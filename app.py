@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.2", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -63,13 +63,13 @@ ASSET_GROUPS = {
 INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
+if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
         st.session_state.category = INITIAL_CATEGORY
         st.session_state.ticker = ASSET_GROUPS[INITIAL_CATEGORY][0]
 
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
-if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
 # --- UI: TEMA SEÇİCİ ---
@@ -218,13 +218,13 @@ def analyze_market_intelligence(asset_list):
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            if score >= 3:
+            if score >= 1: # İstenen yumuşak eşik (min. 1 puan)
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
         except Exception: continue
     
     if not signals: return pd.DataFrame()
-    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Sadece TOP 20
+    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Top 20
 
 # --- WIDGET & DATA ---
 def render_tradingview_widget(ticker, height=600):
@@ -271,7 +271,7 @@ def fetch_google_news(ticker):
         feed = feedparser.parse(rss_url)
         news = []
         limit_date = datetime.now() - timedelta(days=10)
-        for entry in feed.entries[:15]: # 15 Haber Limiti
+        for entry in feed.entries[:15]: 
             try: dt = datetime(*entry.published_parsed[:6])
             except: dt = datetime.now()
             if dt < limit_date: continue
@@ -282,7 +282,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.0")
+st.title(f"🦅 Patronun Terminali v3.5.2")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -309,7 +309,6 @@ with col_search_btn:
 st.markdown("---")
 
 # 2. ANA KOKPİT (2 SÜTUNLU YAPI)
-# Sol Sütun (Grafik + Info) vs Sağ Sütun (Akışlar)
 col_main_left, col_main_right = st.columns([2.5, 1.2]) 
 
 # --- SOL SÜTUN ---
@@ -328,18 +327,18 @@ with col_main_left:
     
     # BÜYÜK GRAFİK
     st.write("")
-    render_tradingview_widget(current_ticker, height=700) # Grafik Yüksekliği Arttırıldı
+    render_tradingview_widget(current_ticker, height=700)
 
 # --- SAĞ SÜTUN ---
 with col_main_right:
-    # 1. SENTIMENT 20
-    st.subheader("🧠 Sentiment 20 Skoru")
+    # 1. SENTIMENT İLK 20 (İsim Güncellendi)
+    st.subheader("🧠 Sentiment İlk 20")
     if st.button(f"⚡ {current_category} Tara", type="primary"):
         with st.spinner("Piyasa taranıyor..."):
             scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
             st.session_state.scan_data = scan_df
     
-    with st.container(height=350): # Scroll edilebilir alan
+    with st.container(height=350):
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
@@ -358,7 +357,7 @@ with col_main_right:
     st.write("")
     st.subheader("📡 Haber Akışı")
     news_data = fetch_google_news(current_ticker)
-    with st.container(height=400): # Scroll edilebilir alan
+    with st.container(height=400):
         if news_data:
             for n in news_data:
                 st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
