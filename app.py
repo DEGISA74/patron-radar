@@ -113,7 +113,7 @@ def analyze_market_intelligence(asset_list):
             
             # --- GÖSTERGELERİ HESAPLA ---
             
-            # EMA Hesaplamaları (Trend için)
+            # EMA Hesaplamaları (Trend için - EMA5 ve EMA20)
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
@@ -148,7 +148,7 @@ def analyze_market_intelligence(asset_list):
             found = False
             strategies = []
 
-            # 1. Trend: EMA5, EMA20'yi Bugün veya Dün Kesti (Golden Cross)
+            # 1. Trend: EMA5, EMA20'yi Bugün veya Dün Kesti (Golden Cross Kısa Vade)
             # Bugün Kesişim
             cross_today = (ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])
             # Dün Kesişim
