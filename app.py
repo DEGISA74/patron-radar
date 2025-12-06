@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.4 (İndeks Güvenlik Güncellemesi)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.5 (Final Stabilizasyon)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -164,21 +164,19 @@ def analyze_market_intelligence(asset_list):
             progress_val = (i + 1) / len(asset_list)
             progress_bar.progress(progress_val, text=f"{i + 1}/{len(asset_list)} sembol taranıyor: **{symbol}**")
             
+            # Veri çekimi 1 yıllık (Stabilizasyon için gerekli)
             df = yf.download(symbol, period="1y", progress=False) 
             
             if df.empty or 'Close' not in df.columns: continue
             
-            # KRİTİK DEĞİŞİKLİK: DataFrame'i sadece 'Close' sütununda değil, genel olarak temizle
             df = df.dropna(how='all')
-            # 200 gün değil, RS için gerekli olan 6 gün ve gösterge hesaplamaları için minimum 50 gün kontrolü
+            # 50 günlük veri kontrolü (RSI/W%R'nin sağlıklı hesaplanması için)
             if len(df) < 50: continue 
             
-            # Göstergelerin düzgün hesaplanması için gerekli sütunları temizle
             df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
             
-            # En son değerlerin NaN olup olmadığını kontrol et (Gösterge hesaplamadan önce)
             if pd.isna(df['Close'].iloc[-1]) or pd.isna(df['High'].iloc[-1]) or pd.isna(df['Low'].iloc[-1]): continue 
-            if len(df) < 6: continue # 5 günlük değişim için minimum 6 gün
+            if len(df) < 6: continue 
 
             close = df['Close']
             high = df['High']
@@ -186,7 +184,12 @@ def analyze_market_intelligence(asset_list):
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
             # Göstergeler
-            sma200 = close.rolling(200).mean()
+            # SMA200'ü yalnızca yeterli veri varsa hesapla, aksi halde NaN kalsın
+            if len(close) >= 200:
+                sma200 = close.rolling(200).mean()
+            else:
+                sma200 = pd.Series([np.nan] * len(close), index=close.index) # NaN olarak ayarla
+                
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
@@ -218,9 +221,10 @@ def analyze_market_intelligence(asset_list):
             
             # Kritik: Bütün hesaplanan indikatör serilerinde son değer NaN ise atla
             indicator_values = [
-                sma200.iloc[-1], bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], 
+                bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], 
                 williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]
             ]
+            # SMA200 hariç tüm indikatörlerin hesaplandığından emin ol
             if any(pd.isna(val) for val in indicator_values): continue 
             
             curr_c = float(close.iloc[-1])
@@ -228,32 +232,28 @@ def analyze_market_intelligence(asset_list):
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
             # Kriter Kontrolleri
-            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+            # 1. 🛡️ SMA200 (Yeni Mantık: Sadece hesaplanabiliyorsa puan ver)
+            if not pd.isna(sma200.iloc[-1]) and curr_c > sma200.iloc[-1]: 
+                score += 1
+                reasons.append("🛡️ SMA200")
             
-            # KRİTİK GÜNCELLEME: close.iloc[-6] NaN ise bu kriteri pas geç
+            # 2. 👑 RS (5 günlük değişim için)
             if not pd.isna(close.iloc[-6]):
                 stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
                 if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
-            else: 
-                # Eğer 5 günlük değişim hesaplanamıyorsa, bu kritere 0 puan veririz.
-                pass 
             
+            # Diğer Kriterler
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
-            
-            # NR4 için min 5 günlük veri kontrolü
             if len(daily_range) >= 4 and daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
-            
             if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
             if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            
             if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
             if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
-            
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            # FİLTRE EŞİĞİ 2'DE TUTULDU (Halen Test Modu)
-            if score >= 2: 
+            # FİLTRE EŞİĞİ ORİJİNAL HALE GETİRİLDİ
+            if score >= 3: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
         except Exception: 
@@ -322,7 +322,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.4")
+st.title(f"🦅 Patronun Terminali v3.6.5")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
