@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.2 (Veri Temizliği ve Stablizasyon)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.3 (Nihai NaN Temizliği)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -178,10 +178,11 @@ def analyze_market_intelligence(asset_list):
             high = df['High']
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            
+            # Puanlama öncesi son değerlerin temizliğini kontrol et
+            if pd.isna(close.iloc[-1]) or pd.isna(high.iloc[-1]) or pd.isna(low.iloc[-1]): continue 
 
             # Göstergeler
-            # (Bu bloktaki hataları minimize etmek için veri temizliği yukarıda yapıldı)
-            
             sma200 = close.rolling(200).mean()
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
@@ -215,26 +216,30 @@ def analyze_market_intelligence(asset_list):
             # Puanlama
             score = 0; reasons = []
             
-            # Kritik: En son değerin NaN olup olmadığını kontrol et
-            if pd.isna(close.iloc[-1]): continue 
+            # Kritik: Bütün hesaplanan indikatör serilerinde son değer NaN ise atla
+            indicator_values = [
+                sma200.iloc[-1], bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], 
+                williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]
+            ]
+            if any(pd.isna(val) for val in indicator_values): continue 
             
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # Kriter Kontrolleri (NaN Kontrolleri eklendi)
-            if not pd.isna(sma200.iloc[-1]) and curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+            # Kriter Kontrolleri (NaN Kontrolleri yukarıda halledildi)
+            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
             stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
             if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
             
-            if not pd.isna(bb_width.iloc[-1]) and bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
             
-            if not pd.isna(ema5.iloc[-1]) and not pd.isna(ema20.iloc[-1]) and ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
-            if not pd.isna(williams_r.iloc[-1]) and williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
+            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
+            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
             
-            if not pd.isna(hist.iloc[-1]) and not pd.isna(hist.iloc[-2]) and hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            if not pd.isna(rsi.iloc[-1]) and rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
+            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+            if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
             
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
@@ -243,9 +248,8 @@ def analyze_market_intelligence(asset_list):
             if score >= 2: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
-        except Exception as e: 
-            # Hata durumunda sadece o sembolü atla ve konsola hatayı yaz (debug amaçlı)
-            # print(f"Hata sembolü {symbol}: {e}") 
+        except Exception: 
+            # Hata durumunda sadece o sembolü atla ve taramaya devam et
             continue 
     
     # İşlem tamamlandığında progress bar'ı gizle
@@ -310,7 +314,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.2")
+st.title(f"🦅 Patronun Terminali v3.6.3")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
