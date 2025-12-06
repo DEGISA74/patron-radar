@@ -8,7 +8,7 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.5.0 (Manuel Giriş Öncelikli)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.0.1", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -19,12 +19,39 @@ ASSET_GROUPS = {
     "TÜRK HİSSE": ["THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS"] 
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
-INITIAL_CATEGORY = list(ASSET_GROUPS.keys())[0] # Varsayılan ilk kategori
+INITIAL_CATEGORY = "TÜRK HİSSE"
 
-# --- CSS TASARIM --- (Aynı Kaldı)
+# --- CSS TASARIM ---
 st.markdown("""
 <style>
-    /* ... (CSS Kodları V1.4.0 ile aynıdır) ... */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
+
+    .stat-box {
+        background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .stat-label { font-size: 0.8rem; color: #546E7A; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #263238; margin: 5px 0; }
+    .delta-pos { color: #00C853; }
+    .delta-neg { color: #D50000; }
+
+    .news-card {
+        background: #FFFFFF; border: 1px solid #CFD8DC; padding: 10px; border-radius: 8px; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .news-title { 
+        color: #263238; font-weight: 600; display: block; 
+        margin-bottom: 3px; font-size: 0.9rem; line-height: 1.2;
+    }
+    .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
+    
+    .stButton button {
+        background-color: #F5F5F5; border: 1px solid #E0E0E0;
+        text-align: center; width: 100%; margin-top: 5px; font-size: 0.8rem;
+    }
+    h1 { padding-top: 0px; }
 </style>
 """, unsafe_allow_html=True) 
 
@@ -32,28 +59,39 @@ st.markdown("""
 if 'ticker' not in st.session_state:
     st.session_state.ticker = "THYAO.IS"
 
-if 'manual_input_value' not in st.session_state:
-    st.session_state.manual_input_value = st.session_state.ticker
-
 if 'category' not in st.session_state:
     st.session_state.category = INITIAL_CATEGORY
 
-# Ticker değiştiğinde manuel input'u da güncelleme
-def update_manual_input(new_ticker):
-    st.session_state.manual_input_value = new_ticker
-    st.session_state.ticker = new_ticker
-    st.rerun()
+if 'run_scan' not in st.session_state: 
+    st.session_state.run_scan = False
 
-# MANUEL GİRİŞ İÇİN ÖZEL CALLBACK
-def handle_manual_search():
-    # Manuel arama yapıldığında, kategori seçimini sıfırla
-    if st.session_state.manual_ticker_input != st.session_state.ticker:
-        st.session_state.category = INITIAL_CATEGORY
-        st.session_state.ticker = st.session_state.manual_ticker_input
-        st.session_state.manual_input_value = st.session_state.manual_ticker_input
-        st.rerun()
+# --- CALLBACK FONKSİYONLARI ---
+# Bu fonksiyonlar kullanıcı bir şeye tıkladığında çalışır, böylece loop (döngü) oluşmaz.
 
-# --- WIDGET VE VERİ FONKSİYONLARI (Aynı Kaldı) ---
+def on_category_change():
+    """Kategori değiştiğinde o kategorinin ilk hissesini yükle."""
+    new_cat = st.session_state.selected_category_key
+    st.session_state.category = new_cat
+    st.session_state.ticker = ASSET_GROUPS[new_cat][0]
+
+def on_asset_change():
+    """Listeden hisse seçildiğinde ticker'ı güncelle."""
+    new_asset = st.session_state.selected_asset_key
+    st.session_state.ticker = new_asset
+
+def on_manual_input_change():
+    """Manuel giriş yapıldığında ticker'ı güncelle."""
+    input_val = st.session_state.manual_input_key
+    if input_val:
+        st.session_state.ticker = input_val.upper()
+
+def on_manual_button_click():
+    """Ara butonuna basıldığında ticker'ı güncelle."""
+    input_val = st.session_state.manual_input_key
+    if input_val:
+        st.session_state.ticker = input_val.upper()
+
+# --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
     tv_symbol = ticker
@@ -134,76 +172,63 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.5.0 (V1.2.0 Geri Dönüş)")
+st.title("🦅 Patronun Terminali v2.0.1")
 st.markdown("---")
 
-## Dinamik Menü Barı (HORIZONTAL DROPDOWNS)
+## Dinamik Menü Barı (V1.2.0 Estetiği + Callback Kontrolü)
 
-category_list = list(ASSET_GROUPS.keys())
 current_ticker = st.session_state.ticker
-
-# Ticker'ın listede olup olmadığını kontrol et
-is_in_list = current_ticker in ALL_ASSETS
-
-# Ticker listede değilse, kategoriyi varsayılan ilk kategoriye sıfırla
-if not is_in_list:
-    current_category = INITIAL_CATEGORY
-else:
-    # Ticker listedeyse, kategori eşleştirmesi yap
-    current_category = next((cat for cat, assets in ASSET_GROUPS.items() if current_ticker in assets), INITIAL_CATEGORY)
-
+current_category = st.session_state.category
 
 # 1. Filtreleme Alanı
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 with col_cat:
     # Kategori Seçimi
-    selected_category = st.selectbox(
+    # Kullanıcı değiştirdiğinde on_category_change çalışır
+    st.selectbox(
         "Kategori Seç", 
-        category_list,
-        index=category_list.index(current_category) 
+        list(ASSET_GROUPS.keys()),
+        index=list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0,
+        key="selected_category_key",
+        on_change=on_category_change 
     )
-
-    # Kategori Değişimi Kontrolü
-    if selected_category != st.session_state.category:
-        st.session_state.category = selected_category
-        # Kategori değişirse listedeki ilk elemanı seç
-        st.session_state.manual_input_value = ASSET_GROUPS[selected_category][0]
-        set_ticker(ASSET_GROUPS[selected_category][0])
-
-
-# 2. Varlık Seçimi (Kategoriye Bağımlı)
-asset_options = ASSET_GROUPS.get(st.session_state.category, [current_ticker])
 
 with col_ass:
-    # Eğer mevcut ticker, gösterilen listede yoksa, default index 0 olur
-    default_index = asset_options.index(current_ticker) if current_ticker in asset_options else 0
+    # Varlık Seçimi
+    asset_options = ASSET_GROUPS[current_category]
     
-    selected_asset = st.selectbox(
-        f"{st.session_state.category} Listesi",
+    # Mevcut ticker listede varsa o seçili gelir, yoksa listedeki ilk eleman (0) görsel olarak seçili durur.
+    # ÖNEMLİ: Ancak 'on_change' sadece kullanıcı elle değiştirirse tetiklenir.
+    # Bu sayede PFE yazılıyken, selectbox AAPL gösterse bile kodu PFE olarak kalır ve değiştirmez.
+    try:
+        default_index = asset_options.index(current_ticker)
+    except ValueError:
+        default_index = 0
+    
+    st.selectbox(
+        f"{current_category} Listesi",
         asset_options,
-        index=default_index
+        index=default_index,
+        key="selected_asset_key",
+        on_change=on_asset_change 
     )
-    
-    # EĞER TIKLANDIYSA, TİCKERI DEĞİŞTİR
-    if selected_asset != current_ticker:
-        update_manual_input(selected_asset)
 
-
-# 3. Manuel Giriş (Gecikmeli Arama Kontrolü)
+# 2. Manuel Giriş
 with col_search_in:
-    manual_input = st.text_input(
-        "Manuel Hisse Kodu (Ara Butonu gerekli)", 
-        value=st.session_state.manual_input_value,
-        key="manual_ticker_input" # Callback için key
-    ).upper()
-
+    # Placeholder içine mevcut ticker'ı yazıyoruz ki kullanıcı neye baktığını bilsin
+    st.text_input(
+        "Manuel Hisse Kodu (Örn: PFE, THYAO.IS)", 
+        value="", 
+        placeholder=f"Şu anki hisse: {current_ticker}",
+        key="manual_input_key",
+        on_change=on_manual_input_change # Enter'a basınca çalışır
+    )
 
 with col_search_btn:
     st.write("") 
     st.write("")
-    if st.button("🔎 Ara"):
-        handle_manual_search() # CALLBACK'i çalıştır
+    st.button("🔎 Ara", on_click=on_manual_button_click)
 
 st.markdown("---")
 
@@ -219,7 +244,6 @@ if info_data and info_data['price']:
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
 
-    # Fiyat Metriği
     c1.markdown(f"""
     <div class="stat-box">
         <div class="stat-label">{current_ticker} FİYAT</div>
@@ -227,7 +251,6 @@ if info_data and info_data['price']:
         <div class="stat-delta {delta_class} money-text">{delta_sign}{info_data['change_pct']:.2f}%</div>
     </div>""", unsafe_allow_html=True)
     
-    # Hacim Metriği
     c2.markdown(f"""
     <div class="stat-box">
         <div class="stat-label">GÜNLÜK HACİM</div>
@@ -235,7 +258,6 @@ if info_data and info_data['price']:
         <span style="color: #616161;">adet</span>
     </div>""", unsafe_allow_html=True)
     
-    # Hedef Fiyat Metriği
     target_text = f"{info_data['target_price']:.2f}" if isinstance(info_data['target_price'], (int, float)) else info_data['target_price']
     c3.markdown(f"""
     <div class="stat-box">
@@ -244,7 +266,6 @@ if info_data and info_data['price']:
         <span style="color: #616161;">Ort. Fiyat</span>
     </div>""", unsafe_allow_html=True)
 
-    # Sektör Metriği
     pe_text = f"{info_data['pe_ratio']:.1f}" if isinstance(info_data['pe_ratio'], (int, float)) else info_data['pe_ratio']
     c4.markdown(f"""
     <div class="stat-box">
@@ -279,6 +300,61 @@ if info_data and info_data['price']:
                     """, unsafe_allow_html=True)
             else:
                 st.info("Haber akışı bulunamadı.")
+    
+    # --- TARAMA MOTORU (V2.0) ---
+    st.markdown("---")
+    
+    col_refresh = st.columns([6,1])
+    with col_refresh[1]:
+        if st.button("🔄 Tam Yenile"): 
+            st.cache_data.clear()
+            st.rerun()
+
+    st.header("🔍 V2.0: Finansal İstihbarat & Tarama Motoru")
+    st.info("Bu modül, hisse listelerimizdeki (S&P/NASDAQ Top 100) varlıkları, belirlediğiniz teknik ve duygu kriterlerine göre tarar.")
+
+    with st.expander("Tarama Kriterlerini Ayarla ve Taramayı Başlat"):
+        
+        col_tech, col_volume, col_sentiment, col_pattern = st.columns(4)
+        
+        with col_tech:
+            st.markdown("**1. Dipten Dönüş & RSI**")
+            rsi_min = st.slider("RSI (14) Alt Limit", min_value=20, max_value=50, value=30)
+            rsi_max = st.slider("RSI (14) Üst Limit", min_value=50, max_value=80, value=70)
+            price_ma = st.selectbox("Fiyat Durumu", ["SMA200 Üstü", "SMA200 Altı", "Fark Etmez"])
+
+        with col_volume:
+            st.markdown("**2. Hacim & Likidite**")
+            rel_vol = st.slider("Relative Volume (RV) Min.", min_value=0.5, max_value=3.0, value=1.5, step=0.1)
+            min_volume = st.number_input("Günlük Ortalama Hacim (USD)", value=1000000)
+            
+        with col_sentiment:
+            st.markdown("**3. Duygu & Haber Akışı**")
+            sentiment_change = st.selectbox("Sentiment Değişimi", ["Son 7 gün Artan", "Son 7 gün Azalan", "Nötr Yükselen"])
+            news_level = st.selectbox("Haber Kaynak Seviyesi", ["Level 1 (Kritik)", "Level 2 (Analiz)", "Fark Etmez"])
+
+        with col_pattern:
+            st.markdown("**4. Konsolidasyon (Built-up)**")
+            atr_days = st.slider("ATR Kaç Günün En Düşüğü Olsun?", min_value=10, max_value=90, value=30)
+            consolidation_time = st.selectbox("Konsolidasyon Süresi", ["1 Ay (Kısa)", "3 Ay (Orta)", "6 Ay (Uzun)"])
+        
+        st.markdown("---")
+        
+        if st.button("🔴 Taramayı Başlat", use_container_width=True, type="primary"):
+            st.session_state.run_scan = True
+            st.info("Tarama başladı. Lütfen bu modülün V2.1'de aktif olacağını unutmayın. Şimdilik sonuçlar yer tutucudur.")
+        
+    if st.session_state.get('run_scan', False):
+        st.subheader("🔍 Tarama Sonuçları")
+        results_df = pd.DataFrame({
+            'Hisse': ['AAPL', 'TSLA', 'MSFT'],
+            'Kriter': ['RSI Dönüşü', 'Yüksek Hacim', 'Konsolidasyon'],
+            'RSI (14)': [32.5, 45.1, 55.0],
+            'Relative Volume': [1.8, 2.5, 0.9],
+            'Sentiment': ['Artış', 'Nötr', 'Azalış']
+        })
+        st.dataframe(results_df, use_container_width=True)
+        st.session_state.run_scan = False 
+        
 else:
     st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
-
