@@ -8,24 +8,24 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.2.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.3.0", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
     "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
+    # GC=F ve SI=F çıkarıldı
     "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
 }
 
-# --- CSS TASARIM ---
+# --- CSS TASARIM & FONTLAR ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
 
-    /* Custom Stat Cards */
     .stat-box {
         background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
@@ -35,7 +35,6 @@ st.markdown("""
     .delta-pos { color: #00C853; }
     .delta-neg { color: #D50000; }
 
-    /* Haber Kartları */
     .news-card {
         background: #FFFFFF; border: 1px solid #CFD8DC; padding: 10px; border-radius: 8px; margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.02);
@@ -46,7 +45,6 @@ st.markdown("""
     }
     .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
     
-    /* Sidebar Butonları */
     .stButton button {
         background-color: #F5F5F5; border: 1px solid #E0E0E0;
         text-align: center; width: 100%; margin-top: 5px; font-size: 0.8rem;
@@ -72,7 +70,7 @@ def render_tradingview_widget(ticker):
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker: # Döviz pariteleri
+    elif "=X" in ticker: 
         tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
     elif ticker in ["BTC-USD", "ETH-USD"]:
         tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
@@ -147,59 +145,98 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.2.1")
+st.title("🦅 Patronun Terminali v1.3.0")
+st.markdown("---")
 
-# --- SIDEBAR: MANUEL GİRİŞ & Varlık Seçimi ---
-with st.sidebar:
-    st.header("Manuel Ticker & İşlemler")
-    
-    # 1. MANUEL GİRİŞ (Gecikmeli Arama)
-    # Gecikmeli giriş için st.session_state kullanılır.
-    manual_input = st.text_input(
-        "Hisse Kodu (Ara butonu gerekli)", 
-        value=st.session_state.manual_input_value
-    ).upper()
+## Dinamik Menü Barı (YATAY YAPIYA GERİ DÖNÜŞ)
 
-    if manual_input != st.session_state.manual_input_value:
-        st.session_state.manual_input_value = manual_input
-    
-    if st.button("🔎 Ara & Yükle"):
-        set_ticker(st.session_state.manual_input_value)
+menu_cols = st.columns(len(ASSET_GROUPS) + 1)
+menu_titles = list(ASSET_GROUPS.keys())
+menu_titles.append("İşlemler")
 
-    st.markdown("---")
-    st.header("Varlık Menüsü")
-    
-    # 2. Varlık Grupları (Kompakt Açılır Menüler)
-    for title, symbols in ASSET_GROUPS.items():
-        with st.expander(f"**{title}**"):
-            # Daha kompakt görünüm için 3 sütun
-            list_cols = st.columns(3)
-            for i, symbol in enumerate(symbols):
-                with list_cols[i % 3]: 
-                    if st.button(symbol, key=f"btn_{symbol}"):
-                        set_ticker(symbol)
+with st.container():
+    col_index = 0
+    for title in ASSET_GROUPS.keys():
+        with menu_cols[col_index]:
+            st.markdown(f"**{title}**")
+            with st.expander("Listeyi Gör"):
+                # Yatay yayılmayı sağlamak için 2 sütun kullanılıyor (daha kompakt)
+                list_cols = st.columns(2)
+                for i, symbol in enumerate(ASSET_GROUPS[title]):
+                    with list_cols[i % 2]: 
+                        if st.button(symbol, key=f"btn_{symbol}", help=f"Grafiği {symbol} ile değiştir"):
+                            set_ticker(symbol)
+        col_index += 1
 
-    st.markdown("---")
-    if st.button("🔄 Tam Yenile"): 
-        st.cache_data.clear()
-        st.rerun()
+    # Ek İşlemler ve Manuel Giriş
+    with menu_cols[-1]:
+        st.markdown(f"**İşlemler**")
+        
+        # MANUEL GİRİŞ KONTROLÜ
+        manual_input = st.text_input(
+            "Hisse Kodu (Ara butonu gerekli)", 
+            value=st.session_state.manual_input_value
+        ).upper()
 
-# --- ANA GÖSTERGE VE GRAFİK ---
+        if manual_input != st.session_state.manual_input_value:
+            st.session_state.manual_input_value = manual_input
+        
+        if st.button("🔎 Ara & Yükle"):
+            set_ticker(st.session_state.manual_input_value)
+        
+        # Tam Yenileme Butonu
+        if st.button("🔄 Tam Yenile"): 
+            st.cache_data.clear()
+            st.rerun()
+
+st.markdown("---")
+
+# Veri Akışı
 current_ticker = st.session_state.ticker
 info_data = fetch_stock_info(current_ticker)
 news_data = fetch_google_news(current_ticker)
 
+# --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards)
+    # Metrikler (Stat Cards) - HTML Geri Eklendi
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
 
-    c1.markdown(f"""...""", unsafe_allow_html=True)
-    c2.markdown(f"""...""", unsafe_allow_html=True)
-    c3.markdown(f"""...""", unsafe_allow_html=True)
-    c4.markdown(f"""...""", unsafe_allow_html=True)
+    # Fiyat Metriği
+    c1.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">{current_ticker} FİYAT</div>
+        <div class="stat-value money-text">{info_data['price']:.2f}</div>
+        <div class="stat-delta {delta_class} money-text">{delta_sign}{info_data['change_pct']:.2f}%</div>
+    </div>""", unsafe_allow_html=True)
+    
+    # Hacim Metriği
+    c2.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">GÜNLÜK HACİM</div>
+        <div class="stat-value money-text">{(info_data['volume'] / 1_000_000):.1f}M</div>
+        <span style="color: #616161;">adet</span>
+    </div>""", unsafe_allow_html=True)
+    
+    # Hedef Fiyat Metriği
+    target_text = f"{info_data['target_price']:.2f}" if isinstance(info_data['target_price'], (int, float)) else info_data['target_price']
+    c3.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">ANALİST HEDEF</div>
+        <div class="stat-value money-text">{target_text}</div>
+        <span style="color: #616161;">Ort. Fiyat</span>
+    </div>""", unsafe_allow_html=True)
+
+    # Sektör Metriği
+    pe_text = f"{info_data['pe_ratio']:.1f}" if isinstance(info_data['pe_ratio'], (int, float)) else info_data['pe_ratio']
+    c4.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">SEKTÖR / F/K</div>
+        <div class="stat-value">{info_data['sector']}</div>
+        <span style="color: #616161;">PE: {pe_text}</span>
+    </div>""", unsafe_allow_html=True)
 
     st.write("")
 
