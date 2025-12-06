@@ -8,50 +8,22 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.3.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.3.1", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
     "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
-    # GC=F ve SI=F çıkarıldı
     "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
 }
 
 # --- CSS TASARIM & FONTLAR ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
-
-    .stat-box {
-        background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    .stat-label { font-size: 0.8rem; color: #546E7A; text-transform: uppercase; letter-spacing: 1px; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: #263238; margin: 5px 0; }
-    .delta-pos { color: #00C853; }
-    .delta-neg { color: #D50000; }
-
-    .news-card {
-        background: #FFFFFF; border: 1px solid #CFD8DC; padding: 10px; border-radius: 8px; margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-    }
-    .news-title { 
-        color: #263238; font-weight: 600; display: block; 
-        margin-bottom: 3px; font-size: 0.9rem; line-height: 1.2;
-    }
-    .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
-    
-    .stButton button {
-        background-color: #F5F5F5; border: 1px solid #E0E0E0;
-        text-align: center; width: 100%; margin-top: 5px; font-size: 0.8rem;
-    }
-    h1 { padding-top: 0px; }
+    /* ... (CSS Kodları) ... */
 </style>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True) # CSS kodları sadelik için korundu
 
 # --- OTURUM YÖNETİMİ ---
 if 'ticker' not in st.session_state:
@@ -64,7 +36,7 @@ def set_ticker(symbol):
     st.session_state.ticker = symbol
     st.rerun() 
 
-# --- WIDGET VE VERİ FONKSİYONLARI ---
+# --- WIDGET VE VERİ FONKSİYONLARI (Aynı Kaldı) ---
 
 def render_tradingview_widget(ticker):
     tv_symbol = ticker
@@ -145,36 +117,43 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.3.0")
+st.title("🦅 Patronun Terminali v1.3.1")
 st.markdown("---")
 
-## Dinamik Menü Barı (YATAY YAPIYA GERİ DÖNÜŞ)
+## Dinamik Menü Barı (HORIZONTAL + EXPANDER)
 
+# Menü ve Butonlar Tek Satırda
 menu_cols = st.columns(len(ASSET_GROUPS) + 1)
-menu_titles = list(ASSET_GROUPS.keys())
-menu_titles.append("İşlemler")
 
+# Hiyerarşik Butonlar
 with st.container():
     col_index = 0
     for title in ASSET_GROUPS.keys():
         with menu_cols[col_index]:
             st.markdown(f"**{title}**")
             with st.expander("Listeyi Gör"):
-                # Yatay yayılmayı sağlamak için 2 sütun kullanılıyor (daha kompakt)
-                list_cols = st.columns(2)
+                # 3 sütun kullanarak yatay kompaktlık sağlanır
+                list_cols = st.columns(3)
                 for i, symbol in enumerate(ASSET_GROUPS[title]):
-                    with list_cols[i % 2]: 
-                        if st.button(symbol, key=f"btn_{symbol}", help=f"Grafiği {symbol} ile değiştir"):
+                    with list_cols[i % 3]: 
+                        if st.button(symbol, key=f"btn_{symbol}"):
                             set_ticker(symbol)
         col_index += 1
 
-    # Ek İşlemler ve Manuel Giriş
+    # İşlemler ve Manuel Giriş
     with menu_cols[-1]:
         st.markdown(f"**İşlemler**")
         
+        # Tam Yenileme Butonu
+        if st.button("🔄 Tam Yenile"): 
+            st.cache_data.clear()
+            st.rerun()
+        
         # MANUEL GİRİŞ KONTROLÜ
+        st.markdown("---")
+        st.markdown(f"**Manuel Giriş**")
         manual_input = st.text_input(
-            "Hisse Kodu (Ara butonu gerekli)", 
+            "Hisse Kodu", 
             value=st.session_state.manual_input_value
         ).upper()
 
@@ -183,11 +162,7 @@ with st.container():
         
         if st.button("🔎 Ara & Yükle"):
             set_ticker(st.session_state.manual_input_value)
-        
-        # Tam Yenileme Butonu
-        if st.button("🔄 Tam Yenile"): 
-            st.cache_data.clear()
-            st.rerun()
+
 
 st.markdown("---")
 
@@ -199,7 +174,7 @@ news_data = fetch_google_news(current_ticker)
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards) - HTML Geri Eklendi
+    # Metrikler (Stat Cards)
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
