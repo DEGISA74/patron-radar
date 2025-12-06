@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.5 (Final Stabilizasyon)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.6 (Son Güvenlik Katmanı)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -147,7 +147,7 @@ def analyze_market_intelligence(asset_list):
         spy_data = yf.download("^GSPC", period="1y", progress=False)
         if not spy_data.empty and len(spy_data) >= 6:
             spy_close = spy_data['Close']
-            # NaN kontrolü eklendi
+            # NaN kontrolü
             if pd.isna(spy_close.iloc[-1]) or pd.isna(spy_close.iloc[-6]):
                 spy_5d_chg = 0 
             else:
@@ -185,11 +185,11 @@ def analyze_market_intelligence(asset_list):
 
             # Göstergeler
             # SMA200'ü yalnızca yeterli veri varsa hesapla, aksi halde NaN kalsın
+            sma200_val = np.nan # Varsayılan değer NaN
             if len(close) >= 200:
                 sma200 = close.rolling(200).mean()
-            else:
-                sma200 = pd.Series([np.nan] * len(close), index=close.index) # NaN olarak ayarla
-                
+                sma200_val = sma200.iloc[-1]
+            
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
@@ -224,16 +224,16 @@ def analyze_market_intelligence(asset_list):
                 bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], 
                 williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]
             ]
-            # SMA200 hariç tüm indikatörlerin hesaplandığından emin ol
             if any(pd.isna(val) for val in indicator_values): continue 
             
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # Kriter Kontrolleri
-            # 1. 🛡️ SMA200 (Yeni Mantık: Sadece hesaplanabiliyorsa puan ver)
-            if not pd.isna(sma200.iloc[-1]) and curr_c > sma200.iloc[-1]: 
+            # Kriter Kontrolleri (10 kriter)
+            
+            # 1. 🛡️ SMA200 (Yalnızca hesaplanabiliyorsa puan ver)
+            if not pd.isna(sma200_val) and curr_c > sma200_val: 
                 score += 1
                 reasons.append("🛡️ SMA200")
             
@@ -252,8 +252,8 @@ def analyze_market_intelligence(asset_list):
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            # FİLTRE EŞİĞİ ORİJİNAL HALE GETİRİLDİ
-            if score >= 3: 
+            # FİLTRE EŞİĞİ KANITLAMA İÇİN 1'E İNDİRİLDİ
+            if score >= 1: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
         except Exception: 
@@ -322,7 +322,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.5")
+st.title(f"🦅 Patronun Terminali v3.6.6")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
