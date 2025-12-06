@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.4.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.3.0", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -21,46 +21,24 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-# --- VARLIK LİSTELERİ (TOP 250) ---
+# --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 250)": [
-        # Teknoloji & Yarı İletken (Devler)
+    "S&P 500 (TOP 150)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", 
         "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
         "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
-        "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
-        "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
-        
-        # Finans & Bankacılık
         "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", 
         "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
-        "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
-        "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
-        
-        # Sağlık & İlaç
         "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", 
         "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
-        "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
-        "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
-        
-        # Tüketim & Perakende
-        "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
+        "AMZN", "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", 
         "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
-        "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", 
-        "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
-        
-        # Sanayi & Enerji & Materyal
         "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
         "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
         "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
         "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
-        "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
-        "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
-        
-        # Altyapı & GYO (Real Estate) & Utilities
-        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
-        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
-        "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY"
+        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI",
+        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG"
     ],
     "NASDAQ (TOP 50)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
@@ -71,7 +49,7 @@ ASSET_GROUPS = {
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
-INITIAL_CATEGORY = "S&P 500 (TOP 250)"
+INITIAL_CATEGORY = "S&P 500 (TOP 150)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' in st.session_state:
@@ -146,18 +124,19 @@ def on_scan_result_click(symbol):
 def analyze_market_intelligence(asset_list):
     signals = []
     
-    # 1. Benchmark (S&P 500)
+    # 1. Benchmark (S&P 500) Verisini Çek (RS Hesabı için)
     try:
         spy_data = yf.download("^GSPC", period="1y", progress=False)
         if not spy_data.empty:
             spy_close = spy_data['Close']
+            # Son 5 günlük S&P değişimi (Haftalık RS kıyaslaması için)
             spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
         else:
             spy_5d_chg = 0
     except:
         spy_5d_chg = 0
 
-    # 2. Hisse Verileri (1 Yıllık)
+    # 2. Hisse Verilerini Çek (1 Yıllık - SMA200 için)
     try:
         data = yf.download(asset_list, period="1y", group_by='ticker', threads=True, progress=False)
     except Exception: return []
@@ -173,80 +152,117 @@ def analyze_market_intelligence(asset_list):
 
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
-            if len(df) < 200: continue 
+            if len(df) < 200: continue # SMA200 için en az 200 gün lazım
 
+            # SERİLER
             close = df['Close']
             high = df['High']
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # GÖSTERGELER
+            # --- GÖSTERGE HESAPLAMALARI ---
+            
+            # Trendler
             sma200 = close.rolling(200).mean()
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
+            # Bollinger (Squeeze)
             sma20_bb = close.rolling(20).mean()
             std20_bb = close.rolling(20).std()
-            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
+            bb_upper = sma20_bb + 2*std20_bb
+            bb_lower = sma20_bb - 2*std20_bb
+            bb_width = (bb_upper - bb_lower) / (sma20_bb + 0.0001)
             
+            # MACD
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
             macd_line = ema12 - ema26
             signal_line = macd_line.ewm(span=9, adjust=False).mean()
             hist = macd_line - signal_line
             
+            # RSI
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rs_val = gain / loss
             rsi = 100 - (100 / (1 + rs_val))
             
+            # Williams %R
             highest_high_14 = high.rolling(14).max()
             lowest_low_14 = low.rolling(14).min()
             williams_r = (highest_high_14 - close) / (highest_high_14 - lowest_low_14) * -100
             
+            # NR4 (Daily Range)
             daily_range = high - low
             
-            # PUANLAMA
-            score = 0; reasons = []
+            # --- PUANLAMA (MASTER 10) ---
+            score = 0
+            reasons = []
+            
+            # Son Değerler (float)
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # 1. SMA200+
-            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200+")
+            # KATMAN 1: GÜVENLİK
+            # 1. 🛡️ Ana Trend (SMA200)
+            if curr_c > sma200.iloc[-1]:
+                score += 1; reasons.append("🛡️ SMA200+")
             
-            # 2. RS Lider
+            # 2. 👑 RS Gücü (S&P'yi Yenen)
             stock_5d_chg = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
-            if stock_5d_chg > spy_5d_chg: score += 1; reasons.append("👑 RS Lider")
+            if stock_5d_chg > spy_5d_chg:
+                score += 1; reasons.append("👑 RS Lider")
 
-            # 3. Squeeze
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
+            # KATMAN 2: HAZIRLIK
+            # 3. 🚀 Squeeze (Daralma)
+            min_width = bb_width.tail(60).min()
+            if bb_width.iloc[-1] <= min_width * 1.15: # %15 tolerans
+                score += 1; reasons.append("🚀 Squeeze")
 
-            # 4. NR4
-            if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
+            # 4. 🔇 NR4 (Sessizlik)
+            if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05:
+                score += 1; reasons.append("🔇 NR4")
 
-            # 5. Trend
-            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
+            # KATMAN 3: TETİKLEME
+            # 5. ⚡ Trend (EMA5 > EMA20)
+            if ema5.iloc[-1] > ema20.iloc[-1]:
+                score += 1; reasons.append("⚡ Trend")
             
-            # 6. Will%R
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 Will%R")
+            # 6. 🔫 Will%R (-50 üstü)
+            if williams_r.iloc[-1] > -50:
+                score += 1; reasons.append("🔫 Will%R")
                 
-            # 7. MACD
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+            # 7. 🟢 MACD (Artış)
+            if hist.iloc[-1] > hist.iloc[-2]:
+                score += 1; reasons.append("🟢 MACD")
             
-            # 8. RSI
+            # 8. 📈 RSI (Boğa Bölgesi)
             rsi_curr = rsi.iloc[-1]
-            if rsi_curr > 50 and rsi_curr > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI>50")
+            if rsi_curr > 50 and rsi_curr > rsi.iloc[-2]:
+                score += 1; reasons.append("📈 RSI>50")
 
-            # 9. Hacim
-            if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Hacim")
+            # KATMAN 4: YAKIT & ONAY
+            # 9. 🔊 Hacim
+            if curr_vol > avg_vol * 1.2:
+                pct = int(((curr_vol - avg_vol)/avg_vol)*100)
+                score += 1; reasons.append(f"🔊 Hacim")
             
-            # 10. Zirve
-            if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Zirve")
+            # 10. 🔨 Breakout (Zirveye Yakınlık)
+            high_20 = high.tail(20).max()
+            if curr_c >= high_20 * 0.97: # %3 yakınlık
+                score += 1; reasons.append("🔨 Zirve")
 
+            # LİSTEYE EKLE (En az 3 puan)
             if score >= 3:
-                signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "RSI": round(rsi_curr, 1)})
+                signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": f"{curr_c:.2f}",
+                    "Skor": score,
+                    "Nedenler": " | ".join(reasons),
+                    "RSI": round(rsi_curr, 1)
+                })
 
         except Exception: continue
     
@@ -310,7 +326,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ ---
-st.title(f"🦅 Patronun Terminali v3.4.0")
+st.title(f"🦅 Patronun Terminali v3.3.0")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -336,7 +352,7 @@ with col_search_btn:
 
 st.markdown("---")
 
-# İSTATİSTİK
+# İSTATİSTİKLER
 info = fetch_stock_info(current_ticker)
 if info and info['price']:
     c1, c2, c3, c4 = st.columns(4)
@@ -392,6 +408,7 @@ with col_main_intel:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
                     score = row['Skor']
+                    # Görsel Puanlama
                     icon = "🔥" if score >= 9 else "✅" if score >= 7 else "⚠️" if score >= 5 else ""
                     label = f"{icon} {score}/10 | {row['Sembol']}"
                     
