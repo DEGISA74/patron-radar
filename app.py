@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.0.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.0.2", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -37,13 +37,12 @@ ASSET_GROUPS = {
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
-ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
 INITIAL_CATEGORY = "S&P 500 (TOP 150)"
 
-# --- GÜVENLİ BAŞLANGIÇ (ESKİ VERİLERİ TEMİZLE) ---
+# --- GÜVENLİ BAŞLANGIÇ (SELF-HEALING) ---
+# Eğer hafızadaki kategori şu anki listede yoksa, hafızayı sıfırla.
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
-        # Eski kategori kalmışsa sıfırla
         st.session_state.category = INITIAL_CATEGORY
         st.session_state.ticker = ASSET_GROUPS[INITIAL_CATEGORY][0]
 
@@ -78,7 +77,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True) 
 
-# --- GÜVENLİ CALLBACKLER ---
+# --- CALLBACKLER ---
 def on_category_change():
     # Hata korumalı callback
     new_cat = st.session_state.get("selected_category_key")
@@ -99,7 +98,7 @@ def on_manual_button_click():
 def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
-# --- İSTİHBARAT & PUANLAMA MOTORU ---
+# --- ANALİZ MOTORU ---
 def analyze_market_intelligence(asset_list):
     signals = []
     
@@ -109,10 +108,9 @@ def analyze_market_intelligence(asset_list):
 
     for symbol in asset_list:
         try:
-            # VERİ SEÇİMİ (MultiIndex veya Single)
+            # VERİ GÜVENLİĞİ
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]:
-                    df = data[symbol].copy()
+                if symbol in data.columns.levels[0]: df = data[symbol].copy()
                 else: continue
             else:
                 if len(asset_list) == 1: df = data.copy()
@@ -127,7 +125,7 @@ def analyze_market_intelligence(asset_list):
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # --- GÖSTERGELER ---
+            # GÖSTERGELER
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
@@ -153,69 +151,30 @@ def analyze_market_intelligence(asset_list):
             
             daily_range = high - low
 
-            # --- PUANLAMA ---
-            score = 0
-            reasons = []
-            
+            # PUANLAMA
+            score = 0; reasons = []
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # 1. SQUEEZE
-            min_width = bb_width.tail(60).min()
-            if bb_width.iloc[-1] <= min_width * 1.1:
-                score += 1; reasons.append("🚀 Squeeze")
-
-            # 2. NR4
-            r_today = daily_range.iloc[-1]
-            r_last4 = daily_range.tail(4)
-            if r_today == r_last4.min() and r_today > 0:
-                score += 1; reasons.append("🔇 NR4")
-
-            # 3. TREND
-            cross_today = (ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])
-            cross_yest = (ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])
-            if cross_today or cross_yest:
-                score += 1; reasons.append("⚡ Trend")
-
-            # 4. MACD
-            if hist.iloc[-1] > hist.iloc[-2]:
-                score += 1; reasons.append("🟢 MACD")
-
-            # 5. WILLIAMS %R
-            if williams_r.iloc[-1] > -50:
-                score += 1; reasons.append("🔫 Will%R")
-
-            # 6. HACİM
-            if curr_vol > avg_vol * 1.2:
-                pct = int(((curr_vol - avg_vol)/avg_vol)*100)
-                score += 1; reasons.append(f"🔊 Hacim(+%{pct})")
-
-            # 7. BREAKOUT
-            h20 = high.tail(20).max()
-            if curr_c >= h20 * 0.98:
-                score += 1; reasons.append("🔨 Breakout")
-
-            # 8. RSI
-            rsi_curr = rsi.iloc[-1]
-            rsi_prev = rsi.iloc[-2]
-            if 30 < rsi_curr < 65 and rsi_curr > rsi_prev:
-                score += 1; reasons.append("⚓ RSI Güçlü")
+            # KRİTERLER
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
+            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
+            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend")
+            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 Will%R")
+            if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Hacim")
+            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout")
+            rsi_c = rsi.iloc[-1]
+            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
 
             if score > 0:
-                signals.append({
-                    "Sembol": symbol,
-                    "Fiyat": f"{curr_c:.2f}",
-                    "Skor": score,
-                    "Nedenler": " | ".join(reasons),
-                    "RSI": round(rsi_curr, 1)
-                })
+                signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "RSI": round(rsi_c, 1)})
 
         except Exception: continue
     
     if not signals: return pd.DataFrame()
-    df_res = pd.DataFrame(signals)
-    return df_res.sort_values(by="Skor", ascending=False)
+    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
 
 # --- WIDGET & DATA ---
 def render_tradingview_widget(ticker):
@@ -274,7 +233,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.0.1 (Master Trader)")
+st.title("🦅 Patronun Terminali v3.0.2")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -287,6 +246,10 @@ with col_cat:
     cat_index = 0
     if current_category in ASSET_GROUPS:
         cat_index = list(ASSET_GROUPS.keys()).index(current_category)
+    else:
+        # Eğer kategori bulunamazsa sıfırla
+        st.session_state.category = INITIAL_CATEGORY
+        cat_index = 0
     
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change)
 
@@ -306,6 +269,8 @@ st.markdown("---")
 
 # 2. İÇERİK
 info = fetch_stock_info(current_ticker)
+
+# -- GÜVENLİ RENDER: Veri gelmese bile en azından grafiği göster --
 if info and info['price']:
     c1, c2, c3, c4 = st.columns(4)
     cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -314,52 +279,54 @@ if info and info['price']:
     c2.markdown(f'<div class="stat-box"><div class="stat-label">HACİM</div><div class="stat-value money-text">{info["volume"]/1e6:.1f}M</div></div>', unsafe_allow_html=True)
     c3.markdown(f'<div class="stat-box"><div class="stat-label">HEDEF</div><div class="stat-value money-text">{info["target"]}</div></div>', unsafe_allow_html=True)
     c4.markdown(f'<div class="stat-box"><div class="stat-label">SEKTÖR</div><div class="stat-value">{str(info["sector"])[:15]}</div></div>', unsafe_allow_html=True)
+else:
+    st.warning(f"{current_ticker} için anlık fiyat verisi alınamadı (API limiti veya veri yok). Ancak grafik aşağıdadır.")
 
-    st.write("")
-    col_main_chart, col_main_news, col_main_intel = st.columns([2.2, 0.9, 0.9])
+st.write("")
+col_main_chart, col_main_news, col_main_intel = st.columns([2.2, 0.9, 0.9])
 
-    with col_main_chart:
-        st.subheader(f"📈 {current_ticker}")
-        render_tradingview_widget(current_ticker)
+with col_main_chart:
+    st.subheader(f"📈 {current_ticker}")
+    render_tradingview_widget(current_ticker)
 
-    with col_main_news:
-        st.subheader("📡 Haberler")
-        news_data = fetch_google_news(current_ticker)
-        with st.container(height=550):
-            if news_data:
-                for n in news_data:
-                    st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
-            else: st.info("Haber yok.")
+with col_main_news:
+    st.subheader("📡 Haberler")
+    news_data = fetch_google_news(current_ticker)
+    with st.container(height=550):
+        if news_data:
+            for n in news_data:
+                st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
+        else: st.info("Haber yok.")
 
-    with col_main_intel:
-        st.subheader("🧠 Sentiment")
-        with st.expander("ℹ️ 8'li Puan Sistemi"):
-            st.markdown("""
-            <div style="font-size:0.7rem;">
-            <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
-            <b>2. 🔇 NR4:</b> Sessiz Gün<br>
-            <b>3. ⚡ Trend:</b> EMA5 > EMA20<br>
-            <b>4. 🟢 MACD:</b> Momentum Yeşil<br>
-            <b>5. 🔫 Will%R:</b> -50 Kırılımı<br>
-            <b>6. 🔊 Hacim:</b> %20+ Artış<br>
-            <b>7. 🔨 Breakout:</b> Zirve Zorluyor<br>
-            <b>8. ⚓ RSI:</b> 30-65 Yükselen
-            </div>""", unsafe_allow_html=True)
+with col_main_intel:
+    st.subheader("🧠 Sentiment")
+    with st.expander("ℹ️ 8'li Puan Sistemi"):
+        st.markdown("""
+        <div style="font-size:0.7rem;">
+        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
+        <b>2. 🔇 NR4:</b> Sessiz Gün<br>
+        <b>3. ⚡ Trend:</b> EMA5 > EMA20<br>
+        <b>4. 🟢 MACD:</b> Momentum Yeşil<br>
+        <b>5. 🔫 Will%R:</b> -50 Kırılımı<br>
+        <b>6. 🔊 Hacim:</b> %20+ Artış<br>
+        <b>7. 🔨 Breakout:</b> Zirve Zorluyor<br>
+        <b>8. ⚓ RSI:</b> 30-65 Yükselen
+        </div>""", unsafe_allow_html=True)
 
-        if st.button(f"⚡ {current_category} Analiz", type="primary"):
-            with st.spinner("Taranıyor..."):
-                scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
-                st.session_state.scan_data = scan_df
-        
-        with st.container(height=450):
-            if st.session_state.scan_data is not None:
-                if not st.session_state.scan_data.empty:
-                    for index, row in st.session_state.scan_data.iterrows():
-                        score = row['Skor']
-                        label = f"★ {score}/8 | {row['Sembol']}"
-                        if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
-                            on_scan_result_click(row['Sembol'])
-                            st.rerun()
-                        st.markdown(f"<div style='font-size:0.65rem; color:#666; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
-                else: st.info("Sinyal yok.")
-            else: st.info("Analiz için butona basın.")
+    if st.button(f"⚡ {current_category} Analiz", type="primary"):
+        with st.spinner("Taranıyor..."):
+            scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
+            st.session_state.scan_data = scan_df
+    
+    with st.container(height=450):
+        if st.session_state.scan_data is not None:
+            if not st.session_state.scan_data.empty:
+                for index, row in st.session_state.scan_data.iterrows():
+                    score = row['Skor']
+                    label = f"★ {score}/8 | {row['Sembol']}"
+                    if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
+                        on_scan_result_click(row['Sembol'])
+                        st.rerun()
+                    st.markdown(f"<div style='font-size:0.65rem; color:#666; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
+            else: st.info("Sinyal yok.")
+        else: st.info("Analiz için butona basın.")
