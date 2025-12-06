@@ -8,12 +8,38 @@ from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import numpy as np
 
-# --- SAYFA AYARLARI (Karanlık Tema) ---
-st.set_page_config(
-    page_title="Patronun Terminali v3.1.1", 
-    layout="wide", 
-    page_icon="🦅"
-)
+# --- SAYFA AYARLARI ---
+st.set_page_config(page_title="Patronun Terminali v3.2.0", layout="wide", page_icon="🦅")
+
+# --- TEMA MOTORU ---
+# Session State'de tema saklama
+if 'theme' not in st.session_state:
+    st.session_state.theme = "Buz Mavisi"
+
+# Tema Renk Paletleri
+THEMES = {
+    "Beyaz": {
+        "bg": "#FFFFFF",
+        "box_bg": "#F8F9FA",
+        "text": "#000000",
+        "border": "#DEE2E6",
+        "news_bg": "#FFFFFF"
+    },
+    "Kirli Beyaz": {
+        "bg": "#FAF9F6", # Off-white / Cream
+        "box_bg": "#FFFFFF",
+        "text": "#2C3E50",
+        "border": "#E5E7EB",
+        "news_bg": "#FFFFFF"
+    },
+    "Buz Mavisi": {
+        "bg": "#F0F8FF", # AliceBlue
+        "box_bg": "#FFFFFF",
+        "text": "#0F172A",
+        "border": "#BFDBFE",
+        "news_bg": "#FFFFFF"
+    }
+}
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -45,7 +71,7 @@ ASSET_GROUPS = {
 }
 INITIAL_CATEGORY = "S&P 500 (TOP 150)"
 
-# --- GÜVENLİ BAŞLANGIÇ (SELF-HEALING) ---
+# --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
         st.session_state.category = INITIAL_CATEGORY
@@ -55,59 +81,64 @@ if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
-# --- CSS TASARIM (Karanlık Tema & Arka Plan) ---
-st.markdown("""
+# --- UI: TEMA SEÇİCİ ---
+st.write("") # Spacer
+c_theme, _, _ = st.columns([2, 4, 1])
+with c_theme:
+    selected_theme_name = st.radio(
+        "Görünüm Modu", 
+        ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], 
+        index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    st.session_state.theme = selected_theme_name
+
+# --- DİNAMİK CSS ---
+current_theme = THEMES[st.session_state.theme]
+
+st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: #E0E0E0; } /* Genel Metin Rengi */
+    
+    /* Genel Ayarlar */
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     
     /* Ana Arka Plan */
-    .stApp {
-        background-color: #0E1117; /* Resimdeki koyu arka plan rengi */
-    }
+    .stApp {{
+        background-color: {current_theme['bg']};
+    }}
 
-    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
+    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
     /* İstatistik Kutuları */
-    .stat-box {
-        background: #161B22; /* Daha koyu bir kutu arka planı */
-        border: 1px solid #30363D; 
+    .stat-box {{
+        background: {current_theme['box_bg']};
+        border: 1px solid {current_theme['border']}; 
         border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    }
-    .stat-label { font-size: 0.75rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 1.2rem; font-weight: 700; color: #E0E0E0; margin: 4px 0; }
-    .delta-pos { color: #3FB950; } /* Yeşil */
-    .delta-neg { color: #F85149; } /* Kırmızı */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }}
+    .stat-label {{ font-size: 0.75rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; }}
+    .stat-value {{ font-size: 1.2rem; font-weight: 700; color: {current_theme['text']}; margin: 4px 0; }}
+    .delta-pos {{ color: #16A34A; }} 
+    .delta-neg {{ color: #DC2626; }} 
     
     /* Haber Kartları */
-    .news-card {
-        background: #161B22; 
-        border-left: 4px solid #30363D; 
+    .news-card {{
+        background: {current_theme['news_bg']}; 
+        border-left: 4px solid {current_theme['border']}; 
         padding: 8px; margin-bottom: 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.2); font-size: 0.85rem;
-    }
-    .news-title { 
-        color: #E0E0E0; font-weight: 600; text-decoration: none; display: block; margin-bottom: 4px; line-height: 1.2;
-    }
-    .news-title:hover { text-decoration: underline; color: #58A6FF; }
-    .news-meta { font-size: 0.7rem; color: #8B949E; }
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 0.85rem;
+    }}
+    .news-title {{ 
+        color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 4px; line-height: 1.2;
+    }}
+    .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
+    .news-meta {{ font-size: 0.7rem; color: #64748B; }}
     
-    /* Butonlar ve Diğer Elemanlar */
-    .stButton button { width: 100%; border-radius: 5px; background-color: #238636; color: white; border: none;}
-    .stButton button:hover { background-color: #2EA043; }
-    .stSelectbox label, .stTextInput label { color: #E0E0E0; }
+    /* Butonlar */
+    .stButton button {{ width: 100%; border-radius: 5px; }}
     
-    /* Sentiment Kartı Arka Planı */
-    [data-testid="stExpander"] {
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        color: #E0E0E0;
-    }
-    [data-testid="stExpander"] summary {
-         color: #E0E0E0;
-    }
-
 </style>
 """, unsafe_allow_html=True) 
 
@@ -216,6 +247,11 @@ def render_tradingview_widget(ticker):
     elif ticker in ["SI=F"]: tv_symbol = "COMEX:SI1!"
     elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
     
+    # Tema seçimine göre widget teması (Light/Dark)
+    # Buz mavisi, kirli beyaz ve beyaz için 'light' tema daha uygundur.
+    # Ancak ileride 'Gece Modu' eklersen burayı dinamik yapabilirsin.
+    widget_theme = "light" 
+
     html_code = f"""
     <div class="tradingview-widget-container">
       <div id="tradingview_chart"></div>
@@ -224,7 +260,7 @@ def render_tradingview_widget(ticker):
       new TradingView.widget(
       {{
         "width": "100%", "height": 550, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
-        "theme": "dark", "style": "1", "locale": "tr", "toolbar_bg": "#161B22", "enable_publishing": false,
+        "theme": "{widget_theme}", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
         "allow_symbol_change": true, "container_id": "tradingview_chart"
       }});
       </script>
@@ -259,13 +295,13 @@ def fetch_google_news(ticker):
             except: dt = datetime.now()
             if dt < limit_date: continue
             blob = TextBlob(entry.title); pol = blob.sentiment.polarity
-            color = "#3FB950" if pol > 0.1 else "#F85149" if pol < -0.1 else "#8B949E"
+            color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
             news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
         return news
     except: return []
 
-# --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.1.1")
+# --- ARAYÜZ (GÖVDE) ---
+st.title(f"🦅 Patronun Terminali v3.2.0")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -354,6 +390,6 @@ with col_main_intel:
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
-                    st.markdown(f"<div style='font-size:0.65rem; color:#8B949E; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:0.65rem; color:#64748B; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
             else: st.info("Sinyal yok.")
         else: st.info("Analiz için butona basın.")
