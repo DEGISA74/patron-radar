@@ -281,3 +281,4 @@ if info_data and info_data['price']:
                 st.info("Haber akışı bulunamadı.")
 else:
     st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
+
