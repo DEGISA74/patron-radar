@@ -44,8 +44,8 @@ st.markdown("""
     .news-meta { font-size: 0.75rem; color: #90A4AE; font-family: 'JetBrains Mono'; }
     .sentiment-badge { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     
-    /* TradingView Arkaplanı */
-    iframe { border-radius: 10px; }
+    /* Butonlar ve Genel Düzen */
+    .stButton button { background-color: #1e2329; color: white; border: 1px solid #2a2e39; border-radius: 6px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +55,7 @@ if 'ticker' not in st.session_state:
 
 def set_ticker(symbol): 
     st.session_state.ticker = symbol
-    st.rerun() # Sayfa yenileme komutu düzeltildi
+    st.rerun() 
 
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
@@ -215,6 +215,7 @@ if info_data and info_data['price']:
     <div class="stat-box">
         <div class="stat-label">Sektör</div>
         <div class="stat-value" style="font-size:1.1rem; margin-top:10px;">{info_data['sector']}</div>
+        <div class="stat-delta" style="color:#8b9bb4">F/K: {info_data['pe_ratio']}</div>
     </div>
     """, unsafe_allow_html=True)
 
