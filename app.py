@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.7.1 (NR4 ve Trend Geri Dönüş)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.7.2 (Gevşek V3.2.0 Eşiği)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 # Session State'de tema saklama
@@ -175,7 +175,7 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# V3.7.1: NR4 ve TREND TAM V3.2.0 mantığına geri döndürüldü.
+# V3.7.2: NR4 ve TREND TAM V3.2.0 mantığına geri döndürüldü ve eşikler gevşetildi.
 def analyze_market_intelligence(asset_list):
     signals = []
     
@@ -254,12 +254,11 @@ def analyze_market_intelligence(asset_list):
             
             # KRİTERLER (V3.2.0'ın TAM 8 Kriteri ve Eşikleri)
             
-            # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı)
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
+            # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı) - EŞİK GEVŞETİLİYOR
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.20: score += 1; reasons.append("🚀 Squeeze (Gevşek)")
             
             # 2. 🔇 NR4: Sessiz Gün (TAM V3.2.0 MANTIĞI)
-            # Sadece tam eşitlik, > 0 kontrolü yok
-            if daily_range.iloc[-1] == daily_range.tail(4).min(): score += 1; reasons.append("🔇 NR4")
+            if daily_range.iloc[-1] == daily_range.tail(4).min(): score += 1; reasons.append("🔇 NR4 (Tam Eşitlik)")
             
             # 3. ⚡ Trend: Cross-over (TAM V3.2.0 MANTIĞI - AGRESİF KONTROL)
             if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): 
@@ -278,9 +277,9 @@ def analyze_market_intelligence(asset_list):
             # 7. 🔨 Breakout: Zirve Zorluyor (V3.2.0 mantığı: %3 gevşek eşik)
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
             
-            # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı)
+            # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı) - EŞİK GEVŞETİLİYOR
             rsi_c = rsi.iloc[-1]
-            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
+            if 25 < rsi_c < 70 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü (Gevşek)")
 
             # FİLTRE EŞİĞİ (V3.2.0 Mantığı: Daha fazla sinyal için Eşik 1'e düşürüldü)
             if score >= 1: 
@@ -352,7 +351,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.7.1")
+st.title(f"🦅 Patronun Terminali v3.7.2")
 
 # 1. ÜST MENÜ
 current_ticker = st.session_state.ticker
@@ -407,14 +406,14 @@ with col_main_right:
     with st.expander("ℹ️ 8'li Puan Sistemi (Tam V3.2.0 Eşiği)", expanded=True): 
         st.markdown("""
         <div style="font-size:0.7rem;">
-        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
+        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı) **(Daha Gevşek)**<br>
         <b>2. 🔇 NR4:</b> Sessiz Gün **(Tam Eşitlik)**<br>
-        <b>3. ⚡ Trend Cross:</b> **EMA Kesişimi veya Yön Değişimi**<br>
+        <b>3. ⚡ Trend Cross:</b> **EMA Kesişimi veya Yön Değişimi (Tam V3.2.0)**<br>
         <b>4. 🟢 MACD:</b> Histogram artışı<br>
         <b>5. 🔫 W%R:</b> -50 Kırılımı<br>
         <b>6. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
         <b>7. 🔨 Top:</b> Direnç zorlama (Zirveye %3 yakınlık)<br>
-        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası Yükselen
+        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası Yükselen **(Daha Gevşek Aralık)**
         <br><br>
         <span style="color:#DC2626; font-weight:bold;">Sinyal Eşiği: 1/8</span> (Daha fazla sonuç için V3.2.0 mantığı)
         </div>
