@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.6 (Son Güvenlik Katmanı)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.5 (Kriter Sabit)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -64,14 +64,15 @@ INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
+if 'category' in st.session_state:
+    if st.session_state.category not in ASSET_GROUPS:
+        st.session_state.category = INITIAL_CATEGORY
+        st.session_state.ticker = ASSET_GROUPS[INITIAL_CATEGORY][0]
+
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
+if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
-current_ticker = st.session_state.ticker
-current_category = st.session_state.category
-if current_category not in ASSET_GROUPS:
-    current_category = INITIAL_CATEGORY
-    st.session_state.category = INITIAL_CATEGORY
 # --- UI: TEMA SEÇİCİ ---
 st.write("") 
 c_theme, _, _ = st.columns([2, 4, 1])
@@ -141,42 +142,32 @@ def on_scan_result_click(symbol):
 # --- ANALİZ MOTORU ---
 def analyze_market_intelligence(asset_list):
     signals = []
-    
     # 1. Benchmark
     try:
         spy_data = yf.download("^GSPC", period="1y", progress=False)
-        if not spy_data.empty and len(spy_data) >= 6:
+        if not spy_data.empty:
             spy_close = spy_data['Close']
-            # NaN kontrolü
-            if pd.isna(spy_close.iloc[-1]) or pd.isna(spy_close.iloc[-6]):
-                spy_5d_chg = 0 
-            else:
-                spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
+            spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
         else: spy_5d_chg = 0
     except: spy_5d_chg = 0
 
-    # 2. Hisseler (Kararlı tekil çekim döngüsü)
-    
-    progress_bar = st.progress(0, text=f"0/{len(asset_list)} sembol taranıyor...")
-    
-    for i, symbol in enumerate(asset_list):
+    # 2. Hisseler
+    try:
+        data = yf.download(asset_list, period="1y", group_by='ticker', threads=True, progress=False)
+    except: return []
+
+    for symbol in asset_list:
         try:
-            progress_val = (i + 1) / len(asset_list)
-            progress_bar.progress(progress_val, text=f"{i + 1}/{len(asset_list)} sembol taranıyor: **{symbol}**")
-            
-            # Veri çekimi 1 yıllık (Stabilizasyon için gerekli)
-            df = yf.download(symbol, period="1y", progress=False) 
-            
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]: df = data[symbol].copy()
+                else: continue
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: continue
+
             if df.empty or 'Close' not in df.columns: continue
-            
-            df = df.dropna(how='all')
-            # 50 günlük veri kontrolü (RSI/W%R'nin sağlıklı hesaplanması için)
-            if len(df) < 50: continue 
-            
-            df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
-            
-            if pd.isna(df['Close'].iloc[-1]) or pd.isna(df['High'].iloc[-1]) or pd.isna(df['Low'].iloc[-1]): continue 
-            if len(df) < 6: continue 
+            df = df.dropna(subset=['Close'])
+            if len(df) < 200: continue 
 
             close = df['Close']
             high = df['High']
@@ -184,18 +175,13 @@ def analyze_market_intelligence(asset_list):
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
             # Göstergeler
-            # SMA200'ü yalnızca yeterli veri varsa hesapla, aksi halde NaN kalsın
-            sma200_val = np.nan # Varsayılan değer NaN
-            if len(close) >= 200:
-                sma200 = close.rolling(200).mean()
-                sma200_val = sma200.iloc[-1]
-            
+            sma200 = close.rolling(200).mean()
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
             sma20_bb = close.rolling(20).mean()
             std20_bb = close.rolling(20).std()
-            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb.replace(0, 1) + 0.0001) 
+            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
             
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
@@ -206,45 +192,26 @@ def analyze_market_intelligence(asset_list):
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs_val = gain / loss.replace(0, np.nan).fillna(1e-10)
+            rs_val = gain / loss
             rsi = 100 - (100 / (1 + rs_val))
             
             highest_high = high.rolling(14).max()
             lowest_low = low.rolling(14).min()
-            range_diff = highest_high - lowest_low
-            williams_r = (highest_high - close) / range_diff.replace(0, np.nan).fillna(1e-10) * -100
+            williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
             
             daily_range = high - low
             
             # Puanlama
             score = 0; reasons = []
-            
-            # Kritik: Bütün hesaplanan indikatör serilerinde son değer NaN ise atla
-            indicator_values = [
-                bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], 
-                williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]
-            ]
-            if any(pd.isna(val) for val in indicator_values): continue 
-            
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # Kriter Kontrolleri (10 kriter)
-            
-            # 1. 🛡️ SMA200 (Yalnızca hesaplanabiliyorsa puan ver)
-            if not pd.isna(sma200_val) and curr_c > sma200_val: 
-                score += 1
-                reasons.append("🛡️ SMA200")
-            
-            # 2. 👑 RS (5 günlük değişim için)
-            if not pd.isna(close.iloc[-6]):
-                stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
-                if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
-            
-            # Diğer Kriterler
+            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+            stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
+            if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
-            if len(daily_range) >= 4 and daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
+            if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
             if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
             if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
             if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
@@ -252,23 +219,16 @@ def analyze_market_intelligence(asset_list):
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            # FİLTRE EŞİĞİ KANITLAMA İÇİN 1'E İNDİRİLDİ
-            if score >= 1: 
+            if score >= 3: # Sıkı Filtre (Eski Çalışan Sistem)
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
-        except Exception: 
-            # Hata durumunda sadece o sembolü atla ve taramaya devam et
-            continue 
+        except Exception: continue
     
-    # İşlem tamamlandığında progress bar'ı gizle
-    progress_bar.empty()
-    
-    if not signals: 
-        return pd.DataFrame()
+    if not signals: return pd.DataFrame()
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
 
 # --- WIDGET & DATA ---
-def render_tradingview_widget(ticker, height=810): 
+def render_tradingview_widget(ticker, height=700): 
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
@@ -291,6 +251,7 @@ def render_tradingview_widget(ticker, height=810):
     """
     components.html(html_code, height=height)
 
+@st.cache_data(ttl=600)
 def fetch_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -322,7 +283,11 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.6")
+st.title(f"🦅 Patronun Terminali v3.5.5")
+st.markdown("---")
+
+current_ticker = st.session_state.ticker
+current_category = st.session_state.category
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
@@ -363,7 +328,7 @@ with col_main_left:
     
     # BÜYÜK GRAFİK
     st.write("")
-    render_tradingview_widget(current_ticker, height=810) # Yükseklik 810px
+    render_tradingview_widget(current_ticker, height=700)
 
 # --- SAĞ SÜTUN ---
 with col_main_right:
@@ -392,9 +357,7 @@ with col_main_right:
             scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
             st.session_state.scan_data = scan_df
     
-    # Progress bar için yer tutucu. progress bar, analyze_market_intelligence fonksiyonunun içinde dinamik olarak gösterilir ve biter.
-    
-    with st.container(height=240): # Alan 2 Yüksekliği 240px
+    with st.container(height=350):
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
