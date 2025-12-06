@@ -185,7 +185,8 @@ def analyze_market_intelligence(asset_list):
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
             macd_line = ema12 - ema26
-            hist = macd_line - signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            hist = macd_line - signal_line
             
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
