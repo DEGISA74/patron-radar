@@ -6,7 +6,7 @@ from textblob import TextBlob
 from datetime import datetime
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v0.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v0.3", layout="wide", page_icon="🦅")
 
 # --- STİL ---
 st.markdown("""
@@ -18,12 +18,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- KAYNAK LİSTESİ (PİRAMİT MODELİ) ---
+# --- KAYNAK LİSTESİ ---
 LEVEL_1_SOURCES = ['Bloomberg', 'Reuters', 'SEC', 'KAP', 'Business Wire']
 LEVEL_2_SOURCES = ['WSJ', 'FT', 'CNBC', 'Barron\'s']
 
-# --- ANALİZ FONKSİYONLARI ---
-
+# --- YARDIMCI FONKSİYONLAR ---
 def get_sentiment(text):
     blob = TextBlob(text)
     score = blob.sentiment.polarity
@@ -31,60 +30,14 @@ def get_sentiment(text):
     elif score < -0.1: return "AŞAĞI", "🔴", score
     else: return "NÖTR", "⚪", score
 
-def fetch_data(ticker):
-    stock = yf.Ticker(ticker)
-    try:
-        # 1 Yıllık Veri (Grafik İçin)
-        hist = stock.history(period="1y")
-        
-        # Güncel Bilgiler
-        info = stock.info
-        news = stock.news
-        
-        # Haber İşleme
-        processed_news = []
-        for item in news:
-            title = item.get('title', 'Başlık Yok')
-            publisher = item.get('publisher', 'Bilinmiyor')
-            link = item.get('link', '#')
-            pub_time = item.get('providerPublishTime', 0)
-            
-            # Tarih formatlama
-            try:
-                date_obj = datetime.fromtimestamp(pub_time)
-            except:
-                date_obj = datetime.now()
-            
-            sentiment, icon, score = get_sentiment(title)
-            
-            # Seviye Belirleme
-            level = 3
-            if any(s.lower() in str(publisher).lower() for s in LEVEL_1_SOURCES): level = 1
-            elif any(s.lower() in str(publisher).lower() for s in LEVEL_2_SOURCES): level = 2
-            
-            processed_news.append({
-                'Tarih': date_obj,
-                'Başlık': title,
-                'Kaynak': publisher,
-                'Seviye': level,
-                'Yön': sentiment,
-                'İkon': icon,
-                'Link': link
-            })
-            
-        return hist, info, processed_news
-    except Exception as e:
-        return None, None, None
-
 def plot_ict_chart(df, ticker):
     """
-    Price Action ve ICT Odaklı Grafik
-    - Candlestick (Mum) Grafiği
-    - Basit FVG (Fair Value Gap) Tespiti
+    ICT Konseptli Mum Grafiği
+    Otomatik Fair Value Gap (FVG) çizimi içerir.
     """
     fig = go.Figure()
 
-    # Mum Grafiği Ekle
+    # 1. Mum Grafiği (Candlestick)
     fig.add_trace(go.Candlestick(
         x=df.index,
         open=df['Open'], high=df['High'],
@@ -92,84 +45,152 @@ def plot_ict_chart(df, ticker):
         name=ticker
     ))
 
-    # --- ICT FVG TESPİT ALGORİTMASI (Basit Versiyon) ---
-    # FVG: 1. mumun yükseği ile 3. mumun düşüğü arasında boşluk kalması (Bullish FVG)
-    # Son 30 mumu kontrol edelim ki grafik karışmasın
-    for i in range(len(df)-30, len(df)-2):
-        # Bullish FVG
-        if df['High'].iloc[i] < df['Low'].iloc[i+2]:
-            fig.add_shape(type="rect",
-                x0=df.index[i], x1=df.index[i+2],
-                y0=df['High'].iloc[i], y1=df['Low'].iloc[i+2],
-                fillcolor="green", opacity=0.3, line_width=0,
-            )
-        # Bearish FVG
-        elif df['Low'].iloc[i] > df['High'].iloc[i+2]:
-            fig.add_shape(type="rect",
-                x0=df.index[i], x1=df.index[i+2],
-                y0=df['Low'].iloc[i], y1=df['High'].iloc[i+2],
-                fillcolor="red", opacity=0.3, line_width=0,
-            )
+    # 2. ICT FVG Tespiti (Otomatik Kutular)
+    # Son 50 muma bakıyoruz ki grafik çok karışmasın
+    for i in range(len(df)-50, len(df)-2):
+        try:
+            # Bullish FVG (Yeşil Kutu): 1. Mumun Yükseği < 3. Mumun Düşüğü
+            if df['High'].iloc[i] < df['Low'].iloc[i+2]:
+                fig.add_shape(type="rect",
+                    x0=df.index[i], x1=df.index[i+2],
+                    y0=df['High'].iloc[i], y1=df['Low'].iloc[i+2],
+                    fillcolor="rgba(0, 255, 0, 0.2)", line_width=0,
+                )
+            
+            # Bearish FVG (Kırmızı Kutu): 1. Mumun Düşüğü > 3. Mumun Yükseği
+            elif df['Low'].iloc[i] > df['High'].iloc[i+2]:
+                fig.add_shape(type="rect",
+                    x0=df.index[i], x1=df.index[i+2],
+                    y0=df['Low'].iloc[i], y1=df['High'].iloc[i+2],
+                    fillcolor="rgba(255, 0, 0, 0.2)", line_width=0,
+                )
+        except:
+            continue
 
     fig.update_layout(
-        title=f"{ticker} - ICT Price Action (Otomatik FVG Tespiti)",
+        title=f"{ticker} - ICT Price Action & FVG Analizi",
         yaxis_title="Fiyat",
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        height=600
+        height=600,
+        margin=dict(l=0, r=0, t=30, b=0)
     )
     return fig
 
-# --- ARAYÜZ ---
-st.title("🦅 Patronun Dijital Terminali v0.2")
+# --- ANA VERİ ÇEKME FONKSİYONU ---
+def fetch_data_safe(ticker):
+    """
+    Hata toleranslı veri çekme modülü.
+    Haberler gelmezse bile grafiği çizer.
+    """
+    stock = yf.Ticker(ticker)
+    
+    # 1. Fiyat Verisi (En kritik)
+    try:
+        hist = stock.history(period="1y")
+        if hist.empty:
+            return None, None, None
+    except Exception as e:
+        st.error(f"Fiyat verisi hatası: {e}")
+        return None, None, None
+
+    # 2. Şirket Bilgisi
+    try:
+        info = stock.info
+    except:
+        info = {} # Bilgi gelmezse boş sözlük dön
+
+    # 3. Haber Verisi (En sık hata veren kısım)
+    processed_news = []
+    try:
+        news = stock.news
+        if news:
+            for item in news:
+                title = item.get('title', 'Başlık Yok')
+                publisher = item.get('publisher', 'Bilinmiyor')
+                link = item.get('link', '#')
+                
+                # Tarih İşleme
+                try:
+                    pub_time = item.get('providerPublishTime', 0)
+                    date_obj = datetime.fromtimestamp(pub_time)
+                except:
+                    date_obj = datetime.now()
+                
+                sentiment, icon, score = get_sentiment(title)
+                
+                level = 3
+                if any(s.lower() in str(publisher).lower() for s in LEVEL_1_SOURCES): level = 1
+                elif any(s.lower() in str(publisher).lower() for s in LEVEL_2_SOURCES): level = 2
+                
+                processed_news.append({
+                    'Tarih': date_obj,
+                    'Başlık': title,
+                    'Kaynak': publisher,
+                    'Seviye': level,
+                    'Yön': sentiment,
+                    'İkon': icon,
+                    'Link': link,
+                    'Skor': score
+                })
+    except Exception as e:
+        # Haber çekilemezse programı durdurma, sadece konsola yaz
+        print(f"Haber çekme hatası: {e}")
+
+    return hist, info, processed_news
+
+# --- ARAYÜZ (UI) ---
+st.title("🦅 Patronun Dijital Terminali v0.3")
 
 with st.sidebar:
-    ticker = st.text_input("Hisse Kodu", value="AAPL").upper()
-    st.markdown("---")
-    st.caption("Veriler: Yahoo Finance | Analiz: Price Action & Sentiment")
+    st.header("Kontrol Paneli")
+    ticker = st.text_input("Hisse Kodu Girin", value="AAPL").upper()
+    st.info("ℹ️ Mum grafikleri ve FVG (Dengesizlik) kutuları aktiftir.")
 
 if ticker:
-    hist, info, news_data = fetch_data(ticker)
+    with st.spinner(f'{ticker} verileri analiz ediliyor...'):
+        hist, info, news_data = fetch_data_safe(ticker)
     
-    if hist is not None and not hist.empty:
-        # Fiyat Bilgisi
+    if hist is not None:
+        # Fiyat Kartları
         last_price = hist['Close'].iloc[-1]
         prev_price = hist['Close'].iloc[-2]
-        change = ((last_price - prev_price) / prev_price) * 100
+        change_pct = ((last_price - prev_price) / prev_price) * 100
+        color_delta = "normal" if change_pct >= 0 else "inverse"
         
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Anlık Fiyat", f"{last_price:.2f}", f"%{change:.2f}")
-        col2.metric("Sektör", info.get('sector', '-'))
-        col3.metric("Öneri", info.get('recommendationKey', '-').upper())
-        
-        # Grafik Sekmesi
-        st.subheader("Price Action Analizi")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Fiyat", f"{last_price:.2f}", f"%{change_pct:.2f}", delta_color=color_delta)
+        c2.metric("Sektör", info.get('sector', 'Bilinmiyor'))
+        c3.metric("Hedef (Analist)", info.get('targetMeanPrice', '-'))
+
+        # Grafik Alanı (MUM GRAFİK & FVG)
+        st.subheader(f"📈 {ticker} - Price Action & FVG")
         st.plotly_chart(plot_ict_chart(hist, ticker), use_container_width=True)
-        st.info("💡 Grafikteki Yeşil/Kırmızı Kutular otomatik tespit edilen **Fair Value Gap (FVG)** bölgeleridir.")
         
-        # Haber Sekmesi
-        st.subheader("Piramit Haber Akışı")
+        # Haber Alanı
+        st.subheader("📡 Piramit Haber Akışı")
         if news_data:
             df_news = pd.DataFrame(news_data).sort_values(by=['Seviye', 'Tarih'], ascending=[True, False])
             
             for _, row in df_news.iterrows():
-                # Renk Sınıfı
                 css = "bullish" if "YUKARI" in row['Yön'] else "bearish" if "AŞAĞI" in row['Yön'] else "neutral"
                 
                 st.markdown(f"""
                 <div class="metric-card {css}">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span style="font-size:0.8em; color:#aaa;">{row['Tarih'].strftime('%d %b %H:%M')}</span>
-                        <span style="font-weight:bold; color:#fff;">{row['Kaynak']} (L{row['Seviye']})</span>
+                    <div style="display:flex; justify-content:space-between; color:#aaa; font-size:0.8em;">
+                        <span>{row['Tarih'].strftime('%d %b %H:%M')}</span>
+                        <span>Seviye {row['Seviye']} Kaynak</span>
                     </div>
-                    <h4 style="margin:5px 0;"><a href="{row['Link']}" target="_blank" style="text-decoration:none; color:white;">{row['Başlık']}</a></h4>
+                    <h4 style="margin:5px 0; color:white;">
+                        <a href="{row['Link']}" target="_blank" style="text-decoration:none; color:white;">{row['Başlık']}</a>
+                    </h4>
                     <div style="margin-top:5px;">
-                        {row['İkon']} <strong>{row['Yön']}</strong> <span style="font-size:0.8em;">(Sentiment Skor: {row.get('Skor',0):.2f})</span>
+                        {row['İkon']} <strong>{row['Kaynak']}</strong>: {row['Yön']}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.warning("Güncel haber bulunamadı.")
+            st.info("Şu an için güncel haber akışı çekilemedi (Yahoo API limiti olabilir).")
             
     else:
-        st.error("Veri çekilemedi. Hisse kodunu kontrol et.")
+        st.error("Veri bulunamadı. Hisse kodunu doğru girdiğinden emin ol (Örn: THYAO.IS, TSLA).")
