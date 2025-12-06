@@ -8,7 +8,7 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.4.2 (Geri Dönüş Engellendi)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.5.0 (Manuel Giriş Öncelikli)", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -19,11 +19,12 @@ ASSET_GROUPS = {
     "TÜRK HİSSE": ["THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS"] 
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
+INITIAL_CATEGORY = list(ASSET_GROUPS.keys())[0] # Varsayılan ilk kategori
 
-# --- CSS TASARIM ---
+# --- CSS TASARIM --- (Aynı Kaldı)
 st.markdown("""
 <style>
-    /* ... (CSS Kodları V1.4.0 ile aynıdır, estetik korunmuştur) ... */
+    /* ... (CSS Kodları V1.4.0 ile aynıdır) ... */
 </style>
 """, unsafe_allow_html=True) 
 
@@ -35,11 +36,22 @@ if 'manual_input_value' not in st.session_state:
     st.session_state.manual_input_value = st.session_state.ticker
 
 if 'category' not in st.session_state:
-    st.session_state.category = "TÜRK HİSSE"
+    st.session_state.category = INITIAL_CATEGORY
 
-def set_ticker(symbol): 
-    st.session_state.ticker = symbol
-    st.rerun() 
+# Ticker değiştiğinde manuel input'u da güncelleme
+def update_manual_input(new_ticker):
+    st.session_state.manual_input_value = new_ticker
+    st.session_state.ticker = new_ticker
+    st.rerun()
+
+# MANUEL GİRİŞ İÇİN ÖZEL CALLBACK
+def handle_manual_search():
+    # Manuel arama yapıldığında, kategori seçimini sıfırla
+    if st.session_state.manual_ticker_input != st.session_state.ticker:
+        st.session_state.category = INITIAL_CATEGORY
+        st.session_state.ticker = st.session_state.manual_ticker_input
+        st.session_state.manual_input_value = st.session_state.manual_ticker_input
+        st.rerun()
 
 # --- WIDGET VE VERİ FONKSİYONLARI (Aynı Kaldı) ---
 
@@ -106,7 +118,7 @@ def fetch_stock_info(ticker):
         stock = yf.Ticker(ticker)
         info = stock.info
         current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask')
-        prev_close = info.get('previousMarketPreviousClose') or info.get('regularMarketPreviousClose')
+        prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
         
         if current_price and prev_close:
             change_pct = ((current_price - prev_close) / prev_close) * 100
@@ -122,7 +134,7 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.4.2 (Geri Dönüş Engellendi)")
+st.title("🦅 Patronun Terminali v1.5.0 (V1.2.0 Geri Dönüş)")
 st.markdown("---")
 
 ## Dinamik Menü Barı (HORIZONTAL DROPDOWNS)
@@ -133,67 +145,65 @@ current_ticker = st.session_state.ticker
 # Ticker'ın listede olup olmadığını kontrol et
 is_in_list = current_ticker in ALL_ASSETS
 
-# Ticker listede yoksa, kategoriyi geçersiz kıl ve dropdownları etkisizleştir
+# Ticker listede değilse, kategoriyi varsayılan ilk kategoriye sıfırla
 if not is_in_list:
-    current_category = "HİSSE DIŞI"
+    current_category = INITIAL_CATEGORY
 else:
     # Ticker listedeyse, kategori eşleştirmesi yap
-    current_category = next((cat for cat, assets in ASSET_GROUPS.items() if current_ticker in assets), list(ASSET_GROUPS.keys())[0])
+    current_category = next((cat for cat, assets in ASSET_GROUPS.items() if current_ticker in assets), INITIAL_CATEGORY)
+
 
 # 1. Filtreleme Alanı
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 with col_cat:
-    # Ticker listede değilse dropdown'ı devre dışı bırak
-    disabled_state = not is_in_list 
-    
     # Kategori Seçimi
     selected_category = st.selectbox(
         "Kategori Seç", 
         category_list,
-        index=category_list.index(current_category) if current_category != "HİSSE DIŞI" else 0,
-        disabled=disabled_state # Ticker listede yoksa menü kilitlenir
+        index=category_list.index(current_category) 
     )
 
+    # Kategori Değişimi Kontrolü
     if selected_category != st.session_state.category:
         st.session_state.category = selected_category
+        # Kategori değişirse listedeki ilk elemanı seç
         st.session_state.manual_input_value = ASSET_GROUPS[selected_category][0]
         set_ticker(ASSET_GROUPS[selected_category][0])
 
 
 # 2. Varlık Seçimi (Kategoriye Bağımlı)
-asset_options = ASSET_GROUPS.get(current_category, [current_ticker]) # Ticker listede yoksa sadece current_ticker'ı gösterir
+asset_options = ASSET_GROUPS.get(st.session_state.category, [current_ticker])
 
 with col_ass:
-    # Seçili Ticker'ın listedeki indexini bul
+    # Eğer mevcut ticker, gösterilen listede yoksa, default index 0 olur
     default_index = asset_options.index(current_ticker) if current_ticker in asset_options else 0
     
     selected_asset = st.selectbox(
-        f"{current_category} Listesi",
+        f"{st.session_state.category} Listesi",
         asset_options,
-        index=default_index,
-        disabled=disabled_state # Ticker listede yoksa menü kilitlenir
+        index=default_index
     )
-
+    
+    # EĞER TIKLANDIYSA, TİCKERI DEĞİŞTİR
     if selected_asset != current_ticker:
-        set_ticker(selected_asset)
+        update_manual_input(selected_asset)
 
 
 # 3. Manuel Giriş (Gecikmeli Arama Kontrolü)
 with col_search_in:
     manual_input = st.text_input(
         "Manuel Hisse Kodu (Ara Butonu gerekli)", 
-        value=st.session_state.manual_input_value
+        value=st.session_state.manual_input_value,
+        key="manual_ticker_input" # Callback için key
     ).upper()
 
-    if manual_input != st.session_state.manual_input_value:
-        st.session_state.manual_input_value = manual_input
 
 with col_search_btn:
     st.write("") 
     st.write("")
     if st.button("🔎 Ara"):
-        set_ticker(st.session_state.manual_input_value)
+        handle_manual_search() # CALLBACK'i çalıştır
 
 st.markdown("---")
 
