@@ -8,9 +8,10 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.0.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.0.3", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
+# Not: Varlıkları temsil etmek için kısa listeler kullandım. İsteklerine göre 100/20 varlığa kadar genişletebilirsin.
 ASSET_LISTS = {
     "S&P 500 (TOP 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (TOP 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
@@ -37,10 +38,18 @@ st.markdown("""
 
     /* Haber Kartları */
     .news-card {
-        background: #FFFFFF; border: 1px solid #CFD8DC; padding: 15px; border-radius: 8px; margin-bottom: 10px;
+        background: #FFFFFF; border: 1px solid #CFD8DC; padding: 10px; border-radius: 8px; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
-    .news-title { color: #263238; font-weight: 600; text-decoration: none; display: block; margin-bottom: 5px; }
-    .news-meta { font-size: 0.75rem; color: #78909c; font-family: 'JetBrains Mono'; }
+    .news-title { 
+        color: #263238; font-weight: 600; text-decoration: none; display: block; 
+        margin-bottom: 3px; font-size: 0.9rem; line-height: 1.2;
+    }
+    .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
+    .sentiment-badge { 
+        font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; 
+        display: inline-block; margin-left: 5px;
+    }
 
     /* Menü Düzeltmesi */
     .stButton button {
@@ -49,6 +58,7 @@ st.markdown("""
         text-align: center;
         width: 100%;
         margin-top: 5px;
+        font-size: 0.8rem; /* Menü butonları daha küçük */
     }
     h1 { padding-top: 0px; }
 </style>
@@ -74,8 +84,10 @@ def render_tradingview_widget(ticker):
         tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
     elif ticker == "GC=F":
         tv_symbol = "TVC:GOLD"
-    elif ticker == "BTC-USD":
-        tv_symbol = "BINANCE:BTCUSDT"
+    elif ticker == "SI=F":
+        tv_symbol = "COMEX:SI1!" # Gümüş future kodu
+    elif ticker == "BTC-USD" or ticker == "ETH-USD" or ticker == "SOL-USD":
+        tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
     elif "." not in ticker and ":" not in ticker: 
         tv_symbol = f"NASDAQ:{ticker}"
 
@@ -161,7 +173,7 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.0.2")
+st.title("🦅 Patronun Terminali v1.0.3")
 st.markdown("---")
 
 ## Dinamik Menü Barı
@@ -176,10 +188,10 @@ with st.container():
         with menu_cols[col_index]:
             st.markdown(f"**{title}**")
             with st.expander("Listeyi Gör"):
-                # Yatay yayılma için 2 sütun
-                list_cols = st.columns(2)
+                # Yatay yayılmayı sağlamak için 4 sütun kullanılıyor (daha kompakt)
+                list_cols = st.columns(4) 
                 for i, symbol in enumerate(ASSET_LISTS[title]):
-                    with list_cols[i % 2]: 
+                    with list_cols[i % 4]: # 4 Sütunlu Döngü
                         if st.button(symbol, key=f"btn_{symbol}", help=f"Grafiği {symbol} ile değiştir"):
                             set_ticker(symbol)
         col_index += 1
@@ -195,7 +207,6 @@ with st.container():
 st.markdown("---")
 
 # Arama Çubuğu
-# Hata kontrolü için boş veya None ise default değer ata
 current_ticker = st.session_state.ticker if st.session_state.ticker else "AAPL"
 ticker_input = st.text_input("Manuel Hisse Kodu", value=current_ticker, help="BIST için .IS, Emtia için =F, Döviz için =X ekle").upper()
 
@@ -210,27 +221,70 @@ news_data = fetch_google_news(st.session_state.ticker)
 
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
-    # Metrikler (Stat Cards)
+    
+    # Metrikler (Stat Cards) - HTML Geri Eklendi
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
+    
+    # Fiyat Metriği
+    c1.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">{st.session_state.ticker} FİYAT</div>
+        <div class="stat-value">{info_data['price']:.2f}</div>
+        <span class="{delta_class}">{delta_sign}{info_data['change_pct']:.2f}%</span>
+    </div>""", unsafe_allow_html=True)
+    
+    # Hacim Metriği
+    c2.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">GÜNLÜK HACİM</div>
+        <div class="stat-value">{(info_data['volume'] / 1_000_000):.1f}M</div>
+        <span style="color: #616161;">adet</span>
+    </div>""", unsafe_allow_html=True)
+    
+    # Hedef Fiyat Metriği
+    target_text = f"{info_data['target_price']:.2f}" if isinstance(info_data['target_price'], (int, float)) else info_data['target_price']
+    c3.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">ANALİST HEDEF</div>
+        <div class="stat-value">{target_text}</div>
+        <span style="color: #616161;">Ort. Fiyat</span>
+    </div>""", unsafe_allow_html=True)
 
-    # (Burada HTML Stat Box Kodları bulunmalıydı, sadelik için atlanmıştır)
+    # Sektör Metriği
+    c4.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">SEKTÖR / F/K</div>
+        <div class="stat-value">{info_data['sector']}</div>
+        <span style="color: #616161;">PE: {info_data['pe_ratio']:.1f}</span>
+    </div>""", unsafe_allow_html=True)
+
+    st.write("")
 
     # GRAFİK ve HABERLER (Yan Yana)
     col_chart, col_news = st.columns([3, 1.2])
     
     with col_chart:
         st.subheader(f"📈 {st.session_state.ticker} Trading Terminali")
-        render_tradingview_widget(st.session_state.ticker) # Widget çağrılıyor
+        render_tradingview_widget(st.session_state.ticker)
     
     with col_news:
-        st.subheader("📡 Küresel Haber Akışı") # Haber başlığı geri geldi
+        st.subheader("📡 Küresel Haber Akışı") 
         with st.container(height=600):
             if news_data:
                 for item in news_data:
                     color = item['color']
-                    # (Haber Kartı HTML'i burada olmalıydı)
+                    # Haber Kartı HTML - EKSİKLER GİDERİLDİ
+                    st.markdown(f"""
+                    <div class="news-card">
+                        <a href="{item['link']}" target="_blank" class="news-title">{item['title']}</a>
+                        <div class="news-meta">
+                            {item['date']} | {item['source']} 
+                            <span class="sentiment-badge" style="background-color: {color}; color: white;">{item['sentiment']}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("Haber akışı bulunamadı.")
 else:
