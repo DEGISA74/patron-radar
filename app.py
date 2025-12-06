@@ -8,21 +8,23 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.4.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.4.1", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
     "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
-    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"] # GC=F ve SI=F çıkarıldı
+    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"],
+    # TÜRK HİSSELERİ LİSTEDE OLMADIĞI İÇİN YENİ BİR KATEGORİ EKLENDİ
+    "TÜRK HİSSE": ["THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS"] 
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
 
 # --- CSS TASARIM ---
 st.markdown("""
 <style>
-    /* ... (CSS Kodları V1.3.0 ile aynıdır, estetik korunmuştur) ... */
+    /* ... (CSS Kodları V1.4.0 ile aynıdır, estetik korunmuştur) ... */
 </style>
 """, unsafe_allow_html=True) 
 
@@ -34,9 +36,8 @@ if 'manual_input_value' not in st.session_state:
     st.session_state.manual_input_value = st.session_state.ticker
 
 if 'category' not in st.session_state:
-    # Başlangıçta seçili tickera ait kategoriyi bul
-    initial_category = next((cat for cat, assets in ASSET_GROUPS.items() if st.session_state.ticker in assets), list(ASSET_GROUPS.keys())[0])
-    st.session_state.category = initial_category
+    # Başlangıç kategorisi THYAO'nun ait olduğu Türk Hisse olarak ayarlandı
+    st.session_state.category = "TÜRK HİSSE"
 
 def set_ticker(symbol): 
     st.session_state.ticker = symbol
@@ -123,47 +124,55 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.4.0 (V1.2.0 Estetiği)")
+st.title("🦅 Patronun Terminali v1.4.1 (Ticker Önceliği)")
 st.markdown("---")
 
 ## Dinamik Menü Barı (HORIZONTAL DROPDOWNS)
 
-category_list = list(ASSET_GROUPS.keys())
-current_category = st.session_state.category
-current_ticker = st.session_state.ticker
+# THYAO.IS'in hangi kategoride olduğunu bulmak için yardımcı fonksiyon
+def find_category(ticker):
+    for cat, assets in ASSET_GROUPS.items():
+        if ticker in assets:
+            return cat
+    return list(ASSET_GROUPS.keys())[0] # Eğer listede yoksa ilk kategoriyi döndürür
+
+# State'i güncelleme (Yeni Ticker Geldiğinde)
+if st.session_state.ticker not in ASSET_GROUPS[st.session_state.category]:
+    # Eğer mevcut ticker, mevcut kategoride değilse, kategoriyi tickera göre yeniden bul
+    st.session_state.category = find_category(st.session_state.ticker)
 
 # 1. Filtreleme Alanı
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 with col_cat:
-    # Kategori Seçimi
+    # Kategori Seçimi (Ticker'a göre default index ayarlandı)
     selected_category = st.selectbox(
         "Kategori Seç", 
-        category_list,
-        index=category_list.index(current_category)
+        list(ASSET_GROUPS.keys()),
+        index=list(ASSET_GROUPS.keys()).index(st.session_state.category)
     )
 
-    if selected_category != current_category:
+    if selected_category != st.session_state.category:
         st.session_state.category = selected_category
-        # Kategori değişirse varlık listesi resetlenir ve uygulama yenilenir
+        # Kategori değişirse listedeki ilk elemanı seç
         st.session_state.manual_input_value = ASSET_GROUPS[selected_category][0]
         set_ticker(ASSET_GROUPS[selected_category][0])
 
 
 # 2. Varlık Seçimi (Kategoriye Bağımlı)
-asset_options = ASSET_GROUPS[current_category]
+asset_options = ASSET_GROUPS[st.session_state.category]
 
 with col_ass:
     # Seçili Ticker'ın listedeki indexini bul
-    default_index = asset_options.index(current_ticker) if current_ticker in asset_options else 0
+    default_index = asset_options.index(st.session_state.ticker) if st.session_state.ticker in asset_options else 0
     
     selected_asset = st.selectbox(
-        f"{current_category} Listesi",
+        f"{st.session_state.category} Listesi",
         asset_options,
         index=default_index
     )
 
-    if selected_asset != current_ticker:
+    if selected_asset != st.session_state.ticker:
         set_ticker(selected_asset)
 
 
@@ -181,18 +190,20 @@ with col_search_btn:
     st.write("") 
     st.write("")
     if st.button("🔎 Ara"):
+        # Yeni kodu ticker olarak ayarla
         set_ticker(st.session_state.manual_input_value)
 
 st.markdown("---")
 
 # Veri Akışı
+current_ticker = st.session_state.ticker
 info_data = fetch_stock_info(current_ticker)
 news_data = fetch_google_news(current_ticker)
 
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards)
+    # Metrikler (Stat Cards) ... (HTML Kodları korundu)
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
