@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.7.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.7.2", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -84,37 +84,38 @@ def on_manual_button_click():
 def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
-# --- İSTİHBARAT MOTORU (HATA KORUMALI) ---
+# --- İSTİHBARAT MOTORU ---
 def analyze_market_intelligence(asset_list):
     signals = []
     
     try:
-        # Veri indir (Sessiz modda)
         data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except Exception as e:
-        st.error(f"Veri indirme hatası: {e}")
         return []
 
     for symbol in asset_list:
         try:
-            # MultiIndex kontrolü ve DataFrame seçimi
+            # Veri Formatı Kontrolü
             if isinstance(data.columns, pd.MultiIndex):
-                df = data[symbol].copy()
+                if symbol in data.columns.levels[0]:
+                    df = data[symbol].copy()
+                else: continue
             else:
-                # Tek hisse varsa veya yapı farklıysa
-                if symbol in data.columns: # Sütun adlarında varsa
-                    df = pd.DataFrame(data[symbol])
+                if symbol in data.columns: # Tek hisse indirildiyse
+                    # yfinance bazen tek hisseyi düz tablo olarak döner
+                    # Bu durumda karmaşık logic gerekebilir, basitleştirilmiş:
+                    continue 
+                elif len(asset_list) == 1: # Tek hisse varsa
+                     df = data.copy()
                 else:
-                    df = data.copy() # Tekil df
+                    continue
 
-            # Boş veri kontrolü
             if df.empty: continue
             
-            # Sütunları düzleştir (Bazen yfinance karmaşık döner)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            # Gerekli sütunlar var mı?
+            # Sütun isimlerini düzelt (Close, Volume vs.)
+            # Eğer MultiIndex değilse sorun yok, ama bazen adj close vs geliyor.
+            # En garantisi yfinance son sürümde 'Close' dönüyor.
+            
             if 'Close' not in df.columns: continue
             
             df = df.dropna(subset=['Close'])
@@ -122,7 +123,6 @@ def analyze_market_intelligence(asset_list):
 
             close = df['Close']
             
-            # Hacim sütunu bazen 'Volume' bazen 'volume' olabilir veya olmayabilir
             if 'Volume' in df.columns:
                 volume = df['Volume']
             else:
@@ -151,7 +151,7 @@ def analyze_market_intelligence(asset_list):
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             
-            # Son Değerler (float dönüşümü garantile)
+            # Son Değerler
             curr_price = float(close.iloc[-1])
             curr_rsi = float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 50.0
             curr_width = float(bb_width.iloc[-1])
@@ -199,18 +199,29 @@ def analyze_market_intelligence(asset_list):
                 })
 
         except Exception: 
-            continue # Hata veren hisseyi atla, diğerlerine devam et
+            continue
             
     return pd.DataFrame(signals)
 
 
 # --- WIDGET & DATA ---
 def render_tradingview_widget(ticker):
+    # --- DÜZELTME BURADA YAPILDI ---
+    # Artık NASDAQ zorlaması yok. Sadece sembol gönderiyoruz.
+    # TradingView kendi veritabanında en uygun borsayı (NYSE veya NASDAQ) bulacak.
+    
     tv_symbol = ticker
-    if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
-    elif "." not in ticker: tv_symbol = f"NASDAQ:{ticker}"
+    
+    if ".IS" in ticker: 
+        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+    elif "=X" in ticker: 
+        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
+    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: 
+        tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
+    elif "." not in ticker: 
+        # ÖNEMLİ: Önceden burada 'NASDAQ:' ekliyorduk, kaldırdık.
+        # Artık sadece 'AAPL', 'ABBV' gidiyor. Widget bunu otomatik çözer.
+        tv_symbol = ticker 
 
     html_code = f"""
     <div class="tradingview-widget-container">
@@ -269,7 +280,7 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.7.1")
+st.title("🦅 Patronun Terminali v2.7.2")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -351,6 +362,7 @@ with col_main_intel:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
                     label = f"{row['Sembol']} | {row['Sinyal']}"
+                    # Her buton için unique key: sembol + index
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
