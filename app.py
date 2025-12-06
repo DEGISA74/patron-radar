@@ -9,31 +9,45 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.7.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.0.0", layout="wide", page_icon="🦅")
 
-# --- VARLIK LİSTELERİ ---
+# --- VARLIK LİSTELERİ (150 HİSSE + TEMİZ EMTİA) ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 100)": [
-        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "BRK.B", "AVGO", "JPM", 
-        "LLY", "UNH", "V", "XOM", "MA", "JNJ", "HD", "PG", "COST", "ABBV", 
-        "MRK", "CRM", "CVX", "BAC", "AMD", "WMT", "NFLX", "ACN", "PEP", "KO",
-        "LIN", "TMO", "DIS", "ADBE", "WFC", "MCD", "CSCO", "QCOM", "CAT", "VZ",
-        "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", "TXN",
-        "ISRG", "UBER", "PM", "LOW", "HON", "AMGN", "RTX", "SYK", "GS", "BLK",
-        "ELV", "PLD", "BKNG", "NEE", "T", "MS", "PGR", "ETN", "C", "TJX",
-        "UPS", "MDT", "BSX", "VRTX", "CHTR", "AXP", "CI", "DE", "CB", "LRCX",
-        "REGN", "SCHW", "ADP", "MMC", "KLAC", "MU", "PANW", "FI", "BX", "GILD",
-        "ADI", "SNPS", "ZTS", "CRWD", "WM", "MO", "USB", "SO", "ICE", "CL"
+    "S&P 500 (TOP 150)": [
+        # Teknoloji & Devler
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", 
+        "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
+        "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
+        
+        # Finans
+        "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", 
+        "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
+        
+        # Sağlık
+        "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", 
+        "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
+        
+        # Tüketim & Perakende
+        "AMZN", "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", 
+        "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
+        
+        # Sanayi & Enerji & Diğer
+        "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
+        "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
+        "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
+        "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
+        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI",
+        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG"
     ],
     "KRİPTO (TOP 20)": [
         "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", 
         "TRX-USD", "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "UNI-USD", 
         "ATOM-USD", "XLM-USD", "ETC-USD", "FIL-USD"
     ],
-    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X", "GC=F", "SI=F", "CL=F"]
+    "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
-INITIAL_CATEGORY = "S&P 500 (TOP 100)"
+INITIAL_CATEGORY = "S&P 500 (TOP 150)"
 
 # --- CSS TASARIM ---
 st.markdown("""
@@ -41,6 +55,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
+    
     .stat-box {
         background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
@@ -49,6 +64,7 @@ st.markdown("""
     .stat-value { font-size: 1.2rem; font-weight: 700; color: #263238; margin: 4px 0; }
     .delta-pos { color: #00C853; }
     .delta-neg { color: #D50000; }
+    
     .news-card {
         background: #FFFFFF; border-left: 4px solid #ddd; padding: 8px; margin-bottom: 8px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 0.85rem;
@@ -58,6 +74,11 @@ st.markdown("""
     }
     .news-title:hover { text-decoration: underline; color: #0277BD; }
     .news-meta { font-size: 0.7rem; color: #90A4AE; }
+    
+    .score-badge {
+        font-weight: bold; padding: 2px 8px; border-radius: 4px; color: white; font-size: 0.8rem;
+    }
+    
     .stButton button { width: 100%; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True) 
@@ -84,145 +105,177 @@ def on_manual_button_click():
 def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
-# --- İSTİHBARAT MOTORU ---
+# --- İSTİHBARAT & PUANLAMA MOTORU (MASTER TRADER) ---
 def analyze_market_intelligence(asset_list):
     signals = []
     
+    # 6 Aylık Veri (Tüm göstergeler için yeterli)
     try:
         data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
-    except Exception as e:
+    except Exception:
         return []
 
     for symbol in asset_list:
         try:
-            # Veri Formatı Kontrolü
+            # VERİ HAZIRLIĞI
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]:
                     df = data[symbol].copy()
                 else: continue
             else:
-                if symbol in data.columns: # Tek hisse indirildiyse
-                    # yfinance bazen tek hisseyi düz tablo olarak döner
-                    # Bu durumda karmaşık logic gerekebilir, basitleştirilmiş:
-                    continue 
-                elif len(asset_list) == 1: # Tek hisse varsa
-                     df = data.copy()
-                else:
-                    continue
+                if len(asset_list) == 1: df = data.copy()
+                else: continue
 
-            if df.empty: continue
-            
-            # Sütun isimlerini düzelt (Close, Volume vs.)
-            # Eğer MultiIndex değilse sorun yok, ama bazen adj close vs geliyor.
-            # En garantisi yfinance son sürümde 'Close' dönüyor.
-            
-            if 'Close' not in df.columns: continue
-            
+            if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
-            if len(df) < 50: continue 
+            if len(df) < 60: continue # Williams%R ve MACD için veri lazım
 
+            # TEMEL SERİLER
             close = df['Close']
-            
-            if 'Volume' in df.columns:
-                volume = df['Volume']
-            else:
-                volume = pd.Series([0]*len(df), index=df.index)
+            high = df['High']
+            low = df['Low']
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # --- HESAPLAMALAR ---
+            # --- GÖSTERGE HESAPLAMALARI ---
             
-            # EMA
+            # 1. EMA (Trend)
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
-            # Hacim Ortalaması
-            vol_avg_week = volume.rolling(window=5).mean()
-
-            # Bollinger
-            sma20 = close.rolling(window=20).mean()
-            std = close.rolling(window=20).std()
-            bb_upper = sma20 + (std * 2)
-            bb_lower = sma20 - (std * 2)
-            bb_width = (bb_upper - bb_lower) / (sma20 + 0.0001)
-
-            # RSI
+            # 2. Bollinger (Squeeze)
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
+            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / sma20
+            
+            # 3. MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            hist = macd_line - signal_line
+            
+            # 4. RSI
             delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs_val = gain / loss
+            rsi = 100 - (100 / (1 + rs_val))
             
-            # Son Değerler
-            curr_price = float(close.iloc[-1])
-            curr_rsi = float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else 50.0
-            curr_width = float(bb_width.iloc[-1])
-            prev_close = float(close.iloc[-2])
+            # 5. Williams %R
+            # Formül: (Highest High - Close) / (Highest High - Lowest Low) * -100
+            highest_high = high.rolling(14).max()
+            lowest_low = low.rolling(14).min()
+            williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
             
+            # 6. NR4 (Daralma)
+            # Range = High - Low
+            daily_range = high - low
+            # Son 4 günün range'lerini al
+            
+            # --- PUANLAMA (MUHTEŞEM SEKİZLİ) ---
+            score = 0
+            reasons = []
+            
+            # SON DEĞERLER (float)
+            curr_c = float(close.iloc[-1])
+            prev_c = float(close.iloc[-2])
             curr_vol = float(volume.iloc[-1])
-            curr_vol_avg = float(vol_avg_week.iloc[-1]) if not pd.isna(vol_avg_week.iloc[-1]) else 1.0
+            avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+            
+            # 1. 🚀 SQUEEZE
+            # Bant genişliği son 60 günün en düşüğüne %10 yakınsa
+            min_width = bb_width.tail(60).min()
+            if bb_width.iloc[-1] <= min_width * 1.1:
+                score += 1
+                reasons.append("🚀 Squeeze")
 
-            # --- FİLTRELER ---
-            strategies = []
+            # 2. 🔇 NR4 (Sessizlik)
+            # Bugünkü range, son 4 günün en küçüğü mü?
+            r_today = daily_range.iloc[-1]
+            r_last4 = daily_range.tail(4)
+            if r_today == r_last4.min() and r_today > 0:
+                score += 1
+                reasons.append("🔇 NR4")
 
-            # 1. Trend (Golden Cross)
-            try:
-                cross_today = (ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])
-                cross_yesterday = (ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])
-                if cross_today or cross_yesterday:
-                    strategies.append("⚡ Trend")
-            except: pass
+            # 3. ⚡ TREND (EMA Cross)
+            # EMA5 > EMA20 (Bugün veya Dün Kesişim)
+            cross_today = (ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])
+            cross_yest = (ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])
+            if cross_today or cross_yest:
+                score += 1
+                reasons.append("⚡ Trend")
 
-            # 2. Hacim Artışı
-            if curr_vol > (curr_vol_avg * 1.20) and curr_vol > 0:
-                pct_inc = ((curr_vol - curr_vol_avg) / curr_vol_avg) * 100
-                strategies.append(f"🔊 Hacim (%{int(pct_inc)})")
+            # 4. 🟢 MACD DÖNÜŞÜ
+            # Histogram Yeşile Döndü (Artıyor) VE (Pozitif veya Sığ Negatif)
+            h_curr = hist.iloc[-1]
+            h_prev = hist.iloc[-2]
+            if h_curr > h_prev: # Momentum Artıyor (Yeşil Bar)
+                score += 1
+                reasons.append("🟢 MACD")
 
-            # 3. Squeeze
-            min_width_3m = bb_width.tail(60).min()
-            if curr_width <= min_width_3m * 1.1: 
-                strategies.append("🚀 Squeeze")
+            # 5. 🔫 WILLIAMS %R
+            # -50'nin üzerine attı (Momentum)
+            wr_curr = williams_r.iloc[-1]
+            if wr_curr > -50:
+                score += 1
+                reasons.append("🔫 Will%R")
 
-            # 4. Dip Dönüşü
-            if (curr_rsi < 35) and (curr_price > prev_close):
-                strategies.append("⚓ Dip Dönüş")
+            # 6. 🔊 HACİM
+            # Hacim ortalamadan %20 fazla
+            if curr_vol > avg_vol * 1.2:
+                pct = int(((curr_vol - avg_vol)/avg_vol)*100)
+                score += 1
+                reasons.append(f"🔊 Hacim(+%{pct})")
 
-            # 5. Breakout
-            high_20 = close.tail(20).max()
-            if (curr_price >= high_20 * 0.98) and (curr_price < high_20 * 1.02):
-                strategies.append("🔨 Breakout")
+            # 7. 🔨 BREAKOUT
+            # Son 20 günün zirvesine %2 yakınlıkta
+            h20 = high.tail(20).max()
+            if curr_c >= h20 * 0.98:
+                score += 1
+                reasons.append("🔨 Breakout")
 
-            if strategies:
+            # 8. ⚓ GÜVENLİ DİP/GİRİŞ
+            # RSI 30-60 arasında ve Yükseliyor (Aşırı şişkin değil, düşmüyor)
+            rsi_curr = rsi.iloc[-1]
+            rsi_prev = rsi.iloc[-2]
+            if 30 < rsi_curr < 65 and rsi_curr > rsi_prev:
+                score += 1
+                reasons.append("⚓ RSI Güçlü")
+
+            # LİSTEYE EKLE (Sadece Skoru 1 ve üzeri olanlar)
+            if score >= 4: # Gürültüyü azaltmak için en az 4 puan şartı koyabiliriz veya hepsini gösteririz.
+                # Patron "Sıralama" istedi, hepsini alıp sıralayalım.
+                # Ama liste çok şişmesin, en az 3 diyelim.
+                pass
+            
+            if score > 0:
                 signals.append({
                     "Sembol": symbol,
-                    "Fiyat": f"{curr_price:.2f}",
-                    "Sinyal": " + ".join(strategies),
-                    "RSI": round(curr_rsi, 1)
+                    "Fiyat": f"{curr_c:.2f}",
+                    "Skor": score,
+                    "Nedenler": " | ".join(reasons),
+                    "RSI": round(rsi_curr, 1)
                 })
 
-        except Exception: 
-            continue
-            
-    return pd.DataFrame(signals)
+        except Exception: continue
+    
+    # SONUÇLARI PUANA GÖRE SIRALA (BÜYÜKTEN KÜÇÜĞE)
+    if not signals: return pd.DataFrame()
+    
+    df_res = pd.DataFrame(signals)
+    df_res = df_res.sort_values(by="Skor", ascending=False)
+    return df_res
 
 
 # --- WIDGET & DATA ---
 def render_tradingview_widget(ticker):
-    # --- DÜZELTME BURADA YAPILDI ---
-    # Artık NASDAQ zorlaması yok. Sadece sembol gönderiyoruz.
-    # TradingView kendi veritabanında en uygun borsayı (NYSE veya NASDAQ) bulacak.
-    
     tv_symbol = ticker
+    if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+    elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
+    elif ticker in ["GC=F"]: tv_symbol = "COMEX:GC1!"
+    elif ticker in ["SI=F"]: tv_symbol = "COMEX:SI1!"
+    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
     
-    if ".IS" in ticker: 
-        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker: 
-        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: 
-        tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
-    elif "." not in ticker: 
-        # ÖNEMLİ: Önceden burada 'NASDAQ:' ekliyorduk, kaldırdık.
-        # Artık sadece 'AAPL', 'ABBV' gidiyor. Widget bunu otomatik çözer.
-        tv_symbol = ticker 
-
     html_code = f"""
     <div class="tradingview-widget-container">
       <div id="tradingview_chart"></div>
@@ -254,33 +307,25 @@ def fetch_stock_info(ticker):
 @st.cache_data(ttl=300)
 def fetch_google_news(ticker):
     try:
-        clean_ticker = ticker.replace(".IS", "")
+        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
         query = f"{clean_ticker} stock news" if ".IS" not in ticker else f"{clean_ticker} hisse haberleri"
         encoded_query = urllib.parse.quote_plus(query)
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
         feed = feedparser.parse(rss_url)
         news = []
         limit_date = datetime.now() - timedelta(days=10)
-        
-        if not feed.entries: return []
-
-        for entry in feed.entries[:10]:
+        for entry in feed.entries[:8]:
             try: dt = datetime(*entry.published_parsed[:6])
             except: dt = datetime.now()
-            
             if dt < limit_date: continue
-                
             blob = TextBlob(entry.title); pol = blob.sentiment.polarity
             color = "#00C853" if pol > 0.1 else "#D50000" if pol < -0.1 else "#78909c"
-            news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b %H:%M'), 'source': entry.source.title, 'color': color, 'timestamp': dt})
-        
-        news.sort(key=lambda x: x['timestamp'], reverse=True)
+            news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
         return news
-    except:
-        return []
+    except: return []
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.7.2")
+st.title("🦅 Patronun Terminali v3.0.0 (Master Trader)")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -318,41 +363,37 @@ if info and info['price']:
 st.write("")
 col_main_chart, col_main_news, col_main_intel = st.columns([2.2, 0.9, 0.9])
 
-# SÜTUN 1: GRAFİK
 with col_main_chart:
     st.subheader(f"📈 {current_ticker}")
     render_tradingview_widget(current_ticker)
 
-# SÜTUN 2: HABERLER
 with col_main_news:
     st.subheader("📡 Haberler")
     news_data = fetch_google_news(current_ticker)
     with st.container(height=550):
         if news_data:
             for n in news_data:
-                st.markdown(f"""
-                <div class="news-card" style="border-left-color: {n['color']};">
-                    <a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a>
-                    <div class="news-meta">{n['date']} • {n['source']}</div>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
         else: st.info("Son 10 günde önemli haber yok.")
 
-# SÜTUN 3: SENTIMENT & TARAMA
 with col_main_intel:
-    st.subheader("🧠 Sentiment")
+    st.subheader("🧠 Sentiment Skor Kartı")
     
-    with st.expander("ℹ️ Algoritma"):
+    with st.expander("ℹ️ 8'li Puan Sistemi"):
         st.markdown("""
-        <div style="font-size:0.75rem;">
-        <b>1. ⚡ Trend (Yeni):</b> EMA5, EMA20'yi Bugün/Dün yukarı kesti.<br>
-        <b>2. 🔊 Hacim:</b> Hacim > 1 Haftalık Ortalama + %20.<br>
-        <b>3. 🚀 Squeeze:</b> Bollinger bantları daraldı.<br>
-        <b>4. ⚓ Dip Dönüşü:</b> RSI < 35 ve fiyat artıda.<br>
-        <b>5. 🔨 Breakout:</b> Zirve zorluyor.
+        <div style="font-size:0.7rem;">
+        <b>1. 🚀 Squeeze:</b> Bollinger Daralması (Patlama Hazırlığı)<br>
+        <b>2. 🔇 NR4:</b> En dar gün (Fırtına öncesi sessizlik)<br>
+        <b>3. ⚡ Trend:</b> EMA5 > EMA20 Kesişimi<br>
+        <b>4. 🟢 MACD:</b> Momentum artışı (Yeşil Bar)<br>
+        <b>5. 🔫 Will%R:</b> -50 Kırılımı (Hızlı Kalkış)<br>
+        <b>6. 🔊 Hacim:</b> Ortalamanın %20 üzerinde<br>
+        <b>7. 🔨 Breakout:</b> Zirve zorluyor<br>
+        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası ve yükseliyor
         </div>
         """, unsafe_allow_html=True)
 
-    if st.button(f"⚡ {current_category} Tara", type="primary"):
+    if st.button(f"⚡ {current_category} Analiz Et", type="primary"):
         with st.spinner(f"{len(ASSET_GROUPS[current_category])} varlık taranıyor..."):
             scan_df = analyze_market_intelligence(ASSET_GROUPS[current_category])
             st.session_state.scan_data = scan_df
@@ -361,15 +402,21 @@ with col_main_intel:
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
-                    label = f"{row['Sembol']} | {row['Sinyal']}"
-                    # Her buton için unique key: sembol + index
+                    score = row['Skor']
+                    # Renk Kodlaması
+                    s_color = "#4CAF50" if score >= 6 else "#FF9800" if score >= 4 else "#9E9E9E"
+                    label = f"★ {score}/8 | {row['Sembol']}"
+                    
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
+                    
+                    # Detayları butonun altında ufak göster
+                    st.markdown(f"<div style='font-size:0.7rem; color:#555; margin-top:-10px; margin-bottom:10px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
             else:
-                st.success("Tüm varlıklar normal seyirde.")
+                st.info("Piyasada şu an güçlü bir kurulum (Setup) yok.")
         else:
-            st.info("Taramak için butona basın.")
+            st.info("Analiz için butona basın.")
 
     if st.button("🗑️ Temizle"):
         st.session_state.scan_data = None
