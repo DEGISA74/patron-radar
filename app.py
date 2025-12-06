@@ -9,21 +9,38 @@ import streamlit.components.v1 as components
 import time
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.2.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.3.0", layout="wide", page_icon="🦅")
 
-# --- VARLIK LİSTELERİ ---
+# --- VARLIK LİSTELERİ (GENİŞ LİSTE GERİ GELDİ) ---
 ASSET_GROUPS = {
     "TÜRK HİSSE (BIST 30)": [
         "THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS", "KCHOL.IS", "AKBNK.IS", "ISCTR.IS", "SISE.IS", 
         "BIMAS.IS", "EREGL.IS", "SAHOL.IS", "YKBNK.IS", "FROTO.IS", "KONTR.IS", "HEKTS.IS", "PETKM.IS", 
         "TOASO.IS", "PGSUS.IS", "ENKAI.IS", "ALARK.IS", "ODAS.IS", "EKGYO.IS", "KOZAL.IS", "SASA.IS"
     ],
-    "S&P 500 (TOP 50)": [ # Performans için ilk 50'ye düşürdüm, tarama hızlı olsun
-        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "BRK.B", "AVGO", "JPM", 
-        "LLY", "UNH", "V", "XOM", "MA", "JNJ", "HD", "PG", "COST", "ABBV", 
-        "MRK", "CRM", "CVX", "BAC", "AMD", "WMT", "NFLX", "ACN", "PEP", "KO",
-        "LIN", "TMO", "DIS", "ADBE", "WFC", "MCD", "CSCO", "QCOM", "CAT", "VZ",
-        "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", "TXN"
+    "S&P 500 (TOP 100)": [
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "BRK.B", "TSLA", "AVGO", 
+        "JPM", "LLY", "UNH", "V", "XOM", "MA", "JNJ", "HD", "PG", "COST", 
+        "ABBV", "MRK", "CRM", "CVX", "BAC", "AMD", "WMT", "NFLX", "ACN", "PEP", 
+        "KO", "LIN", "TMO", "DIS", "ADBE", "WFC", "MCD", "CSCO", "QCOM", "CAT", 
+        "VZ", "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", 
+        "TXN", "ISRG", "UBER", "PM", "LOW", "HON", "AMGN", "RTX", "SYK", "GS", 
+        "BLK", "ELV", "PLD", "BKNG", "NEE", "T", "MS", "PGR", "ETN", "C", 
+        "TJX", "UPS", "MDT", "BSX", "VRTX", "CHTR", "AXP", "CI", "DE", "CB", 
+        "LRCX", "REGN", "SCHW", "ADP", "MMC", "KLAC", "MU", "PANW", "FI", "BX",
+        "GILD", "ADI", "SNPS", "ZTS", "CRWD", "WM", "MO", "USB", "SO", "ICE"
+    ],
+    "NASDAQ 100 (TOP 100)": [
+        "MSFT", "AAPL", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST", 
+        "AMD", "NFLX", "PEP", "LIN", "ADBE", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", 
+        "TXN", "ISRG", "CMCSA", "AMGN", "HON", "INTC", "BKNG", "VRTX", "LRCX", "MU", 
+        "PANW", "ADP", "REGN", "ADI", "GILD", "KLAC", "MDLZ", "SNPS", "CRWD", "MELI", 
+        "CSX", "CDNS", "PYPL", "MAR", "ORLY", "ASML", "NXPI", "CTAS", "MNST", "FTR",
+        "ROP", "PCAR", "WDAY", "AEP", "LULU", "ADSK", "KDP", "DXCM", "PAYX", "ROST", 
+        "IDXX", "MRVL", "MCHP", "ODFL", "BIIB", "EXC", "FAST", "CPRT", "SBUX", "CTSH", 
+        "KHC", "BKR", "VRSK", "EA", "CSGP", "XEL", "CEG", "DDOG", "GEHC", "FANG", 
+        "ON", "WBD", "TEAM", "ANSS", "TTD", "ALGN", "ILMN", "DLTR", "EBAY", "WBA", 
+        "ZM", "SIRI", "ENPH", "LCID", "RIVN", "ZS", "GFS", "SPLK", "ABNB", "ARM"
     ],
     "KRİPTO (TOP 20)": [
         "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", 
@@ -82,56 +99,6 @@ if 'run_scan' not in st.session_state:
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 
-# --- TEKNİK ANALİZ MOTORU (YENİ) ---
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-def run_scanner(asset_list, rsi_min, rsi_max, min_vol, rel_vol_thresh):
-    """Gerçek zamanlı tarama motoru"""
-    results = []
-    progress_bar = st.progress(0)
-    total = len(asset_list)
-    
-    for i, symbol in enumerate(asset_list):
-        try:
-            # İlerleme çubuğunu güncelle
-            progress_bar.progress((i + 1) / total)
-            
-            # Veri çek (Son 3 ay yeterli)
-            stock = yf.Ticker(symbol)
-            hist = stock.history(period="3mo")
-            
-            if len(hist) < 30: continue # Yetersiz veri varsa atla
-
-            # 1. RSI Hesapla
-            hist['RSI'] = calculate_rsi(hist['Close'])
-            current_rsi = hist['RSI'].iloc[-1]
-            
-            # 2. Hacim Analizi
-            avg_vol = hist['Volume'].rolling(window=20).mean().iloc[-1]
-            current_vol = hist['Volume'].iloc[-1]
-            rv = current_vol / avg_vol if avg_vol > 0 else 0
-            
-            # 3. Kriter Kontrolü
-            if (rsi_min <= current_rsi <= rsi_max) and (current_vol >= min_vol) and (rv >= rel_vol_thresh):
-                results.append({
-                    "Hisse": symbol,
-                    "Fiyat": round(hist['Close'].iloc[-1], 2),
-                    "RSI (14)": round(current_rsi, 2),
-                    "Rel. Vol": round(rv, 2),
-                    "Hacim": f"{current_vol/1000000:.1f}M"
-                })
-                
-        except Exception as e:
-            continue
-            
-    progress_bar.empty()
-    return pd.DataFrame(results)
-
 # --- CALLBACK FONKSİYONLARI ---
 def on_category_change():
     new_cat = st.session_state.selected_category_key
@@ -147,14 +114,62 @@ def on_manual_button_click():
     if input_val:
         st.session_state.ticker = input_val.upper()
 
+# --- TEKNİK ANALİZ MOTORU ---
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def run_scanner(asset_list, rsi_min, rsi_max, min_vol, rel_vol_thresh):
+    """Gerçek zamanlı tarama motoru"""
+    results = []
+    progress_bar = st.progress(0)
+    total = len(asset_list)
+    
+    for i, symbol in enumerate(asset_list):
+        try:
+            progress_bar.progress((i + 1) / total)
+            
+            # Veri çek
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="3mo")
+            
+            if len(hist) < 30: continue
+
+            # Hesaplamalar
+            hist['RSI'] = calculate_rsi(hist['Close'])
+            current_rsi = hist['RSI'].iloc[-1]
+            
+            avg_vol = hist['Volume'].rolling(window=20).mean().iloc[-1]
+            current_vol = hist['Volume'].iloc[-1]
+            rv = current_vol / avg_vol if avg_vol > 0 else 0
+            
+            # Filtreleme
+            if (rsi_min <= current_rsi <= rsi_max) and (current_vol >= min_vol) and (rv >= rel_vol_thresh):
+                results.append({
+                    "Hisse": symbol,
+                    "Fiyat": round(hist['Close'].iloc[-1], 2),
+                    "RSI (14)": round(current_rsi, 2),
+                    "Rel. Vol": round(rv, 2),
+                    "Hacim": f"{current_vol/1000000:.1f}M"
+                })
+                
+        except Exception as e:
+            continue
+            
+    progress_bar.empty()
+    return pd.DataFrame(results)
+
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
-    # TRADINGVIEW SEMBOL DÜZELTMESİ
+    # TRADINGVIEW SEMBOL DÜZELTMESİ (BIST FIX)
     tv_symbol = ticker
     
     if ".IS" in ticker:
-        # ".IS" uzantısını kesin olarak kaldırıyoruz.
+        # ".IS" uzantısını kaldırıp BIST: ekliyoruz
         clean_ticker = ticker.split(".")[0] 
         tv_symbol = f"BIST:{clean_ticker}"
         
@@ -186,23 +201,27 @@ def fetch_google_news(ticker):
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
     encoded_query = urllib.parse.quote_plus(query) 
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
+    
     feed = feedparser.parse(rss_url)
     news_items = []
+    
     for entry in feed.entries[:15]: 
         title = entry.title
         link = entry.link
         source = entry.source.title if 'source' in entry else "Global News"
+        
         try: pub_date = entry.published_parsed; dt_object = datetime(*pub_date[:6])
         except: dt_object = datetime.now()
         date_str = dt_object.strftime('%H:%M | %d %b')
+            
         blob = TextBlob(title)
         score = blob.sentiment.polarity
         if score > 0.1: sent_text, sent_color = "YUKARI", "#00C853"
         elif score < -0.1: sent_text, sent_color = "AŞAĞI", "#D50000"
         else: sent_text, sent_color = "NÖTR", "#616161"
+
         news_items.append({'title': title, 'link': link, 'date': date_str, 'source': source, 'sentiment': sent_text, 'color': sent_color, 'timestamp': dt_object})
     
-    # Haberleri Tarihe Göre Sırala (En Yeni En Üstte)
     news_items.sort(key=lambda x: x['timestamp'], reverse=True)
     return news_items
 
@@ -213,13 +232,14 @@ def fetch_stock_info(ticker):
         info = stock.info
         current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask')
         prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
+        
         if current_price and prev_close: change_pct = ((current_price - prev_close) / prev_close) * 100
         else: change_pct = 0
         return {'price': current_price, 'change_pct': change_pct, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target_price': info.get('targetMeanPrice', '-'), 'pe_ratio': info.get('trailingPE', '-')}
     except: return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.2.0")
+st.title("🦅 Patronun Terminali v2.3.0")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -280,26 +300,26 @@ if info_data and info_data['price']:
     if st.button("🔄 Tam Yenile"): st.cache_data.clear(); st.rerun()
 
     st.header("🔍 V2.0: Finansal İstihbarat & Tarama Motoru")
-    st.info(f"Aktif Kategori: {current_category}. Bu kategorideki tüm hisseler aşağıda belirlediğin kriterlere göre canlı olarak taranacaktır.")
+    st.info(f"Aktif Kategori: {current_category}. Bu kategorideki tüm hisseler taranacaktır. Liste uzun olduğu için işlem 30-60 sn sürebilir.")
 
     with st.expander("Tarama Kriterlerini Ayarla ve Taramayı Başlat"):
         col_tech, col_volume, col_dummy = st.columns([1, 1, 2])
         
         with col_tech:
             st.markdown("**1. RSI Filtresi**")
-            rsi_range = st.slider("RSI (14) Aralığı", 0, 100, (30, 70))
+            # Varsayılan aralığı genişlettim (0-100) ki sonuç dönsün
+            rsi_range = st.slider("RSI (14) Aralığı", 0, 100, (0, 100)) 
         
         with col_volume:
             st.markdown("**2. Hacim Filtresi**")
-            rel_vol_thresh = st.number_input("Relative Volume (Ort. Hacmin Kaç Katı?)", value=1.0, step=0.1)
-            min_volume = st.number_input("Min. Günlük Hacim (Adet)", value=500000)
+            rel_vol_thresh = st.number_input("Relative Volume (Ort. Hacmin Kaç Katı?)", value=0.5, step=0.1)
+            min_volume = st.number_input("Min. Günlük Hacim (Adet)", value=0)
             
         st.markdown("---")
         
         if st.button("🔴 CANLI TARAMAYI BAŞLAT", use_container_width=True, type="primary"):
             st.session_state.run_scan = True
-            with st.spinner('Piyasa taranıyor... Bu işlem seçili listenin büyüklüğüne göre 30-60 saniye sürebilir.'):
-                # Seçili kategorideki hisseleri taramaya gönder
+            with st.spinner('Piyasa taranıyor...'):
                 target_list = ASSET_GROUPS[current_category]
                 st.session_state.scan_results = run_scanner(target_list, rsi_range[0], rsi_range[1], min_volume, rel_vol_thresh)
             st.success("Tarama Tamamlandı!")
