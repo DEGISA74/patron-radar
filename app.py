@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.7.0 (Tam V3.2.0 Eşiği)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.7.1 (NR4 ve Trend Geri Dönüş)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 # Session State'de tema saklama
@@ -175,7 +175,7 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# V3.2.0'dan alınan TOPLU ÇEKİM mantığı ve SADECE 8 KRİTER
+# V3.7.1: NR4 ve TREND TAM V3.2.0 mantığına geri döndürüldü.
 def analyze_market_intelligence(asset_list):
     signals = []
     
@@ -204,7 +204,7 @@ def analyze_market_intelligence(asset_list):
             
             # NaN temizliği ve minimum veri kontrolü
             df = df.dropna(how='all').dropna(subset=['Close'])
-            if len(df) < 50: continue # 50 gün, 6 aylık veri için yeterli
+            if len(df) < 50: continue 
             
             df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
             if pd.isna(df['Close'].iloc[-1]) or len(df) < 6: continue 
@@ -214,8 +214,7 @@ def analyze_market_intelligence(asset_list):
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # GÖSTERGELER (Sadece 8 Kriter için yeterli olanlar)
-            
+            # GÖSTERGELER
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
@@ -253,16 +252,19 @@ def analyze_market_intelligence(asset_list):
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # KRİTERLER (V3.2.0'ın 8 Kriteri ve Eşikleri)
+            # KRİTERLER (V3.2.0'ın TAM 8 Kriteri ve Eşikleri)
             
             # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı)
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
             
-            # 2. 🔇 NR4: Sessiz Gün (V3.2.0 mantığı)
-            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
+            # 2. 🔇 NR4: Sessiz Gün (TAM V3.2.0 MANTIĞI)
+            # Sadece tam eşitlik, > 0 kontrolü yok
+            if daily_range.iloc[-1] == daily_range.tail(4).min(): score += 1; reasons.append("🔇 NR4")
             
-            # 3. ⚡ Trend: Cross-over (V3.2.0 mantığı)
-            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend Yönü")
+            # 3. ⚡ Trend: Cross-over (TAM V3.2.0 MANTIĞI - AGRESİF KONTROL)
+            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): 
+                 score += 1
+                 reasons.append("⚡ Trend Cross")
             
             # 4. 🟢 MACD: Histogram artışı (V3.2.0 mantığı)
             if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
@@ -273,7 +275,7 @@ def analyze_market_intelligence(asset_list):
             # 6. 🔊 Hacim: %20+ Artış (V3.2.0 mantığı)
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             
-            # 7. 🔨 Breakout: Zirve Zorluyor (V3.2.0 mantığı: Daha gevşek eşik)
+            # 7. 🔨 Breakout: Zirve Zorluyor (V3.2.0 mantığı: %3 gevşek eşik)
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
             
             # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı)
@@ -350,7 +352,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.7.0")
+st.title(f"🦅 Patronun Terminali v3.7.1")
 
 # 1. ÜST MENÜ
 current_ticker = st.session_state.ticker
@@ -402,12 +404,12 @@ with col_main_right:
     st.subheader("🧠 Sentiment İlk 20")
     
     # 8'Lİ KRİTERLER
-    with st.expander("ℹ️ 8'li Puan Sistemi (V3.2.0 Eşiği)", expanded=True): 
+    with st.expander("ℹ️ 8'li Puan Sistemi (Tam V3.2.0 Eşiği)", expanded=True): 
         st.markdown("""
         <div style="font-size:0.7rem;">
         <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
-        <b>2. 🔇 NR4:</b> Sessiz Gün<br>
-        <b>3. ⚡ Trend Yönü:</b> EMA5 > EMA20<br>
+        <b>2. 🔇 NR4:</b> Sessiz Gün **(Tam Eşitlik)**<br>
+        <b>3. ⚡ Trend Cross:</b> **EMA Kesişimi veya Yön Değişimi**<br>
         <b>4. 🟢 MACD:</b> Histogram artışı<br>
         <b>5. 🔫 W%R:</b> -50 Kırılımı<br>
         <b>6. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
