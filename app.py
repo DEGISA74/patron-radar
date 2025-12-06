@@ -8,18 +8,49 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.0.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.1.0", layout="wide", page_icon="🦅")
 
-# --- VARLIK LİSTELERİ ---
+# --- VARLIK LİSTELERİ (GENİŞLETİLMİŞ) ---
+# Kodun okunabilirliği için en büyük hacimli hisseleri ekledim.
 ASSET_GROUPS = {
-    "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
-    "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
-    "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
-    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"],
-    "TÜRK HİSSE": ["THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS"] 
+    "TÜRK HİSSE (BIST 30)": [
+        "THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS", "KCHOL.IS", "AKBNK.IS", "ISCTR.IS", "SISE.IS", 
+        "BIMAS.IS", "EREGL.IS", "SAHOL.IS", "YKBNK.IS", "FROTO.IS", "KONTR.IS", "HEKTS.IS", "PETKM.IS", 
+        "TOASO.IS", "PGSUS.IS", "ENKAI.IS", "ALARK.IS", "ODAS.IS", "EKGYO.IS", "KOZAL.IS", "SASA.IS"
+    ],
+    "S&P 500 (TOP 100)": [
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "BRK.B", "TSLA", "AVGO", 
+        "JPM", "LLY", "UNH", "V", "XOM", "MA", "JNJ", "HD", "PG", "COST", 
+        "ABBV", "MRK", "CRM", "CVX", "BAC", "AMD", "WMT", "NFLX", "ACN", "PEP", 
+        "KO", "LIN", "TMO", "DIS", "ADBE", "WFC", "MCD", "CSCO", "QCOM", "CAT", 
+        "VZ", "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", 
+        "TXN", "ISRG", "UBER", "PM", "LOW", "HON", "AMGN", "RTX", "SYK", "GS", 
+        "BLK", "ELV", "PLD", "BKNG", "NEE", "T", "MS", "PGR", "ETN", "C", 
+        "TJX", "UPS", "MDT", "BSX", "VRTX", "CHTR", "AXP", "CI", "DE", "CB", 
+        "LRCX", "REGN", "SCHW", "ADP", "MMC", "KLAC", "MU", "PANW", "FI", "BX",
+        "GILD", "ADI", "SNPS", "ZTS", "CRWD", "WM", "MO", "USB", "SO", "ICE"
+    ],
+    "NASDAQ 100 (TOP 100)": [
+        "MSFT", "AAPL", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST", 
+        "AMD", "NFLX", "PEP", "LIN", "ADBE", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", 
+        "TXN", "ISRG", "CMCSA", "AMGN", "HON", "INTC", "BKNG", "VRTX", "LRCX", "MU", 
+        "PANW", "ADP", "REGN", "ADI", "GILD", "KLAC", "MDLZ", "SNPS", "CRWD", "MELI", 
+        "CSX", "CDNS", "PYPL", "MAR", "ORLY", "ASML", "NXPI", "CTAS", "MNST", "FTR",
+        "ROP", "PCAR", "WDAY", "AEP", "LULU", "ADSK", "KDP", "DXCM", "PAYX", "ROST", 
+        "IDXX", "MRVL", "MCHP", "ODFL", "BIIB", "EXC", "FAST", "CPRT", "SBUX", "CTSH", 
+        "KHC", "BKR", "VRSK", "EA", "CSGP", "XEL", "CEG", "DDOG", "GEHC", "FANG", 
+        "ON", "WBD", "TEAM", "ANSS", "TTD", "ALGN", "ILMN", "DLTR", "EBAY", "WBA", 
+        "ZM", "SIRI", "ENPH", "LCID", "RIVN", "ZS", "GFS", "SPLK", "ABNB", "ARM"
+    ],
+    "KRİPTO (TOP 20)": [
+        "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", 
+        "TRX-USD", "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "UNI-USD", 
+        "ATOM-USD", "XLM-USD", "ETC-USD", "FIL-USD"
+    ],
+    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
-INITIAL_CATEGORY = "TÜRK HİSSE"
+INITIAL_CATEGORY = "TÜRK HİSSE (BIST 30)"
 
 # --- CSS TASARIM ---
 st.markdown("""
@@ -66,27 +97,21 @@ if 'run_scan' not in st.session_state:
     st.session_state.run_scan = False
 
 # --- CALLBACK FONKSİYONLARI ---
-# Bu fonksiyonlar kullanıcı bir şeye tıkladığında çalışır, böylece loop (döngü) oluşmaz.
-
 def on_category_change():
-    """Kategori değiştiğinde o kategorinin ilk hissesini yükle."""
     new_cat = st.session_state.selected_category_key
     st.session_state.category = new_cat
     st.session_state.ticker = ASSET_GROUPS[new_cat][0]
 
 def on_asset_change():
-    """Listeden hisse seçildiğinde ticker'ı güncelle."""
     new_asset = st.session_state.selected_asset_key
     st.session_state.ticker = new_asset
 
 def on_manual_input_change():
-    """Manuel giriş yapıldığında ticker'ı güncelle."""
     input_val = st.session_state.manual_input_key
     if input_val:
         st.session_state.ticker = input_val.upper()
 
 def on_manual_button_click():
-    """Ara butonuna basıldığında ticker'ı güncelle."""
     input_val = st.session_state.manual_input_key
     if input_val:
         st.session_state.ticker = input_val.upper()
@@ -134,8 +159,12 @@ def fetch_google_news(ticker):
         link = entry.link
         source = entry.source.title if 'source' in entry else "Global News"
         
-        try: pub_date = entry.published_parsed; dt_object = datetime(*pub_date[:6])
-        except: dt_object = datetime.now()
+        try: 
+            pub_date = entry.published_parsed
+            dt_object = datetime(*pub_date[:6])
+        except: 
+            dt_object = datetime.now()
+            
         date_str = dt_object.strftime('%H:%M | %d %b')
             
         blob = TextBlob(title)
@@ -146,8 +175,13 @@ def fetch_google_news(ticker):
 
         news_items.append({
             'title': title, 'link': link, 'date': date_str, 'source': source,
-            'sentiment': sent_text, 'color': sent_color
+            'sentiment': sent_text, 'color': sent_color,
+            'timestamp': dt_object # Sıralama için eklendi
         })
+    
+    # Haberleri Tarihe Göre Sırala (En Yeni En Üstte)
+    news_items.sort(key=lambda x: x['timestamp'], reverse=True)
+    
     return news_items
 
 @st.cache_data(ttl=600)
@@ -172,10 +206,10 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.0.1")
+st.title("🦅 Patronun Terminali v2.1.0")
 st.markdown("---")
 
-## Dinamik Menü Barı (V1.2.0 Estetiği + Callback Kontrolü)
+## Dinamik Menü Barı
 
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
@@ -184,8 +218,6 @@ current_category = st.session_state.category
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 with col_cat:
-    # Kategori Seçimi
-    # Kullanıcı değiştirdiğinde on_category_change çalışır
     st.selectbox(
         "Kategori Seç", 
         list(ASSET_GROUPS.keys()),
@@ -195,12 +227,7 @@ with col_cat:
     )
 
 with col_ass:
-    # Varlık Seçimi
     asset_options = ASSET_GROUPS[current_category]
-    
-    # Mevcut ticker listede varsa o seçili gelir, yoksa listedeki ilk eleman (0) görsel olarak seçili durur.
-    # ÖNEMLİ: Ancak 'on_change' sadece kullanıcı elle değiştirirse tetiklenir.
-    # Bu sayede PFE yazılıyken, selectbox AAPL gösterse bile kodu PFE olarak kalır ve değiştirmez.
     try:
         default_index = asset_options.index(current_ticker)
     except ValueError:
@@ -216,13 +243,12 @@ with col_ass:
 
 # 2. Manuel Giriş
 with col_search_in:
-    # Placeholder içine mevcut ticker'ı yazıyoruz ki kullanıcı neye baktığını bilsin
     st.text_input(
         "Manuel Hisse Kodu (Örn: PFE, THYAO.IS)", 
         value="", 
         placeholder=f"Şu anki hisse: {current_ticker}",
         key="manual_input_key",
-        on_change=on_manual_input_change # Enter'a basınca çalışır
+        on_change=on_manual_input_change 
     )
 
 with col_search_btn:
@@ -239,7 +265,6 @@ news_data = fetch_google_news(current_ticker)
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards)
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
@@ -276,7 +301,6 @@ if info_data and info_data['price']:
 
     st.write("")
 
-    # GRAFİK ve HABERLER (Yan Yana)
     col_chart, col_news = st.columns([3, 1.2])
     
     with col_chart:
@@ -311,7 +335,7 @@ if info_data and info_data['price']:
             st.rerun()
 
     st.header("🔍 V2.0: Finansal İstihbarat & Tarama Motoru")
-    st.info("Bu modül, hisse listelerimizdeki (S&P/NASDAQ Top 100) varlıkları, belirlediğiniz teknik ve duygu kriterlerine göre tarar.")
+    st.info("Bu modül, varlıkları belirlediğiniz teknik ve duygu kriterlerine göre tarar.")
 
     with st.expander("Tarama Kriterlerini Ayarla ve Taramayı Başlat"):
         
