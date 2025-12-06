@@ -8,8 +8,12 @@ from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import numpy as np
 
-# --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.1.0", layout="wide", page_icon="🦅")
+# --- SAYFA AYARLARI (Karanlık Tema) ---
+st.set_page_config(
+    page_title="Patronun Terminali v3.1.1", 
+    layout="wide", 
+    page_icon="🦅"
+)
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -51,30 +55,59 @@ if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
-# --- CSS TASARIM ---
+# --- CSS TASARIM (Karanlık Tema & Arka Plan) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
-    .stat-box {
-        background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: #E0E0E0; } /* Genel Metin Rengi */
+    
+    /* Ana Arka Plan */
+    .stApp {
+        background-color: #0E1117; /* Resimdeki koyu arka plan rengi */
     }
-    .stat-label { font-size: 0.75rem; color: #546E7A; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 1.2rem; font-weight: 700; color: #263238; margin: 4px 0; }
-    .delta-pos { color: #00C853; }
-    .delta-neg { color: #D50000; }
+
+    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
+    
+    /* İstatistik Kutuları */
+    .stat-box {
+        background: #161B22; /* Daha koyu bir kutu arka planı */
+        border: 1px solid #30363D; 
+        border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .stat-label { font-size: 0.75rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 1.2rem; font-weight: 700; color: #E0E0E0; margin: 4px 0; }
+    .delta-pos { color: #3FB950; } /* Yeşil */
+    .delta-neg { color: #F85149; } /* Kırmızı */
+    
+    /* Haber Kartları */
     .news-card {
-        background: #FFFFFF; border-left: 4px solid #ddd; padding: 8px; margin-bottom: 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 0.85rem;
+        background: #161B22; 
+        border-left: 4px solid #30363D; 
+        padding: 8px; margin-bottom: 8px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2); font-size: 0.85rem;
     }
     .news-title { 
-        color: #263238; font-weight: 600; text-decoration: none; display: block; margin-bottom: 4px; line-height: 1.2;
+        color: #E0E0E0; font-weight: 600; text-decoration: none; display: block; margin-bottom: 4px; line-height: 1.2;
     }
-    .news-title:hover { text-decoration: underline; color: #0277BD; }
-    .news-meta { font-size: 0.7rem; color: #90A4AE; }
-    .stButton button { width: 100%; border-radius: 5px; }
+    .news-title:hover { text-decoration: underline; color: #58A6FF; }
+    .news-meta { font-size: 0.7rem; color: #8B949E; }
+    
+    /* Butonlar ve Diğer Elemanlar */
+    .stButton button { width: 100%; border-radius: 5px; background-color: #238636; color: white; border: none;}
+    .stButton button:hover { background-color: #2EA043; }
+    .stSelectbox label, .stTextInput label { color: #E0E0E0; }
+    
+    /* Sentiment Kartı Arka Planı */
+    [data-testid="stExpander"] {
+        background-color: #161B22;
+        border: 1px solid #30363D;
+        color: #E0E0E0;
+    }
+    [data-testid="stExpander"] summary {
+         color: #E0E0E0;
+    }
+
 </style>
 """, unsafe_allow_html=True) 
 
@@ -101,7 +134,6 @@ def on_scan_result_click(symbol):
 # --- ANALİZ MOTORU ---
 def analyze_market_intelligence(asset_list):
     signals = []
-    
     try:
         data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except Exception: return []
@@ -192,7 +224,7 @@ def render_tradingview_widget(ticker):
       new TradingView.widget(
       {{
         "width": "100%", "height": 550, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
-        "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
+        "theme": "dark", "style": "1", "locale": "tr", "toolbar_bg": "#161B22", "enable_publishing": false,
         "allow_symbol_change": true, "container_id": "tradingview_chart"
       }});
       </script>
@@ -216,7 +248,8 @@ def fetch_stock_info(ticker):
 def fetch_google_news(ticker):
     try:
         clean = ticker.replace(".IS", "").replace("=F", "")
-        query = f"{clean} stock news" if ".IS" not in ticker else f"{clean} hisse haberleri"
+        # Sorguyu Investing.com ve Seeking Alpha ile sınırla
+        query = f"{clean} stock news site:investing.com OR site:seekingalpha.com"
         rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(query)}&hl=tr&gl=TR&ceid=TR:tr"
         feed = feedparser.parse(rss_url)
         news = []
@@ -226,13 +259,13 @@ def fetch_google_news(ticker):
             except: dt = datetime.now()
             if dt < limit_date: continue
             blob = TextBlob(entry.title); pol = blob.sentiment.polarity
-            color = "#00C853" if pol > 0.1 else "#D50000" if pol < -0.1 else "#78909c"
+            color = "#3FB950" if pol > 0.1 else "#F85149" if pol < -0.1 else "#8B949E"
             news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
         return news
     except: return []
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.1.0 (Master Trader)")
+st.title("🦅 Patronun Terminali v3.1.1")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -284,13 +317,13 @@ with col_main_chart:
     render_tradingview_widget(current_ticker)
 
 with col_main_news:
-    st.subheader("📡 Haberler")
+    st.subheader("📡 Haberler (Investing & SA)")
     news_data = fetch_google_news(current_ticker)
     with st.container(height=550):
         if news_data:
             for n in news_data:
                 st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
-        else: st.info("Haber yok.")
+        else: st.info("Bu kaynaklardan son 10 günde önemli haber yok.")
 
 with col_main_intel:
     st.subheader("🧠 Sentiment")
@@ -321,6 +354,6 @@ with col_main_intel:
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
-                    st.markdown(f"<div style='font-size:0.65rem; color:#666; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:0.65rem; color:#8B949E; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
             else: st.info("Sinyal yok.")
         else: st.info("Analiz için butona basın.")
