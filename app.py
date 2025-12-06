@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.0.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.1.0", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -30,17 +30,18 @@ ASSET_GROUPS = {
         "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI",
         "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG"
     ],
-    "KRİPTO (TOP 20)": [
-        "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", 
-        "TRX-USD", "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "UNI-USD", 
-        "ATOM-USD", "XLM-USD", "ETC-USD", "FIL-USD"
+    "NASDAQ (TOP 50)": [
+        "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
+        "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
+        "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
+        "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
+        "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP"
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
 INITIAL_CATEGORY = "S&P 500 (TOP 150)"
 
 # --- GÜVENLİ BAŞLANGIÇ (SELF-HEALING) ---
-# Eğer hafızadaki kategori şu anki listede yoksa, hafızayı sıfırla.
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
         st.session_state.category = INITIAL_CATEGORY
@@ -79,7 +80,6 @@ st.markdown("""
 
 # --- CALLBACKLER ---
 def on_category_change():
-    # Hata korumalı callback
     new_cat = st.session_state.get("selected_category_key")
     if new_cat and new_cat in ASSET_GROUPS:
         st.session_state.category = new_cat
@@ -108,7 +108,6 @@ def analyze_market_intelligence(asset_list):
 
     for symbol in asset_list:
         try:
-            # VERİ GÜVENLİĞİ
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]: df = data[symbol].copy()
                 else: continue
@@ -233,7 +232,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.0.2")
+st.title("🦅 Patronun Terminali v3.1.0 (Master Trader)")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -242,15 +241,12 @@ current_category = st.session_state.category
 # 1. MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
-    # Güvenli Seçim
     cat_index = 0
     if current_category in ASSET_GROUPS:
         cat_index = list(ASSET_GROUPS.keys()).index(current_category)
     else:
-        # Eğer kategori bulunamazsa sıfırla
         st.session_state.category = INITIAL_CATEGORY
         cat_index = 0
-    
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change)
 
 with col_ass:
@@ -269,8 +265,6 @@ st.markdown("---")
 
 # 2. İÇERİK
 info = fetch_stock_info(current_ticker)
-
-# -- GÜVENLİ RENDER: Veri gelmese bile en azından grafiği göster --
 if info and info['price']:
     c1, c2, c3, c4 = st.columns(4)
     cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -280,7 +274,7 @@ if info and info['price']:
     c3.markdown(f'<div class="stat-box"><div class="stat-label">HEDEF</div><div class="stat-value money-text">{info["target"]}</div></div>', unsafe_allow_html=True)
     c4.markdown(f'<div class="stat-box"><div class="stat-label">SEKTÖR</div><div class="stat-value">{str(info["sector"])[:15]}</div></div>', unsafe_allow_html=True)
 else:
-    st.warning(f"{current_ticker} için anlık fiyat verisi alınamadı (API limiti veya veri yok). Ancak grafik aşağıdadır.")
+    st.warning(f"{current_ticker} fiyat verisi anlık çekilemedi. Grafik aşağıdadır.")
 
 st.write("")
 col_main_chart, col_main_news, col_main_intel = st.columns([2.2, 0.9, 0.9])
