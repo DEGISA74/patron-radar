@@ -8,22 +8,23 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.3.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.4.0", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
     "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
-    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
+    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"] # GC=F ve SI=F çıkarıldı
 }
+ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
 
-# --- CSS TASARIM & FONTLAR ---
+# --- CSS TASARIM ---
 st.markdown("""
 <style>
-    /* ... (CSS Kodları) ... */
+    /* ... (CSS Kodları V1.3.0 ile aynıdır, estetik korunmuştur) ... */
 </style>
-""", unsafe_allow_html=True) # CSS kodları sadelik için korundu
+""", unsafe_allow_html=True) 
 
 # --- OTURUM YÖNETİMİ ---
 if 'ticker' not in st.session_state:
@@ -31,6 +32,11 @@ if 'ticker' not in st.session_state:
 
 if 'manual_input_value' not in st.session_state:
     st.session_state.manual_input_value = st.session_state.ticker
+
+if 'category' not in st.session_state:
+    # Başlangıçta seçili tickera ait kategoriyi bul
+    initial_category = next((cat for cat, assets in ASSET_GROUPS.items() if st.session_state.ticker in assets), list(ASSET_GROUPS.keys())[0])
+    st.session_state.category = initial_category
 
 def set_ticker(symbol): 
     st.session_state.ticker = symbol
@@ -117,57 +123,69 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.3.1")
+st.title("🦅 Patronun Terminali v1.4.0 (V1.2.0 Estetiği)")
 st.markdown("---")
 
-## Dinamik Menü Barı (HORIZONTAL + EXPANDER)
+## Dinamik Menü Barı (HORIZONTAL DROPDOWNS)
 
-# Menü ve Butonlar Tek Satırda
-menu_cols = st.columns(len(ASSET_GROUPS) + 1)
+category_list = list(ASSET_GROUPS.keys())
+current_category = st.session_state.category
+current_ticker = st.session_state.ticker
 
-# Hiyerarşik Butonlar
-with st.container():
-    col_index = 0
-    for title in ASSET_GROUPS.keys():
-        with menu_cols[col_index]:
-            st.markdown(f"**{title}**")
-            with st.expander("Listeyi Gör"):
-                # 3 sütun kullanarak yatay kompaktlık sağlanır
-                list_cols = st.columns(3)
-                for i, symbol in enumerate(ASSET_GROUPS[title]):
-                    with list_cols[i % 3]: 
-                        if st.button(symbol, key=f"btn_{symbol}"):
-                            set_ticker(symbol)
-        col_index += 1
+# 1. Filtreleme Alanı
+col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
-    # İşlemler ve Manuel Giriş
-    with menu_cols[-1]:
-        st.markdown(f"**İşlemler**")
-        
-        # Tam Yenileme Butonu
-        if st.button("🔄 Tam Yenile"): 
-            st.cache_data.clear()
-            st.rerun()
-        
-        # MANUEL GİRİŞ KONTROLÜ
-        st.markdown("---")
-        st.markdown(f"**Manuel Giriş**")
-        manual_input = st.text_input(
-            "Hisse Kodu", 
-            value=st.session_state.manual_input_value
-        ).upper()
+with col_cat:
+    # Kategori Seçimi
+    selected_category = st.selectbox(
+        "Kategori Seç", 
+        category_list,
+        index=category_list.index(current_category)
+    )
 
-        if manual_input != st.session_state.manual_input_value:
-            st.session_state.manual_input_value = manual_input
-        
-        if st.button("🔎 Ara & Yükle"):
-            set_ticker(st.session_state.manual_input_value)
+    if selected_category != current_category:
+        st.session_state.category = selected_category
+        # Kategori değişirse varlık listesi resetlenir ve uygulama yenilenir
+        st.session_state.manual_input_value = ASSET_GROUPS[selected_category][0]
+        set_ticker(ASSET_GROUPS[selected_category][0])
 
+
+# 2. Varlık Seçimi (Kategoriye Bağımlı)
+asset_options = ASSET_GROUPS[current_category]
+
+with col_ass:
+    # Seçili Ticker'ın listedeki indexini bul
+    default_index = asset_options.index(current_ticker) if current_ticker in asset_options else 0
+    
+    selected_asset = st.selectbox(
+        f"{current_category} Listesi",
+        asset_options,
+        index=default_index
+    )
+
+    if selected_asset != current_ticker:
+        set_ticker(selected_asset)
+
+
+# 3. Manuel Giriş (Gecikmeli Arama Kontrolü)
+with col_search_in:
+    manual_input = st.text_input(
+        "Manuel Hisse Kodu (Ara Butonu gerekli)", 
+        value=st.session_state.manual_input_value
+    ).upper()
+
+    if manual_input != st.session_state.manual_input_value:
+        st.session_state.manual_input_value = manual_input
+
+with col_search_btn:
+    st.write("") 
+    st.write("")
+    if st.button("🔎 Ara"):
+        set_ticker(st.session_state.manual_input_value)
 
 st.markdown("---")
 
 # Veri Akışı
-current_ticker = st.session_state.ticker
 info_data = fetch_stock_info(current_ticker)
 news_data = fetch_google_news(current_ticker)
 
