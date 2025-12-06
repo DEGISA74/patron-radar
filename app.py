@@ -8,25 +8,29 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.0.3", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.1.0", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
-# Not: Varlıkları temsil etmek için kısa listeler kullandım. İsteklerine göre 100/20 varlığa kadar genişletebilirsin.
 ASSET_LISTS = {
-    "S&P 500 (TOP 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
-    "NASDAQ (TOP 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
-    "KRİPTO (TOP 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
+    "SEÇİNİZ...": [], # Varsayılan Boş Seçenek
+    "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
+    "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
+    "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
     "EMTİA & DÖVİZ": ["GC=F", "SI=F", "EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
+}
+# --- YENİ: FİNANCE UZANTILARI İÇİN MAPPING ---
+ASSET_TYPE_MAP = {
+    "NASDAQ": "NASDAQ", "S&P 500": "NASDAQ", "KRİPTO": "BINANCE", "EMTİA": "TVC", "DÖVİZ": "FX_IDC"
 }
 
 # --- CSS TASARIM & FONTLAR ---
 st.markdown("""
 <style>
+    /* ... (CSS Kodları) ... */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
 
-    /* Custom Stat Cards */
     .stat-box {
         background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
@@ -42,23 +46,14 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
     .news-title { 
-        color: #263238; font-weight: 600; text-decoration: none; display: block; 
+        color: #263238; font-weight: 600; display: block; 
         margin-bottom: 3px; font-size: 0.9rem; line-height: 1.2;
     }
     .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
-    .sentiment-badge { 
-        font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; 
-        display: inline-block; margin-left: 5px;
-    }
-
-    /* Menü Düzeltmesi */
+    
     .stButton button {
-        background-color: #F5F5F5;
-        border: 1px solid #E0E0E0;
-        text-align: center;
-        width: 100%;
-        margin-top: 5px;
-        font-size: 0.8rem; /* Menü butonları daha küçük */
+        background-color: #F5F5F5; border: 1px solid #E0E0E0;
+        text-align: center; width: 100%; margin-top: 5px; font-size: 0.8rem;
     }
     h1 { padding-top: 0px; }
 </style>
@@ -75,20 +70,18 @@ def set_ticker(symbol):
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
-    """TradingView Chart Widget'ını gömer ve DÖVİZ pariteleri için formatı düzeltir."""
+    """TradingView Chart Widget'ını gömer ve formatı düzenler."""
     tv_symbol = ticker
+    # YENİ: Birden fazla kripto/döviz formatını destekler
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    # DÖVİZ DÜZELTMESİ (USDTRY=X -> FX_IDC:USDTRY)
     elif "=X" in ticker:
         tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    elif ticker == "GC=F":
-        tv_symbol = "TVC:GOLD"
-    elif ticker == "SI=F":
-        tv_symbol = "COMEX:SI1!" # Gümüş future kodu
-    elif ticker == "BTC-USD" or ticker == "ETH-USD" or ticker == "SOL-USD":
+    elif ticker in ["BTC-USD", "ETH-USD"]:
         tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
-    elif "." not in ticker and ":" not in ticker: 
+    elif ticker in ["GC=F", "SI=F"]:
+        tv_symbol = f"TVC:{ticker.replace('=F', '')}"
+    elif "." not in ticker and ":" not in ticker and ticker not in ["MO", "GOOGL", "AGNC"]: # NASDAQ/NYSE varsayımı
         tv_symbol = f"NASDAQ:{ticker}"
 
     html_code = f"""
@@ -98,18 +91,9 @@ def render_tradingview_widget(ticker):
       <script type="text/javascript">
       new TradingView.widget(
       {{
-        "width": "100%",
-        "height": 600,
-        "symbol": "{tv_symbol}",
-        "interval": "D",
-        "timezone": "Etc/UTC",
-        "theme": "light", 
-        "style": "1",
-        "locale": "tr",
-        "toolbar_bg": "#f0f3f6",
-        "enable_publishing": false,
-        "allow_symbol_change": true,
-        "container_id": "tradingview_chart"
+        "width": "100%", "height": 600, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
+        "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f0f3f6", "enable_publishing": false,
+        "allow_symbol_change": true, "container_id": "tradingview_chart"
       }});
       </script>
     </div>
@@ -131,14 +115,10 @@ def fetch_google_news(ticker):
         link = entry.link
         source = entry.source.title if 'source' in entry else "Global News"
         
-        try:
-            pub_date = entry.published_parsed
-            dt_object = datetime(*pub_date[:6])
-            date_str = dt_object.strftime('%H:%M | %d %b')
-        except:
-            date_str = "Şimdi"
+        try: pub_date = entry.published_parsed; dt_object = datetime(*pub_date[:6])
+        except: dt_object = datetime.now()
+        date_str = dt_object.strftime('%H:%M | %d %b')
             
-        # Duygu Analizi
         blob = TextBlob(title)
         score = blob.sentiment.polarity
         if score > 0.1: sent_text, sent_color = "YUKARI", "#00C853"
@@ -173,47 +153,55 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.0.3")
+st.title("🦅 Patronun Terminali v1.1.0")
 st.markdown("---")
 
-## Dinamik Menü Barı
+## Dinamik Filtreleme Modülü (Yeni Yapı)
 
-menu_cols = st.columns(len(ASSET_LISTS) + 1)
-menu_titles = list(ASSET_LISTS.keys())
-menu_titles.append("Ekstra")
+# 1. Filtre Barı
+filter_cols = st.columns(len(ASSET_LISTS))
 
-with st.container():
-    col_index = 0
-    for title in ASSET_LISTS.keys():
-        with menu_cols[col_index]:
-            st.markdown(f"**{title}**")
-            with st.expander("Listeyi Gör"):
-                # Yatay yayılmayı sağlamak için 4 sütun kullanılıyor (daha kompakt)
-                list_cols = st.columns(4) 
-                for i, symbol in enumerate(ASSET_LISTS[title]):
-                    with list_cols[i % 4]: # 4 Sütunlu Döngü
-                        if st.button(symbol, key=f"btn_{symbol}", help=f"Grafiği {symbol} ile değiştir"):
-                            set_ticker(symbol)
-        col_index += 1
+selected_category = ""
 
-    # Ek İşlemler
-    with menu_cols[-1]:
-        st.markdown(f"**İşlemler**")
-        with st.expander("Yenileme & Ayar"):
-            if st.button("🔄 Tam Yenile"): 
-                st.cache_data.clear()
-                st.rerun()
+for i, title in enumerate(ASSET_LISTS.keys()):
+    with filter_cols[i]:
+        # Açılır Menü (Dropdown)
+        selected_option = st.selectbox(
+            title, 
+            ['Seçiniz...'] + ASSET_LISTS[title],
+            key=f"filter_box_{title}"
+        )
+        if selected_option != 'Seçiniz...':
+            selected_category = title
+            # Ticker'ı otomatik güncelle
+            if st.session_state.ticker != selected_option:
+                 st.session_state.ticker = selected_option
+                 st.rerun()
 
-st.markdown("---")
+# 2. Manuel Arama ve Yenileme
+col_search, col_refresh = st.columns([5, 1])
 
-# Arama Çubuğu
-current_ticker = st.session_state.ticker if st.session_state.ticker else "AAPL"
-ticker_input = st.text_input("Manuel Hisse Kodu", value=current_ticker, help="BIST için .IS, Emtia için =F, Döviz için =X ekle").upper()
+with col_search:
+    current_ticker = st.session_state.ticker if st.session_state.ticker else "AAPL"
+    ticker_input = st.text_input(
+        "Manuel Hisse Kodu (veya Seçilen)", 
+        value=current_ticker, 
+        help="Sembolü girin veya üstteki filtreden seçin."
+    ).upper()
 
 # Hisse kodu değiştiyse session state'i güncelle
 if ticker_input and ticker_input != st.session_state.ticker:
     st.session_state.ticker = ticker_input
     st.rerun()
+
+with col_refresh:
+    st.write("")
+    st.write("")
+    if st.button("🔄 Tam Yenile"): 
+        st.cache_data.clear()
+        st.rerun()
+
+st.markdown("---")
 
 # Veri Akışı
 info_data = fetch_stock_info(st.session_state.ticker)
@@ -222,15 +210,15 @@ news_data = fetch_google_news(st.session_state.ticker)
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards) - HTML Geri Eklendi
+    # Metrikler (Stat Cards)
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
-    
+
     # Fiyat Metriği
     c1.markdown(f"""
     <div class="stat-box">
-        <div class="stat-label">{st.session_state.ticker} FİYAT</div>
+        <div class="stat-label">Anlık Fiyat</div>
         <div class="stat-value">{info_data['price']:.2f}</div>
         <span class="{delta_class}">{delta_sign}{info_data['change_pct']:.2f}%</span>
     </div>""", unsafe_allow_html=True)
@@ -270,22 +258,22 @@ if info_data and info_data['price']:
         render_tradingview_widget(st.session_state.ticker)
     
     with col_news:
-        st.subheader("📡 Küresel Haber Akışı") 
+        st.subheader("📡 Küresel Haber Akışı")
         with st.container(height=600):
             if news_data:
                 for item in news_data:
                     color = item['color']
-                    # Haber Kartı HTML - EKSİKLER GİDERİLDİ
+                    # HABER KARTI HTML - EKSİKLER GİDERİLDİ
                     st.markdown(f"""
                     <div class="news-card">
                         <a href="{item['link']}" target="_blank" class="news-title">{item['title']}</a>
-                        <div class="news-meta">
-                            {item['date']} | {item['source']} 
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span class="news-meta">{item['date']} | {item['source']} </span>
                             <span class="sentiment-badge" style="background-color: {color}; color: white;">{item['sentiment']}</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
             else:
-                st.info("Haber akışı bulunamadı.")
+                st.info("Haber akışı bulunamadı. Lütfen 'Tam Yenile' yapın.")
 else:
-    st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin. Örneğin, Döviz için USDTRY=X, BIST için THYAO.IS kullanın.")
+    st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
