@@ -7,9 +7,10 @@ from textblob import TextBlob
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import numpy as np
+import time # Yeni eklendi: Hata durumunda bekleme için
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.8 (Veri Akışı Tamir Edildi)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.9 (Sağlam Veri Akışı)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -139,12 +140,12 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# @st.cache_data(ttl=600)  <-- ÖN BELLEK KALDIRILDI
+# ÖN BELLEK KALDIRILDI
 def analyze_market_intelligence(asset_list):
     signals = []
-    # 1. Benchmark
+    
+    # 1. Benchmark (Veri çekme hatasını yakalama eklendi)
     try:
-        # Benchmark için de ön bellek kaldırılabilir, ancak YF'den veri çekiliyor
         spy_data = yf.download("^GSPC", period="1y", progress=False)
         if not spy_data.empty:
             spy_close = spy_data['Close']
@@ -152,80 +153,161 @@ def analyze_market_intelligence(asset_list):
         else: spy_5d_chg = 0
     except: spy_5d_chg = 0
 
-    # 2. Hisseler
+    # 2. Hisseler (Veri çekme mekanizması iyileştirildi)
+    
+    # Toplu veri çekme (Hızlı yol)
     try:
         data = yf.download(asset_list, period="1y", group_by='ticker', threads=True, progress=False)
-    except: return []
+        # Veri başarılı çekildiyse, normal döngüyü kullan
+        if isinstance(data.columns, pd.MultiIndex) or len(asset_list) == 1: 
+             valid_data_downloaded = True
+        else:
+             valid_data_downloaded = False
+    except Exception:
+        valid_data_downloaded = False
+        
+    if valid_data_downloaded:
+        # Toplu çekim başarılıysa, her sembol için döngüye gir
+        for symbol in asset_list:
+            try:
+                if isinstance(data.columns, pd.MultiIndex):
+                    if symbol in data.columns.levels[0]: df = data[symbol].copy()
+                    else: continue
+                else:
+                    if len(asset_list) == 1: df = data.copy()
+                    else: continue
+                
+                # --- ORİJİNAL ANALİZ BLOĞU BAŞLANGIÇ ---
+                if df.empty or 'Close' not in df.columns: continue
+                df = df.dropna(subset=['Close'])
+                if len(df) < 200: continue 
+                
+                close = df['Close']
+                high = df['High']
+                low = df['Low']
+                volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-    for symbol in asset_list:
-        try:
-            if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]: df = data[symbol].copy()
-                else: continue
-            else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
+                # Göstergeler (Aynı)
+                sma200 = close.rolling(200).mean()
+                ema5 = close.ewm(span=5, adjust=False).mean()
+                ema20 = close.ewm(span=20, adjust=False).mean()
+                
+                sma20_bb = close.rolling(20).mean()
+                std20_bb = close.rolling(20).std()
+                bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
+                
+                ema12 = close.ewm(span=12, adjust=False).mean()
+                ema26 = close.ewm(span=26, adjust=False).mean()
+                macd_line = ema12 - ema26
+                signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                hist = macd_line - signal_line
+                
+                delta = close.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rs_val = gain / loss
+                rsi = 100 - (100 / (1 + rs_val))
+                
+                highest_high = high.rolling(14).max()
+                lowest_low = low.rolling(14).min()
+                williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
+                
+                daily_range = high - low
+                
+                # Puanlama (Aynı)
+                score = 0; reasons = []
+                curr_c = float(close.iloc[-1])
+                curr_vol = float(volume.iloc[-1])
+                avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+                
+                if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+                stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
+                if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
+                if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
+                if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
+                if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
+                if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
+                if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+                if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
+                if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
+                if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close'])
-            if len(df) < 200: continue 
+                if score >= 3: 
+                    signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
+                # --- ORİJİNAL ANALİZ BLOĞU SONU ---
+            except Exception: continue
+    else:
+        # Toplu çekim başarısız olursa, hisseleri tek tek çek ve analiz et (Güvenli Yol)
+        for symbol in asset_list:
+            try:
+                # 3 saniye bekleme eklendi (YF'yi yormamak için)
+                time.sleep(3) 
+                df = yf.download(symbol, period="1y", progress=False)
+                
+                # --- ORİJİNAL ANALİZ BLOĞU BAŞLANGIÇ (Tekrar Kopyalandı) ---
+                if df.empty or 'Close' not in df.columns: continue
+                df = df.dropna(subset=['Close'])
+                if len(df) < 200: continue 
+                
+                close = df['Close']
+                high = df['High']
+                low = df['Low']
+                volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            close = df['Close']
-            high = df['High']
-            low = df['Low']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+                # Göstergeler
+                sma200 = close.rolling(200).mean()
+                ema5 = close.ewm(span=5, adjust=False).mean()
+                ema20 = close.ewm(span=20, adjust=False).mean()
+                
+                sma20_bb = close.rolling(20).mean()
+                std20_bb = close.rolling(20).std()
+                bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
+                
+                ema12 = close.ewm(span=12, adjust=False).mean()
+                ema26 = close.ewm(span=26, adjust=False).mean()
+                macd_line = ema12 - ema26
+                signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                hist = macd_line - signal_line
+                
+                delta = close.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rs_val = gain / loss
+                rsi = 100 - (100 / (1 + rs_val))
+                
+                highest_high = high.rolling(14).max()
+                lowest_low = low.rolling(14).min()
+                williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
+                
+                daily_range = high - low
+                
+                # Puanlama
+                score = 0; reasons = []
+                curr_c = float(close.iloc[-1])
+                curr_vol = float(volume.iloc[-1])
+                avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+                
+                if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+                stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
+                if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
+                if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
+                if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
+                if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
+                if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
+                if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+                if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
+                if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
+                if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            # Göstergeler
-            sma200 = close.rolling(200).mean()
-            ema5 = close.ewm(span=5, adjust=False).mean()
-            ema20 = close.ewm(span=20, adjust=False).mean()
-            
-            sma20_bb = close.rolling(20).mean()
-            std20_bb = close.rolling(20).std()
-            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
-            
-            ema12 = close.ewm(span=12, adjust=False).mean()
-            ema26 = close.ewm(span=26, adjust=False).mean()
-            macd_line = ema12 - ema26
-            signal_line = macd_line.ewm(span=9, adjust=False).mean()
-            hist = macd_line - signal_line
-            
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs_val = gain / loss
-            rsi = 100 - (100 / (1 + rs_val))
-            
-            highest_high = high.rolling(14).max()
-            lowest_low = low.rolling(14).min()
-            williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
-            
-            daily_range = high - low
-            
-            # Puanlama
-            score = 0; reasons = []
-            curr_c = float(close.iloc[-1])
-            curr_vol = float(volume.iloc[-1])
-            avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
-            
-            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
-            stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
-            if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
-            if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
-            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
-            if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
-            if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
-
-            if score >= 3: # Sıkı Filtre (Eski Çalışan Sistem)
-                signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
-
-        except Exception: continue
+                if score >= 3: 
+                    signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
+                # --- ORİJİNAL ANALİZ BLOĞU SONU ---
+            except Exception: 
+                continue # Tekil çekimde hata olursa bu hisseyi atla
     
-    if not signals: return pd.DataFrame()
+    if not signals: 
+        # Eğer sonuç yoksa, debug amaçlı konsola yazdırılabilir.
+        return pd.DataFrame()
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
 
 # --- WIDGET & DATA ---
@@ -252,7 +334,7 @@ def render_tradingview_widget(ticker, height=810):
     """
     components.html(html_code, height=height)
 
-# @st.cache_data(ttl=600)  <-- ÖN BELLEK KALDIRILDI
+# ÖN BELLEK KALDIRILDI
 def fetch_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -284,7 +366,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.8")
+st.title(f"🦅 Patronun Terminali v3.5.9")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
