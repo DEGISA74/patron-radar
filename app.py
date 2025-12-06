@@ -155,4 +155,48 @@ with col_refresh:
 
 # Ana Akış
 ticker = st.session_state.ticker
-hist, info,
+hist, info, news_data = fetch_data_cached(ticker)
+
+if hist is not None and not hist.empty:
+    # Metrikler
+    last = hist['Close'].iloc[-1]
+    prev = hist['Close'].iloc[-2]
+    chg = ((last - prev) / prev) * 100
+    color = "normal" if chg >= 0 else "inverse"
+    
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Fiyat", f"{last:.2f}", f"%{chg:.2f}", delta_color=color)
+    m2.metric("Sektör", info.get('sector', '-'))
+    m3.metric("F/K", f"{info.get('trailingPE','-')}")
+    m4.metric("Hacim", f"{info.get('volume',0):,}")
+
+    # GRAFİK (Price Action)
+    st.subheader(f"📈 {ticker} - Price Action")
+    # config={'scrollZoom': True} -> Mouse tekerleğiyle her yöne zoom
+    st.plotly_chart(plot_ict_chart(hist, ticker), use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+    st.caption("🔍 **İpucu:** Grafiği mouse ile tutup sürükleyebilirsin. Tekerlek ile yakınlaşıp uzaklaşabilirsin (Hem fiyat hem zaman ekseninde).")
+
+    # HABERLER
+    st.subheader("📡 Piramit Haber Akışı")
+    if news_data:
+        df_news = pd.DataFrame(news_data).sort_values(by=['Seviye', 'Tarih'], ascending=[True, False])
+        for _, row in df_news.iterrows():
+            if row['Başlık'] != "Başlık Yok":
+                css = "bullish" if "YUKARI" in row['Yön'] else "bearish" if "AŞAĞI" in row['Yön'] else "neutral"
+                st.markdown(f"""
+                <div class="metric-card {css}">
+                    <div class="card-meta">
+                        {row['Tarih'].strftime('%d %b %H:%M')} | {row['Kaynak']} (Seviye {row['Seviye']})
+                    </div>
+                    <a href="{row['Link']}" target="_blank" class="card-title">
+                        {row['Başlık']}
+                    </a>
+                    <div class="card-sentiment">
+                        {row['İkon']} {row['Yön']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.info("Bu sembol için anlık haber akışı yok.")
+else:
+    st.error("Veri bulunamadı. BIST hisseleri için .IS eklemeyi unutma (Örn: ASELS.IS).")
