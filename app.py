@@ -6,12 +6,12 @@ import urllib.parse
 from textblob import TextBlob
 from datetime import datetime
 import streamlit.components.v1 as components
-import time
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.3.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.1.0", layout="wide", page_icon="🦅")
 
-# --- VARLIK LİSTELERİ (GENİŞ LİSTE GERİ GELDİ) ---
+# --- VARLIK LİSTELERİ (GENİŞLETİLMİŞ) ---
+# Kodun okunabilirliği için en büyük hacimli hisseleri ekledim.
 ASSET_GROUPS = {
     "TÜRK HİSSE (BIST 30)": [
         "THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS", "KCHOL.IS", "AKBNK.IS", "ISCTR.IS", "SISE.IS", 
@@ -96,9 +96,6 @@ if 'category' not in st.session_state:
 if 'run_scan' not in st.session_state: 
     st.session_state.run_scan = False
 
-if 'scan_results' not in st.session_state:
-    st.session_state.scan_results = None
-
 # --- CALLBACK FONKSİYONLARI ---
 def on_category_change():
     new_cat = st.session_state.selected_category_key
@@ -109,73 +106,25 @@ def on_asset_change():
     new_asset = st.session_state.selected_asset_key
     st.session_state.ticker = new_asset
 
+def on_manual_input_change():
+    input_val = st.session_state.manual_input_key
+    if input_val:
+        st.session_state.ticker = input_val.upper()
+
 def on_manual_button_click():
     input_val = st.session_state.manual_input_key
     if input_val:
         st.session_state.ticker = input_val.upper()
 
-# --- TEKNİK ANALİZ MOTORU ---
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-def run_scanner(asset_list, rsi_min, rsi_max, min_vol, rel_vol_thresh):
-    """Gerçek zamanlı tarama motoru"""
-    results = []
-    progress_bar = st.progress(0)
-    total = len(asset_list)
-    
-    for i, symbol in enumerate(asset_list):
-        try:
-            progress_bar.progress((i + 1) / total)
-            
-            # Veri çek
-            stock = yf.Ticker(symbol)
-            hist = stock.history(period="3mo")
-            
-            if len(hist) < 30: continue
-
-            # Hesaplamalar
-            hist['RSI'] = calculate_rsi(hist['Close'])
-            current_rsi = hist['RSI'].iloc[-1]
-            
-            avg_vol = hist['Volume'].rolling(window=20).mean().iloc[-1]
-            current_vol = hist['Volume'].iloc[-1]
-            rv = current_vol / avg_vol if avg_vol > 0 else 0
-            
-            # Filtreleme
-            if (rsi_min <= current_rsi <= rsi_max) and (current_vol >= min_vol) and (rv >= rel_vol_thresh):
-                results.append({
-                    "Hisse": symbol,
-                    "Fiyat": round(hist['Close'].iloc[-1], 2),
-                    "RSI (14)": round(current_rsi, 2),
-                    "Rel. Vol": round(rv, 2),
-                    "Hacim": f"{current_vol/1000000:.1f}M"
-                })
-                
-        except Exception as e:
-            continue
-            
-    progress_bar.empty()
-    return pd.DataFrame(results)
-
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
-    # TRADINGVIEW SEMBOL DÜZELTMESİ (BIST FIX)
     tv_symbol = ticker
-    
     if ".IS" in ticker:
-        # ".IS" uzantısını kaldırıp BIST: ekliyoruz
-        clean_ticker = ticker.split(".")[0] 
-        tv_symbol = f"BIST:{clean_ticker}"
-        
+        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: 
         tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]:
+    elif ticker in ["BTC-USD", "ETH-USD"]:
         tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
     elif "." not in ticker and ":" not in ticker: 
         tv_symbol = f"NASDAQ:{ticker}"
@@ -210,8 +159,12 @@ def fetch_google_news(ticker):
         link = entry.link
         source = entry.source.title if 'source' in entry else "Global News"
         
-        try: pub_date = entry.published_parsed; dt_object = datetime(*pub_date[:6])
-        except: dt_object = datetime.now()
+        try: 
+            pub_date = entry.published_parsed
+            dt_object = datetime(*pub_date[:6])
+        except: 
+            dt_object = datetime.now()
+            
         date_str = dt_object.strftime('%H:%M | %d %b')
             
         blob = TextBlob(title)
@@ -220,9 +173,15 @@ def fetch_google_news(ticker):
         elif score < -0.1: sent_text, sent_color = "AŞAĞI", "#D50000"
         else: sent_text, sent_color = "NÖTR", "#616161"
 
-        news_items.append({'title': title, 'link': link, 'date': date_str, 'source': source, 'sentiment': sent_text, 'color': sent_color, 'timestamp': dt_object})
+        news_items.append({
+            'title': title, 'link': link, 'date': date_str, 'source': source,
+            'sentiment': sent_text, 'color': sent_color,
+            'timestamp': dt_object # Sıralama için eklendi
+        })
     
+    # Haberleri Tarihe Göre Sırala (En Yeni En Üstte)
     news_items.sort(key=lambda x: x['timestamp'], reverse=True)
+    
     return news_items
 
 @st.cache_data(ttl=600)
@@ -233,14 +192,24 @@ def fetch_stock_info(ticker):
         current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask')
         prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
         
-        if current_price and prev_close: change_pct = ((current_price - prev_close) / prev_close) * 100
-        else: change_pct = 0
-        return {'price': current_price, 'change_pct': change_pct, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target_price': info.get('targetMeanPrice', '-'), 'pe_ratio': info.get('trailingPE', '-')}
-    except: return None
+        if current_price and prev_close:
+            change_pct = ((current_price - prev_close) / prev_close) * 100
+        else:
+            change_pct = 0
+            
+        return {
+            'price': current_price, 'change_pct': change_pct, 'volume': info.get('volume', 0),
+            'sector': info.get('sector', '-'), 'target_price': info.get('targetMeanPrice', '-'),
+            'pe_ratio': info.get('trailingPE', '-')
+        }
+    except:
+        return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.3.0")
+st.title("🦅 Patronun Terminali v2.1.0")
 st.markdown("---")
+
+## Dinamik Menü Barı
 
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
@@ -249,19 +218,42 @@ current_category = st.session_state.category
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 with col_cat:
-    st.selectbox("Kategori Seç", list(ASSET_GROUPS.keys()), index=list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0, key="selected_category_key", on_change=on_category_change)
+    st.selectbox(
+        "Kategori Seç", 
+        list(ASSET_GROUPS.keys()),
+        index=list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0,
+        key="selected_category_key",
+        on_change=on_category_change 
+    )
 
 with col_ass:
     asset_options = ASSET_GROUPS[current_category]
-    try: default_index = asset_options.index(current_ticker)
-    except ValueError: default_index = 0
-    st.selectbox(f"{current_category} Listesi", asset_options, index=default_index, key="selected_asset_key", on_change=on_asset_change)
+    try:
+        default_index = asset_options.index(current_ticker)
+    except ValueError:
+        default_index = 0
+    
+    st.selectbox(
+        f"{current_category} Listesi",
+        asset_options,
+        index=default_index,
+        key="selected_asset_key",
+        on_change=on_asset_change 
+    )
 
+# 2. Manuel Giriş
 with col_search_in:
-    st.text_input("Manuel Hisse Kodu (Örn: PFE, THYAO.IS)", value="", placeholder=f"Şu anki hisse: {current_ticker}", key="manual_input_key")
+    st.text_input(
+        "Manuel Hisse Kodu (Örn: PFE, THYAO.IS)", 
+        value="", 
+        placeholder=f"Şu anki hisse: {current_ticker}",
+        key="manual_input_key",
+        on_change=on_manual_input_change 
+    )
 
 with col_search_btn:
-    st.write(""); st.write("")
+    st.write("") 
+    st.write("")
     st.button("🔎 Ara", on_click=on_manual_button_click)
 
 st.markdown("---")
@@ -270,16 +262,45 @@ st.markdown("---")
 info_data = fetch_stock_info(current_ticker)
 news_data = fetch_google_news(current_ticker)
 
+# --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
+    
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
-    c1.markdown(f"""<div class="stat-box"><div class="stat-label">{current_ticker} FİYAT</div><div class="stat-value money-text">{info_data['price']:.2f}</div><div class="stat-delta {delta_class} money-text">{delta_sign}{info_data['change_pct']:.2f}%</div></div>""", unsafe_allow_html=True)
-    c2.markdown(f"""<div class="stat-box"><div class="stat-label">GÜNLÜK HACİM</div><div class="stat-value money-text">{(info_data['volume'] / 1_000_000):.1f}M</div><span style="color: #616161;">adet</span></div>""", unsafe_allow_html=True)
-    c3.markdown(f"""<div class="stat-box"><div class="stat-label">ANALİST HEDEF</div><div class="stat-value money-text">{info_data['target_price']}</div><span style="color: #616161;">Ort. Fiyat</span></div>""", unsafe_allow_html=True)
-    c4.markdown(f"""<div class="stat-box"><div class="stat-label">SEKTÖR / F/K</div><div class="stat-value">{info_data['sector']}</div><span style="color: #616161;">PE: {info_data['pe_ratio']}</span></div>""", unsafe_allow_html=True)
+
+    c1.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">{current_ticker} FİYAT</div>
+        <div class="stat-value money-text">{info_data['price']:.2f}</div>
+        <div class="stat-delta {delta_class} money-text">{delta_sign}{info_data['change_pct']:.2f}%</div>
+    </div>""", unsafe_allow_html=True)
+    
+    c2.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">GÜNLÜK HACİM</div>
+        <div class="stat-value money-text">{(info_data['volume'] / 1_000_000):.1f}M</div>
+        <span style="color: #616161;">adet</span>
+    </div>""", unsafe_allow_html=True)
+    
+    target_text = f"{info_data['target_price']:.2f}" if isinstance(info_data['target_price'], (int, float)) else info_data['target_price']
+    c3.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">ANALİST HEDEF</div>
+        <div class="stat-value money-text">{target_text}</div>
+        <span style="color: #616161;">Ort. Fiyat</span>
+    </div>""", unsafe_allow_html=True)
+
+    pe_text = f"{info_data['pe_ratio']:.1f}" if isinstance(info_data['pe_ratio'], (int, float)) else info_data['pe_ratio']
+    c4.markdown(f"""
+    <div class="stat-box">
+        <div class="stat-label">SEKTÖR / F/K</div>
+        <div class="stat-value">{info_data['sector']}</div>
+        <span style="color: #616161;">PE: {pe_text}</span>
+    </div>""", unsafe_allow_html=True)
 
     st.write("")
+
     col_chart, col_news = st.columns([3, 1.2])
     
     with col_chart:
@@ -292,46 +313,72 @@ if info_data and info_data['price']:
             if news_data:
                 for item in news_data:
                     color = item['color']
-                    st.markdown(f"""<div class="news-card" style="border-left-color: {color};"><a href="{item['link']}" target="_blank" class="news-title">{item['title']}</a><div style="display:flex; justify-content:space-between; align-items:center;"><span class="news-meta">{item['date']} | {item['source']} </span><span class="sentiment-badge" style="color:{color}; border:1px solid {color}">{item['sentiment']}</span></div></div>""", unsafe_allow_html=True)
-            else: st.info("Haber akışı bulunamadı.")
+                    st.markdown(f"""
+                    <div class="news-card" style="border-left-color: {color};">
+                        <a href="{item['link']}" target="_blank" class="news-title">{item['title']}</a>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span class="news-meta">{item['date']} | {item['source']} </span>
+                            <span class="sentiment-badge" style="color:{color}; border:1px solid {color}">{item['sentiment']}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Haber akışı bulunamadı.")
     
-    # --- GERÇEK TARAMA MOTORU ---
+    # --- TARAMA MOTORU (V2.0) ---
     st.markdown("---")
-    if st.button("🔄 Tam Yenile"): st.cache_data.clear(); st.rerun()
+    
+    col_refresh = st.columns([6,1])
+    with col_refresh[1]:
+        if st.button("🔄 Tam Yenile"): 
+            st.cache_data.clear()
+            st.rerun()
 
     st.header("🔍 V2.0: Finansal İstihbarat & Tarama Motoru")
-    st.info(f"Aktif Kategori: {current_category}. Bu kategorideki tüm hisseler taranacaktır. Liste uzun olduğu için işlem 30-60 sn sürebilir.")
+    st.info("Bu modül, varlıkları belirlediğiniz teknik ve duygu kriterlerine göre tarar.")
 
     with st.expander("Tarama Kriterlerini Ayarla ve Taramayı Başlat"):
-        col_tech, col_volume, col_dummy = st.columns([1, 1, 2])
+        
+        col_tech, col_volume, col_sentiment, col_pattern = st.columns(4)
         
         with col_tech:
-            st.markdown("**1. RSI Filtresi**")
-            # Varsayılan aralığı genişlettim (0-100) ki sonuç dönsün
-            rsi_range = st.slider("RSI (14) Aralığı", 0, 100, (0, 100)) 
-        
+            st.markdown("**1. Dipten Dönüş & RSI**")
+            rsi_min = st.slider("RSI (14) Alt Limit", min_value=20, max_value=50, value=30)
+            rsi_max = st.slider("RSI (14) Üst Limit", min_value=50, max_value=80, value=70)
+            price_ma = st.selectbox("Fiyat Durumu", ["SMA200 Üstü", "SMA200 Altı", "Fark Etmez"])
+
         with col_volume:
-            st.markdown("**2. Hacim Filtresi**")
-            rel_vol_thresh = st.number_input("Relative Volume (Ort. Hacmin Kaç Katı?)", value=0.5, step=0.1)
-            min_volume = st.number_input("Min. Günlük Hacim (Adet)", value=0)
+            st.markdown("**2. Hacim & Likidite**")
+            rel_vol = st.slider("Relative Volume (RV) Min.", min_value=0.5, max_value=3.0, value=1.5, step=0.1)
+            min_volume = st.number_input("Günlük Ortalama Hacim (USD)", value=1000000)
             
+        with col_sentiment:
+            st.markdown("**3. Duygu & Haber Akışı**")
+            sentiment_change = st.selectbox("Sentiment Değişimi", ["Son 7 gün Artan", "Son 7 gün Azalan", "Nötr Yükselen"])
+            news_level = st.selectbox("Haber Kaynak Seviyesi", ["Level 1 (Kritik)", "Level 2 (Analiz)", "Fark Etmez"])
+
+        with col_pattern:
+            st.markdown("**4. Konsolidasyon (Built-up)**")
+            atr_days = st.slider("ATR Kaç Günün En Düşüğü Olsun?", min_value=10, max_value=90, value=30)
+            consolidation_time = st.selectbox("Konsolidasyon Süresi", ["1 Ay (Kısa)", "3 Ay (Orta)", "6 Ay (Uzun)"])
+        
         st.markdown("---")
         
-        if st.button("🔴 CANLI TARAMAYI BAŞLAT", use_container_width=True, type="primary"):
+        if st.button("🔴 Taramayı Başlat", use_container_width=True, type="primary"):
             st.session_state.run_scan = True
-            with st.spinner('Piyasa taranıyor...'):
-                target_list = ASSET_GROUPS[current_category]
-                st.session_state.scan_results = run_scanner(target_list, rsi_range[0], rsi_range[1], min_volume, rel_vol_thresh)
-            st.success("Tarama Tamamlandı!")
-            st.session_state.run_scan = False 
+            st.info("Tarama başladı. Lütfen bu modülün V2.1'de aktif olacağını unutmayın. Şimdilik sonuçlar yer tutucudur.")
         
-    # --- SONUÇLARI GÖSTER ---
-    if st.session_state.scan_results is not None:
+    if st.session_state.get('run_scan', False):
         st.subheader("🔍 Tarama Sonuçları")
-        if not st.session_state.scan_results.empty:
-            st.dataframe(st.session_state.scan_results, use_container_width=True)
-        else:
-            st.warning("Kriterlere uygun hisse bulunamadı. Lütfen kriterleri gevşetin.")
-
+        results_df = pd.DataFrame({
+            'Hisse': ['AAPL', 'TSLA', 'MSFT'],
+            'Kriter': ['RSI Dönüşü', 'Yüksek Hacim', 'Konsolidasyon'],
+            'RSI (14)': [32.5, 45.1, 55.0],
+            'Relative Volume': [1.8, 2.5, 0.9],
+            'Sentiment': ['Artış', 'Nötr', 'Azalış']
+        })
+        st.dataframe(results_df, use_container_width=True)
+        st.session_state.run_scan = False 
+        
 else:
     st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
