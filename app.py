@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.8 (Toplu Çekim ve Master 10)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.9 (Stabil 8'li Sentiment)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 # Session State'de tema saklama
@@ -42,7 +42,7 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-# --- VARLIK LİSTELERİ (GÜNCEL TOP 250 LİSTESİ KORUNDU) ---
+# --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (TOP 250)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", 
@@ -81,7 +81,7 @@ ASSET_GROUPS = {
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
-INITIAL_CATEGORY = "S&P 500 (TOP 250)" # Kategori ismini düzelttik
+INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' in st.session_state:
@@ -175,28 +175,16 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# V3.2.0'dan alınan TOPLU ÇEKİM mantığı ve V3.5+'daki Master 10 kriterleri
+# V3.2.0'dan alınan TOPLU ÇEKİM mantığı ve SADECE 8 KRİTER
 def analyze_market_intelligence(asset_list):
     signals = []
     
-    # 1. Benchmark (Uzun periyot çekim)
+    # SADECE 6 AYLIK VERİ ÇEKİMİ (V3.2.0 stabil mantık)
     try:
-        spy_data = yf.download("^GSPC", period="max", progress=False)
-        if not spy_data.empty and len(spy_data) >= 6:
-            spy_close = spy_data['Close']
-            spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
-        else: spy_5d_chg = 0
-    except: spy_5d_chg = 0
-
-    # 2. Hisseler (TOPLU ÇEKİM - V3.2.0 mantığı)
-    try:
-        # 1 yıllık veri çekmek SMA200 için daha doğru (V3.2.0'daki 6mo yerine 1y kullanıyoruz)
-        data = yf.download(asset_list, period="1y", group_by='ticker', threads=True, progress=False) 
+        data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False) 
     except Exception: 
-        # Eğer toplu çekim hata verirse boş liste döndür
         return pd.DataFrame() 
 
-    # Streamlit ile progress bar eklemek
     progress_bar = st.progress(0, text=f"0/{len(asset_list)} sembol taranıyor...")
     
     for i, symbol in enumerate(asset_list):
@@ -216,7 +204,7 @@ def analyze_market_intelligence(asset_list):
             
             # NaN temizliği ve minimum veri kontrolü
             df = df.dropna(how='all').dropna(subset=['Close'])
-            if len(df) < 50: continue 
+            if len(df) < 50: continue # 50 gün, 6 aylık veri için yeterli
             
             df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
             if pd.isna(df['Close'].iloc[-1]) or len(df) < 6: continue 
@@ -226,21 +214,14 @@ def analyze_market_intelligence(asset_list):
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # Göstergeler (V3.5+ Master 10 için)
+            # GÖSTERGELER (Sadece 8 Kriter için yeterli olanlar)
             
-            # 1. SMA200 (Hesaplanabiliyorsa)
-            sma200_val = np.nan
-            if len(close) >= 200:
-                sma200 = close.rolling(200).mean()
-                sma200_val = sma200.iloc[-1]
-            
-            # Diğer indikatörler
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
-            sma20_bb = close.rolling(20).mean()
-            std20_bb = close.rolling(20).std()
-            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb.replace(0, 1) + 0.0001) 
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
+            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20.replace(0, 1) + 0.0001) 
             
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
@@ -264,6 +245,7 @@ def analyze_market_intelligence(asset_list):
             # Puanlama
             score = 0; reasons = []
             
+            # NaN kontrolü (Hesaplama hatası olmaması için)
             indicator_values = [bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]]
             if any(pd.isna(val) for val in indicator_values): continue 
             
@@ -271,38 +253,36 @@ def analyze_market_intelligence(asset_list):
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # Kriter Kontrolleri (Master 10)
+            # KRİTERLER (V3.2.0'ın 8 Kriteri)
             
-            # 1. 🛡️ SMA200 (Hesaplanabilirse)
-            if not pd.isna(sma200_val) and curr_c > sma200_val: 
-                score += 1
-                reasons.append("🛡️ SMA200")
+            # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı)
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
             
-            # 2. 👑 RS (5 günlük değişim)
-            if not pd.isna(close.iloc[-6]):
-                stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
-                if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
+            # 2. 🔇 NR4: Sessiz Gün (V3.2.0 mantığı)
+            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
             
-            # Diğer 8 kriter (V3.2.0'daki gibi NR4 ve Trend düzeltildi)
-            # 3. 🚀 Squeeze
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
-            # 4. 🔇 NR4 (Sadeleştirilmiş V3.5+ mantığı)
-            if len(daily_range) >= 4 and daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
-            # 5. ⚡ Trend
-            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
-            # 6. 🔫 W%R
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            # 7. 🟢 MACD
+            # 3. ⚡ Trend: Cross-over (V3.2.0 mantığı)
+            # Burada cross-over mantığını sadeleştirip V3.5+'daki gibi sadece yönünü kontrol ediyoruz (daha basit ve stabil)
+            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend Yönü")
+            
+            # 4. 🟢 MACD: Histogram artışı (V3.2.0 mantığı)
             if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            # 8. 📈 RSI
-            if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
-            # 9. 🔊 Vol
+            
+            # 5. 🔫 Will%R: -50 Kırılımı (V3.2.0 mantığı)
+            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
+            
+            # 6. 🔊 Hacim: %20+ Artış (V3.2.0 mantığı)
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
-            # 10. 🔨 Top
-            if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
+            
+            # 7. 🔨 Breakout: Zirve Zorluyor (V3.2.0 mantığı)
+            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Top")
+            
+            # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı)
+            rsi_c = rsi.iloc[-1]
+            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
 
-            # FİLTRE EŞİĞİ (Orijinal istek: 3/10)
-            if score >= 3: 
+            # FİLTRE EŞİĞİ (Stabil sonuç için 2/8 yeterli)
+            if score >= 2: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
         except Exception: 
@@ -313,7 +293,7 @@ def analyze_market_intelligence(asset_list):
     
     if not signals: 
         return pd.DataFrame()
-    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
+    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) 
 
 
 # --- WIDGET & DATA ---
@@ -371,7 +351,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.8")
+st.title(f"🦅 Patronun Terminali v3.6.9")
 
 # 1. ÜST MENÜ
 current_ticker = st.session_state.ticker
@@ -422,20 +402,18 @@ with col_main_right:
     # 1. SENTIMENT İLK 20 
     st.subheader("🧠 Sentiment İlk 20")
     
-    # MASTER 10 KRİTERLERİ 
-    with st.expander("ℹ️ Master 10 Kriter Detayı", expanded=True): 
+    # 8'Lİ KRİTERLER
+    with st.expander("ℹ️ 8'li Puan Sistemi", expanded=True): 
         st.markdown("""
         <div style="font-size:0.7rem;">
-        <b>1. 🛡️ SMA200:</b> Ana trend boğa (Düşen bıçak değil)<br>
-        <b>2. 👑 RS:</b> Endeksten güçlü<br>
-        <b>3. 🚀 Squeeze:</b> Bollinger daralması<br>
-        <b>4. 🔇 NR4:</b> Sessiz gün<br>
-        <b>5. ⚡ Trend:</b> EMA5 > EMA20<br>
-        <b>6. 🔫 W%R:</b> Momentum patlaması<br>
-        <b>7. 🟢 MACD:</b> Histogram artışı<br>
-        <b>8. 📈 RSI:</b> Boğa bölgesi<br>
-        <b>9. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
-        <b>10. 🔨 Top:</b> Direnç zorlama (Zirveye yakınlık)
+        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
+        <b>2. 🔇 NR4:</b> Sessiz Gün<br>
+        <b>3. ⚡ Trend Yönü:</b> EMA5 > EMA20<br>
+        <b>4. 🟢 MACD:</b> Histogram artışı<br>
+        <b>5. 🔫 W%R:</b> -50 Kırılımı<br>
+        <b>6. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
+        <b>7. 🔨 Top:</b> Direnç zorlama (Zirveye yakınlık)<br>
+        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası Yükselen
         </div>
         """, unsafe_allow_html=True)
         
@@ -449,8 +427,8 @@ with col_main_right:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
                     score = row['Skor']
-                    icon = "🔥" if score >= 9 else "✅" if score >= 7 else "⚠️" 
-                    label = f"{icon} {score}/10 | {row['Sembol']}"
+                    icon = "🔥" if score >= 7 else "✅" if score >= 5 else "⚠️" 
+                    label = f"{icon} {score}/8 | {row['Sembol']}"
                     
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
