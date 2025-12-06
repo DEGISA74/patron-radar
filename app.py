@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.7 (Hata Giderildi)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.8 (Veri Akışı Tamir Edildi)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -67,7 +67,6 @@ if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEG
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
-# Session state'i kontrol et ve tanımla
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 if current_category not in ASSET_GROUPS:
@@ -140,10 +139,12 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
+# @st.cache_data(ttl=600)  <-- ÖN BELLEK KALDIRILDI
 def analyze_market_intelligence(asset_list):
     signals = []
     # 1. Benchmark
     try:
+        # Benchmark için de ön bellek kaldırılabilir, ancak YF'den veri çekiliyor
         spy_data = yf.download("^GSPC", period="1y", progress=False)
         if not spy_data.empty:
             spy_close = spy_data['Close']
@@ -251,7 +252,7 @@ def render_tradingview_widget(ticker, height=810):
     """
     components.html(html_code, height=height)
 
-@st.cache_data(ttl=600)
+# @st.cache_data(ttl=600)  <-- ÖN BELLEK KALDIRILDI
 def fetch_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -283,12 +284,11 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.7")
+st.title(f"🦅 Patronun Terminali v3.5.8")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
-    # Hata veren kısım düzeltildi. current_category zaten yukarıda session state'den çekiliyor.
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change)
 
