@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import feedparser
-import urllib.parse # URL Encoding için gerekli
+import urllib.parse 
 from textblob import TextBlob
 from datetime import datetime
 import streamlit.components.v1 as components
@@ -18,20 +18,21 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
 
-    /* Custom Stat Cards (Metrikler) */
+    /* Custom Stat Cards (Glassmorphism) */
     .stat-box {
         background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 10px;
         padding: 15px;
         text-align: center;
+        margin-bottom: 15px;
     }
     .stat-label { font-size: 0.8rem; color: #8b9bb4; text-transform: uppercase; letter-spacing: 1px; }
     .stat-value { font-size: 1.5rem; font-weight: 700; color: #e2e8f0; margin: 5px 0; }
     .delta-pos { color: #00E676; }
     .delta-neg { color: #FF1744; }
 
-    /* Haber Kartları (Glassmorphism) */
+    /* Haber Kartları */
     .news-card {
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -43,9 +44,8 @@ st.markdown("""
     .news-meta { font-size: 0.75rem; color: #90A4AE; font-family: 'JetBrains Mono'; }
     .sentiment-badge { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     
-    /* Butonlar ve Genel Düzen */
-    .stButton button { background-color: #1e2329; color: white; border: 1px solid #2a2e39; border-radius: 6px; }
-    .st-emotion-cache-1jmpsgm { background-color: #0e1117; } /* Sidebar arka planı */
+    /* TradingView Arkaplanı */
+    iframe { border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +55,7 @@ if 'ticker' not in st.session_state:
 
 def set_ticker(symbol): 
     st.session_state.ticker = symbol
-    st.rerun() # Hızlı butonlara basınca sayfayı yeniler
+    st.rerun() # Sayfa yenileme komutu düzeltildi
 
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
@@ -99,9 +99,8 @@ def render_tradingview_widget(ticker):
 @st.cache_data(ttl=300) 
 def fetch_google_news(ticker):
     """URL Encoding düzeltmesi ile Google News'ten veri çeker."""
-    # SORGULAMA KISMINDAKİ BOŞLUKLAR DÜZELTİLDİ
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
-    encoded_query = urllib.parse.quote_plus(query) 
+    encoded_query = urllib.parse.quote_plus(query) # HATA DÜZELTME: InvalidURL Fix
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
     
     feed = feedparser.parse(rss_url)
@@ -140,7 +139,6 @@ def fetch_stock_info(ticker):
         stock = yf.Ticker(ticker)
         info = stock.info
         
-        # Fiyat hesaplamaları
         current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask')
         prev_close = info.get('previousClose') or info.get('regularMarketPreviousClose')
         
@@ -183,8 +181,8 @@ if ticker_input != st.session_state.ticker: st.session_state.ticker = ticker_inp
 info_data = fetch_stock_info(st.session_state.ticker)
 news_data = fetch_google_news(st.session_state.ticker)
 
-if info_data:
-    # --- ÖZEL METRİK KARTLARI (HTML/CSS) ---
+if info_data and info_data['price']:
+    # --- ÖZEL METRİK KARTLARI ---
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
@@ -215,9 +213,8 @@ if info_data:
 
     c4.markdown(f"""
     <div class="stat-box">
-        <div class="stat-label">F/K Oranı</div>
-        <div class="stat-value money-text">{info_data['pe_ratio'] if info_data['pe_ratio'] != '-' else '-'}</div>
-        <div class="stat-delta" style="color:#8b9bb4">SEKTÖR: {info_data['sector']}</div>
+        <div class="stat-label">Sektör</div>
+        <div class="stat-value" style="font-size:1.1rem; margin-top:10px;">{info_data['sector']}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -229,7 +226,6 @@ if info_data:
     with col_chart:
         st.subheader(f"📈 {st.session_state.ticker} Trading Terminali")
         render_tradingview_widget(st.session_state.ticker)
-        st.caption("ℹ️ Grafik TradingView tarafından sağlanır. Çizim araçları ve standart indikatörler aktiftir.")
     
     with col_news:
         st.subheader("📡 Küresel Haber Akışı")
