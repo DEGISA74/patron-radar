@@ -8,29 +8,59 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.2.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.2.1", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (Top 10)": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META", "BRK.B"],
     "NASDAQ (Top 10)": ["ADBE", "CSCO", "INTC", "QCOM", "AMAT", "MU", "ISRG", "BIIB"],
     "KRİPTO (Top 5)": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"],
-    "EMTİA & DÖVİZ": ["GC=F", "SI=F", "EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
+    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X"]
 }
 
 # --- CSS TASARIM ---
 st.markdown("""
 <style>
-    /* ... (CSS Kodları) ... */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
+
+    /* Custom Stat Cards */
+    .stat-box {
+        background: #FFFFFF; border: 1px solid #CFD8DC; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .stat-label { font-size: 0.8rem; color: #546E7A; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #263238; margin: 5px 0; }
+    .delta-pos { color: #00C853; }
+    .delta-neg { color: #D50000; }
+
+    /* Haber Kartları */
+    .news-card {
+        background: #FFFFFF; border: 1px solid #CFD8DC; padding: 10px; border-radius: 8px; margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .news-title { 
+        color: #263238; font-weight: 600; display: block; 
+        margin-bottom: 3px; font-size: 0.9rem; line-height: 1.2;
+    }
+    .news-meta { font-size: 0.65rem; color: #78909c; font-family: 'JetBrains Mono'; margin-top: 5px;}
+    
+    /* Sidebar Butonları */
+    .stButton button {
+        background-color: #F5F5F5; border: 1px solid #E0E0E0;
+        text-align: center; width: 100%; margin-top: 5px; font-size: 0.8rem;
+    }
+    h1 { padding-top: 0px; }
 </style>
-""", unsafe_allow_html=True) # CSS kodları önceki sürümde verildiği için burada kısaltıldı
+""", unsafe_allow_html=True)
 
 # --- OTURUM YÖNETİMİ ---
 if 'ticker' not in st.session_state:
     st.session_state.ticker = "THYAO.IS"
 
-if 'manual_input' not in st.session_state:
-    st.session_state.manual_input = st.session_state.ticker
+if 'manual_input_value' not in st.session_state:
+    st.session_state.manual_input_value = st.session_state.ticker
 
 def set_ticker(symbol): 
     st.session_state.ticker = symbol
@@ -39,16 +69,13 @@ def set_ticker(symbol):
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
-    """TradingView Chart Widget'ını gömer ve formatı düzenler."""
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker:
+    elif "=X" in ticker: # Döviz pariteleri
         tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
     elif ticker in ["BTC-USD", "ETH-USD"]:
         tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
-    elif ticker in ["GC=F", "SI=F"]:
-        tv_symbol = f"TVC:{ticker.replace('=F', '')}"
     elif "." not in ticker and ":" not in ticker: 
         tv_symbol = f"NASDAQ:{ticker}"
 
@@ -70,7 +97,6 @@ def render_tradingview_widget(ticker):
 
 @st.cache_data(ttl=300) 
 def fetch_google_news(ticker):
-    """URL Encoding düzeltmesi ile Google News'ten veri çeker."""
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
     encoded_query = urllib.parse.quote_plus(query) 
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
@@ -78,8 +104,6 @@ def fetch_google_news(ticker):
     feed = feedparser.parse(rss_url)
     news_items = []
     
-    # ... (Haber çekme ve analiz mantığı aynı) ...
-
     for entry in feed.entries[:15]: 
         title = entry.title
         link = entry.link
@@ -103,7 +127,6 @@ def fetch_google_news(ticker):
 
 @st.cache_data(ttl=600)
 def fetch_stock_info(ticker):
-    # ... (Hisse Bilgisi Çekme Mantığı Aynı) ...
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
@@ -124,104 +147,59 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.2.0")
-st.markdown("---")
+st.title("🦅 Patronun Terminali v1.2.1")
 
-## 🎯 Varlık Seçimi ve Filtreleme (YENİ KONTROL YAPISI)
-
-category_list = list(ASSET_GROUPS.keys())
-current_category = st.session_state.get('category', category_list[0])
-
-# 1. Kategori Seçimi
-col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2.5, 0.8])
-
-with col_cat:
-    selected_category = st.selectbox(
-        "Kategori Seç", 
-        category_list,
-        index=category_list.index(current_category)
-    )
-
-    if selected_category != current_category:
-        st.session_state.category = selected_category
-        # Kategori değişirse varlık listesi resetlenir ve uygulama yenilenir
-        st.session_state.manual_input = ASSET_GROUPS[selected_category][0]
-        st.session_state.ticker = ASSET_GROUPS[selected_category][0]
-        st.rerun()
-
-# 2. Varlık Seçimi (Kategoriye Bağımlı)
-asset_options = ASSET_GROUPS[selected_category]
-
-with col_ass:
-    selected_asset = st.selectbox(
-        f"{selected_category} Listesi",
-        asset_options,
-        index=asset_options.index(st.session_state.ticker) if st.session_state.ticker in asset_options else 0
-    )
-
-    if selected_asset != st.session_state.ticker:
-        set_ticker(selected_asset)
-
-
-# 3. Manuel Giriş (Gecikmeli)
-with col_search_in:
-    manual_ticker = st.text_input(
-        "Manuel Hisse Kodu (Enter yerine Ara Butonu)", 
-        value=st.session_state.manual_input
+# --- SIDEBAR: MANUEL GİRİŞ & Varlık Seçimi ---
+with st.sidebar:
+    st.header("Manuel Ticker & İşlemler")
+    
+    # 1. MANUEL GİRİŞ (Gecikmeli Arama)
+    # Gecikmeli giriş için st.session_state kullanılır.
+    manual_input = st.text_input(
+        "Hisse Kodu (Ara butonu gerekli)", 
+        value=st.session_state.manual_input_value
     ).upper()
 
-with col_search_btn:
-    st.write("") # Hizalama için boşluk
-    st.write("")
-    if st.button("🔎 Ara"):
-        st.session_state.manual_input = manual_ticker
-        set_ticker(manual_ticker)
+    if manual_input != st.session_state.manual_input_value:
+        st.session_state.manual_input_value = manual_input
+    
+    if st.button("🔎 Ara & Yükle"):
+        set_ticker(st.session_state.manual_input_value)
 
+    st.markdown("---")
+    st.header("Varlık Menüsü")
+    
+    # 2. Varlık Grupları (Kompakt Açılır Menüler)
+    for title, symbols in ASSET_GROUPS.items():
+        with st.expander(f"**{title}**"):
+            # Daha kompakt görünüm için 3 sütun
+            list_cols = st.columns(3)
+            for i, symbol in enumerate(symbols):
+                with list_cols[i % 3]: 
+                    if st.button(symbol, key=f"btn_{symbol}"):
+                        set_ticker(symbol)
+
+    st.markdown("---")
+    if st.button("🔄 Tam Yenile"): 
+        st.cache_data.clear()
+        st.rerun()
 
 # --- ANA GÖSTERGE VE GRAFİK ---
-st.markdown("---")
-
-info_data = fetch_stock_info(st.session_state.ticker)
-news_data = fetch_google_news(st.session_state.ticker)
+current_ticker = st.session_state.ticker
+info_data = fetch_stock_info(current_ticker)
+news_data = fetch_google_news(current_ticker)
 
 if info_data and info_data['price']:
     
-    # Metrikler (Stat Cards) ... (HTML Kodları aynı kaldı)
+    # Metrikler (Stat Cards)
     c1, c2, c3, c4 = st.columns(4)
     delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
     delta_sign = "+" if info_data['change_pct'] >= 0 else ""
 
-    c1.markdown(f"""
-    <div class="stat-box">
-        <div class="stat-label">Anlık Fiyat</div>
-        <div class="stat-value money-text">{info_data['price']:.2f}</div>
-        <div class="stat-delta {delta_class} money-text">{delta_sign}{info_data['change_pct']:.2f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    c2.markdown(f"""
-    <div class="stat-box">
-        <div class="stat-label">GÜNLÜK HACİM</div>
-        <div class="stat-value money-text">{info_data['volume']/1000000:.1f}M</div>
-        <div class="stat-delta" style="color:#616161">adet</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c3.markdown(f"""
-    <div class="stat-box">
-        <div class="stat-label">ANALİST HEDEF</div>
-        <div class="stat-value money-text">{info_data['target_price']}</div>
-        <div class="stat-delta" style="color:#29B6F6">Ort. Fiyat</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c4.markdown(f"""
-    <div class="stat-box">
-        <div class="stat-label">SEKTÖR / F/K</div>
-        <div class="stat-value">{info_data['sector']}</div>
-        <div class="stat-delta" style="color:#616161">PE: {info_data['pe_ratio'] if info_data['pe_ratio'] != '-' else '-'}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    c1.markdown(f"""...""", unsafe_allow_html=True)
+    c2.markdown(f"""...""", unsafe_allow_html=True)
+    c3.markdown(f"""...""", unsafe_allow_html=True)
+    c4.markdown(f"""...""", unsafe_allow_html=True)
 
     st.write("")
 
@@ -229,11 +207,11 @@ if info_data and info_data['price']:
     col_chart, col_news = st.columns([3, 1.2])
     
     with col_chart:
-        st.subheader(f"📈 {st.session_state.ticker} Trading Terminali")
-        render_tradingview_widget(st.session_state.ticker)
+        st.subheader(f"📈 {current_ticker} Trading Terminali")
+        render_tradingview_widget(current_ticker)
     
     with col_news:
-        st.subheader("📡 Küresel Haber Akışı")
+        st.subheader("📡 Küresel Haber Akışı") 
         with st.container(height=600):
             if news_data:
                 for item in news_data:
@@ -242,12 +220,12 @@ if info_data and info_data['price']:
                     <div class="news-card" style="border-left-color: {color};">
                         <a href="{item['link']}" target="_blank" class="news-title">{item['title']}</a>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="news-meta">{item['source']} • {item['date']}</span>
+                            <span class="news-meta">{item['date']} | {item['source']} </span>
                             <span class="sentiment-badge" style="color:{color}; border:1px solid {color}">{item['sentiment']}</span>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
             else:
-                st.info("Haber akışı bulunamadı. Lütfen 'Tam Yenile' yapın.")
+                st.info("Haber akışı bulunamadı.")
 else:
     st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
