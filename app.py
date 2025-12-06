@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.3 (Nihai NaN Temizliği)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.4 (İndeks Güvenlik Güncellemesi)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -145,42 +145,45 @@ def analyze_market_intelligence(asset_list):
     # 1. Benchmark
     try:
         spy_data = yf.download("^GSPC", period="1y", progress=False)
-        if not spy_data.empty:
+        if not spy_data.empty and len(spy_data) >= 6:
             spy_close = spy_data['Close']
-            spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
+            # NaN kontrolü eklendi
+            if pd.isna(spy_close.iloc[-1]) or pd.isna(spy_close.iloc[-6]):
+                spy_5d_chg = 0 
+            else:
+                spy_5d_chg = (spy_close.iloc[-1] - spy_close.iloc[-6]) / spy_close.iloc[-6]
         else: spy_5d_chg = 0
     except: spy_5d_chg = 0
 
     # 2. Hisseler (Kararlı tekil çekim döngüsü)
     
-    # Streamlit ile progress bar eklemek için placeholder
     progress_bar = st.progress(0, text=f"0/{len(asset_list)} sembol taranıyor...")
     
     for i, symbol in enumerate(asset_list):
         try:
-            # İlerleme çubuğunu güncelle
             progress_val = (i + 1) / len(asset_list)
             progress_bar.progress(progress_val, text=f"{i + 1}/{len(asset_list)} sembol taranıyor: **{symbol}**")
             
-            # Tekil indirme (En kararlı yöntem)
             df = yf.download(symbol, period="1y", progress=False) 
             
             if df.empty or 'Close' not in df.columns: continue
             
             # KRİTİK DEĞİŞİKLİK: DataFrame'i sadece 'Close' sütununda değil, genel olarak temizle
             df = df.dropna(how='all')
-            if len(df) < 200: continue 
+            # 200 gün değil, RS için gerekli olan 6 gün ve gösterge hesaplamaları için minimum 50 gün kontrolü
+            if len(df) < 50: continue 
             
             # Göstergelerin düzgün hesaplanması için gerekli sütunları temizle
             df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
             
+            # En son değerlerin NaN olup olmadığını kontrol et (Gösterge hesaplamadan önce)
+            if pd.isna(df['Close'].iloc[-1]) or pd.isna(df['High'].iloc[-1]) or pd.isna(df['Low'].iloc[-1]): continue 
+            if len(df) < 6: continue # 5 günlük değişim için minimum 6 gün
+
             close = df['Close']
             high = df['High']
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
-            
-            # Puanlama öncesi son değerlerin temizliğini kontrol et
-            if pd.isna(close.iloc[-1]) or pd.isna(high.iloc[-1]) or pd.isna(low.iloc[-1]): continue 
 
             # Göstergeler
             sma200 = close.rolling(200).mean()
@@ -189,7 +192,6 @@ def analyze_market_intelligence(asset_list):
             
             sma20_bb = close.rolling(20).mean()
             std20_bb = close.rolling(20).std()
-            # Eğer std20_bb sıfırsa hata vermemek için ek koruma
             bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb.replace(0, 1) + 0.0001) 
             
             ema12 = close.ewm(span=12, adjust=False).mean()
@@ -201,13 +203,11 @@ def analyze_market_intelligence(asset_list):
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            # ZeroDivisionError için koruma eklendi
             rs_val = gain / loss.replace(0, np.nan).fillna(1e-10)
             rsi = 100 - (100 / (1 + rs_val))
             
             highest_high = high.rolling(14).max()
             lowest_low = low.rolling(14).min()
-            # ZeroDivisionError için koruma eklendi
             range_diff = highest_high - lowest_low
             williams_r = (highest_high - close) / range_diff.replace(0, np.nan).fillna(1e-10) * -100
             
@@ -227,13 +227,21 @@ def analyze_market_intelligence(asset_list):
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # Kriter Kontrolleri (NaN Kontrolleri yukarıda halledildi)
+            # Kriter Kontrolleri
             if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
-            stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
-            if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
+            
+            # KRİTİK GÜNCELLEME: close.iloc[-6] NaN ise bu kriteri pas geç
+            if not pd.isna(close.iloc[-6]):
+                stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
+                if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
+            else: 
+                # Eğer 5 günlük değişim hesaplanamıyorsa, bu kritere 0 puan veririz.
+                pass 
             
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
-            if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
+            
+            # NR4 için min 5 günlük veri kontrolü
+            if len(daily_range) >= 4 and daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
             
             if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
             if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
@@ -314,7 +322,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.3")
+st.title(f"🦅 Patronun Terminali v3.6.4")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
