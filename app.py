@@ -7,10 +7,9 @@ from textblob import TextBlob
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import numpy as np
-# time modülü kaldırıldı
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.0 (Zaman Aşımı Hatası Giderildi)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.1 (Minimum Filtre Test)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -140,7 +139,6 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# Tüm karmaşık veri çekme ve sleep() kaldırıldı. En kararlı tekil çekime odaklanıldı.
 def analyze_market_intelligence(asset_list):
     signals = []
     
@@ -221,8 +219,10 @@ def analyze_market_intelligence(asset_list):
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            if score >= 3: 
+            # --- SADECE BURASI DEĞİŞTİ ---
+            if score >= 2: # GEÇİCİ KANIT İÇİN FİLTRE 3'TEN 2'YE DÜŞÜRÜLDÜ
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
+            # ---------------------------
 
         except Exception: 
             # Hata durumunda sadece o sembolü atla
@@ -290,7 +290,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.0")
+st.title(f"🦅 Patronun Terminali v3.6.1")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
