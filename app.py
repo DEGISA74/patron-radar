@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.5 (Kriter Sabit)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.6 (Optimum Ekran)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -228,7 +228,7 @@ def analyze_market_intelligence(asset_list):
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
 
 # --- WIDGET & DATA ---
-def render_tradingview_widget(ticker, height=700): 
+def render_tradingview_widget(ticker, height=810): # GRAFİK YÜKSEKLİĞİ ARTTIRILDI (810px)
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
@@ -283,13 +283,10 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.5")
-st.markdown("---")
+st.title(f"🦅 Patronun Terminali v3.5.6")
 
-current_ticker = st.session_state.ticker
-current_category = st.session_state.category
-
-# 1. ÜST MENÜ
+# Alan 1'deki Yüksekliği Azaltmak için: st.markdown("---") kaldırılarak boşluk azaltıldı.
+# Area 1: ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
@@ -328,7 +325,7 @@ with col_main_left:
     
     # BÜYÜK GRAFİK
     st.write("")
-    render_tradingview_widget(current_ticker, height=700)
+    render_tradingview_widget(current_ticker, height=810) # Yükseklik 810px
 
 # --- SAĞ SÜTUN ---
 with col_main_right:
@@ -357,7 +354,7 @@ with col_main_right:
             scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
             st.session_state.scan_data = scan_df
     
-    with st.container(height=350):
+    with st.container(height=240): # Alan 2 Yüksekliği 240px
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
