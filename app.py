@@ -1,4 +1,5 @@
 import streamlit as st
+import urllib.parse
 import yfinance as yf
 import pandas as pd
 import feedparser
@@ -101,8 +102,9 @@ def render_tradingview_widget(ticker):
 @st.cache_data(ttl=300) # 5 dakikada bir yenile
 def fetch_google_news(ticker):
     # Arama terimini optimize et
-    query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
-    rss_url = f"https://news.google.com/rss/search?q={query}&hl=tr&gl=TR&ceid=TR:tr"
+  query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
+encoded_query = urllib.parse.quote_plus(query) # BOŞLUKLARI VE KARAKTERLERİ GÜVENLİ HALE GETİRİR
+rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
     
     feed = feedparser.parse(rss_url)
     news_items = []
@@ -192,3 +194,4 @@ with col_news:
                 """, unsafe_allow_html=True)
         else:
             st.warning("Haber akışı bulunamadı.")
+
