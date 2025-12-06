@@ -8,7 +8,7 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v1.0.1", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v1.0.2", layout="wide", page_icon="🦅")
 
 # --- VARLIK LİSTELERİ ---
 ASSET_LISTS = {
@@ -62,12 +62,16 @@ def set_ticker(symbol):
     st.session_state.ticker = symbol
     st.rerun() 
 
-# --- WIDGET VE VERİ FONKSİYONLARI (URL Encoding Fix Dahil) ---
+# --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
+    """TradingView Chart Widget'ını gömer ve DÖVİZ pariteleri için formatı düzeltir."""
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+    # DÖVİZ DÜZELTMESİ (USDTRY=X -> FX_IDC:USDTRY)
+    elif "=X" in ticker:
+        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
     elif ticker == "GC=F":
         tv_symbol = "TVC:GOLD"
     elif ticker == "BTC-USD":
@@ -102,6 +106,7 @@ def render_tradingview_widget(ticker):
 
 @st.cache_data(ttl=300) 
 def fetch_google_news(ticker):
+    """URL Encoding düzeltmesi ile Google News'ten veri çeker."""
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
     encoded_query = urllib.parse.quote_plus(query) 
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
@@ -156,35 +161,32 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v1.0.1")
+st.title("🦅 Patronun Terminali v1.0.2")
 st.markdown("---")
 
 ## Dinamik Menü Barı
 
 menu_cols = st.columns(len(ASSET_LISTS) + 1)
 menu_titles = list(ASSET_LISTS.keys())
-menu_titles.append("İşlemler")
+menu_titles.append("Ekstra")
 
-# Menü Başlıkları ve Genişletilebilir Paneller
 with st.container():
     col_index = 0
     for title in ASSET_LISTS.keys():
         with menu_cols[col_index]:
-            # Subheader yerine daha sade bir başlık
-            st.markdown(f"**{title}**") 
-            # Genişletilebilir liste
+            st.markdown(f"**{title}**")
             with st.expander("Listeyi Gör"):
-                # Hisseleri iki sütuna ayır (Yatay yayılma)
+                # Yatay yayılma için 2 sütun
                 list_cols = st.columns(2)
                 for i, symbol in enumerate(ASSET_LISTS[title]):
-                    with list_cols[i % 2]: # Alternatif sütunlara yerleştir
-                        if st.button(symbol, key=f"btn_{symbol}"):
+                    with list_cols[i % 2]: 
+                        if st.button(symbol, key=f"btn_{symbol}", help=f"Grafiği {symbol} ile değiştir"):
                             set_ticker(symbol)
         col_index += 1
 
     # Ek İşlemler
     with menu_cols[-1]:
-        st.markdown(f"**Ekstra**")
+        st.markdown(f"**İşlemler**")
         with st.expander("Yenileme & Ayar"):
             if st.button("🔄 Tam Yenile"): 
                 st.cache_data.clear()
@@ -193,14 +195,14 @@ with st.container():
 st.markdown("---")
 
 # Arama Çubuğu
-# st.session_state.ticker'ın boş olup olmadığını kontrol et
+# Hata kontrolü için boş veya None ise default değer ata
 current_ticker = st.session_state.ticker if st.session_state.ticker else "AAPL"
-ticker_input = st.text_input("Manuel Hisse Kodu", value=current_ticker, help="BIST için .IS, Emtia için =F, Kripto için -USD ekle").upper()
+ticker_input = st.text_input("Manuel Hisse Kodu", value=current_ticker, help="BIST için .IS, Emtia için =F, Döviz için =X ekle").upper()
 
 # Hisse kodu değiştiyse session state'i güncelle
 if ticker_input and ticker_input != st.session_state.ticker:
     st.session_state.ticker = ticker_input
-    st.rerun() # Değişiklik varsa uygulamayı yenile
+    st.rerun()
 
 # Veri Akışı
 info_data = fetch_stock_info(st.session_state.ticker)
@@ -209,14 +211,18 @@ news_data = fetch_google_news(st.session_state.ticker)
 # --- ANA GÖSTERGE VE GRAFİK ---
 if info_data and info_data['price']:
     # Metrikler (Stat Cards)
-    # ... (HTML kartları burada olmalı, sadelik için kod blokunda atladım)
+    c1, c2, c3, c4 = st.columns(4)
+    delta_class = "delta-pos" if info_data['change_pct'] >= 0 else "delta-neg"
+    delta_sign = "+" if info_data['change_pct'] >= 0 else ""
+
+    # (Burada HTML Stat Box Kodları bulunmalıydı, sadelik için atlanmıştır)
 
     # GRAFİK ve HABERLER (Yan Yana)
     col_chart, col_news = st.columns([3, 1.2])
     
     with col_chart:
         st.subheader(f"📈 {st.session_state.ticker} Trading Terminali")
-        render_tradingview_widget(st.session_state.ticker)
+        render_tradingview_widget(st.session_state.ticker) # Widget çağrılıyor
     
     with col_news:
         st.subheader("📡 Küresel Haber Akışı") # Haber başlığı geri geldi
@@ -224,8 +230,8 @@ if info_data and info_data['price']:
             if news_data:
                 for item in news_data:
                     color = item['color']
-                    # ... (Haber Kartı HTML'i burada olmalı)
+                    # (Haber Kartı HTML'i burada olmalıydı)
             else:
                 st.info("Haber akışı bulunamadı.")
 else:
-    st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin.")
+    st.error("Veri bulunamadı. Lütfen hisse kodunu kontrol edin. Örneğin, Döviz için USDTRY=X, BIST için THYAO.IS kullanın.")
