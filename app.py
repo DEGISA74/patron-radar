@@ -8,9 +8,9 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v0.9.2", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v0.9.3", layout="wide", page_icon="🦅")
 
-# --- CSS TASARIM ---
+# --- CSS TASARIM & FONTLAR (Açık Tema Kontrastı İçin Güncellendi) ---
 st.markdown("""
 <style>
     /* Fontlar */
@@ -18,34 +18,35 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stMetricValue, .money-text { font-family: 'JetBrains Mono', monospace !important; }
 
-    /* Custom Stat Cards (Glassmorphism) */
+    /* Custom Stat Cards (Kontrastlı görünüm) */
     .stat-box {
-        background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
-        border: 1px solid rgba(255,255,255,0.08);
+        background: #FFFFFF; /* Beyaz kart arkaplanı */
+        border: 1px solid #CFD8DC; /* Açık kenarlık */
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); /* Hafif gölge */
         border-radius: 10px;
         padding: 15px;
         text-align: center;
         margin-bottom: 15px;
     }
-    .stat-label { font-size: 0.8rem; color: #8b9bb4; text-transform: uppercase; letter-spacing: 1px; }
-    .stat-value { font-size: 1.5rem; font-weight: 700; color: #e2e8f0; margin: 5px 0; }
-    .delta-pos { color: #00E676; }
-    .delta-neg { color: #FF1744; }
+    .stat-label { font-size: 0.8rem; color: #546E7A; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: #263238; margin: 5px 0; }
+    .delta-pos { color: #00C853; } /* Koyu yeşil */
+    .delta-neg { color: #D50000; } /* Koyu kırmızı */
 
     /* Haber Kartları */
     .news-card {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #FFFFFF;
+        border: 1px solid #CFD8DC;
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 10px;
     }
-    .news-title { color: #ECEFF1; font-weight: 600; text-decoration: none; display: block; margin-bottom: 5px; }
-    .news-meta { font-size: 0.75rem; color: #90A4AE; font-family: 'JetBrains Mono'; }
+    .news-title { color: #263238; font-weight: 600; text-decoration: none; display: block; margin-bottom: 5px; }
+    .news-meta { font-size: 0.75rem; color: #78909c; font-family: 'JetBrains Mono'; }
     .sentiment-badge { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     
     /* Butonlar ve Genel Düzen */
-    .stButton button { background-color: #1e2329; color: white; border: 1px solid #2a2e39; border-radius: 6px; }
+    .stButton button { background-color: #ECEFF1; color: #263238; border: 1px solid #CFD8DC; border-radius: 6px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +61,7 @@ def set_ticker(symbol):
 # --- WIDGET VE VERİ FONKSİYONLARI ---
 
 def render_tradingview_widget(ticker):
-    """TradingView Chart Widget'ını gömer."""
+    """TradingView Chart Widget'ını gömer ve temayı Açık Moda çeker."""
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
@@ -83,10 +84,11 @@ def render_tradingview_widget(ticker):
         "symbol": "{tv_symbol}",
         "interval": "D",
         "timezone": "Etc/UTC",
-        "theme": "dark",
-        "style": "1",
+        // TEMA DEĞİŞİKLİĞİ: Light Mod
+        "theme": "light", 
+        "style": "1", // Mum grafiği (Candlesticks)
         "locale": "tr",
-        "toolbar_bg": "#1e2329",
+        "toolbar_bg": "#f0f3f6", // Açık tema için araç çubuğu rengi
         "enable_publishing": false,
         "allow_symbol_change": true,
         "container_id": "tradingview_chart"
@@ -100,7 +102,7 @@ def render_tradingview_widget(ticker):
 def fetch_google_news(ticker):
     """URL Encoding düzeltmesi ile Google News'ten veri çeker."""
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
-    encoded_query = urllib.parse.quote_plus(query) # HATA DÜZELTME: InvalidURL Fix
+    encoded_query = urllib.parse.quote_plus(query) 
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
     
     feed = feedparser.parse(rss_url)
@@ -122,9 +124,9 @@ def fetch_google_news(ticker):
         if not title: continue
         blob = TextBlob(title)
         score = blob.sentiment.polarity
-        if score > 0.1: sent_text, sent_color = "YUKARI", "#00E676"
-        elif score < -0.1: sent_text, sent_color = "AŞAĞI", "#FF1744"
-        else: sent_text, sent_color = "NÖTR", "#9E9E9E"
+        if score > 0.1: sent_text, sent_color = "YUKARI", "#00C853" # Light theme green
+        elif score < -0.1: sent_text, sent_color = "AŞAĞI", "#D50000" # Light theme red
+        else: sent_text, sent_color = "NÖTR", "#616161" # Light theme grey
 
         news_items.append({
             'title': title, 'link': link, 'date': date_str, 'source': source,
@@ -159,11 +161,10 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v0.9.2")
+st.title("🦅 Patronun Terminali v0.9.3")
 
 # Hızlı Erişim Butonları
 col_btns = st.columns([1,1,1,1,1,2])
-# SYNTAX FIX: With blokları içindeki butonlar alt satıra ve girintili taşındı
 with col_btns[0]: 
     if st.button("🇹🇷 THYAO"): set_ticker("THYAO.IS")
 with col_btns[1]: 
@@ -205,7 +206,7 @@ if info_data and info_data['price']:
     <div class="stat-box">
         <div class="stat-label">Hacim</div>
         <div class="stat-value money-text">{info_data['volume']/1000000:.1f}M</div>
-        <div class="stat-delta" style="color:#8b9bb4">GÜNLÜK</div>
+        <div class="stat-delta" style="color:#546E7A">GÜNLÜK</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -221,7 +222,7 @@ if info_data and info_data['price']:
     <div class="stat-box">
         <div class="stat-label">Sektör</div>
         <div class="stat-value" style="font-size:1.1rem; margin-top:10px;">{info_data['sector']}</div>
-        <div class="stat-delta" style="color:#8b9bb4">F/K: {info_data['pe_ratio']}</div>
+        <div class="stat-delta" style="color:#546E7A">F/K: {info_data['pe_ratio']}</div>
     </div>
     """, unsafe_allow_html=True)
 
