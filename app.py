@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.7.2 (Gevşek V3.2.0 Eşiği)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal Eşlemesi)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 # Session State'de tema saklama
@@ -175,7 +175,7 @@ def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
 
 # --- ANALİZ MOTORU ---
-# V3.7.2: NR4 ve TREND TAM V3.2.0 mantığına geri döndürüldü ve eşikler gevşetildi.
+# V3.7.4: TAM V3.2.0 mantığı, NR4 sadeleştirildi, Trend Cross eklendi ve Veri Temizleme kaldırıldı.
 def analyze_market_intelligence(asset_list):
     signals = []
     
@@ -202,12 +202,15 @@ def analyze_market_intelligence(asset_list):
             
             if df.empty or 'Close' not in df.columns: continue
             
-            # NaN temizliği ve minimum veri kontrolü
-            df = df.dropna(how='all').dropna(subset=['Close'])
+            # V3.2.0'DAKİ GİBİ SADECE dropna(subset=['Close']) yapılıyor, fillna VEYA how='all' YOK.
+            df = df.dropna(subset=['Close'])
             if len(df) < 50: continue 
             
-            df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
-            if pd.isna(df['Close'].iloc[-1]) or len(df) < 6: continue 
+            # KRİTİK FARK: V3.2.0'da bu satır yoktu, indikatörler ham veri üzerinden hesaplanıyordu.
+            # df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
+            
+            # KRİTİK FARK: V3.2.0'da bu kadar katı kontrol yoktu.
+            # if pd.isna(df['Close'].iloc[-1]) or len(df) < 6: continue 
 
             close = df['Close']
             high = df['High']
@@ -244,7 +247,7 @@ def analyze_market_intelligence(asset_list):
             # Puanlama
             score = 0; reasons = []
             
-            # NaN kontrolü (Hesaplama hatası olmaması için)
+            # NaN kontrolü (Hesaplama hatası olmaması için. Bu, V3.2.0'dan bir iyileştirmedir.)
             indicator_values = [bb_width.iloc[-1], ema5.iloc[-1], ema20.iloc[-1], williams_r.iloc[-1], hist.iloc[-1], rsi.iloc[-1]]
             if any(pd.isna(val) for val in indicator_values): continue 
             
@@ -252,12 +255,12 @@ def analyze_market_intelligence(asset_list):
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            # KRİTERLER (V3.2.0'ın TAM 8 Kriteri ve Eşikleri)
+            # KRİTERLER (TAM V3.2.0 MANTIĞI)
             
-            # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı) - EŞİK GEVŞETİLİYOR
+            # 1. 🚀 Squeeze: Daralma (V3.2.0 mantığı - Gevşek Eşik)
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.20: score += 1; reasons.append("🚀 Squeeze (Gevşek)")
             
-            # 2. 🔇 NR4: Sessiz Gün (TAM V3.2.0 MANTIĞI)
+            # 2. 🔇 NR4: Sessiz Gün (TAM V3.2.0 MANTIĞI - >0 şartı yok)
             if daily_range.iloc[-1] == daily_range.tail(4).min(): score += 1; reasons.append("🔇 NR4 (Tam Eşitlik)")
             
             # 3. ⚡ Trend: Cross-over (TAM V3.2.0 MANTIĞI - AGRESİF KONTROL)
@@ -277,11 +280,11 @@ def analyze_market_intelligence(asset_list):
             # 7. 🔨 Breakout: Zirve Zorluyor (V3.2.0 mantığı: %3 gevşek eşik)
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
             
-            # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı) - EŞİK GEVŞETİLİYOR
+            # 8. ⚓ RSI: 30-65 Yükselen (V3.2.0 mantığı - Gevşek Aralık)
             rsi_c = rsi.iloc[-1]
             if 25 < rsi_c < 70 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü (Gevşek)")
 
-            # FİLTRE EŞİĞİ (V3.2.0 Mantığı: Daha fazla sinyal için Eşik 1'e düşürüldü)
+            # FİLTRE EŞİĞİ (V3.2.0 Mantığı: Daha fazla sinyal için Eşik 1)
             if score >= 1: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
 
@@ -351,7 +354,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.7.2")
+st.title(f"🦅 Patronun Terminali v3.7.4")
 
 # 1. ÜST MENÜ
 current_ticker = st.session_state.ticker
@@ -403,17 +406,17 @@ with col_main_right:
     st.subheader("🧠 Sentiment İlk 20")
     
     # 8'Lİ KRİTERLER
-    with st.expander("ℹ️ 8'li Puan Sistemi (Tam V3.2.0 Eşiği)", expanded=True): 
+    with st.expander("ℹ️ 8'li Puan Sistemi (TAM V3.2.0 Eşlemesi)", expanded=True): 
         st.markdown("""
         <div style="font-size:0.7rem;">
-        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı) **(Daha Gevşek)**<br>
-        <b>2. 🔇 NR4:</b> Sessiz Gün **(Tam Eşitlik)**<br>
-        <b>3. ⚡ Trend Cross:</b> **EMA Kesişimi veya Yön Değişimi (Tam V3.2.0)**<br>
+        <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı) **(Gevşek)**<br>
+        <b>2. 🔇 NR4:</b> Sessiz Gün **(Tam Eşitlik, En Yalın Hali)**<br>
+        <b>3. ⚡ Trend Cross:</b> **EMA Kesişimi veya Yön Değişimi (Agresif V3.2.0)**<br>
         <b>4. 🟢 MACD:</b> Histogram artışı<br>
         <b>5. 🔫 W%R:</b> -50 Kırılımı<br>
         <b>6. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
         <b>7. 🔨 Top:</b> Direnç zorlama (Zirveye %3 yakınlık)<br>
-        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası Yükselen **(Daha Gevşek Aralık)**
+        <b>8. ⚓ RSI Güçlü:</b> 30-65 arası Yükselen **(Gevşek Aralık)**
         <br><br>
         <span style="color:#DC2626; font-weight:bold;">Sinyal Eşiği: 1/8</span> (Daha fazla sonuç için V3.2.0 mantığı)
         </div>
