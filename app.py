@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.6 (Optimum Ekran)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.7 (Hata Giderildi)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -64,15 +64,15 @@ INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
-if 'category' in st.session_state:
-    if st.session_state.category not in ASSET_GROUPS:
-        st.session_state.category = INITIAL_CATEGORY
-        st.session_state.ticker = ASSET_GROUPS[INITIAL_CATEGORY][0]
-
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
-if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
+# Session state'i kontrol et ve tanımla
+current_ticker = st.session_state.ticker
+current_category = st.session_state.category
+if current_category not in ASSET_GROUPS:
+    current_category = INITIAL_CATEGORY
+    st.session_state.category = INITIAL_CATEGORY
 # --- UI: TEMA SEÇİCİ ---
 st.write("") 
 c_theme, _, _ = st.columns([2, 4, 1])
@@ -228,7 +228,7 @@ def analyze_market_intelligence(asset_list):
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
 
 # --- WIDGET & DATA ---
-def render_tradingview_widget(ticker, height=810): # GRAFİK YÜKSEKLİĞİ ARTTIRILDI (810px)
+def render_tradingview_widget(ticker, height=810): 
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
@@ -283,12 +283,12 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.6")
+st.title(f"🦅 Patronun Terminali v3.5.7")
 
-# Alan 1'deki Yüksekliği Azaltmak için: st.markdown("---") kaldırılarak boşluk azaltıldı.
-# Area 1: ÜST MENÜ
+# 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
+    # Hata veren kısım düzeltildi. current_category zaten yukarıda session state'den çekiliyor.
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change)
 
