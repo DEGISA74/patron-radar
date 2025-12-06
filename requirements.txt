@@ -2,5 +2,4 @@ streamlit
 yfinance
 pandas
 textblob
-beautifulsoup4
-requests
+plotly
