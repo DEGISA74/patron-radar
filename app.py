@@ -2,15 +2,15 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import feedparser
-import urllib.parse 
+import urllib.parse  # URL Encoding için gerekli
 from textblob import TextBlob
 from datetime import datetime
 import streamlit.components.v1 as components
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v0.9", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v0.9.1", layout="wide", page_icon="🦅")
 
-# --- CSS TASARIM & FONTLAR ---
+# --- CSS TASARIM --- (Önceki en iyi tasarımlar korundu)
 st.markdown("""
 <style>
     /* Fontlar */
@@ -43,9 +43,6 @@ st.markdown("""
     .news-title { color: #ECEFF1; font-weight: 600; text-decoration: none; display: block; margin-bottom: 5px; }
     .news-meta { font-size: 0.75rem; color: #90A4AE; font-family: 'JetBrains Mono'; }
     .sentiment-badge { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-    
-    /* Butonlar ve Genel Düzen */
-    .stButton button { background-color: #1e2329; color: white; border: 1px solid #2a2e39; border-radius: 6px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -100,7 +97,7 @@ def render_tradingview_widget(ticker):
 def fetch_google_news(ticker):
     """URL Encoding düzeltmesi ile Google News'ten veri çeker."""
     query = ticker.replace(".IS", " hisse") if ".IS" in ticker else f"{ticker} stock"
-    encoded_query = urllib.parse.quote_plus(query) # HATA DÜZELTME: InvalidURL Fix
+    encoded_query = urllib.parse.quote_plus(query) # KESİN DÜZELTME: InvalidURL Fix
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
     
     feed = feedparser.parse(rss_url)
@@ -159,7 +156,7 @@ def fetch_stock_info(ticker):
         return None
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v0.9")
+st.title("🦅 Patronun Terminali v0.9.1")
 
 # Hızlı Erişim Butonları
 col_btns = st.columns([1,1,1,1,1,2])
