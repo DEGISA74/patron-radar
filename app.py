@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.6.1 (Minimum Filtre Test)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.6.2 (Veri Temizliği ve Stablizasyon)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -42,7 +42,7 @@ ASSET_GROUPS = {
         "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", 
         "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
         "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
-        "GE", "CAT", "DE", "HON", "MMM", "ETN", "EMR", "PH", "CMI", "PCAR",
+        "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
         "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
         "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
         "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
@@ -166,8 +166,13 @@ def analyze_market_intelligence(asset_list):
             df = yf.download(symbol, period="1y", progress=False) 
             
             if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close'])
+            
+            # KRİTİK DEĞİŞİKLİK: DataFrame'i sadece 'Close' sütununda değil, genel olarak temizle
+            df = df.dropna(how='all')
             if len(df) < 200: continue 
+            
+            # Göstergelerin düzgün hesaplanması için gerekli sütunları temizle
+            df[['Close', 'High', 'Low', 'Volume']] = df[['Close', 'High', 'Low', 'Volume']].fillna(method='ffill').fillna(method='bfill')
             
             close = df['Close']
             high = df['High']
@@ -175,13 +180,16 @@ def analyze_market_intelligence(asset_list):
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
             # Göstergeler
+            # (Bu bloktaki hataları minimize etmek için veri temizliği yukarıda yapıldı)
+            
             sma200 = close.rolling(200).mean()
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             
             sma20_bb = close.rolling(20).mean()
             std20_bb = close.rolling(20).std()
-            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb + 0.0001)
+            # Eğer std20_bb sıfırsa hata vermemek için ek koruma
+            bb_width = ((sma20_bb + 2*std20_bb) - (sma20_bb - 2*std20_bb)) / (sma20_bb.replace(0, 1) + 0.0001) 
             
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
@@ -192,40 +200,52 @@ def analyze_market_intelligence(asset_list):
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs_val = gain / loss
+            # ZeroDivisionError için koruma eklendi
+            rs_val = gain / loss.replace(0, np.nan).fillna(1e-10)
             rsi = 100 - (100 / (1 + rs_val))
             
             highest_high = high.rolling(14).max()
             lowest_low = low.rolling(14).min()
-            williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
+            # ZeroDivisionError için koruma eklendi
+            range_diff = highest_high - lowest_low
+            williams_r = (highest_high - close) / range_diff.replace(0, np.nan).fillna(1e-10) * -100
             
             daily_range = high - low
             
             # Puanlama
             score = 0; reasons = []
+            
+            # Kritik: En son değerin NaN olup olmadığını kontrol et
+            if pd.isna(close.iloc[-1]): continue 
+            
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
-            if curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
+            # Kriter Kontrolleri (NaN Kontrolleri eklendi)
+            if not pd.isna(sma200.iloc[-1]) and curr_c > sma200.iloc[-1]: score += 1; reasons.append("🛡️ SMA200")
             stock_5d = (curr_c - float(close.iloc[-6])) / float(close.iloc[-6])
             if stock_5d > spy_5d_chg: score += 1; reasons.append("👑 RS")
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
+            
+            if not pd.isna(bb_width.iloc[-1]) and bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.15: score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] <= daily_range.tail(4).min() * 1.05: score += 1; reasons.append("🔇 NR4")
-            if ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
+            
+            if not pd.isna(ema5.iloc[-1]) and not pd.isna(ema20.iloc[-1]) and ema5.iloc[-1] > ema20.iloc[-1]: score += 1; reasons.append("⚡ Trend")
+            if not pd.isna(williams_r.iloc[-1]) and williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
+            
+            if not pd.isna(hist.iloc[-1]) and not pd.isna(hist.iloc[-2]) and hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+            if not pd.isna(rsi.iloc[-1]) and rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score += 1; reasons.append("📈 RSI")
+            
             if curr_vol > avg_vol * 1.2: score += 1; reasons.append(f"🔊 Vol")
             if curr_c >= high.tail(20).max() * 0.97: score += 1; reasons.append("🔨 Top")
 
-            # --- SADECE BURASI DEĞİŞTİ ---
-            if score >= 2: # GEÇİCİ KANIT İÇİN FİLTRE 3'TEN 2'YE DÜŞÜRÜLDÜ
+            # FİLTRE EŞİĞİ 2'DE TUTULDU (Halen Test Modu)
+            if score >= 2: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
-            # ---------------------------
 
-        except Exception: 
-            # Hata durumunda sadece o sembolü atla
+        except Exception as e: 
+            # Hata durumunda sadece o sembolü atla ve konsola hatayı yaz (debug amaçlı)
+            # print(f"Hata sembolü {symbol}: {e}") 
             continue 
     
     # İşlem tamamlandığında progress bar'ı gizle
@@ -290,7 +310,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.6.1")
+st.title(f"🦅 Patronun Terminali v3.6.2")
 
 # 1. ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
