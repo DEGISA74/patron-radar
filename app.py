@@ -9,32 +9,31 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v2.6.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v2.7.0", layout="wide", page_icon="🦅")
 
-# --- VARLIK LİSTELERİ (SIRALAMA GÜNCELLENDİ) ---
+# --- VARLIK LİSTELERİ (S&P 100 EKLENDİ, BIST SİLİNDİ) ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 50)": [
+    "S&P 500 (TOP 100)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "BRK.B", "AVGO", "JPM", 
         "LLY", "UNH", "V", "XOM", "MA", "JNJ", "HD", "PG", "COST", "ABBV", 
         "MRK", "CRM", "CVX", "BAC", "AMD", "WMT", "NFLX", "ACN", "PEP", "KO",
         "LIN", "TMO", "DIS", "ADBE", "WFC", "MCD", "CSCO", "QCOM", "CAT", "VZ",
-        "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", "TXN"
+        "INTU", "IBM", "GE", "AMAT", "NOW", "PFE", "CMCSA", "SPGI", "UNP", "TXN",
+        "ISRG", "UBER", "PM", "LOW", "HON", "AMGN", "RTX", "SYK", "GS", "BLK",
+        "ELV", "PLD", "BKNG", "NEE", "T", "MS", "PGR", "ETN", "C", "TJX",
+        "UPS", "MDT", "BSX", "VRTX", "CHTR", "AXP", "CI", "DE", "CB", "LRCX",
+        "REGN", "SCHW", "ADP", "MMC", "KLAC", "MU", "PANW", "FI", "BX", "GILD",
+        "ADI", "SNPS", "ZTS", "CRWD", "WM", "MO", "USB", "SO", "ICE", "CL"
     ],
     "KRİPTO (TOP 20)": [
         "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", 
         "TRX-USD", "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "UNI-USD", 
         "ATOM-USD", "XLM-USD", "ETC-USD", "FIL-USD"
     ],
-    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X", "GC=F", "SI=F", "CL=F"],
-    # TÜRK HİSSELERİ EN ALTA ALINDI (Stabilite İçin)
-    "TÜRK HİSSE (BIST 30)": [
-        "THYAO.IS", "GARAN.IS", "ASELS.IS", "TUPRS.IS", "KCHOL.IS", "AKBNK.IS", "ISCTR.IS", "SISE.IS", 
-        "BIMAS.IS", "EREGL.IS", "SAHOL.IS", "YKBNK.IS", "FROTO.IS", "KONTR.IS", "HEKTS.IS", "PETKM.IS", 
-        "TOASO.IS", "PGSUS.IS", "ENKAI.IS", "ALARK.IS", "ODAS.IS", "EKGYO.IS", "KOZAL.IS", "SASA.IS"
-    ]
+    "EMTİA & DÖVİZ": ["EURUSD=X", "USDTRY=X", "EURTRY=X", "GBPTRY=X", "GC=F", "SI=F", "CL=F"]
 }
 ALL_ASSETS = [item for sublist in ASSET_GROUPS.values() for item in sublist]
-INITIAL_CATEGORY = "S&P 500 (TOP 50)" # Varsayılan kategori değiştirildi
+INITIAL_CATEGORY = "S&P 500 (TOP 100)"
 
 # --- CSS TASARIM ---
 st.markdown("""
@@ -66,14 +65,11 @@ st.markdown("""
     
     /* Butonlar */
     .stButton button { width: 100%; border-radius: 5px; }
-    
-    /* İstihbarat Açıklama */
-    .intel-info { font-size: 0.75rem; color: #555; background: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True) 
 
 # --- OTURUM YÖNETİMİ ---
-if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL" # Varsayılan AAPL
+if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 
@@ -92,15 +88,13 @@ def on_manual_button_click():
         st.session_state.ticker = st.session_state.manual_input_key.upper()
 
 def on_scan_result_click(symbol):
-    """Tarama sonucuna tıklandığında çalışır"""
     st.session_state.ticker = symbol
-    # Burada rerun'a gerek yok, butonun kendisi rerun tetikler
 
 # --- GELİŞMİŞ FİNANSAL İSTİHBARAT MOTORU ---
 def analyze_market_intelligence(asset_list):
     signals = []
     
-    # 1. Toplu Veri Çekme (6 aylık)
+    # 1. Toplu Veri Çekme (EMA hesaplaması için yeterli veri: 6 ay)
     try:
         data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except:
@@ -111,52 +105,77 @@ def analyze_market_intelligence(asset_list):
             if len(asset_list) > 1: df = data[symbol].copy()
             else: df = data.copy()
             
-            df = df.dropna(subset=['Close'])
+            df = df.dropna(subset=['Close', 'Volume'])
             if len(df) < 50: continue 
 
             close = df['Close']
+            volume = df['Volume']
             
-            # Göstergeler
+            # --- GÖSTERGELERİ HESAPLA ---
+            
+            # EMA Hesaplamaları (Trend için)
+            ema5 = close.ewm(span=5, adjust=False).mean()
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            
+            # Hacim Ortalaması (Son 1 hafta = 5 gün)
+            vol_avg_week = volume.rolling(window=5).mean()
+
+            # Bollinger Bantları (Sıkışma için)
             sma20 = close.rolling(window=20).mean()
-            sma50 = close.rolling(window=50).mean()
-            sma200 = close.rolling(window=200).mean()
-            
             std = close.rolling(window=20).std()
             bb_upper = sma20 + (std * 2)
-            bb_width = (bb_upper - (sma20 - (std * 2))) / sma20 
+            bb_lower = sma20 - (std * 2)
+            # 0'a bölme hatasını önlemek için küçük bir sayı ekle
+            bb_width = (bb_upper - bb_lower) / (sma20 + 0.0001)
 
+            # RSI
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             
+            # Son Değerler
             curr_price = close.iloc[-1]
             curr_rsi = rsi.iloc[-1]
             curr_width = bb_width.iloc[-1]
             prev_close = close.iloc[-2]
+            
+            curr_vol = volume.iloc[-1]
+            curr_vol_avg = vol_avg_week.iloc[-1]
 
-            # --- STRATEJİLER ---
+            # --- STRATEJİLER (FIRSAT FİLTRELERİ) ---
             found = False
             strategies = []
 
-            # 1. Roket (Squeeze)
+            # 1. Trend: EMA5, EMA20'yi Bugün veya Dün Kesti (Golden Cross)
+            # Bugün Kesişim
+            cross_today = (ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])
+            # Dün Kesişim
+            cross_yesterday = (ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])
+            
+            if cross_today or cross_yesterday:
+                strategies.append("⚡ Trend (EMA5>20)")
+                found = True
+
+            # 2. Hacim Artışı: Son 1 haftalık ortalamanın %20 üzerinde
+            if curr_vol > (curr_vol_avg * 1.20):
+                pct_inc = ((curr_vol - curr_vol_avg) / curr_vol_avg) * 100
+                strategies.append(f"🔊 Hacim Artışı (%{int(pct_inc)})")
+                found = True
+
+            # 3. Roket (Squeeze)
             min_width_3m = bb_width.tail(60).min()
             if curr_width <= min_width_3m * 1.1: 
                 strategies.append("🚀 Squeeze")
                 found = True
 
-            # 2. Trend Lideri
-            if (curr_price > sma50.iloc[-1]) and (sma50.iloc[-1] > sma200.iloc[-1]) and (50 < curr_rsi < 70):
-                strategies.append("⭐ Trend")
-                found = True
-
-            # 3. Dip Avcısı
+            # 4. Dip Avcısı
             if (curr_rsi < 35) and (curr_price > prev_close):
                 strategies.append("⚓ Dip Dönüşü")
                 found = True
 
-            # 4. Direnç Kırma
+            # 5. Direnç Kırma
             high_20 = close.tail(20).max()
             if (curr_price >= high_20 * 0.98) and (curr_price < high_20 * 1.02):
                 strategies.append("🔨 Breakout")
@@ -218,17 +237,27 @@ def fetch_google_news(ticker):
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=tr&gl=TR&ceid=TR:tr"
     feed = feedparser.parse(rss_url)
     news = []
+    
+    # 10 GÜN FİLTRESİ
+    limit_date = datetime.now() - timedelta(days=10)
+    
     for entry in feed.entries[:10]:
         try: dt = datetime(*entry.published_parsed[:6])
         except: dt = datetime.now()
+        
+        # Tarih kontrolü
+        if dt < limit_date:
+            continue
+            
         blob = TextBlob(entry.title); pol = blob.sentiment.polarity
         color = "#00C853" if pol > 0.1 else "#D50000" if pol < -0.1 else "#78909c"
         news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b %H:%M'), 'source': entry.source.title, 'color': color, 'timestamp': dt})
+    
     news.sort(key=lambda x: x['timestamp'], reverse=True)
     return news
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v2.6.0")
+st.title("🦅 Patronun Terminali v2.7.0")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -282,43 +311,39 @@ with col_main_news:
                     <a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a>
                     <div class="news-meta">{n['date']} • {n['source']}</div>
                 </div>""", unsafe_allow_html=True)
-        else: st.info("Haber yok.")
+        else: st.info("Son 10 günde önemli haber akışı yok.")
 
-# SÜTUN 3: FİNANSAL İSTİHBARAT
+# SÜTUN 3: SENTIMENT & TARAMA
 with col_main_intel:
-    st.subheader("🧠 İstihbarat")
+    st.subheader("🧠 Sentiment")
     
-    # Matematiksel Açıklama (Şeffaflık)
-    with st.expander("ℹ️ Algoritma Nasıl Çalışır?"):
+    with st.expander("ℹ️ Algoritma"):
         st.markdown("""
         <div style="font-size:0.75rem;">
-        <b>1. 🚀 Squeeze (Sıkışma):</b> Bollinger Bant genişliği son 3 ayın en düşüğünde. Patlama yakındır.<br>
-        <b>2. ⭐ Trend:</b> Fiyat > SMA50 > SMA200. Trend güçlü ve yukarı.<br>
-        <b>3. ⚓ Dip Dönüşü:</b> RSI < 35 (Aşırı Satım) ama fiyat tepki veriyor.<br>
-        <b>4. 🔨 Breakout:</b> Fiyat son 20 günün zirvesini zorluyor.
+        <b>1. ⚡ Trend (Yeni):</b> EMA5, EMA20'yi Bugün/Dün yukarı kesti (Golden Cross).<br>
+        <b>2. 🔊 Hacim:</b> Hacim, son 1 haftalık ortalamanın %20 üzerinde.<br>
+        <b>3. 🚀 Squeeze:</b> Bollinger bantları aşırı daraldı (Patlama Yakın).<br>
+        <b>4. ⚓ Dip Dönüşü:</b> RSI < 35 ama fiyat toparlıyor.
         </div>
         """, unsafe_allow_html=True)
 
     if st.button(f"⚡ {current_category} Tara", type="primary"):
-        with st.spinner("Analiz ediliyor..."):
+        with st.spinner(f"{len(ASSET_GROUPS[current_category])} varlık taranıyor..."):
             scan_df = analyze_market_intelligence(ASSET_GROUPS[current_category])
             st.session_state.scan_data = scan_df
     
-    # SONUÇLAR (İNTERAKTİF BUTONLAR)
     with st.container(height=450):
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
-                    # Buton Etiketi
                     label = f"{row['Sembol']} | {row['Sinyal']}"
-                    # TIKLANABİLİR BUTON (Her biri bir hisseye link gibi çalışır)
                     if st.button(label, key=f"btn_{row['Sembol']}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
-                        st.rerun() # Sayfayı yenile ve grafiği güncelle
+                        st.rerun()
             else:
-                st.success("Tüm varlıklar yatay seyirde. Özel formasyon bulunamadı.")
+                st.success("Tüm varlıklar normal seyirde.")
         else:
-            st.info("Listeyi taramak için butona basın.")
+            st.info("Taramak için butona basın.")
 
     if st.button("🗑️ Temizle"):
         st.session_state.scan_data = None
