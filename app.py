@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.5.4 (Final Kokpit)", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.5.5 (Kriter Sabit)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 if 'theme' not in st.session_state: st.session_state.theme = "Buz Mavisi"
@@ -228,7 +228,7 @@ def analyze_market_intelligence(asset_list):
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False).head(20) # Max 20 listeleme limiti
 
 # --- WIDGET & DATA ---
-def render_tradingview_widget(ticker, height=700): # Grafik Yüksekliği 700
+def render_tradingview_widget(ticker, height=700): 
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
@@ -283,7 +283,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.5.4")
+st.title(f"🦅 Patronun Terminali v3.5.5")
 st.markdown("---")
 
 current_ticker = st.session_state.ticker
@@ -334,6 +334,24 @@ with col_main_left:
 with col_main_right:
     # 1. SENTIMENT İLK 20 
     st.subheader("🧠 Sentiment İlk 20")
+    
+    # MASTER 10 KRİTERLERİ (SABİT AÇIK)
+    with st.expander("ℹ️ Master 10 Kriter Detayı", expanded=True): 
+        st.markdown("""
+        <div style="font-size:0.7rem;">
+        <b>1. 🛡️ SMA200:</b> Ana trend boğa (Düşen bıçak değil)<br>
+        <b>2. 👑 RS:</b> Endeksten güçlü<br>
+        <b>3. 🚀 Squeeze:</b> Bollinger daralması<br>
+        <b>4. 🔇 NR4:</b> Sessiz gün<br>
+        <b>5. ⚡ Trend:</b> EMA5 > EMA20<br>
+        <b>6. 🔫 W%R:</b> Momentum patlaması<br>
+        <b>7. 🟢 MACD:</b> Histogram artışı<br>
+        <b>8. 📈 RSI:</b> Boğa bölgesi<br>
+        <b>9. 🔊 Vol:</b> Kurumsal giriş (Hacim artışı)<br>
+        <b>10. 🔨 Top:</b> Direnç zorlama (Zirveye yakınlık)
+        </div>
+        """, unsafe_allow_html=True)
+        
     if st.button(f"⚡ {current_category} Tara", type="primary"):
         with st.spinner("Piyasa taranıyor..."):
             scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
