@@ -115,17 +115,17 @@ if 'radar2_log' not in st.session_state:
 if 'radar2_profile' not in st.session_state:
     st.session_state.radar2_profile = "Swing"
 
-# --- HEADER (kompakt nav bar) ---
-header_left, header_right = st.columns([3, 1])
+# --- HEADER (ortalanmış başlık + sağda yatay tema) ---
+pad_col, header_center, header_theme = st.columns([1, 2, 1])
 
-with header_left:
+with header_center:
     st.markdown(
         """
-        <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:2px;">
-            <div style="font-size:1.3rem;font-weight:600;">
+        <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:2px;text-align:center;">
+            <div style="font-size:2.0rem;font-weight:600;">
                 🐂 Patronun Terminali v3.7.7
             </div>
-            <div style="font-size:0.7rem;color:#64748B;">
+            <div style="font-size:0.8rem;color:#64748B;">
                 Sentiment ve Radar
             </div>
         </div>
@@ -133,7 +133,7 @@ with header_left:
         unsafe_allow_html=True
     )
 
-with header_right:
+with header_theme:
     st.markdown(
         "<div style='font-size:0.7rem;color:#64748B;text-align:right;margin-bottom:2px;'>Tema</div>",
         unsafe_allow_html=True
@@ -142,7 +142,7 @@ with header_right:
         "",
         ["Beyaz", "Kirli Beyaz", "Buz Mavisi"],
         index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
-        horizontal=False,
+        horizontal=True,          # yan yana
         label_visibility="collapsed"
     )
     st.session_state.theme = selected_theme_name
@@ -224,8 +224,8 @@ st.markdown(f"""
         font-size: 0.62rem;
     }}
 
-    /* Primary butonları lacivert yap */
-    .stButton>button:first-child {{
+    /* SADECE primary (tarama) butonlarını lacivert yap */
+    button[data-testid="baseButton-primary"] {{
         background-color: #1e40af !important;
         border-color: #1e40af !important;
         color: white !important;
@@ -242,6 +242,11 @@ st.markdown(f"""
         border-radius: 4px;
         font-size: 0.78rem;
         padding: 0.15rem 0.35rem;
+    }}
+
+    /* Genel paddingi biraz azaltarak içeriği yukarı çekelim */
+    section.main > div.block-container {{
+        padding-top: 0.6rem;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -534,7 +539,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     df_res = pd.DataFrame(results)
     return df_res.sort_values(by=["Skor", "RS"], ascending=False).head(50)
 
-# --- TRADINGVIEW WIDGET (indikatör dayatmadan, yüksek grafik) ---
+# --- TRADINGVIEW WIDGET (indikatör dayatmıyor, yüksek grafik) ---
 def render_tradingview_widget(ticker, height=780):
     tv_symbol = ticker
     if ".IS" in ticker:
@@ -701,7 +706,7 @@ def render_common_signals():
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
-# ÜST MENÜ (daha kompakt)
+# ÜST MENÜ (Kategori/Varlık/Manuel) – biraz yukarı çekilmiş, kompakt
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.4, 1.8, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
@@ -838,14 +843,14 @@ with col_main_right:
                         cols = st.columns([0.2, 0.8])
                         symbol = row["Sembol"]
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
-                        if cols[0].button(star_label, key=f"radar1_star_{symbol}_{index}"):
+                        if cols[0].button(star_label, key=f"radar1_star_{symbol}_{index}", type="secondary"):
                             toggle_watchlist(symbol)
                             st.rerun()
 
                         score = row['Skor']
                         icon = "🔥" if score >= 7 else "✅" if score >= 4 else "⚠️"
                         label = f"{icon} {score}/8 | {symbol}"
-                        if cols[1].button(label, key=f"radar1_btn_{symbol}_{index}"):
+                        if cols[1].button(label, key=f"radar1_btn_{symbol}_{index}", type="secondary"):
                             on_scan_result_click(symbol)
                             st.rerun()
                         st.markdown(
@@ -942,13 +947,13 @@ with col_main_right:
                         cols = st.columns([0.2, 0.8])
                         symbol = row["Sembol"]
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
-                        if cols[0].button(star_label, key=f"radar2_star_{symbol}_{index}"):
+                        if cols[0].button(star_label, key=f"radar2_star_{symbol}_{index}", type="secondary"):
                             toggle_watchlist(symbol)
                             st.rerun()
 
                         icon = "🚀" if row["Setup"] == "Breakout" else "🔁" if row["Setup"] == "Pullback" else "🩹"
                         label = f"{icon} {symbol} | {row['Trend']} | {row['Setup']} | Skor: {row['Skor']}"
-                        if cols[1].button(label, key=f"radar2_btn_{symbol}_{index}"):
+                        if cols[1].button(label, key=f"radar2_btn_{symbol}_{index}", type="secondary"):
                             on_scan_result_click(symbol)
                             st.rerun()
                         sub = f"Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}"
@@ -988,12 +993,12 @@ with col_main_right:
                 c1, c2, c3 = st.columns([0.15, 0.45, 0.40])
 
                 with c1:
-                    if st.button("❌", key=f"wl_del_{symbol}"):
+                    if st.button("❌", key=f"wl_del_{symbol}", type="secondary"):
                         toggle_watchlist(symbol)
                         st.rerun()
 
                 with c2:
-                    if st.button(symbol, key=f"wl_go_{symbol}"):
+                    if st.button(symbol, key=f"wl_go_{symbol}", type="secondary"):
                         on_scan_result_click(symbol)
                         st.rerun()
 
@@ -1018,13 +1023,13 @@ with col_main_right:
 
             col_wl1, col_wl2 = st.columns(2)
             with col_wl1:
-                if st.button("⚡ RADAR 1 ile Tara (WL)"):
+                if st.button("⚡ RADAR 1 ile Tara (WL)", type="secondary"):
                     with st.spinner("Watchlist RADAR 1 taranıyor..."):
                         df_wl1 = analyze_market_intelligence(wl)
                         st.session_state.scan_data = df_wl1
                         add_to_log("radar1_log", "WATCHLIST", df_wl1)
             with col_wl2:
-                if st.button("🚀 RADAR 2 ile Tara (WL)"):
+                if st.button("🚀 RADAR 2 ile Tara (WL)", type="secondary"):
                     with st.spinner("Watchlist RADAR 2 taranıyor..."):
                         df_wl2 = radar2_scan(wl)
                         st.session_state.radar2_data = df_wl2
