@@ -10,7 +10,7 @@ import numpy as np
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.7.6 (V3.2.0 + RADAR 2 + Ortaklar)",
+    page_title="Patronun Terminali v3.7.7 (RADAR Ortakları)",
     layout="wide",
     page_icon="🦅"
 )
@@ -45,7 +45,8 @@ THEMES = {
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 250)": [
+    "S&P 500 (TOP 300)": [
+        # (önceki 250 liste + birkaç ekleme; pratikte geniş bir S&P sepeti)
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
         "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
         "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
@@ -71,20 +72,30 @@ ASSET_GROUPS = {
         "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
         "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
         "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
-        "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY"
+        "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
+        # birkaç ek popüler S&P hissesi:
+        "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "NVDA", "BKNG", "MAR",
+        "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
+        "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
     ],
-    "NASDAQ (TOP 50)": [
+    "NASDAQ (TOP 100)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
         "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
         "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
         "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
-        "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP"
+        "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP",
+        # ek teknoloji / büyüme:
+        "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "BKNG", "EA", "TTD",
+        "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR",
+        "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT",
+        "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "LRCX", "SPLK",
+        "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "SGEN", "BIIB", "CSGP"
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
-INITIAL_CATEGORY = "S&P 500 (TOP 250)"
+INITIAL_CATEGORY = "S&P 500 (TOP 300)"
 
-# --- GÜVENLİ BAŞLANGIÇ & STATE ---
+# --- STATE ---
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
         st.session_state.category = INITIAL_CATEGORY
@@ -95,9 +106,9 @@ if 'ticker' not in st.session_state:
 if 'category' not in st.session_state:
     st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state:
-    st.session_state.scan_data = None          # RADAR 1
+    st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state:
-    st.session_state.radar2_data = None        # RADAR 2
+    st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = []
 if 'radar1_log' not in st.session_state:
@@ -107,15 +118,15 @@ if 'radar2_log' not in st.session_state:
 if 'radar2_profile' not in st.session_state:
     st.session_state.radar2_profile = "Swing"
 
-# --- HEADER (daha kompakt) ---
+# --- HEADER (kompakt) ---
 header_left, header_right = st.columns([3, 1])
 
 with header_left:
     st.markdown(
         """
         <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:4px;">
-            <div style="font-size:1.4rem;font-weight:600;">🦅 Patronun Terminali v3.7.6</div>
-            <div style="font-size:0.75rem;color:#64748B;">
+            <div style="font-size:1.3rem;font-weight:600;">🦅 Patronun Terminali v3.7.7</div>
+            <div style="font-size:0.7rem;color:#64748B;">
                 V3.2.0 sinyal motoru • RADAR 2 trend + setup • Ortak radar filtresi
             </div>
         </div>
@@ -125,7 +136,7 @@ with header_left:
 
 with header_right:
     st.markdown(
-        "<div style='font-size:0.75rem;color:#64748B;text-align:right;margin-bottom:2px;'>Tema</div>",
+        "<div style='font-size:0.7rem;color:#64748B;text-align:right;margin-bottom:2px;'>Tema</div>",
         unsafe_allow_html=True
     )
     selected_theme_name = st.radio(
@@ -156,14 +167,14 @@ st.markdown(f"""
 
     .stat-box-small {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; padding: 6px; text-align: center; margin-bottom: 5px;
+        border-radius: 6px; padding: 5px; text-align: center; margin-bottom: 4px;
         box-shadow: 0 1px 1px rgba(0,0,0,0.03);
     }}
-    .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase;
-        letter-spacing: 0.5px; margin-bottom: 0px;}}
-    .stat-value-small {{ font-size: 0.9rem; font-weight: 700; color: {current_theme['text']};
+    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase;
+        letter-spacing: 0.4px; margin-bottom: 0px;}}
+    .stat-value-small {{ font-size: 0.85rem; font-weight: 700; color: {current_theme['text']};
         margin: 0px 0; }}
-    .stat-delta-small {{ font-size: 0.7rem; margin-left: 4px; }}
+    .stat-delta-small {{ font-size: 0.68rem; margin-left: 4px; }}
 
     .delta-pos {{ color: #16A34A; }}
     .delta-neg {{ color: #DC2626; }}
@@ -172,21 +183,21 @@ st.markdown(f"""
         background: {current_theme['news_bg']};
         border-left: 3px solid {current_theme['border']};
         padding: 6px; margin-bottom: 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.03);
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }}
     .news-title {{
         color: {current_theme['text']}; font-weight: 600; text-decoration: none;
-        display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.82rem;
+        display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.8rem;
     }}
     .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
-    .news-meta {{ font-size: 0.65rem; color: #64748B; }}
+    .news-meta {{ font-size: 0.63rem; color: #64748B; }}
 
     .signal-card {{
         background: {current_theme['box_bg']};
         border: 1px solid {current_theme['border']};
         border-radius: 6px;
         padding: 6px;
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         margin-top: 6px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }}
@@ -216,12 +227,11 @@ st.markdown(f"""
         font-size: 0.62rem;
     }}
 
-    /* Butonları genel olarak biraz küçült */
     .stButton button {{
         width: 100%;
         border-radius: 4px;
-        font-size: 0.8rem;
-        padding: 0.15rem 0.4rem;
+        font-size: 0.78rem;
+        padding: 0.15rem 0.35rem;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -264,7 +274,7 @@ def add_to_log(log_name, category, df):
     }
     st.session_state[log_name].insert(0, entry)
 
-# --- ANALİZ MOTORU (RADAR 1 - V3.2.0) ---
+# --- RADAR 1 (V3.2.0) ---
 def analyze_market_intelligence(asset_list):
     signals = []
     try:
@@ -362,7 +372,7 @@ def analyze_market_intelligence(asset_list):
         return pd.DataFrame()
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
 
-# --- ANALİZ MOTORU (RADAR 2) ---
+# --- RADAR 2 ---
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list:
         return pd.DataFrame()
@@ -514,7 +524,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     df_res = pd.DataFrame(results)
     return df_res.sort_values(by=["Skor", "RS"], ascending=False).head(50)
 
-# --- TRADINGVIEW WIDGET ---
+# --- TRADINGVIEW WIDGET (SMI + MACD seçili) ---
 def render_tradingview_widget(ticker, height=550):
     tv_symbol = ticker
     if ".IS" in ticker:
@@ -533,9 +543,11 @@ def render_tradingview_widget(ticker, height=550):
       <script type="text/javascript">
       new TradingView.widget(
       {{
-        "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
-        "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
-        "allow_symbol_change": true, "container_id": "tradingview_chart"
+        "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D",
+        "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr",
+        "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true,
+        "container_id": "tradingview_chart",
+        "studies": ["SMI@tv-basicstudies","MACD@tv-basicstudies"]
       }});
       </script>
     </div>
@@ -646,28 +658,22 @@ def render_common_signals():
         row1 = df1[df1["Sembol"] == sym].iloc[0]
         row2 = df2[df2["Sembol"] == sym].iloc[0]
         combined = float(row1["Skor"]) + float(row2["Skor"])
-        commons.append({
-            "symbol": sym,
-            "r1": row1,
-            "r2": row2,
-            "combined": combined
-        })
+        commons.append({"symbol": sym, "r1": row1, "r2": row2, "combined": combined})
 
     commons_sorted = sorted(commons, key=lambda x: x["combined"], reverse=True)
 
     st.markdown(
-        "<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;'>🎯 Ortak Radar Sinyalleri</div>",
+        "<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;color:#1e3a8a;'>🎯 Ortak Radar Sinyalleri</div>",
         unsafe_allow_html=True
     )
 
-    # Yükseklik ve fontları biraz daha küçük tut
     with st.container(height=150):
         for item in commons_sorted:
             sym = item["symbol"]
             row1 = item["r1"]
             row2 = item["r2"]
 
-            cols = st.columns([0.18, 0.82])
+            cols = st.columns([0.2, 0.8])
             star_label = "★" if sym in st.session_state.watchlist else "☆"
             if cols[0].button(star_label, key=f"common_star_{sym}"):
                 toggle_watchlist(sym)
@@ -687,7 +693,7 @@ def render_common_signals():
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
-# ÜST MENÜ (daha sıkı)
+# ÜST MENÜ (sıkı)
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.4, 1.8, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
@@ -721,14 +727,13 @@ with col_search_btn:
 
 st.markdown("---")
 
-# Ortak bilgi: fiyat verisi
 info = fetch_stock_info(current_ticker)
 
-col_main_left, col_main_right = st.columns([2.5, 1.2])
+# Sol daha geniş, sağ (tarama paneli) daha dar: boşluk hissi azalıyor
+col_main_left, col_main_right = st.columns([3.2, 0.8])
 
 # --- SOL SÜTUN ---
 with col_main_left:
-    # Mini bilgi barı
     if info and info['price']:
         sc1, sc2, sc3, sc4 = st.columns(4)
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -756,17 +761,21 @@ with col_main_left:
             unsafe_allow_html=True
         )
 
-    # TradingView grafiği
     st.write("")
-    st.subheader(f"📈 {current_ticker} Grafiği")
+    # Grafik başlığı: daha küçük ve lacivert
+    st.markdown(
+        f"<div style='font-size:0.95rem;font-weight:600;color:#1e3a8a;margin-bottom:4px;'>📈 {current_ticker} Grafiği</div>",
+        unsafe_allow_html=True
+    )
     render_tradingview_widget(current_ticker, height=550)
 
-    # Sinyal özeti
     st.markdown(get_signal_summary_html(current_ticker), unsafe_allow_html=True)
 
-    # Haber akışı
     st.write("")
-    st.subheader("📡 Haber Akışı")
+    st.markdown(
+        "<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;'>📡 Haber Akışı</div>",
+        unsafe_allow_html=True
+    )
     news_data = fetch_google_news(current_ticker)
     with st.container(height=350):
         if news_data:
@@ -781,16 +790,18 @@ with col_main_left:
         else:
             st.info("Haber akışı yok.")
 
-# --- SAĞ SÜTUN ---
+# --- SAĞ SÜTUN (TARAMA PANELİ) ---
 with col_main_right:
-    st.subheader("🛰️ Tarama Paneli")
+    st.markdown(
+        "<div style='font-size:0.95rem;font-weight:600;color:#1e3a8a;margin-bottom:4px;'>🛰️ Tarama Paneli</div>",
+        unsafe_allow_html=True
+    )
 
-    # ORTAK SİNYALLER BLOĞU (skora göre sıralı, fontlar küçük)
     render_common_signals()
 
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 Watchlist"])
 
-    # --- RADAR 1 TAB ---
+    # RADAR 1
     with tab1:
         with st.expander("ℹ️ 8'li Puan Sistemi (V3.2.0)", expanded=True):
             st.markdown("""
@@ -817,7 +828,7 @@ with col_main_right:
             if df is not None:
                 if not df.empty:
                     for index, row in df.iterrows():
-                        cols = st.columns([0.18, 0.82])
+                        cols = st.columns([0.2, 0.8])
                         symbol = row["Sembol"]
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
                         if cols[0].button(star_label, key=f"radar1_star_{symbol}_{index}"):
@@ -848,7 +859,7 @@ with col_main_right:
             else:
                 st.caption("Henüz kayıt yok.")
 
-    # --- RADAR 2 TAB ---
+    # RADAR 2
     with tab2:
         with st.expander("ℹ️ RADAR 2 Mantığı", expanded=True):
             st.markdown("""
@@ -921,7 +932,7 @@ with col_main_right:
             if df2 is not None:
                 if not df2.empty:
                     for index, row in df2.iterrows():
-                        cols = st.columns([0.18, 0.82])
+                        cols = st.columns([0.2, 0.8])
                         symbol = row["Sembol"]
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
                         if cols[0].button(star_label, key=f"radar2_star_{symbol}_{index}"):
@@ -952,7 +963,7 @@ with col_main_right:
             else:
                 st.caption("Henüz kayıt yok.")
 
-    # --- WATCHLIST TAB ---
+    # WATCHLIST
     with tab3:
         wl = st.session_state.watchlist
         if not wl:
