@@ -10,7 +10,7 @@ import numpy as np
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.7.5 (V3.2.0 + RADAR 2 + Ortaklar)",
+    page_title="Patronun Terminali v3.7.6 (V3.2.0 + RADAR 2 + Ortaklar)",
     layout="wide",
     page_icon="🦅"
 )
@@ -107,20 +107,39 @@ if 'radar2_log' not in st.session_state:
 if 'radar2_profile' not in st.session_state:
     st.session_state.radar2_profile = "Swing"
 
-# --- UI: TEMA SEÇİCİ ---
-st.write("")
-c_theme, _, _ = st.columns([2, 4, 1])
-with c_theme:
+# --- HEADER (daha kompakt) ---
+header_left, header_right = st.columns([3, 1])
+
+with header_left:
+    st.markdown(
+        """
+        <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:4px;">
+            <div style="font-size:1.4rem;font-weight:600;">🦅 Patronun Terminali v3.7.6</div>
+            <div style="font-size:0.75rem;color:#64748B;">
+                V3.2.0 sinyal motoru • RADAR 2 trend + setup • Ortak radar filtresi
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with header_right:
+    st.markdown(
+        "<div style='font-size:0.75rem;color:#64748B;text-align:right;margin-bottom:2px;'>Tema</div>",
+        unsafe_allow_html=True
+    )
     selected_theme_name = st.radio(
-        "Görünüm Modu",
+        "",
         ["Beyaz", "Kirli Beyaz", "Buz Mavisi"],
         index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
-        horizontal=True,
+        horizontal=False,
         label_visibility="collapsed"
     )
     st.session_state.theme = selected_theme_name
 
 current_theme = THEMES[st.session_state.theme]
+
+st.markdown("---")
 
 # --- DİNAMİK CSS ---
 st.markdown(f"""
@@ -142,9 +161,9 @@ st.markdown(f"""
     }}
     .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase;
         letter-spacing: 0.5px; margin-bottom: 0px;}}
-    .stat-value-small {{ font-size: 0.95rem; font-weight: 700; color: {current_theme['text']};
+    .stat-value-small {{ font-size: 0.9rem; font-weight: 700; color: {current_theme['text']};
         margin: 0px 0; }}
-    .stat-delta-small {{ font-size: 0.75rem; margin-left: 4px; }}
+    .stat-delta-small {{ font-size: 0.7rem; margin-left: 4px; }}
 
     .delta-pos {{ color: #16A34A; }}
     .delta-neg {{ color: #DC2626; }}
@@ -157,7 +176,7 @@ st.markdown(f"""
     }}
     .news-title {{
         color: {current_theme['text']}; font-weight: 600; text-decoration: none;
-        display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.85rem;
+        display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.82rem;
     }}
     .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
     .news-meta {{ font-size: 0.65rem; color: #64748B; }}
@@ -166,9 +185,9 @@ st.markdown(f"""
         background: {current_theme['box_bg']};
         border: 1px solid {current_theme['border']};
         border-radius: 6px;
-        padding: 8px;
-        font-size: 0.75rem;
-        margin-top: 8px;
+        padding: 6px;
+        font-size: 0.7rem;
+        margin-top: 6px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }}
 
@@ -182,7 +201,7 @@ st.markdown(f"""
     }}
     .wl-symbol {{
         font-weight: 600;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
     }}
     .wl-badges {{
         font-size: 0.7rem;
@@ -194,11 +213,16 @@ st.markdown(f"""
         border-radius: 999px;
         border: 1px solid {current_theme['border']};
         margin-right: 4px;
-        font-size: 0.65rem;
+        font-size: 0.62rem;
     }}
 
-    .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.85rem; }}
-
+    /* Butonları genel olarak biraz küçült */
+    .stButton button {{
+        width: 100%;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        padding: 0.15rem 0.4rem;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -604,7 +628,7 @@ def get_signal_summary_html(ticker):
     return html
 
 def render_common_signals():
-    """Her iki radarda da görünen hisseleri yukarıda listeler."""
+    """Her iki radarda da görünen hisseleri, toplam skora göre büyükten küçüğe sıralar."""
     df1 = st.session_state.scan_data
     df2 = st.session_state.radar2_data
 
@@ -613,34 +637,58 @@ def render_common_signals():
     if df1.empty or df2.empty:
         return
 
-    common_symbols = sorted(set(df1["Sembol"]).intersection(set(df2["Sembol"])))
-    if not common_symbols:
+    commons = []
+    symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+    if not symbols:
         return
 
-    st.markdown("### 🎯 Ortak Radar Sinyalleri")
-    with st.container(height=170):
-        for sym in common_symbols:
-            row1 = df1[df1["Sembol"] == sym].iloc[0]
-            row2 = df2[df2["Sembol"] == sym].iloc[0]
+    for sym in symbols:
+        row1 = df1[df1["Sembol"] == sym].iloc[0]
+        row2 = df2[df2["Sembol"] == sym].iloc[0]
+        combined = float(row1["Skor"]) + float(row2["Skor"])
+        commons.append({
+            "symbol": sym,
+            "r1": row1,
+            "r2": row2,
+            "combined": combined
+        })
+
+    commons_sorted = sorted(commons, key=lambda x: x["combined"], reverse=True)
+
+    st.markdown(
+        "<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;'>🎯 Ortak Radar Sinyalleri</div>",
+        unsafe_allow_html=True
+    )
+
+    # Yükseklik ve fontları biraz daha küçük tut
+    with st.container(height=150):
+        for item in commons_sorted:
+            sym = item["symbol"]
+            row1 = item["r1"]
+            row2 = item["r2"]
+
             cols = st.columns([0.18, 0.82])
             star_label = "★" if sym in st.session_state.watchlist else "☆"
             if cols[0].button(star_label, key=f"common_star_{sym}"):
                 toggle_watchlist(sym)
                 st.rerun()
-            label = f"{sym} | R1: {row1['Skor']}/8 | R2: {row2['Skor']} • {row2['Trend']} • {row2['Setup']}"
+
+            label = (
+                f"{sym} | R1: {row1['Skor']}/8 • "
+                f"R2: {row2['Skor']} • {row2['Trend']} • {row2['Setup']}"
+            )
             if cols[1].button(label, key=f"common_btn_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-    st.markdown("---")
+
+    st.markdown("<hr style='margin:4px 0 6px 0;'>", unsafe_allow_html=True)
 
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.7.5")
-
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
-# ÜST MENÜ
-col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
+# ÜST MENÜ (daha sıkı)
+col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.4, 1.8, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
     st.selectbox(
@@ -668,7 +716,7 @@ with col_ass:
 with col_search_in:
     st.text_input("Manuel Kod", placeholder=f"Aktif: {current_ticker}", key="manual_input_key")
 with col_search_btn:
-    st.write(""); st.write("")
+    st.write("")
     st.button("🔎 Ara", on_click=on_manual_button_click)
 
 st.markdown("---")
@@ -710,7 +758,7 @@ with col_main_left:
 
     # TradingView grafiği
     st.write("")
-    st.subheader(f"📈 {current_ticker} Grafiği (TradingView)")
+    st.subheader(f"📈 {current_ticker} Grafiği")
     render_tradingview_widget(current_ticker, height=550)
 
     # Sinyal özeti
@@ -737,7 +785,7 @@ with col_main_left:
 with col_main_right:
     st.subheader("🛰️ Tarama Paneli")
 
-    # ORTAK SİNYALLER BLOĞU
+    # ORTAK SİNYALLER BLOĞU (skora göre sıralı, fontlar küçük)
     render_common_signals()
 
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 Watchlist"])
@@ -912,7 +960,6 @@ with col_main_right:
         else:
             st.write("Takip listendeki hisseler:")
 
-            # Hangi hisselerin son taramalarda radara girdiğini belirle
             df1 = st.session_state.scan_data
             df2 = st.session_state.radar2_data
             for symbol in wl:
