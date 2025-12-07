@@ -10,7 +10,7 @@ import numpy as np
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal + RADAR 2)",
+    page_title="Patronun Terminali v3.7.5 (V3.2.0 + RADAR 2 + Ortaklar)",
     layout="wide",
     page_icon="🦅"
 )
@@ -95,9 +95,9 @@ if 'ticker' not in st.session_state:
 if 'category' not in st.session_state:
     st.session_state.category = INITIAL_CATEGORY
 if 'scan_data' not in st.session_state:
-    st.session_state.scan_data = None
+    st.session_state.scan_data = None          # RADAR 1
 if 'radar2_data' not in st.session_state:
-    st.session_state.radar2_data = None
+    st.session_state.radar2_data = None        # RADAR 2
 if 'watchlist' not in st.session_state:
     st.session_state.watchlist = []
 if 'radar1_log' not in st.session_state:
@@ -138,7 +138,7 @@ st.markdown(f"""
     .stat-box-small {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; padding: 6px; text-align: center; margin-bottom: 5px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        box-shadow: 0 1px 1px rgba(0,0,0,0.03);
     }}
     .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase;
         letter-spacing: 0.5px; margin-bottom: 0px;}}
@@ -170,6 +170,31 @@ st.markdown(f"""
         font-size: 0.75rem;
         margin-top: 8px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }}
+
+    .wl-row {{
+        background: {current_theme['box_bg']};
+        border: 1px solid {current_theme['border']};
+        border-radius: 8px;
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }}
+    .wl-symbol {{
+        font-weight: 600;
+        font-size: 0.9rem;
+    }}
+    .wl-badges {{
+        font-size: 0.7rem;
+        color: #64748B;
+    }}
+    .wl-badge {{
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid {current_theme['border']};
+        margin-right: 4px;
+        font-size: 0.65rem;
     }}
 
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.85rem; }}
@@ -578,8 +603,38 @@ def get_signal_summary_html(ticker):
     html = "<div class='signal-card'>" + "<br>".join(parts) + "</div>"
     return html
 
+def render_common_signals():
+    """Her iki radarda da görünen hisseleri yukarıda listeler."""
+    df1 = st.session_state.scan_data
+    df2 = st.session_state.radar2_data
+
+    if df1 is None or df2 is None:
+        return
+    if df1.empty or df2.empty:
+        return
+
+    common_symbols = sorted(set(df1["Sembol"]).intersection(set(df2["Sembol"])))
+    if not common_symbols:
+        return
+
+    st.markdown("### 🎯 Ortak Radar Sinyalleri")
+    with st.container(height=170):
+        for sym in common_symbols:
+            row1 = df1[df1["Sembol"] == sym].iloc[0]
+            row2 = df2[df2["Sembol"] == sym].iloc[0]
+            cols = st.columns([0.18, 0.82])
+            star_label = "★" if sym in st.session_state.watchlist else "☆"
+            if cols[0].button(star_label, key=f"common_star_{sym}"):
+                toggle_watchlist(sym)
+                st.rerun()
+            label = f"{sym} | R1: {row1['Skor']}/8 | R2: {row2['Skor']} • {row2['Trend']} • {row2['Setup']}"
+            if cols[1].button(label, key=f"common_btn_{sym}"):
+                on_scan_result_click(sym)
+                st.rerun()
+    st.markdown("---")
+
 # --- ARAYÜZ ---
-st.title("🦅 Patronun Terminali v3.7.4")
+st.title("🦅 Patronun Terminali v3.7.5")
 
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
@@ -680,7 +735,10 @@ with col_main_left:
 
 # --- SAĞ SÜTUN ---
 with col_main_right:
-    st.subheader("📡 Tarama Paneli")
+    st.subheader("🛰️ Tarama Paneli")
+
+    # ORTAK SİNYALLER BLOĞU
+    render_common_signals()
 
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 Watchlist"])
 
@@ -853,15 +911,42 @@ with col_main_right:
             st.info("Watchlist boş. RADAR sonuçlarından ⭐ ile hisse ekleyebilirsin.")
         else:
             st.write("Takip listendeki hisseler:")
+
+            # Hangi hisselerin son taramalarda radara girdiğini belirle
+            df1 = st.session_state.scan_data
+            df2 = st.session_state.radar2_data
             for symbol in wl:
-                cols = st.columns([0.2, 0.5, 0.3])
-                if cols[0].button("❌", key=f"wl_del_{symbol}"):
-                    toggle_watchlist(symbol)
-                    st.rerun()
-                if cols[1].button(symbol, key=f"wl_go_{symbol}"):
-                    on_scan_result_click(symbol)
-                    st.rerun()
-                cols[2].write("")
+                in_r1 = df1 is not None and not df1.empty and symbol in df1["Sembol"].values
+                in_r2 = df2 is not None and not df2.empty and symbol in df2["Sembol"].values
+
+                st.markdown("<div class='wl-row'>", unsafe_allow_html=True)
+                c1, c2, c3 = st.columns([0.15, 0.45, 0.40])
+
+                with c1:
+                    if st.button("❌", key=f"wl_del_{symbol}"):
+                        toggle_watchlist(symbol)
+                        st.rerun()
+
+                with c2:
+                    if st.button(symbol, key=f"wl_go_{symbol}"):
+                        on_scan_result_click(symbol)
+                        st.rerun()
+
+                with c3:
+                    badges = []
+                    if in_r1:
+                        badges.append("<span class='wl-badge'>R1</span>")
+                    if in_r2:
+                        badges.append("<span class='wl-badge'>R2</span>")
+                    if not badges:
+                        badges.append("<span class='wl-badge'>Pasif</span>")
+                    html = (
+                        f"<div class='wl-symbol'>{symbol}</div>"
+                        f"<div class='wl-badges'>{''.join(badges)}</div>"
+                    )
+                    st.markdown(html, unsafe_allow_html=True)
+
+                st.markdown("</div>", unsafe_allow_html=True)
 
             st.markdown("---")
             st.caption("Watchlist üzerinde hızlı tarama:")
@@ -879,24 +964,3 @@ with col_main_right:
                         df_wl2 = radar2_scan(wl)
                         st.session_state.radar2_data = df_wl2
                         add_to_log("radar2_log", "WATCHLIST", df_wl2)
-
-    # --- POZİSYON HESAPLAMA ---
-    st.markdown("---")
-    with st.expander("🧮 Pozisyon Hesaplama", expanded=False):
-        if not info or not info.get("price"):
-            st.info("Aktif hissenin fiyatını çekemedim.")
-        else:
-            acc = st.number_input("Hesap Büyüklüğü (USD)", value=10000.0, step=500.0)
-            risk_pct = st.number_input("Trade başına risk (%)", value=1.0, step=0.25)
-            stop_pct = st.number_input("Stop mesafesi (%)", value=5.0, step=0.5)
-
-            if stop_pct <= 0 or risk_pct <= 0:
-                st.warning("Risk ve stop pozitif olmalı.")
-            else:
-                risk_amount = acc * risk_pct / 100
-                per_share_risk = info["price"] * stop_pct / 100
-                size = int(risk_amount / per_share_risk) if per_share_risk > 0 else 0
-
-                st.write(f"• Fiyat: **{info['price']:.2f} USD**")
-                st.write(f"• Riske edilen tutar: **{risk_amount:.2f} USD**")
-                st.write(f"• Maks. pozisyon boyutu: **{size} adet** (yuvarlanmış)")
