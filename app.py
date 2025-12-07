@@ -2,21 +2,23 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import feedparser
-import urllib.parse 
+import urllib.parse
 from textblob import TextBlob
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal + RADAR 2)", layout="wide", page_icon="🦅")
+st.set_page_config(
+    page_title="Patronun Terminali v3.7.4",
+    layout="wide",
+    page_icon="🦅"
+)
 
 # --- TEMA MOTORU ---
-# Session State'de tema saklama
 if 'theme' not in st.session_state:
     st.session_state.theme = "Buz Mavisi"
 
-# Tema Renk Paletleri
 THEMES = {
     "Beyaz": {
         "bg": "#FFFFFF",
@@ -40,27 +42,26 @@ THEMES = {
         "news_bg": "#FFFFFF"
     }
 }
-current_theme = THEMES[st.session_state.theme]
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (TOP 250)": [
-        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", 
-        "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
+        "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
         "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
         "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
         "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
-        "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", 
+        "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ",
         "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
         "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
         "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
-        "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", 
+        "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN",
         "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
         "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
         "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
         "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
         "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
-        "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", 
+        "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC",
         "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
         "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
         "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
@@ -83,7 +84,7 @@ ASSET_GROUPS = {
 }
 INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
-# --- GÜVENLİ BAŞLANGIÇ ---
+# --- GÜVENLİ BAŞLANGIÇ & STATE ---
 if 'category' in st.session_state:
     if st.session_state.category not in ASSET_GROUPS:
         st.session_state.category = INITIAL_CATEGORY
@@ -97,9 +98,17 @@ if 'scan_data' not in st.session_state:
     st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state:
     st.session_state.radar2_data = None
+if 'watchlist' not in st.session_state:
+    st.session_state.watchlist = []
+if 'radar1_log' not in st.session_state:
+    st.session_state.radar1_log = []
+if 'radar2_log' not in st.session_state:
+    st.session_state.radar2_log = []
+if 'radar2_profile' not in st.session_state:
+    st.session_state.radar2_profile = "Swing"
 
 # --- UI: TEMA SEÇİCİ ---
-st.write("")  # Spacer
+st.write("")
 c_theme, _, _ = st.columns([2, 4, 1])
 with c_theme:
     selected_theme_name = st.radio(
@@ -111,51 +120,60 @@ with c_theme:
     )
     st.session_state.theme = selected_theme_name
 
-# --- DİNAMİK CSS ---
 current_theme = THEMES[st.session_state.theme]
 
+# --- DİNAMİK CSS ---
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
-    
-    /* Genel Ayarlar */
+
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
-    
-    /* Ana Arka Plan */
+
     .stApp {{
         background-color: {current_theme['bg']};
     }}
 
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
-    
-    /* İstatistik Kutuları (Kompakt V3.5+ stilini koruyoruz) */
+
     .stat-box-small {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; 
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; padding: 6px; text-align: center; margin-bottom: 5px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }}
-    .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0px;}}
-    .stat-value-small {{ font-size: 0.95rem; font-weight: 700; color: {current_theme['text']}; margin: 0px 0; }}
+    .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase;
+        letter-spacing: 0.5px; margin-bottom: 0px;}}
+    .stat-value-small {{ font-size: 0.95rem; font-weight: 700; color: {current_theme['text']};
+        margin: 0px 0; }}
     .stat-delta-small {{ font-size: 0.75rem; margin-left: 4px; }}
-    
-    .delta-pos {{ color: #16A34A; }} 
-    .delta-neg {{ color: #DC2626; }} 
-    
-    /* Haber Kartları */
+
+    .delta-pos {{ color: #16A34A; }}
+    .delta-neg {{ color: #DC2626; }}
+
     .news-card {{
-        background: {current_theme['news_bg']}; 
-        border-left: 3px solid {current_theme['border']}; 
-        padding: 6px; margin-bottom: 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.03); font-size: 0.8rem;
+        background: {current_theme['news_bg']};
+        border-left: 3px solid {current_theme['border']};
+        padding: 6px; margin-bottom: 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+        font-size: 0.8rem;
     }}
-    .news-title {{ 
-        color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.85rem;
+    .news-title {{
+        color: {current_theme['text']}; font-weight: 600; text-decoration: none;
+        display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.85rem;
     }}
     .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
     .news-meta {{ font-size: 0.65rem; color: #64748B; }}
-    
-    /* Butonlar */
+
+    .signal-card {{
+        background: {current_theme['box_bg']};
+        border: 1px solid {current_theme['border']};
+        border-radius: 6px;
+        padding: 8px;
+        font-size: 0.75rem;
+        margin-top: 8px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }}
+
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.85rem; }}
-    
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,6 +197,23 @@ def on_manual_button_click():
 
 def on_scan_result_click(symbol):
     st.session_state.ticker = symbol
+
+def toggle_watchlist(symbol):
+    wl = st.session_state.watchlist
+    if symbol in wl:
+        wl.remove(symbol)
+    else:
+        wl.append(symbol)
+
+def add_to_log(log_name, category, df):
+    if df is None or df.empty:
+        return
+    entry = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "category": category,
+        "count": len(df)
+    }
+    st.session_state[log_name].insert(0, entry)  # son tarama başa
 
 # --- ANALİZ MOTORU (RADAR 1 - V3.2.0) ---
 def analyze_market_intelligence(asset_list):
@@ -212,40 +247,37 @@ def analyze_market_intelligence(asset_list):
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # GÖSTERGELER
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
-            
+
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
-            
+
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
             macd_line = ema12 - ema26
             signal_line = macd_line.ewm(span=9, adjust=False).mean()
             hist = macd_line - signal_line
-            
+
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rs_val = gain / loss
             rsi = 100 - (100 / (1 + rs_val))
-            
+
             highest_high = high.rolling(14).max()
             lowest_low = low.rolling(14).min()
             williams_r = (highest_high - close) / (highest_high - lowest_low) * -100
-            
+
             daily_range = high - low
 
-            # PUANLAMA
             score = 0
             reasons = []
             curr_c = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
-            
-            # KRİTERLER
+
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1:
                 score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0:
@@ -276,20 +308,13 @@ def analyze_market_intelligence(asset_list):
 
         except Exception:
             continue
-    
+
     if not signals:
         return pd.DataFrame()
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
 
 # --- ANALİZ MOTORU (RADAR 2) ---
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
-    """
-    RADAR 2:
-    - Evrensel filtre: fiyat & hacim
-    - Trend rejimi: Boğa / Ayı / Yatay (50/100/200 MA)
-    - Setup tipi: Breakout / Pullback / Dip Dönüşü
-    - Basit Relative Strength: son 60 günde endeksten fazla mı getirmiş?
-    """
     if not asset_list:
         return pd.DataFrame()
 
@@ -298,7 +323,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     except Exception:
         return pd.DataFrame()
 
-    # Endeks verisi (S&P 500)
     try:
         idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except Exception:
@@ -312,7 +336,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
         progress_bar.progress(progress_val, text=f"RADAR 2: {i + 1}/{len(asset_list)} sembol taranıyor: {symbol}")
 
         try:
-            # MultiIndex kontrolü
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol not in data.columns.levels[0]:
                     continue
@@ -332,11 +355,9 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 
             close = df['Close']
             high = df['High']
-            low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
             curr_c = float(close.iloc[-1])
-            # Evrensel filtre: fiyat aralığı
             if curr_c < min_price or curr_c > max_price:
                 continue
 
@@ -349,15 +370,13 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             sma100 = close.rolling(100).mean()
             sma200 = close.rolling(200).mean()
 
-            # Trend rejimi
             trend = "Yatay"
-            if sma200.iloc[-1] > 0 and not np.isnan(sma200.iloc[-1]):
+            if not np.isnan(sma200.iloc[-1]):
                 if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]:
                     trend = "Boğa"
                 elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]:
                     trend = "Ayı"
 
-            # RSI, MACD
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -371,14 +390,11 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             signal_line = macd_line.ewm(span=9, adjust=False).mean()
             hist = macd_line - signal_line
 
-            # Breakout & pullback yakınlıkları
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
 
-            # Relative Strength (son 60 gün)
             rs_score = 0.0
             if idx is not None and len(close) > 60 and len(idx) > 60:
-                # Tarihleri hizala
                 common_index = close.index.intersection(idx.index)
                 if len(common_index) > 60:
                     cs = close.reindex(common_index)
@@ -387,12 +403,12 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                     idx_ret = isx.iloc[-1] / isx.iloc[-60] - 1
                     rs_score = float(stock_ret - idx_ret)
 
-            # Setup tipi + skor
             setup = "-"
             tags = []
             score = 0
 
-            # Breakout Setup (boğa trendi, zirveye yakın, hacim artışı)
+            avg_vol_20 = max(avg_vol_20, 1)
+
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
             if trend == "Boğa" and breakout_ratio >= 0.97:
                 setup = "Breakout"
@@ -402,7 +418,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                     score += 1
                     tags.append("Hacim spike")
 
-            # Pullback Setup (boğa trendi, 20-50 MA civarında, RSI 40-55)
             if trend == "Boğa" and setup == "-":
                 if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55:
                     setup = "Pullback"
@@ -412,19 +427,16 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                         score += 1
                         tags.append("Satış hacmi düşük")
 
-            # Dip dönüşü (ayı / yatay, RSI <30'dan dönmüş, MACD hist artıyor)
             if setup == "-":
                 if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]:
                     setup = "Dip Dönüşü"
                     score += 2
                     tags.append("Aşırı satımdan dönüş")
-            
-            # RS bonus
+
             if rs_score > 0:
                 score += 1
                 tags.append("Endeksi yeniyor")
 
-            # Trend bonus
             if trend == "Boğa":
                 score += 1
             elif trend == "Ayı":
@@ -439,7 +451,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                 "Trend": trend,
                 "Setup": setup,
                 "Skor": score,
-                "RS": round(rs_score * 100, 1),  # yüzde fark
+                "RS": round(rs_score * 100, 1),
                 "Etiketler": " | ".join(tags)
             })
 
@@ -450,11 +462,10 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 
     if not results:
         return pd.DataFrame()
-
     df_res = pd.DataFrame(results)
     return df_res.sort_values(by=["Skor", "RS"], ascending=False).head(50)
 
-# --- WIDGET & DATA ---
+# --- TRADINGVIEW WIDGET ---
 def render_tradingview_widget(ticker, height=810):
     tv_symbol = ticker
     if ".IS" in ticker:
@@ -465,7 +476,7 @@ def render_tradingview_widget(ticker, height=810):
         tv_symbol = "COMEX:GC1!"
     elif ticker in ["SI=F"]:
         tv_symbol = "COMEX:SI1!"
-    
+
     html_code = f"""
     <div class="tradingview-widget-container">
       <div id="tradingview_chart"></div>
@@ -482,6 +493,7 @@ def render_tradingview_widget(ticker, height=810):
     """
     components.html(html_code, height=height)
 
+# --- YARDIMCI FONKSİYONLAR ---
 def fetch_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -497,7 +509,7 @@ def fetch_stock_info(ticker):
             'sector': info.get('sector', '-'),
             'target': info.get('targetMeanPrice', '-')
         }
-    except:
+    except Exception:
         return None
 
 @st.cache_data(ttl=300)
@@ -512,7 +524,7 @@ def fetch_google_news(ticker):
         for entry in feed.entries[:15]:
             try:
                 dt = datetime(*entry.published_parsed[:6])
-            except:
+            except Exception:
                 dt = datetime.now()
             if dt < limit_date:
                 continue
@@ -527,30 +539,76 @@ def fetch_google_news(ticker):
                 'color': color
             })
         return news
-    except:
+    except Exception:
         return []
 
-# --- ARAYÜZ (KOKPİT) ---
-st.title(f"🦅 Patronun Terminali v3.7.4")
+def get_signal_summary_html(ticker):
+    radar1_row = None
+    radar2_row = None
 
-# 1. ÜST MENÜ
+    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
+        df1 = st.session_state.scan_data
+        r1 = df1[df1["Sembol"] == ticker]
+        if not r1.empty:
+            radar1_row = r1.iloc[0]
+
+    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
+        df2 = st.session_state.radar2_data
+        r2 = df2[df2["Sembol"] == ticker]
+        if not r2.empty:
+            radar2_row = r2.iloc[0]
+
+    parts = []
+    if radar1_row is not None:
+        parts.append(
+            f"<b>RADAR 1:</b> Skor {radar1_row['Skor']}/8 • "
+            f"Nedenler: {radar1_row['Nedenler']}"
+        )
+    else:
+        parts.append("<b>RADAR 1:</b> Aktif sinyal yok.")
+
+    if radar2_row is not None:
+        parts.append(
+            f"<b>RADAR 2:</b> {radar2_row['Trend']} • {radar2_row['Setup']} • "
+            f"Skor {radar2_row['Skor']} • RS: {radar2_row['RS']}%"
+        )
+    else:
+        parts.append("<b>RADAR 2:</b> Aktif setup yok.")
+
+    html = "<div class='signal-card'>" + "<br>".join(parts) + "</div>"
+    return html
+
+# --- ARAYÜZ ---
+st.title("🦅 Patronun Terminali v3.7.4")
+
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
+# ÜST MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
-    st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index,
-                 key="selected_category_key", on_change=on_category_change)
+    st.selectbox(
+        "Kategori",
+        list(ASSET_GROUPS.keys()),
+        index=cat_index,
+        key="selected_category_key",
+        on_change=on_category_change
+    )
 
 with col_ass:
     opts = ASSET_GROUPS.get(current_category, ASSET_GROUPS[INITIAL_CATEGORY])
     try:
         idx = opts.index(current_ticker)
-    except:
+    except Exception:
         idx = 0
-    st.selectbox("Varlık Listesi", opts, index=idx,
-                 key="selected_asset_key", on_change=on_asset_change)
+    st.selectbox(
+        "Varlık Listesi",
+        opts,
+        index=idx,
+        key="selected_asset_key",
+        on_change=on_asset_change
+    )
 
 with col_search_in:
     st.text_input("Manuel Kod", placeholder=f"Aktif: {current_ticker}", key="manual_input_key")
@@ -560,18 +618,18 @@ with col_search_btn:
 
 st.markdown("---")
 
-# 2. ANA KOKPİT (2 SÜTUNLU YAPI)
+# Ortak bilgi: fiyat verisi
+info = fetch_stock_info(current_ticker)
+
 col_main_left, col_main_right = st.columns([2.5, 1.2])
 
 # --- SOL SÜTUN ---
 with col_main_left:
-    # MİNİK BİLGİ BARI (Yan Yana)
-    info = fetch_stock_info(current_ticker)
+    # Mini bilgi barı
     if info and info['price']:
         sc1, sc2, sc3, sc4 = st.columns(4)
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
         sgn = "+" if info['change_pct'] >= 0 else ""
-        
         sc1.markdown(
             f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p>'
             f'<p class="stat-value-small money-text">{info["price"]:.2f}'
@@ -594,12 +652,16 @@ with col_main_left:
             f'<p class="stat-value-small">{str(info["sector"])[:12]}</p></div>',
             unsafe_allow_html=True
         )
-    
-    # BÜYÜK GRAFİK
-    st.write("")
-    render_tradingview_widget(current_ticker, height=600)
 
-    # HABER AKIŞI (ARTIK GRAFİĞİN ALTINDA)
+    # TradingView grafiği
+    st.write("")
+    st.subheader(f"📈 {current_ticker} Grafiği (TradingView)")
+    render_tradingview_widget(current_ticker, height=550)
+
+    # Sinyal özeti
+    st.markdown(get_signal_summary_html(current_ticker), unsafe_allow_html=True)
+
+    # Haber akışı
     st.write("")
     st.subheader("📡 Haber Akışı")
     news_data = fetch_google_news(current_ticker)
@@ -620,9 +682,9 @@ with col_main_left:
 with col_main_right:
     st.subheader("📡 Tarama Paneli")
 
-    tab1, tab2 = st.tabs(["🧠 Sentiment (RADAR 1)", "🚀 RADAR 2 (Trend & Setup)"])
+    tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 Watchlist"])
 
-    # --- TAB 1: RADAR 1 ---
+    # --- RADAR 1 TAB ---
     with tab1:
         with st.expander("ℹ️ 8'li Puan Sistemi (V3.2.0)", expanded=True):
             st.markdown("""
@@ -642,20 +704,29 @@ with col_main_right:
             with st.spinner("Piyasa taranıyor (RADAR 1)..."):
                 scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
                 st.session_state.scan_data = scan_df
+                add_to_log("radar1_log", current_category, scan_df)
 
-        with st.container(height=240):
-            if st.session_state.scan_data is not None:
-                if not st.session_state.scan_data.empty:
-                    for index, row in st.session_state.scan_data.iterrows():
+        with st.container(height=230):
+            df = st.session_state.scan_data
+            if df is not None:
+                if not df.empty:
+                    for index, row in df.iterrows():
+                        cols = st.columns([0.18, 0.82])
+                        symbol = row["Sembol"]
+                        star_label = "★" if symbol in st.session_state.watchlist else "☆"
+                        if cols[0].button(star_label, key=f"radar1_star_{symbol}_{index}"):
+                            toggle_watchlist(symbol)
+                            st.experimental_rerun()
+
                         score = row['Skor']
                         icon = "🔥" if score >= 7 else "✅" if score >= 4 else "⚠️"
-                        label = f"{icon} {score}/8 | {row['Sembol']}"
-                        
-                        if st.button(label, key=f"radar1_{row['Sembol']}_{index}", use_container_width=True):
-                            on_scan_result_click(row['Sembol'])
-                            st.rerun()
+                        label = f"{icon} {score}/8 | {symbol}"
+                        if cols[1].button(label, key=f"radar1_btn_{symbol}_{index}"):
+                            on_scan_result_click(symbol)
+                            st.experimental_rerun()
                         st.markdown(
-                            f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; margin-bottom:4px; padding-left:5px;'>{row['Nedenler']}</div>",
+                            f"<div style='font-size:0.6rem; color:#64748B; "
+                            f"margin-top:-8px; margin-bottom:4px; padding-left:5px;'>{row['Nedenler']}</div>",
                             unsafe_allow_html=True
                         )
                 else:
@@ -663,7 +734,15 @@ with col_main_right:
             else:
                 st.info("Tara butonuna basın.")
 
-    # --- TAB 2: RADAR 2 ---
+        with st.expander("🕒 Geçmiş Taramalar (oturum içi)"):
+            logs = st.session_state.radar1_log
+            if logs:
+                for e in logs:
+                    st.write(f"- {e['time']} • {e['category']} • {e['count']} sinyal")
+            else:
+                st.caption("Henüz kayıt yok.")
+
+    # --- RADAR 2 TAB ---
     with tab2:
         with st.expander("ℹ️ RADAR 2 Mantığı", expanded=True):
             st.markdown("""
@@ -684,12 +763,43 @@ with col_main_right:
             </div>
             """, unsafe_allow_html=True)
 
-        col_radar2_left, col_radar2_right = st.columns([1, 1])
-        with col_radar2_left:
-            min_price = st.number_input("Min Fiyat", value=5.0, step=1.0)
-            max_price = st.number_input("Max Fiyat", value=500.0, step=5.0)
-        with col_radar2_right:
-            min_vol = st.number_input("Min 20G Ortalama Hacim (M)", value=1.0, step=0.5)
+        # Profil seçimi
+        profile = st.selectbox(
+            "Profil",
+            ["Swing", "Position", "Emerging Breakout", "Custom"],
+            key="radar2_profile"
+        )
+
+        # Profillere göre default öneriler
+        if profile == "Swing":
+            suggested = (5.0, 300.0, 1.0)
+        elif profile == "Position":
+            suggested = (20.0, 500.0, 2.0)
+        elif profile == "Emerging Breakout":
+            suggested = (5.0, 100.0, 0.5)
+        else:
+            suggested = None
+
+        col_r2_l, col_r2_r = st.columns(2)
+        with col_r2_l:
+            if suggested:
+                st.caption(f"Öneri • Min: {suggested[0]}, Max: {suggested[1]}, Hacim≥ {suggested[2]}M")
+            min_price = st.number_input(
+                "Min Fiyat",
+                value=suggested[0] if suggested else 5.0,
+                step=1.0
+            )
+            max_price = st.number_input(
+                "Max Fiyat",
+                value=suggested[1] if suggested else 500.0,
+                step=5.0
+            )
+        with col_r2_r:
+            min_vol = st.number_input(
+                "Min 20G Ortalama Hacim (M)",
+                value=suggested[2] if suggested else 1.0,
+                step=0.5
+            )
 
         if st.button(f"🚀 {current_category} RADAR 2 Tara", type="primary"):
             with st.spinner("Piyasa taranıyor (RADAR 2)..."):
@@ -700,19 +810,29 @@ with col_main_right:
                     min_avg_vol_m=min_vol
                 )
                 st.session_state.radar2_data = radar_df
+                add_to_log("radar2_log", current_category, radar_df)
 
-        with st.container(height=260):
-            if st.session_state.radar2_data is not None:
-                if not st.session_state.radar2_data.empty:
-                    for index, row in st.session_state.radar2_data.iterrows():
+        with st.container(height=230):
+            df2 = st.session_state.radar2_data
+            if df2 is not None:
+                if not df2.empty:
+                    for index, row in df2.iterrows():
+                        cols = st.columns([0.18, 0.82])
+                        symbol = row["Sembol"]
+                        star_label = "★" if symbol in st.session_state.watchlist else "☆"
+                        if cols[0].button(star_label, key=f"radar2_star_{symbol}_{index}"):
+                            toggle_watchlist(symbol)
+                            st.experimental_rerun()
+
                         icon = "🚀" if row["Setup"] == "Breakout" else "🔁" if row["Setup"] == "Pullback" else "🩹"
-                        label = f"{icon} {row['Sembol']} | {row['Trend']} | {row['Setup']} | Skor: {row['Skor']}"
+                        label = f"{icon} {symbol} | {row['Trend']} | {row['Setup']} | Skor: {row['Skor']}"
+                        if cols[1].button(label, key=f"radar2_btn_{symbol}_{index}"):
+                            on_scan_result_click(symbol)
+                            st.experimental_rerun()
                         sub = f"Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}"
-                        if st.button(label, key=f"radar2_{row['Sembol']}_{index}", use_container_width=True):
-                            on_scan_result_click(row['Sembol'])
-                            st.rerun()
                         st.markdown(
-                            f"<div style='font-size:0.6rem; color:#64748B; margin-top:-6px; margin-bottom:4px; padding-left:5px;'>{sub}</div>",
+                            f"<div style='font-size:0.6rem; color:#64748B; "
+                            f"margin-top:-6px; margin-bottom:4px; padding-left:5px;'>{sub}</div>",
                             unsafe_allow_html=True
                         )
                 else:
@@ -720,3 +840,65 @@ with col_main_right:
             else:
                 st.info("RADAR 2 için tara butonuna basın.")
 
+        with st.expander("🕒 Geçmiş Taramalar (oturum içi)"):
+            logs2 = st.session_state.radar2_log
+            if logs2:
+                for e in logs2:
+                    st.write(f"- {e['time']} • {e['category']} • {e['count']} sinyal")
+            else:
+                st.caption("Henüz kayıt yok.")
+
+    # --- WATCHLIST TAB ---
+    with tab3:
+        wl = st.session_state.watchlist
+        if not wl:
+            st.info("Watchlist boş. RADAR sonuçlarından ⭐ ile hisse ekleyebilirsin.")
+        else:
+            st.write("Takip listendeki hisseler:")
+            for symbol in wl:
+                cols = st.columns([0.2, 0.5, 0.3])
+                if cols[0].button("❌", key=f"wl_del_{symbol}"):
+                    toggle_watchlist(symbol)
+                    st.experimental_rerun()
+                if cols[1].button(symbol, key=f"wl_go_{symbol}"):
+                    on_scan_result_click(symbol)
+                    st.experimental_rerun()
+                cols[2].write("")
+
+            st.markdown("---")
+            st.caption("Watchlist üzerinde hızlı tarama:")
+
+            col_wl1, col_wl2 = st.columns(2)
+            with col_wl1:
+                if st.button("⚡ RADAR 1 ile Tara (WL)"):
+                    with st.spinner("Watchlist RADAR 1 taranıyor..."):
+                        df_wl1 = analyze_market_intelligence(wl)
+                        st.session_state.scan_data = df_wl1
+                        add_to_log("radar1_log", "WATCHLIST", df_wl1)
+            with col_wl2:
+                if st.button("🚀 RADAR 2 ile Tara (WL)"):
+                    with st.spinner("Watchlist RADAR 2 taranıyor..."):
+                        df_wl2 = radar2_scan(wl)
+                        st.session_state.radar2_data = df_wl2
+                        add_to_log("radar2_log", "WATCHLIST", df_wl2)
+
+    # --- POZİSYON HESAPLAMA ---
+    st.markdown("---")
+    with st.expander("🧮 Pozisyon Hesaplama", expanded=False):
+        if not info or not info.get("price"):
+            st.info("Aktif hissenin fiyatını çekemedim.")
+        else:
+            acc = st.number_input("Hesap Büyüklüğü (USD)", value=10000.0, step=500.0)
+            risk_pct = st.number_input("Trade başına risk (%)", value=1.0, step=0.25)
+            stop_pct = st.number_input("Stop mesafesi (%)", value=5.0, step=0.5)
+
+            if stop_pct <= 0 or risk_pct <= 0:
+                st.warning("Risk ve stop pozitif olmalı.")
+            else:
+                risk_amount = acc * risk_pct / 100
+                per_share_risk = info["price"] * stop_pct / 100
+                size = int(risk_amount / per_share_risk) if per_share_risk > 0 else 0
+
+                st.write(f"• Fiyat: **{info['price']:.2f} USD**")
+                st.write(f"• Riske edilen tutar: **{risk_amount:.2f} USD**")
+                st.write(f"• Maks. pozisyon boyutu: **{size} adet** (yuvarlanmış)")
