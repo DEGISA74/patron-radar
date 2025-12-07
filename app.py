@@ -12,7 +12,7 @@ import numpy as np
 st.set_page_config(
     page_title="Patronun Terminali v3.7.7 (RADAR Ortakları)",
     layout="wide",
-    page_icon="🦅"
+    page_icon="🐂"  # Boğa
 )
 
 # --- TEMA MOTORU ---
@@ -46,7 +46,6 @@ THEMES = {
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": [
-        # (önceki 250 liste + birkaç ekleme; pratikte geniş bir S&P sepeti)
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
         "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
         "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
@@ -73,8 +72,7 @@ ASSET_GROUPS = {
         "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
         "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
         "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
-        # birkaç ek popüler S&P hissesi:
-        "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "NVDA", "BKNG", "MAR",
+        "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR",
         "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
         "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
     ],
@@ -84,12 +82,11 @@ ASSET_GROUPS = {
         "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
         "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
         "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP",
-        # ek teknoloji / büyüme:
-        "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "BKNG", "EA", "TTD",
+        "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD",
         "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR",
         "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT",
-        "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "LRCX", "SPLK",
-        "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "SGEN", "BIIB", "CSGP"
+        "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK",
+        "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
@@ -118,16 +115,18 @@ if 'radar2_log' not in st.session_state:
 if 'radar2_profile' not in st.session_state:
     st.session_state.radar2_profile = "Swing"
 
-# --- HEADER (kompakt) ---
+# --- HEADER (kompakt nav bar) ---
 header_left, header_right = st.columns([3, 1])
 
 with header_left:
     st.markdown(
         """
-        <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:4px;">
-            <div style="font-size:1.3rem;font-weight:600;">🦅 Patronun Terminali v3.7.7</div>
+        <div style="display:flex;flex-direction:column;gap:2px;margin-bottom:2px;">
+            <div style="font-size:1.3rem;font-weight:600;">
+                🐂 Patronun Terminali v3.7.7
+            </div>
             <div style="font-size:0.7rem;color:#64748B;">
-                V3.2.0 sinyal motoru • RADAR 2 trend + setup • Ortak radar filtresi
+                Sentiment ve Radar
             </div>
         </div>
         """,
@@ -149,8 +148,6 @@ with header_right:
     st.session_state.theme = selected_theme_name
 
 current_theme = THEMES[st.session_state.theme]
-
-st.markdown("---")
 
 # --- DİNAMİK CSS ---
 st.markdown(f"""
@@ -225,6 +222,19 @@ st.markdown(f"""
         border: 1px solid {current_theme['border']};
         margin-right: 4px;
         font-size: 0.62rem;
+    }}
+
+    /* Primary butonları lacivert yap */
+    .stButton>button:first-child {{
+        background-color: #1e40af !important;
+        border-color: #1e40af !important;
+        color: white !important;
+    }}
+
+    /* Form label'larını küçült */
+    .stSelectbox label, .stTextInput label {{
+        font-size: 0.75rem;
+        margin-bottom: 0.1rem;
     }}
 
     .stButton button {{
@@ -304,14 +314,14 @@ def analyze_market_intelligence(asset_list):
             close = df['Close']
             high = df['High']
             low = df['Low']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0] * len(df))
 
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
 
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
-            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
+            bb_width = ((sma20 + 2 * std20) - (sma20 - 2 * std20)) / (sma20 + 0.0001)
 
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
@@ -414,7 +424,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 
             close = df['Close']
             high = df['High']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0] * len(df))
 
             curr_c = float(close.iloc[-1])
             if curr_c < min_price or curr_c > max_price:
@@ -524,8 +534,8 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     df_res = pd.DataFrame(results)
     return df_res.sort_values(by=["Skor", "RS"], ascending=False).head(50)
 
-# --- TRADINGVIEW WIDGET (SMI + MACD seçili) ---
-def render_tradingview_widget(ticker, height=550):
+# --- TRADINGVIEW WIDGET (indikatör dayatmadan, yüksek grafik) ---
+def render_tradingview_widget(ticker, height=780):
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
@@ -546,8 +556,7 @@ def render_tradingview_widget(ticker, height=550):
         "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D",
         "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr",
         "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true,
-        "container_id": "tradingview_chart",
-        "studies": ["SMI@tv-basicstudies","MACD@tv-basicstudies"]
+        "container_id": "tradingview_chart"
       }});
       </script>
     </div>
@@ -640,7 +649,6 @@ def get_signal_summary_html(ticker):
     return html
 
 def render_common_signals():
-    """Her iki radarda da görünen hisseleri, toplam skora göre büyükten küçüğe sıralar."""
     df1 = st.session_state.scan_data
     df2 = st.session_state.radar2_data
 
@@ -693,7 +701,7 @@ def render_common_signals():
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
-# ÜST MENÜ (sıkı)
+# ÜST MENÜ (daha kompakt)
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.4, 1.8, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
@@ -729,7 +737,7 @@ st.markdown("---")
 
 info = fetch_stock_info(current_ticker)
 
-# Sol daha geniş, sağ (tarama paneli) daha dar: boşluk hissi azalıyor
+# Sol geniş, sağ dar
 col_main_left, col_main_right = st.columns([3.2, 0.8])
 
 # --- SOL SÜTUN ---
@@ -762,12 +770,11 @@ with col_main_left:
         )
 
     st.write("")
-    # Grafik başlığı: daha küçük ve lacivert
     st.markdown(
-        f"<div style='font-size:0.95rem;font-weight:600;color:#1e3a8a;margin-bottom:4px;'>📈 {current_ticker} Grafiği</div>",
+        f"<div style='font-size:0.95rem;font-weight:600;color:#1e3a8a;margin-bottom:4px;'>{current_ticker} Grafiği</div>",
         unsafe_allow_html=True
     )
-    render_tradingview_widget(current_ticker, height=550)
+    render_tradingview_widget(current_ticker)  # yükseklik 780
 
     st.markdown(get_signal_summary_html(current_ticker), unsafe_allow_html=True)
 
