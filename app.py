@@ -10,7 +10,7 @@ import numpy as np
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.7.4",
+    page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal + RADAR 2)",
     layout="wide",
     page_icon="🦅"
 )
@@ -213,7 +213,7 @@ def add_to_log(log_name, category, df):
         "category": category,
         "count": len(df)
     }
-    st.session_state[log_name].insert(0, entry)  # son tarama başa
+    st.session_state[log_name].insert(0, entry)
 
 # --- ANALİZ MOTORU (RADAR 1 - V3.2.0) ---
 def analyze_market_intelligence(asset_list):
@@ -466,7 +466,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     return df_res.sort_values(by=["Skor", "RS"], ascending=False).head(50)
 
 # --- TRADINGVIEW WIDGET ---
-def render_tradingview_widget(ticker, height=810):
+def render_tradingview_widget(ticker, height=550):
     tv_symbol = ticker
     if ".IS" in ticker:
         tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
@@ -716,14 +716,14 @@ with col_main_right:
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
                         if cols[0].button(star_label, key=f"radar1_star_{symbol}_{index}"):
                             toggle_watchlist(symbol)
-                            st.experimental_rerun()
+                            st.rerun()
 
                         score = row['Skor']
                         icon = "🔥" if score >= 7 else "✅" if score >= 4 else "⚠️"
                         label = f"{icon} {score}/8 | {symbol}"
                         if cols[1].button(label, key=f"radar1_btn_{symbol}_{index}"):
                             on_scan_result_click(symbol)
-                            st.experimental_rerun()
+                            st.rerun()
                         st.markdown(
                             f"<div style='font-size:0.6rem; color:#64748B; "
                             f"margin-top:-8px; margin-bottom:4px; padding-left:5px;'>{row['Nedenler']}</div>",
@@ -763,14 +763,12 @@ with col_main_right:
             </div>
             """, unsafe_allow_html=True)
 
-        # Profil seçimi
         profile = st.selectbox(
             "Profil",
             ["Swing", "Position", "Emerging Breakout", "Custom"],
             key="radar2_profile"
         )
 
-        # Profillere göre default öneriler
         if profile == "Swing":
             suggested = (5.0, 300.0, 1.0)
         elif profile == "Position":
@@ -822,13 +820,13 @@ with col_main_right:
                         star_label = "★" if symbol in st.session_state.watchlist else "☆"
                         if cols[0].button(star_label, key=f"radar2_star_{symbol}_{index}"):
                             toggle_watchlist(symbol)
-                            st.experimental_rerun()
+                            st.rerun()
 
                         icon = "🚀" if row["Setup"] == "Breakout" else "🔁" if row["Setup"] == "Pullback" else "🩹"
                         label = f"{icon} {symbol} | {row['Trend']} | {row['Setup']} | Skor: {row['Skor']}"
                         if cols[1].button(label, key=f"radar2_btn_{symbol}_{index}"):
                             on_scan_result_click(symbol)
-                            st.experimental_rerun()
+                            st.rerun()
                         sub = f"Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}"
                         st.markdown(
                             f"<div style='font-size:0.6rem; color:#64748B; "
@@ -859,10 +857,10 @@ with col_main_right:
                 cols = st.columns([0.2, 0.5, 0.3])
                 if cols[0].button("❌", key=f"wl_del_{symbol}"):
                     toggle_watchlist(symbol)
-                    st.experimental_rerun()
+                    st.rerun()
                 if cols[1].button(symbol, key=f"wl_go_{symbol}"):
                     on_scan_result_click(symbol)
-                    st.experimental_rerun()
+                    st.rerun()
                 cols[2].write("")
 
             st.markdown("---")
