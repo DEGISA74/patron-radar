@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 import numpy as np
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Patronun Terminali v3.2.0", layout="wide", page_icon="🦅")
+st.set_page_config(page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal Eşlemesi)", layout="wide", page_icon="🦅")
 
 # --- TEMA MOTORU ---
 # Session State'de tema saklama
@@ -26,39 +26,51 @@ THEMES = {
         "news_bg": "#FFFFFF"
     },
     "Kirli Beyaz": {
-        "bg": "#FAF9F6", # Off-white / Cream
+        "bg": "#FAF9F6",
         "box_bg": "#FFFFFF",
         "text": "#2C3E50",
         "border": "#E5E7EB",
         "news_bg": "#FFFFFF"
     },
     "Buz Mavisi": {
-        "bg": "#F0F8FF", # AliceBlue
+        "bg": "#F0F8FF",
         "box_bg": "#FFFFFF",
         "text": "#0F172A",
         "border": "#BFDBFE",
         "news_bg": "#FFFFFF"
     }
 }
+current_theme = THEMES[st.session_state.theme]
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 150)": [
+    "S&P 500 (TOP 250)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", 
         "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
         "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
+        "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
+        "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
         "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", 
         "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
+        "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
+        "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
         "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", 
         "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
-        "AMZN", "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", 
+        "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
+        "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
+        "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
         "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
+        "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", 
+        "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
         "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
         "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
         "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
         "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
-        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI",
-        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG"
+        "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
+        "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
+        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
+        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
+        "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY"
     ],
     "NASDAQ (TOP 50)": [
         "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
@@ -69,7 +81,7 @@ ASSET_GROUPS = {
     ],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
-INITIAL_CATEGORY = "S&P 500 (TOP 150)"
+INITIAL_CATEGORY = "S&P 500 (TOP 250)"
 
 # --- GÜVENLİ BAŞLANGIÇ ---
 if 'category' in st.session_state:
@@ -111,33 +123,33 @@ st.markdown(f"""
 
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
-    /* İstatistik Kutuları */
-    .stat-box {{
-        background: {current_theme['box_bg']};
-        border: 1px solid {current_theme['border']}; 
-        border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* İstatistik Kutuları (Kompakt V3.5+ stilini koruyoruz) */
+    .stat-box-small {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; 
+        border-radius: 6px; padding: 6px; text-align: center; margin-bottom: 5px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }}
-    .stat-label {{ font-size: 0.75rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; }}
-    .stat-value {{ font-size: 1.2rem; font-weight: 700; color: {current_theme['text']}; margin: 4px 0; }}
+    .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0px;}}
+    .stat-value-small {{ font-size: 0.95rem; font-weight: 700; color: {current_theme['text']}; margin: 0px 0; }}
+    .stat-delta-small {{ font-size: 0.75rem; margin-left: 4px; }}
+    
     .delta-pos {{ color: #16A34A; }} 
     .delta-neg {{ color: #DC2626; }} 
     
     /* Haber Kartları */
     .news-card {{
         background: {current_theme['news_bg']}; 
-        border-left: 4px solid {current_theme['border']}; 
-        padding: 8px; margin-bottom: 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 0.85rem;
+        border-left: 3px solid {current_theme['border']}; 
+        padding: 6px; margin-bottom: 6px; box-shadow: 0 1px 1px rgba(0,0,0,0.03); font-size: 0.8rem;
     }}
     .news-title {{ 
-        color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 4px; line-height: 1.2;
+        color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; line-height: 1.1; font-size: 0.85rem;
     }}
     .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
-    .news-meta {{ font-size: 0.7rem; color: #64748B; }}
+    .news-meta {{ font-size: 0.65rem; color: #64748B; }}
     
     /* Butonlar */
-    .stButton button {{ width: 100%; border-radius: 5px; }}
+    .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.85rem; }}
     
 </style>
 """, unsafe_allow_html=True) 
@@ -239,19 +251,13 @@ def analyze_market_intelligence(asset_list):
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
 
 # --- WIDGET & DATA ---
-def render_tradingview_widget(ticker):
+def render_tradingview_widget(ticker, height=810): 
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
     elif ticker in ["GC=F"]: tv_symbol = "COMEX:GC1!"
     elif ticker in ["SI=F"]: tv_symbol = "COMEX:SI1!"
-    elif ticker in ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]: tv_symbol = f"BINANCE:{ticker.replace('-USD', 'USDT')}"
     
-    # Tema seçimine göre widget teması (Light/Dark)
-    # Buz mavisi, kirli beyaz ve beyaz için 'light' tema daha uygundur.
-    # Ancak ileride 'Gece Modu' eklersen burayı dinamik yapabilirsin.
-    widget_theme = "light" 
-
     html_code = f"""
     <div class="tradingview-widget-container">
       <div id="tradingview_chart"></div>
@@ -259,22 +265,21 @@ def render_tradingview_widget(ticker):
       <script type="text/javascript">
       new TradingView.widget(
       {{
-        "width": "100%", "height": 550, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
-        "theme": "{widget_theme}", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
+        "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
+        "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false,
         "allow_symbol_change": true, "container_id": "tradingview_chart"
       }});
       </script>
     </div>
     """
-    components.html(html_code, height=550)
+    components.html(html_code, height=height)
 
-@st.cache_data(ttl=600)
 def fetch_stock_info(ticker):
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
-        price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('ask')
-        prev = info.get('previousClose') or info.get('regularMarketPreviousClose')
+        price = info.get('currentPrice') or info.get('regularMarketPrice')
+        prev = info.get('previousClose')
         pct = ((price - prev) / prev) * 100 if price and prev else 0
         volume = info.get('volume', 0)
         return {'price': price, 'change_pct': pct, 'volume': volume, 'sector': info.get('sector', '-'), 'target': info.get('targetMeanPrice', '-')}
@@ -284,13 +289,12 @@ def fetch_stock_info(ticker):
 def fetch_google_news(ticker):
     try:
         clean = ticker.replace(".IS", "").replace("=F", "")
-        # Sorguyu Investing.com ve Seeking Alpha ile sınırla
         query = f"{clean} stock news site:investing.com OR site:seekingalpha.com"
         rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(query)}&hl=tr&gl=TR&ceid=TR:tr"
         feed = feedparser.parse(rss_url)
         news = []
         limit_date = datetime.now() - timedelta(days=10)
-        for entry in feed.entries[:8]:
+        for entry in feed.entries[:15]: 
             try: dt = datetime(*entry.published_parsed[:6])
             except: dt = datetime.now()
             if dt < limit_date: continue
@@ -300,22 +304,16 @@ def fetch_google_news(ticker):
         return news
     except: return []
 
-# --- ARAYÜZ (GÖVDE) ---
-st.title(f"🦅 Patronun Terminali v3.2.0")
-st.markdown("---")
+# --- ARAYÜZ (KOKPİT) ---
+st.title(f"🦅 Patronun Terminali v3.7.4")
 
+# 1. ÜST MENÜ
 current_ticker = st.session_state.ticker
 current_category = st.session_state.category
 
-# 1. MENÜ
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
-    cat_index = 0
-    if current_category in ASSET_GROUPS:
-        cat_index = list(ASSET_GROUPS.keys()).index(current_category)
-    else:
-        st.session_state.category = INITIAL_CATEGORY
-        cat_index = 0
+    cat_index = list(ASSET_GROUPS.keys()).index(current_category) if current_category in ASSET_GROUPS else 0
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change)
 
 with col_ass:
@@ -332,38 +330,34 @@ with col_search_btn:
 
 st.markdown("---")
 
-# 2. İÇERİK
-info = fetch_stock_info(current_ticker)
-if info and info['price']:
-    c1, c2, c3, c4 = st.columns(4)
-    cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-    sgn = "+" if info['change_pct'] >= 0 else ""
-    c1.markdown(f'<div class="stat-box"><div class="stat-label">FİYAT</div><div class="stat-value money-text">{info["price"]:.2f}</div><div class="stat-delta {cls} money-text">{sgn}{info["change_pct"]:.2f}%</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="stat-box"><div class="stat-label">HACİM</div><div class="stat-value money-text">{info["volume"]/1e6:.1f}M</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="stat-box"><div class="stat-label">HEDEF</div><div class="stat-value money-text">{info["target"]}</div></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="stat-box"><div class="stat-label">SEKTÖR</div><div class="stat-value">{str(info["sector"])[:15]}</div></div>', unsafe_allow_html=True)
-else:
-    st.warning(f"{current_ticker} fiyat verisi anlık çekilemedi. Grafik aşağıdadır.")
+# 2. ANA KOKPİT (2 SÜTUNLU YAPI)
+col_main_left, col_main_right = st.columns([2.5, 1.2]) 
 
-st.write("")
-col_main_chart, col_main_news, col_main_intel = st.columns([2.2, 0.9, 0.9])
+# --- SOL SÜTUN ---
+with col_main_left:
+    # MİNİK BİLGİ BARI (Yan Yana)
+    info = fetch_stock_info(current_ticker)
+    if info and info['price']:
+        sc1, sc2, sc3, sc4 = st.columns(4)
+        cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
+        sgn = "+" if info['change_pct'] >= 0 else ""
+        
+        sc1.markdown(f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{sgn}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
+        sc2.markdown(f'<div class="stat-box-small"><p class="stat-label-small">HACİM</p><p class="stat-value-small money-text">{info["volume"]/1e6:.1f}M</p></div>', unsafe_allow_html=True)
+        sc3.markdown(f'<div class="stat-box-small"><p class="stat-label-small">HEDEF</p><p class="stat-value-small money-text">{info["target"]}</p></div>', unsafe_allow_html=True)
+        sc4.markdown(f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p><p class="stat-value-small">{str(info["sector"])[:12]}</p></div>', unsafe_allow_html=True)
+    
+    # BÜYÜK GRAFİK
+    st.write("")
+    render_tradingview_widget(current_ticker, height=810) 
 
-with col_main_chart:
-    st.subheader(f"📈 {current_ticker}")
-    render_tradingview_widget(current_ticker)
-
-with col_main_news:
-    st.subheader("📡 Haberler (Investing & SA)")
-    news_data = fetch_google_news(current_ticker)
-    with st.container(height=550):
-        if news_data:
-            for n in news_data:
-                st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
-        else: st.info("Bu kaynaklardan son 10 günde önemli haber yok.")
-
-with col_main_intel:
-    st.subheader("🧠 Sentiment")
-    with st.expander("ℹ️ 8'li Puan Sistemi"):
+# --- SAĞ SÜTUN ---
+with col_main_right:
+    # 1. SENTIMENT İLK 20 
+    st.subheader("🧠 Sentiment İlk 20")
+    
+    # 8'Lİ KRİTERLER
+    with st.expander("ℹ️ 8'li Puan Sistemi (TAM V3.2.0 Eşlemesi)", expanded=True): 
         st.markdown("""
         <div style="font-size:0.7rem;">
         <b>1. 🚀 Squeeze:</b> Daralma (Patlama Hazırlığı)<br>
@@ -374,22 +368,35 @@ with col_main_intel:
         <b>6. 🔊 Hacim:</b> %20+ Artış<br>
         <b>7. 🔨 Breakout:</b> Zirve Zorluyor<br>
         <b>8. ⚓ RSI:</b> 30-65 Yükselen
-        </div>""", unsafe_allow_html=True)
-
-    if st.button(f"⚡ {current_category} Analiz", type="primary"):
-        with st.spinner("Taranıyor..."):
+        </div>
+        """, unsafe_allow_html=True)
+        
+    if st.button(f"⚡ {current_category} Tara", type="primary"):
+        with st.spinner("Piyasa taranıyor..."):
             scan_df = analyze_market_intelligence(ASSET_GROUPS.get(current_category, []))
             st.session_state.scan_data = scan_df
     
-    with st.container(height=450):
+    with st.container(height=240): # Alan 2 Yüksekliği 240px
         if st.session_state.scan_data is not None:
             if not st.session_state.scan_data.empty:
                 for index, row in st.session_state.scan_data.iterrows():
                     score = row['Skor']
-                    label = f"★ {score}/8 | {row['Sembol']}"
+                    icon = "🔥" if score >= 7 else "✅" if score >= 4 else "⚠️" 
+                    label = f"{icon} {score}/8 | {row['Sembol']}"
+                    
                     if st.button(label, key=f"btn_{row['Sembol']}_{index}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
-                    st.markdown(f"<div style='font-size:0.65rem; color:#64748B; margin-top:-10px; margin-bottom:5px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
-            else: st.info("Sinyal yok.")
-        else: st.info("Analiz için butona basın.")
+                    st.markdown(f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; margin-bottom:4px; padding-left:5px;'>{row['Nedenler']}</div>", unsafe_allow_html=True)
+            else: st.info("Güçlü sinyal yok.")
+        else: st.info("Tara butonuna basın.")
+
+    # 2. HABERLER (15 ADET)
+    st.write("")
+    st.subheader("📡 Haber Akışı")
+    news_data = fetch_google_news(current_ticker)
+    with st.container(height=400):
+        if news_data:
+            for n in news_data:
+                st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
+        else: st.info("Haber akışı yok.")
