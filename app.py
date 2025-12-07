@@ -12,7 +12,7 @@ from plotly.subplots import make_subplots
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali",
+    page_title="Patronun Terminali v3.7.4 (V3.2.0 Sinyal + RADAR 2)",
     layout="wide",
     page_icon="🦅"
 )
