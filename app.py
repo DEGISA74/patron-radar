@@ -103,7 +103,7 @@ if 'radar2_data' not in st.session_state:
     st.session_state.radar2_data = None
 
 # --- UI: TEMA SEÇİCİ ---
-st.write("")  # Spacer
+st.write("")
 c_theme, _, _ = st.columns([2, 4, 1])
 with c_theme:
     selected_theme_name = st.radio(
@@ -193,7 +193,6 @@ def analyze_market_intelligence(asset_list):
 
     for symbol in asset_list:
         try:
-            # Çoklu sembol / MultiIndex desteği
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]:
                     df = data[symbol].copy()
@@ -216,7 +215,6 @@ def analyze_market_intelligence(asset_list):
             low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
 
-            # GÖSTERGELER
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
 
@@ -242,7 +240,6 @@ def analyze_market_intelligence(asset_list):
 
             daily_range = high - low
 
-            # PUANLAMA
             score = 0
             reasons = []
             curr_c = float(close.iloc[-1])
@@ -286,13 +283,6 @@ def analyze_market_intelligence(asset_list):
 
 # --- ANALİZ MOTORU (RADAR 2) ---
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
-    """
-    RADAR 2:
-    - Evrensel filtre: fiyat & hacim
-    - Trend rejimi: Boğa / Ayı / Yatay (50/100/200 MA)
-    - Setup tipi: Breakout / Pullback / Dip Dönüşü
-    - Basit Relative Strength: son 60 günde endeksten fazla mı getirmiş?
-    """
     if not asset_list:
         return pd.DataFrame()
 
@@ -301,7 +291,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     except Exception:
         return pd.DataFrame()
 
-    # Endeks verisi (S&P 500)
     try:
         idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except Exception:
@@ -350,7 +339,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             sma100 = close.rolling(100).mean()
             sma200 = close.rolling(200).mean()
 
-            # Trend rejimi
             trend = "Yatay"
             if not np.isnan(sma200.iloc[-1]):
                 if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]:
@@ -358,7 +346,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                 elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]:
                     trend = "Ayı"
 
-            # RSI, MACD
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -372,11 +359,9 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             signal_line = macd_line.ewm(span=9, adjust=False).mean()
             hist = macd_line - signal_line
 
-            # Breakout yakınlığı
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
 
-            # Relative Strength (son 60 gün)
             rs_score = 0.0
             if idx is not None and len(close) > 60 and len(idx) > 60:
                 common_index = close.index.intersection(idx.index)
@@ -391,7 +376,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             tags = []
             score = 0
 
-            avg_vol_20 = max(avg_vol_20, 1)  # koruma
+            avg_vol_20 = max(avg_vol_20, 1)
 
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
             if trend == "Boğa" and breakout_ratio >= 0.97:
@@ -453,14 +438,27 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 @st.cache_data(ttl=600)
 def get_indicator_data(ticker):
     """
-    OHLC + EMA20 + EMA50 + VWAP + RSI verisi
+    OHLC + EMA20 + EMA50 + VWAP + RSI verisi.
+    MultiIndex (ticker, field) durumunu da handle eder.
     """
     try:
-        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        df = yf.download(ticker, period="6mo", interval="1d", group_by="ticker", progress=False)
     except Exception:
         return pd.DataFrame()
 
-    if df.empty or 'Close' not in df.columns:
+    if df.empty:
+        return pd.DataFrame()
+
+    # MultiIndex ise uygun ticker seviyesini seç
+    if isinstance(df.columns, pd.MultiIndex):
+        if ticker in df.columns.levels[0]:
+            df = df[ticker].copy()
+        else:
+            # Güvenli taraf: ilk level'ı al
+            first = df.columns.levels[0][0]
+            df = df[first].copy()
+
+    if 'Close' not in df.columns or 'Open' not in df.columns:
         return pd.DataFrame()
 
     df = df.dropna(subset=['Close']).copy()
@@ -483,9 +481,6 @@ def get_indicator_data(ticker):
     return df
 
 def render_indicator_chart(ticker):
-    """
-    Mum + EMA20 + EMA50 + VWAP + alt panelde RSI
-    """
     df = get_indicator_data(ticker)
     if df.empty:
         st.warning(f"{ticker} için grafik verisi alınamadı.")
@@ -500,7 +495,6 @@ def render_indicator_chart(ticker):
         row_heights=[0.7, 0.3]
     )
 
-    # Fiyat paneli
     fig.add_trace(
         go.Candlestick(
             x=df.index,
@@ -540,7 +534,6 @@ def render_indicator_chart(ticker):
         row=1, col=1
     )
 
-    # RSI paneli
     fig.add_trace(
         go.Scatter(
             x=df.index, y=df["RSI"],
@@ -556,8 +549,8 @@ def render_indicator_chart(ticker):
                 x=df.index,
                 y=[level] * len(df),
                 mode="lines",
-                name=f"RSI {level}",
                 line=dict(width=1, dash="dot"),
+                name=f"RSI {level}",
                 showlegend=False
             ),
             row=2, col=1
@@ -623,7 +616,7 @@ def fetch_google_news(ticker):
     except Exception:
         return []
 
-# --- ARAYÜZ (KOKPİT) ---
+# --- ARAYÜZ ---
 st.title("🦅 Patronun Terminali v3.7.4")
 
 current_ticker = st.session_state.ticker
@@ -664,14 +657,12 @@ st.markdown("---")
 
 col_main_left, col_main_right = st.columns([2.5, 1.2])
 
-# --- SOL SÜTUN ---
 with col_main_left:
     info = fetch_stock_info(current_ticker)
     if info and info['price']:
         sc1, sc2, sc3, sc4 = st.columns(4)
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
         sgn = "+" if info['change_pct'] >= 0 else ""
-
         sc1.markdown(
             f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p>'
             f'<p class="stat-value-small money-text">{info["price"]:.2f}'
@@ -715,12 +706,10 @@ with col_main_left:
         else:
             st.info("Haber akışı yok.")
 
-# --- SAĞ SÜTUN ---
 with col_main_right:
     st.subheader("📡 Tarama Paneli")
     tab1, tab2 = st.tabs(["🧠 Sentiment (RADAR 1)", "🚀 RADAR 2 (Trend & Setup)"])
 
-    # RADAR 1
     with tab1:
         with st.expander("ℹ️ 8'li Puan Sistemi (V3.2.0)", expanded=True):
             st.markdown("""
@@ -760,7 +749,6 @@ with col_main_right:
             else:
                 st.info("Tara butonuna basın.")
 
-    # RADAR 2
     with tab2:
         with st.expander("ℹ️ RADAR 2 Mantığı", expanded=True):
             st.markdown("""
