@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.0.0",
+    page_title="Patronun Terminali v4.0.1",
     layout="wide",
     page_icon="🐂"
 )
@@ -217,8 +217,16 @@ with st.sidebar:
         st.session_state.theme = selected_theme_name
         st.rerun()
     st.divider()
+    
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("ChatGPT/Gemini için analiz metni:")
+        if st.button("📋 Analiz Metnini Kopyala", type="primary"):
+            # Prompt oluşturma kodu buraya (Metin olarak gösterilecek, API çağrısı yok)
+            t = st.session_state.ticker
+            st.code(f"{t} için Price Action, ICT ve Teknik Analiz yap. Destek, Direnç ve FVG seviyelerini belirt.", language="text")
 
-# --- ANALİZ MOTORLARI ---
+# --- ANALİZ MOTORLARI (CACHED) ---
+@st.cache_data(ttl=3600)  # 1 Saatlik Cache - Rate Limit'i engeller
 def analyze_market_intelligence(asset_list):
     signals = []
     try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
@@ -270,6 +278,7 @@ def analyze_market_intelligence(asset_list):
         except: continue
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
+@st.cache_data(ttl=3600) # 1 Saatlik Cache
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
     try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
@@ -278,11 +287,11 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     except: idx = None
 
     results = []
-    progress_bar = st.progress(0, text=f"RADAR 2: 0/{len(asset_list)} sembol taranıyor...")
-
-    for i, symbol in enumerate(asset_list):
-        progress_val = (i + 1) / len(asset_list)
-        progress_bar.progress(progress_val, text=f"RADAR 2: {i + 1}/{len(asset_list)} sembol taranıyor: {symbol}")
+    
+    # Progress Bar burada kullanılamaz çünkü cache fonksiyonu UI elemanı güncellemez. 
+    # Tek seferde işleyip döneceğiz.
+    
+    for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol not in data.columns.levels[0]: continue
@@ -347,13 +356,11 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             if score > 0:
                 results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
         except: continue
-    progress_bar.empty()
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- ICT / PRICE ACTION HESAPLAMA MOTORU ---
+@st.cache_data(ttl=600) # 10 Dakikalık Cache (Analiz için)
 def calculate_ict_concepts(ticker):
     try:
-        # Son 90 mum yeterli (Swing ve FVG için)
         df = yf.download(ticker, period="3mo", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
@@ -361,19 +368,15 @@ def calculate_ict_concepts(ticker):
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         curr_price = close.iloc[-1]
         
-        # 1. Market Yapısı ve Yönü (Swing Points)
-        # Son 20 günün en yükseği ve en düşüğü
         recent_high = high.tail(20).max()
         recent_low = low.tail(20).min()
         
         market_structure = "Nötr / Yatay"
-        if close.iloc[-1] > high.tail(20).iloc[-5:].max(): # Son 5 gündeki lokal tepeyi kırdıysa
+        if close.iloc[-1] > high.tail(20).iloc[-5:].max():
             market_structure = "🟢 YÜKSELİŞ (Trend Güçlü)"
         elif close.iloc[-1] < low.tail(20).iloc[-5:].min():
             market_structure = "🔴 DÜŞÜŞ (Yapı Bozuldu)"
             
-        # 2. Premium / Discount (Fibonacci)
-        # 60 günlük Range'e bakıyoruz (Institutional Dealing Range)
         range_high = high.tail(60).max()
         range_low = low.tail(60).min()
         mid_point = (range_high + range_low) / 2
@@ -386,20 +389,15 @@ def calculate_ict_concepts(ticker):
             premium_pct = ((curr_price - range_low) / (range_high - range_low) * 100)
             position = f"⚠️ PAHALI BÖLGE (Premium: %{premium_pct:.1f})"
             
-        # 3. Fair Value Gap (FVG) Tespiti (Son 10 mum içinde taranır)
-        # Bullish FVG: Low[i] > High[i-2]
         fvg_text = "Belirgin Gap Yok"
         for i in range(len(df)-1, len(df)-10, -1):
             if i < 2: break
-            # Bullish FVG
             if low.iloc[i] > high.iloc[i-2]:
                 gap_low = high.iloc[i-2]
                 gap_high = low.iloc[i]
-                # Fiyata yakın mı?
                 if abs(curr_price - gap_high) / curr_price < 0.05:
                    fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$ (Alım Fırsatı)"
                    break
-            # Bearish FVG
             elif high.iloc[i] < low.iloc[i-2]:
                 gap_low = high.iloc[i]
                 gap_high = low.iloc[i-2]
@@ -407,11 +405,7 @@ def calculate_ict_concepts(ticker):
                    fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$ (Direnç Boşluğu)"
                    break
                    
-        # 4. Kurumsal Destek / Order Block (Tahmini)
-        # Son belirgin düşüş mumu (Pivot Low öncesi)
         ob_text = f"🛡️ {recent_low:.2f}$ (Son Swing Low)"
-        
-        # 5. Likidite Hedefi (BSL / SSL)
         liq_text = f"🎯 {recent_high:.2f}$ (Eski Tepe)" if curr_price > mid_point else f"🔻 {recent_low:.2f}$ (Eski Dip)"
 
         return {
@@ -455,6 +449,31 @@ def render_ict_panel(analysis):
 
 
 # --- TEKNİK KART (STANDART SKOR FORMATI + ATR) ---
+@st.cache_data(ttl=600)
+def get_tech_card_data(ticker):
+    # Bu fonksiyon sadece veri çeker ve hesaplar, UI çizmez (Cache için)
+    try:
+        df = yf.download(ticker, period="2y", progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        close = df['Close']; high = df['High']; low = df['Low']
+        
+        sma50 = close.rolling(50).mean().iloc[-1]
+        sma100 = close.rolling(100).mean().iloc[-1]
+        sma200 = close.rolling(200).mean().iloc[-1]
+        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
+        
+        tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean().iloc[-1]
+        stop_level = close.iloc[-1] - (2 * atr)
+        risk_pct = (2*atr)/close.iloc[-1]*100
+        
+        return {
+            "sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144,
+            "stop_level": stop_level, "risk_pct": risk_pct
+        }
+    except: return None
+
 def render_detail_card(ticker):
     r1_content = "<span style='color:#94a3b8; font-style:italic;'>Veri yok (Tara'ya bas)</span>"
     if st.session_state.scan_data is not None:
@@ -466,32 +485,15 @@ def render_detail_card(ticker):
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty:
-            # FORMAT: Skor en başta ve kalın
             r2_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> | {row.iloc[0]['Trend']} | {row.iloc[0]['Setup']} | RS: %{row.iloc[0]['RS']}"
 
-    ma_content = "Hesaplanıyor..."
-    atr_content = ""
-    try:
-        df = yf.download(ticker, period="2y", progress=False)
-        if not df.empty:
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-            close = df['Close']; high = df['High']; low = df['Low']
-            
-            sma50 = close.rolling(50).mean().iloc[-1]
-            sma100 = close.rolling(100).mean().iloc[-1]
-            sma200 = close.rolling(200).mean().iloc[-1]
-            ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
-            
-            tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
-            atr = tr.rolling(14).mean().iloc[-1]
-            stop_level = close.iloc[-1] - (2 * atr)
-            
-            ma_content = f"SMA50: <b>{sma50:.2f}</b> | SMA100: <b>{sma100:.2f}</b> | SMA200: <b>{sma200:.2f}</b> | EMA144: <b>{ema144:.2f}</b>"
-            atr_content = f"ATR Stop (2x): <b style='color:#DC2626'>{stop_level:.2f}</b> (Risk: -{(2*atr)/close.iloc[-1]*100:.1f}%)"
-        else:
-            ma_content = "Veri hatası."
-    except Exception:
+    data = get_tech_card_data(ticker)
+    if data:
+        ma_content = f"SMA50: <b>{data['sma50']:.2f}</b> | SMA100: <b>{data['sma100']:.2f}</b> | SMA200: <b>{data['sma200']:.2f}</b> | EMA144: <b>{data['ema144']:.2f}</b>"
+        atr_content = f"ATR Stop (2x): <b style='color:#DC2626'>{data['stop_level']:.2f}</b> (Risk: -{data['risk_pct']:.1f}%)"
+    else:
         ma_content = "Veri alınamadı."
+        atr_content = "-"
 
     st.markdown(f"""
     <div class="tech-card">
@@ -510,13 +512,14 @@ def render_tradingview_widget(ticker, height=800):
     html = f"""<div class="tradingview-widget-container"><div id="tradingview_chart"></div><script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script><script type="text/javascript">new TradingView.widget({{"width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true, "container_id": "tradingview_chart"}});</script></div>"""
     components.html(html, height=height)
 
+@st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
         info = yf.Ticker(ticker).info
         return {'price': info.get('currentPrice') or info.get('regularMarketPrice'), 'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target': info.get('targetMeanPrice', '-')}
     except: return None
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1200) # 20 Dakikalık Cache
 def fetch_google_news(ticker):
     try:
         clean = ticker.replace(".IS", "").replace("=F", "")
@@ -539,24 +542,37 @@ st.markdown("""
 <div class="header-container" style="display:flex; align-items:center; gap:10px;">
     <div style="font-size:1.8rem;">🐂</div>
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (ICT + PA)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.1</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Cached)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# FILTRELER
+# FILTRELER (NameError Fix: Değişkeni dışarıda tanımladık)
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
+
+# Varsayılan index hesaplama (Hata önleyici)
+current_cat = st.session_state.category
+if current_cat in ASSET_GROUPS:
+    cat_index = list(ASSET_GROUPS.keys()).index(current_cat)
+else:
+    cat_index = 0
+
 with col_cat:
-    cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category) if st.session_state.category in ASSET_GROUPS else 0
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+
 with col_ass:
     opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    idx = opts.index(st.session_state.ticker) if st.session_state.ticker in opts else 0
-    st.selectbox("Varlık Listesi", opts, index=idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
+    if st.session_state.ticker in opts:
+        asset_idx = opts.index(st.session_state.ticker)
+    else:
+        asset_idx = 0
+    st.selectbox("Varlık Listesi", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
+
 with col_search_in:
     st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
+
 with col_search_btn:
     st.button("Ara", on_click=on_manual_button_click)
 
@@ -636,7 +652,7 @@ with col_right:
     
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
-            with st.spinner("Taranıyor..."):
+            with st.spinner("Taranıyor... (Önbellekli)"):
                 st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
@@ -650,7 +666,7 @@ with col_right:
 
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary"):
-            with st.spinner("Taranıyor..."):
+            with st.spinner("Taranıyor... (Önbellekli)"):
                 st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
