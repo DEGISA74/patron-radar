@@ -9,10 +9,11 @@ import streamlit.components.v1 as components
 import numpy as np
 import sqlite3
 import os
+import textwrap 
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.9.0",
+    page_title="Patronun Terminali v3.9.1",
     layout="wide",
     page_icon="🐂"
 )
@@ -55,7 +56,7 @@ def remove_watchlist_db(symbol):
 if not os.path.exists(DB_FILE):
     init_db()
 
-# --- TEMA MOTORU ---
+# --- TEMA MOTORU & CSS (EN BAŞTA YÜKLENMELİ) ---
 if 'theme' not in st.session_state:
     st.session_state.theme = "Buz Mavisi"
 
@@ -65,6 +66,65 @@ THEMES = {
     "Buz Mavisi": {"bg": "#F0F8FF", "box_bg": "#FFFFFF", "text": "#0F172A", "border": "#BFDBFE", "news_bg": "#FFFFFF"}
 }
 current_theme = THEMES[st.session_state.theme]
+
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+    
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
+    .stApp {{ background-color: {current_theme['bg']}; }}
+    
+    /* DASHBOARD STİLİ */
+    .dashboard-container {{
+        display: flex; flex-wrap: wrap; gap: 15px; justify-content: flex-start; align-items: center;
+        background-color: {current_theme['box_bg']}; padding: 10px 15px;
+        border-bottom: 1px solid {current_theme['border']}; margin-top: -50px; margin-bottom: 15px;
+        border-radius: 0px 0px 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        width: 100%;
+    }}
+    .dash-item {{ font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; }}
+    .dash-label {{ color: #64748B; margin-right: 6px; font-weight: 600; }}
+    .dash-val {{ font-weight: 700; color: {current_theme['text']}; }}
+    .dash-delta {{ font-size: 0.7rem; margin-left: 4px; }}
+
+    /* Layout Sıkılaştırma */
+    section.main > div.block-container {{ padding-top: 2rem; padding-bottom: 2rem; }}
+    .header-container {{ margin-bottom: 0.5rem; }}
+    
+    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
+    
+    .stat-box-small {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 6px; padding: 4px 8px; text-align: center; margin-bottom: 4px;
+        box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+    }}
+    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; }}
+    .stat-value-small {{ font-size: 0.9rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
+    
+    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
+    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
+    
+    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
+    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
+    .news-title {{ color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; font-size: 0.8rem; }}
+    .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
+    .news-meta {{ font-size: 0.63rem; color: #64748B; }}
+
+    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
+    .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
+    
+    /* TEKNİK KART STİLİ */
+    .tech-card {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
+        font-size: 0.8rem; font-family: 'Inter', sans-serif;
+    }}
+    .tech-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+    .tech-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
+    .tech-label {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+    .tech-val {{ color: {current_theme['text']}; }}
+</style>
+""", unsafe_allow_html=True)
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
@@ -122,66 +182,7 @@ if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
 
-# --- DİNAMİK CSS ---
-st.markdown(f"""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
-    
-    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
-    .stApp {{ background-color: {current_theme['bg']}; }}
-    
-    /* DASHBOARD STİLİ */
-    .dashboard-container {{
-        display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
-        background-color: {current_theme['box_bg']}; padding: 8px 12px;
-        border-bottom: 1px solid {current_theme['border']}; margin-top: -10px; margin-bottom: 10px;
-        border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-    }}
-    .dash-item {{ font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; }}
-    .dash-label {{ color: #64748B; margin-right: 5px; font-weight: 600; }}
-    .dash-val {{ font-weight: 700; color: {current_theme['text']}; }}
-    .dash-delta {{ font-size: 0.7rem; margin-left: 3px; }}
-
-    /* Layout Sıkılaştırma */
-    section.main > div.block-container {{ padding-top: 0.5rem; padding-bottom: 2rem; }}
-    .header-container {{ margin-bottom: 0.5rem; }}
-    
-    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
-    
-    .stat-box-small {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; padding: 4px 8px; text-align: center; margin-bottom: 4px;
-        box-shadow: 0 1px 1px rgba(0,0,0,0.03);
-    }}
-    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; }}
-    .stat-value-small {{ font-size: 0.9rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
-    
-    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
-    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
-    
-    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
-    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
-    .news-title {{ color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; font-size: 0.8rem; }}
-    .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
-    .news-meta {{ font-size: 0.63rem; color: #64748B; }}
-
-    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
-    .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
-    
-    /* TEKNİK KART STİLİ */
-    .tech-card {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
-        font-size: 0.8rem; font-family: 'Inter', sans-serif;
-    }}
-    .tech-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .tech-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
-    .tech-label {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .tech-val {{ color: {current_theme['text']}; }}
-</style>
-""", unsafe_allow_html=True)
-
-# --- SIDEBAR & AI ANALIST ---
+# --- SIDEBAR & AI ANALIST (DÜZELTİLMİŞ FORMAT) ---
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
     selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
@@ -216,31 +217,31 @@ with st.sidebar:
                      if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                      close = df['Close']; high = df['High']; low = df['Low']
                      tech_extra = f"SMA50: {close.rolling(50).mean().iloc[-1]:.2f}, SMA200: {close.rolling(200).mean().iloc[-1]:.2f}, EMA144: {close.ewm(span=144, adjust=False).mean().iloc[-1]:.2f}"
-                     
-                     # ATR Hesaplama
                      tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
                      atr = tr.rolling(14).mean().iloc[-1]
                      atr_text = f"ATR (14): {atr:.2f} (2x Stop: {close.iloc[-1] - 2*atr:.2f})"
             except: pass
 
-            prompt_text = f"""
+            # --- Sola Yaslı (Dedent) ve Güncellenmiş Prompt ---
+            prompt_raw = f"""
             Rol: Profesyonel borsa traderı.
-            Görev: {ticker} hissesi için teknik analiz yorumu yap.
-            
+            Görev: {ticker} grafiğinde Teknik Analiz ve Formasyon Avcılığı.
+
             Veriler:
             - Fiyat: {price} USD
             - Radar 1 (Momentum): {r1_text}
             - Radar 2 (Trend/Yapı): {r2_text}
             - Ortalamalar: {tech_extra}
             - Risk Yönetimi: {atr_text}
-            
-            İstek:
-            - Al/Sat/Bekle tavsiyesi verme.
-            - Risk ve fırsat durumunu değerlendir.
-            - Destek/Direnç veya trend durumu hakkında kısa, vurucu 3 cümle kur.
-            - Türkçe yanıtla.
+
+            Emirler:
+            1. "Al/Sat/Bekle" tavsiyesi VERMEKTEN ÇEKİNME. (Net duruş sergile).
+            2. Günlük grafikte Formasyon ara (TOBO, OBO, Bayrak, Flama, Üçgen, Kama, Consolidation, Built-up). Varsa mutlaka belirt.
+            3. Destek/Direnç ve Trend hakkında çok kısa, vurucu ve teknik 5 cümle kur.
+            4. Risk/Getiri durumunu değerlendir.
+            5. Türkçe yanıtla.
             """
-            st.code(prompt_text, language="markdown")
+            st.code(textwrap.dedent(prompt_raw).strip(), language="text")
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -270,7 +271,7 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- DASHBOARD (YENİ) ---
+# --- DASHBOARD (YENİ - VIOP YERİNE BIST100) ---
 def render_dashboard():
     indices = {
         "Dow Jones": "^DJI", "S&P 500": "^GSPC", "NASDAQ": "^IXIC", 
@@ -310,7 +311,7 @@ def render_dashboard():
     html_content += '</div>'
     st.markdown(html_content, unsafe_allow_html=True)
 
-# --- ANALİZ MOTORLARI (Daily Stable) ---
+# --- ANALİZ MOTORLARI ---
 def analyze_market_intelligence(asset_list):
     signals = []
     try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
@@ -441,23 +442,20 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     progress_bar.empty()
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- TEKNİK KART (GÜNCELLENDİ: 3 Satır + ATR) ---
+# --- TEKNİK KART (3 Satırlı + ATR) ---
 def render_detail_card(ticker):
-    # Satır 1: Radar 1
     r1_content = "<span style='color:#94a3b8; font-style:italic;'>Veri yok (Tara'ya bas)</span>"
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
         if not row.empty:
             r1_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> • {row.iloc[0]['Nedenler']}"
 
-    # Satır 2: Radar 2
     r2_content = "<span style='color:#94a3b8; font-style:italic;'>Veri yok (Radar 2 Tara'ya bas)</span>"
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty:
             r2_content = f"<b>{row.iloc[0]['Trend']}</b> • {row.iloc[0]['Setup']} • Skor {row.iloc[0]['Skor']} • RS %{row.iloc[0]['RS']}"
 
-    # Satır 3: Ortalamalar ve ATR
     ma_content = "Hesaplanıyor..."
     atr_content = ""
     try:
@@ -471,7 +469,6 @@ def render_detail_card(ticker):
             sma200 = close.rolling(200).mean().iloc[-1]
             ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
             
-            # ATR Hesaplama (14 Günlük)
             tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
             atr = tr.rolling(14).mean().iloc[-1]
             stop_level = close.iloc[-1] - (2 * atr)
@@ -524,15 +521,15 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ KURULUMU ---
-# 1. DASHBOARD (En Üst)
+# 1. DASHBOARD (En Üst - CSS yüklendikten sonra)
 render_dashboard()
 
 st.markdown("""
 <div class="header-container" style="display:flex; align-items:center; gap:10px;">
     <div style="font-size:1.8rem;">🐂</div>
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.9.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Komuta Merkezi (Dashboard + ATR Stop)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.9.1</div>
+        <div style="font-size:0.8rem; color:#64748B;">Stable Release (Fix + Brave AI)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -572,7 +569,7 @@ with col_left:
     # 2. TRADINGVIEW GRAFİĞİ (800PX)
     render_tradingview_widget(st.session_state.ticker)
     
-    # 3. YENİ TEKNİK KART (3 Satırlı + ATR)
+    # 3. TEKNİK KART (3 Satırlı + ATR)
     render_detail_card(st.session_state.ticker)
     
     # 4. HABERLER
