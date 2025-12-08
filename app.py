@@ -13,7 +13,7 @@ import google.generativeai as genai
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.8.0",
+    page_title="Patronun Terminali v3.8.1",
     layout="wide",
     page_icon="🐂"
 )
@@ -137,7 +137,7 @@ st.markdown(f"""
     
     /* 1. ÜST BOŞLUĞU YOK ET */
     section.main > div.block-container {{
-        padding-top: 1rem; /* Varsayılan 5-6rem'den düşürüldü */
+        padding-top: 1rem; 
         padding-bottom: 2rem;
     }}
     
@@ -164,6 +164,9 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     .news-title {{ color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; font-size: 0.8rem; }}
+    .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
+    .news-meta {{ font-size: 0.63rem; color: #64748B; }}
+
     .signal-card {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 6px; padding: 6px; font-size: 0.65rem; margin-top: 6px; }}
     .wl-row {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 8px; padding: 4px 8px; margin-bottom: 4px; }}
     .wl-symbol {{ font-weight: 600; font-size: 0.85rem; }}
@@ -185,7 +188,8 @@ with st.sidebar:
     st.divider()
     
     with st.expander("🤖 AI Analist (Gemini)", expanded=True):
-        api_key = st.text_input("API Key", value=st.session_state.gemini_api_key, type="password", placeholder="Google AI Studio Key")
+        # type='password' kaldırıldı, normal text input yapıldı
+        api_key = st.text_input("API Key (Google AI Studio)", value=st.session_state.gemini_api_key, placeholder="Anahtarını buraya yapıştır")
         if api_key: st.session_state.gemini_api_key = api_key
         
         if st.button("🧠 Patron için Yorumla", type="primary"):
@@ -196,11 +200,9 @@ with st.sidebar:
                     genai.configure(api_key=st.session_state.gemini_api_key)
                     model = genai.GenerativeModel('gemini-pro')
                     
-                    # Prompt Hazırlığı
                     info = yf.Ticker(st.session_state.ticker).info
                     price = info.get('currentPrice', 0)
                     
-                    # Radar Sinyali varsa ekle
                     radar_context = "Henüz tarama yapılmadı."
                     if st.session_state.scan_data is not None:
                         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == st.session_state.ticker]
@@ -209,10 +211,8 @@ with st.sidebar:
                     prompt = f"""
                     Sen profesyonel bir borsa traderısın. Aşağıdaki verileri kullanarak {st.session_state.ticker} hissesi için 
                     Patronuna (bana) çok kısa, net ve vurucu bir teknik analiz yorumu yap.
-                    
                     Fiyat: {price}
                     Radar Sinyali: {radar_context}
-                    
                     Yorumun "Al/Sat/Bekle" tavsiyesi içermesin ama risk/getiri durumunu özetlesin. 
                     Maksimum 3 cümle. Türkçe.
                     """
@@ -221,7 +221,12 @@ with st.sidebar:
                         response = model.generate_content(prompt)
                         st.session_state.ai_analysis = response.text
                 except Exception as e:
-                    st.error(f"Hata: {str(e)}")
+                    # Hata Yönetimi: 429 Too Many Requests yakalama
+                    err_msg = str(e)
+                    if "429" in err_msg or "ResourceExhausted" in err_msg:
+                        st.warning("⚠️ Patron, Google kotası doldu (Too Many Requests). Lütfen 1 dakika bekleyip tekrar dene.")
+                    else:
+                        st.error(f"Hata: {err_msg}")
 
     if st.session_state.ai_analysis:
         st.info(st.session_state.ai_analysis)
@@ -254,10 +259,35 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-def add_to_log(log_name, category, df):
-    if df is None or df.empty: return
-    entry = {"time": datetime.now().strftime("%H:%M"), "category": category, "count": len(df)}
-    st.session_state[log_name].insert(0, entry)
+# --- ORTAK SİNYAL FONKSİYONU ---
+def render_common_signals():
+    df1 = st.session_state.scan_data
+    df2 = st.session_state.radar2_data
+    if df1 is None or df2 is None: return
+    if df1.empty or df2.empty: return
+
+    commons = []
+    symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+    if not symbols: return
+
+    for sym in symbols:
+        row1 = df1[df1["Sembol"] == sym].iloc[0]
+        row2 = df2[df2["Sembol"] == sym].iloc[0]
+        combined = float(row1["Skor"]) + float(row2["Skor"])
+        commons.append({"symbol": sym, "r1": row1, "r2": row2, "combined": combined})
+
+    commons_sorted = sorted(commons, key=lambda x: x["combined"], reverse=True)
+
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar (Radar 1 + 2)</div>", unsafe_allow_html=True)
+    with st.container():
+        for item in commons_sorted:
+            sym = item["symbol"]
+            row1 = item["r1"]; row2 = item["r2"]
+            c1, c2 = st.columns([0.2, 0.8])
+            if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"common_star_{sym}"): toggle_watchlist(sym); st.rerun()
+            label = f"{sym} | R1: {row1['Skor']} | R2: {row2['Skor']} | {row2['Setup']}"
+            if c2.button(label, key=f"common_btn_{sym}"): on_scan_result_click(sym); st.rerun()
+    st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- RADAR 1 (CORE) ---
 def analyze_market_intelligence(asset_list):
@@ -432,8 +462,8 @@ st.markdown("""
 <div class="header-container" style="display:flex; align-items:center; gap:10px;">
     <div style="font-size:1.8rem;">🐂</div>
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.8.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Gold Master + AI Analist</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.8.1</div>
+        <div style="font-size:0.8rem; color:#64748B;">Gold Master (Fix)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -482,13 +512,15 @@ with col_left:
     else: st.info("Haber yok.")
 
 with col_right:
+    # ORTAK SİNYALLER GERİ GELDİ (En Tepeye)
+    render_common_signals()
+
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
             with st.spinner("Taranıyor..."):
-                scan_df = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
-                st.session_state.scan_data = scan_df
+                st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
             for i, row in st.session_state.scan_data.iterrows():
@@ -509,8 +541,11 @@ with col_right:
                 sym = row["Sembol"]
                 c1, c2 = st.columns([0.2, 0.8])
                 if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"r2_s_{sym}_{i}"): toggle_watchlist(sym); st.rerun()
-                if c2.button(f"🚀 {sym} | {row['Setup']}", key=f"r2_b_{sym}_{i}"): on_scan_result_click(sym); st.rerun()
-                st.markdown(f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; padding-left:5px;'>{row['Trend']} | RS: {row['RS']}% | {row['Etiketler']}</div>", unsafe_allow_html=True)
+                
+                # RADAR 2 PUANLAMA VE BUTON DÜZENİ GERİ GELDİ
+                btn_label = f"🚀 {sym} | Skor: {row['Skor']} | {row['Trend']} | {row['Setup']}"
+                if c2.button(btn_label, key=f"r2_b_{sym}_{i}"): on_scan_result_click(sym); st.rerun()
+                st.markdown(f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; padding-left:5px;'>Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}</div>", unsafe_allow_html=True)
         else: st.info("Sinyal yok.")
 
     with tab3:
