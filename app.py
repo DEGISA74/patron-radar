@@ -9,11 +9,10 @@ import streamlit.components.v1 as components
 import numpy as np
 import sqlite3
 import os
-import google.generativeai as genai
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v3.8.1",
+    page_title="Patronun Terminali v3.8.2",
     layout="wide",
     page_icon="🐂"
 )
@@ -122,12 +121,8 @@ if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
-if 'radar1_log' not in st.session_state: st.session_state.radar1_log = []
-if 'radar2_log' not in st.session_state: st.session_state.radar2_log = []
-if 'gemini_api_key' not in st.session_state: st.session_state.gemini_api_key = ""
-if 'ai_analysis' not in st.session_state: st.session_state.ai_analysis = ""
 
-# --- DİNAMİK CSS (RED AREA FIXED) ---
+# --- DİNAMİK CSS ---
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -135,16 +130,9 @@ st.markdown(f"""
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
     
-    /* 1. ÜST BOŞLUĞU YOK ET */
-    section.main > div.block-container {{
-        padding-top: 1rem; 
-        padding-bottom: 2rem;
-    }}
-    
-    /* 2. BAŞLIK MARJLARINI SIKILAŞTIR */
-    .header-container {{
-        margin-bottom: 0.5rem;
-    }}
+    /* ÜST BOŞLUKLARI SIKILAŞTIRMA */
+    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 2rem; }}
+    .header-container {{ margin-bottom: 0.5rem; }}
     
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
@@ -156,28 +144,30 @@ st.markdown(f"""
     .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; }}
     .stat-value-small {{ font-size: 0.9rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
     
-    /* 3. MENÜ ve ÇİZGİ ARALARINI SIKILAŞTIR */
     hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
     .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
     
-    /* Diğer Stiller */
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     .news-title {{ color: {current_theme['text']}; font-weight: 600; text-decoration: none; display: block; margin-bottom: 2px; font-size: 0.8rem; }}
     .news-title:hover {{ text-decoration: underline; color: #2563EB; }}
     .news-meta {{ font-size: 0.63rem; color: #64748B; }}
 
-    .signal-card {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 6px; padding: 6px; font-size: 0.65rem; margin-top: 6px; }}
-    .wl-row {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 8px; padding: 4px 8px; margin-bottom: 4px; }}
-    .wl-symbol {{ font-weight: 600; font-size: 0.85rem; }}
-    .wl-badge {{ display: inline-block; padding: 1px 5px; border-radius: 999px; border: 1px solid {current_theme['border']}; margin-right: 3px; font-size: 0.6rem; }}
-    
+    /* BUTON VE LISTE STILLERI */
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
+    
+    /* Bilgi Kartı Stili */
+    .info-card {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
+        font-size: 0.8rem;
+    }}
+    .info-item {{ margin-bottom: 2px; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR & AI ---
+# --- SIDEBAR & AI ANALIST (PROMPT GENERATOR MODU) ---
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
     selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
@@ -187,49 +177,34 @@ with st.sidebar:
 
     st.divider()
     
-    with st.expander("🤖 AI Analist (Gemini)", expanded=True):
-        # type='password' kaldırıldı, normal text input yapıldı
-        api_key = st.text_input("API Key (Google AI Studio)", value=st.session_state.gemini_api_key, placeholder="Anahtarını buraya yapıştır")
-        if api_key: st.session_state.gemini_api_key = api_key
-        
-        if st.button("🧠 Patron için Yorumla", type="primary"):
-            if not st.session_state.gemini_api_key:
-                st.error("Önce API Key girin.")
-            else:
-                try:
-                    genai.configure(api_key=st.session_state.gemini_api_key)
-                    model = genai.GenerativeModel('gemini-pro')
-                    
-                    info = yf.Ticker(st.session_state.ticker).info
-                    price = info.get('currentPrice', 0)
-                    
-                    radar_context = "Henüz tarama yapılmadı."
-                    if st.session_state.scan_data is not None:
-                        row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == st.session_state.ticker]
-                        if not row.empty: radar_context = f"Radar 1 Skoru: {row.iloc[0]['Skor']}/8. Nedenler: {row.iloc[0]['Nedenler']}"
-                    
-                    prompt = f"""
-                    Sen profesyonel bir borsa traderısın. Aşağıdaki verileri kullanarak {st.session_state.ticker} hissesi için 
-                    Patronuna (bana) çok kısa, net ve vurucu bir teknik analiz yorumu yap.
-                    Fiyat: {price}
-                    Radar Sinyali: {radar_context}
-                    Yorumun "Al/Sat/Bekle" tavsiyesi içermesin ama risk/getiri durumunu özetlesin. 
-                    Maksimum 3 cümle. Türkçe.
-                    """
-                    
-                    with st.spinner("Yapay zeka grafiğe bakıyor..."):
-                        response = model.generate_content(prompt)
-                        st.session_state.ai_analysis = response.text
-                except Exception as e:
-                    # Hata Yönetimi: 429 Too Many Requests yakalama
-                    err_msg = str(e)
-                    if "429" in err_msg or "ResourceExhausted" in err_msg:
-                        st.warning("⚠️ Patron, Google kotası doldu (Too Many Requests). Lütfen 1 dakika bekleyip tekrar dene.")
-                    else:
-                        st.error(f"Hata: {err_msg}")
-
-    if st.session_state.ai_analysis:
-        st.info(st.session_state.ai_analysis)
+    # 3. YENİLİK: AI Prompt Oluşturucu (API Yok, Sorun Yok)
+    with st.expander("🤖 AI Analist (Metin Oluşturucu)", expanded=True):
+        st.caption("Aşağıdaki butona bas, verileri topla ve Gemini/ChatGPT'ye yapıştır.")
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
+            info = yf.Ticker(st.session_state.ticker).info
+            price = info.get('currentPrice', 'Bilinmiyor')
+            
+            # Radar Sinyali varsa ekle
+            radar_context = "Henüz tarama yapılmadı."
+            if st.session_state.scan_data is not None:
+                row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == st.session_state.ticker]
+                if not row.empty: radar_context = f"Radar 1 Skoru: {row.iloc[0]['Skor']}/8. Nedenler: {row.iloc[0]['Nedenler']}"
+            
+            prompt_text = f"""
+            Rol: Profesyonel borsa traderı.
+            Görev: {st.session_state.ticker} hissesi için teknik analiz yorumu yap.
+            
+            Veriler:
+            - Fiyat: {price} USD
+            - Teknik Sinyaller (Radar): {radar_context}
+            
+            İstek:
+            - Al/Sat/Bekle tavsiyesi verme.
+            - Risk ve fırsat durumunu değerlendir.
+            - Destek/Direnç veya trend durumu hakkında kısa, vurucu 3 cümle kur.
+            - Türkçe yanıtla.
+            """
+            st.code(prompt_text, language="markdown")
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -259,37 +234,7 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- ORTAK SİNYAL FONKSİYONU ---
-def render_common_signals():
-    df1 = st.session_state.scan_data
-    df2 = st.session_state.radar2_data
-    if df1 is None or df2 is None: return
-    if df1.empty or df2.empty: return
-
-    commons = []
-    symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
-    if not symbols: return
-
-    for sym in symbols:
-        row1 = df1[df1["Sembol"] == sym].iloc[0]
-        row2 = df2[df2["Sembol"] == sym].iloc[0]
-        combined = float(row1["Skor"]) + float(row2["Skor"])
-        commons.append({"symbol": sym, "r1": row1, "r2": row2, "combined": combined})
-
-    commons_sorted = sorted(commons, key=lambda x: x["combined"], reverse=True)
-
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar (Radar 1 + 2)</div>", unsafe_allow_html=True)
-    with st.container():
-        for item in commons_sorted:
-            sym = item["symbol"]
-            row1 = item["r1"]; row2 = item["r2"]
-            c1, c2 = st.columns([0.2, 0.8])
-            if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"common_star_{sym}"): toggle_watchlist(sym); st.rerun()
-            label = f"{sym} | R1: {row1['Skor']} | R2: {row2['Skor']} | {row2['Setup']}"
-            if c2.button(label, key=f"common_btn_{sym}"): on_scan_result_click(sym); st.rerun()
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-# --- RADAR 1 (CORE) ---
+# --- ANALİZ MOTORLARI (Radar 1 & 2) ---
 def analyze_market_intelligence(asset_list):
     signals = []
     try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
@@ -313,14 +258,10 @@ def analyze_market_intelligence(asset_list):
 
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
-            sma20 = close.rolling(20).mean()
-            std20 = close.rolling(20).std()
+            sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
-
-            ema12 = close.ewm(span=12, adjust=False).mean()
-            ema26 = close.ewm(span=26, adjust=False).mean()
-            hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
-
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            
             delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss)))
             williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
@@ -344,7 +285,6 @@ def analyze_market_intelligence(asset_list):
         except: continue
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
-# --- RADAR 2 ---
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
     try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
@@ -367,7 +307,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                 else: continue
 
             if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close']); 
+            df = df.dropna(subset=['Close']) 
             if len(df) < 120: continue
 
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
@@ -403,8 +343,8 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
 
             if trend == "Boğa" and breakout_ratio >= 0.97:
-                setup = "Breakout"; score += 2; tags.append("Zirveye yakın")
-                if vol_spike: score += 1; tags.append("Hacim spike")
+                setup = "Breakout"; score += 2; tags.append("Zirve")
+                if vol_spike: score += 1; tags.append("Hacim+")
             
             if trend == "Boğa" and setup == "-":
                 if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55:
@@ -425,8 +365,41 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     progress_bar.empty()
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- TRADINGVIEW ---
-def render_tradingview_widget(ticker, height=780):
+# --- GRAFİK ALTINA BİLGİ KARTI ---
+def render_detail_card(ticker):
+    try:
+        # Hızlıca tekil veri çekme
+        df = yf.download(ticker, period="3mo", progress=False)
+        if df.empty: return
+        
+        # Sütun isimlerini düzleştir (MultiIndex sorununu önlemek için)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        close = df['Close']
+        if len(close) < 26: return
+        
+        curr_c = close.iloc[-1]
+        sma20 = close.rolling(20).mean().iloc[-1]
+        sma50 = close.rolling(50).mean().iloc[-1]
+        
+        trend_status = "BOĞA 🐂" if curr_c > sma50 else "NÖTR 😐" if curr_c > sma20 else "AYI 🐻"
+        
+        delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss)))
+        rsi_val = rsi.iloc[-1]
+        
+        st.markdown(f"""
+        <div class="info-card">
+            <div style="font-weight:700; color:#1e3a8a; margin-bottom:5px;">📋 {ticker} Teknik Kartı</div>
+            <div class="info-item">🔹 <b>Trend:</b> {trend_status} (Fiyat: {curr_c:.2f})</div>
+            <div class="info-item">🔹 <b>RSI (14):</b> {rsi_val:.1f} {'🔥 (Aşırı Alım)' if rsi_val>70 else '🥶 (Aşırı Satım)' if rsi_val<30 else ''}</div>
+            <div class="info-item">🔹 <b>SMA 50:</b> {sma50:.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    except: pass
+
+def render_tradingview_widget(ticker, height=500):
     tv_symbol = ticker
     if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
     elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
@@ -446,7 +419,7 @@ def fetch_google_news(ticker):
         rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(f'{clean} stock news site:investing.com OR site:seekingalpha.com')}&hl=tr&gl=TR&ceid=TR:tr"
         feed = feedparser.parse(rss_url)
         news = []
-        for entry in feed.entries[:15]:
+        for entry in feed.entries[:6]:
             try: dt = datetime(*entry.published_parsed[:6])
             except: dt = datetime.now()
             if dt < datetime.now() - timedelta(days=10): continue
@@ -456,20 +429,19 @@ def fetch_google_news(ticker):
         return news
     except: return []
 
-# --- ARAYÜZ ---
-# HEADER
+# --- ARAYÜZ KURULUMU ---
 st.markdown("""
 <div class="header-container" style="display:flex; align-items:center; gap:10px;">
     <div style="font-size:1.8rem;">🐂</div>
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.8.1</div>
-        <div style="font-size:0.8rem; color:#64748B;">Gold Master (Fix)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v3.8.2</div>
+        <div style="font-size:0.8rem; color:#64748B;">Final (Scrollbar + Detail Card + Prompt Mode)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# FILTERS
+# FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 with col_cat:
     cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category) if st.session_state.category in ASSET_GROUPS else 0
@@ -485,11 +457,12 @@ with col_search_btn:
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# MAIN CONTENT
+# İÇERİK
 info = fetch_stock_info(st.session_state.ticker)
 col_left, col_right = st.columns([3, 1])
 
 with col_left:
+    # 1. İSTATİSTİK KUTULARI
     if info and info['price']:
         sc1, sc2, sc3, sc4 = st.columns(4)
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -499,21 +472,56 @@ with col_left:
         sc4.markdown(f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p><p class="stat-value-small">{str(info["sector"])[:12]}</p></div>', unsafe_allow_html=True)
     
     st.write("")
+    # 2. TRADINGVIEW GRAFİĞİ
     render_tradingview_widget(st.session_state.ticker)
     
-    # Haberler
+    # 3. YENİLİK: GRAFİK ALTI BİLGİ KARTI
+    render_detail_card(st.session_state.ticker)
+    
+    # 4. HABERLER
     st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
     news = fetch_google_news(st.session_state.ticker)
     if news:
         cols = st.columns(2)
-        for i, n in enumerate(news[:6]):
+        for i, n in enumerate(news):
             with cols[i%2]:
                 st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
     else: st.info("Haber yok.")
 
 with col_right:
-    # ORTAK SİNYALLER GERİ GELDİ (En Tepeye)
-    render_common_signals()
+    # 1. YENİLİK: ORTAK SİNYALLER (SCROLLBAR İLE SABİT YÜKSEKLİK)
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
+    
+    # st.container(height=...) Streamlit'in yeni versiyonlarında scrollbar getirir
+    with st.container(height=250):
+        df1 = st.session_state.scan_data
+        df2 = st.session_state.radar2_data
+        
+        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
+            commons = []
+            symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+            if symbols:
+                for sym in symbols:
+                    row1 = df1[df1["Sembol"] == sym].iloc[0]
+                    row2 = df2[df2["Sembol"] == sym].iloc[0]
+                    combined = float(row1["Skor"]) + float(row2["Skor"])
+                    commons.append({"symbol": sym, "r1": row1, "r2": row2, "combined": combined})
+                
+                commons_sorted = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                
+                for item in commons_sorted:
+                    sym = item["symbol"]
+                    row1 = item["r1"]; row2 = item["r2"]
+                    c1, c2 = st.columns([0.2, 0.8])
+                    if c1.button("★", key=f"c_s_{sym}"): toggle_watchlist(sym); st.rerun()
+                    label = f"{sym} | R1:{row1['Skor']} R2:{row2['Skor']} | {row2['Setup']}"
+                    if c2.button(label, key=f"c_b_{sym}"): on_scan_result_click(sym); st.rerun()
+            else:
+                st.info("Kesişim yok.")
+        else:
+            st.caption("İki radar da çalıştırılmalı.")
+
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
@@ -542,7 +550,6 @@ with col_right:
                 c1, c2 = st.columns([0.2, 0.8])
                 if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"r2_s_{sym}_{i}"): toggle_watchlist(sym); st.rerun()
                 
-                # RADAR 2 PUANLAMA VE BUTON DÜZENİ GERİ GELDİ
                 btn_label = f"🚀 {sym} | Skor: {row['Skor']} | {row['Trend']} | {row['Setup']}"
                 if c2.button(btn_label, key=f"r2_b_{sym}_{i}"): on_scan_result_click(sym); st.rerun()
                 st.markdown(f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; padding-left:5px;'>Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}</div>", unsafe_allow_html=True)
