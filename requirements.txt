@@ -3,4 +3,4 @@ yfinance
 pandas
 feedparser
 textblob
-numpy
+google-generativeai
