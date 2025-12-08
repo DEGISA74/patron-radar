@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.0.2",
+    page_title="Patronun Terminali v4.0.3",
     layout="wide",
     page_icon="🐂"
 )
@@ -62,59 +62,24 @@ st.markdown(f"""
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
     
-    /* TEKNİK KART STİLİ */
-    .tech-card {{
+    /* ORTAK KART STİLİ (Hem Teknik hem ICT için) */
+    .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
         font-size: 0.8rem; font-family: 'Inter', sans-serif;
     }}
-    .tech-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .tech-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
-    .tech-label {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .tech-val {{ color: {current_theme['text']}; }}
-
-    /* ICT PANEL STİLİ */
-    .ict-container {{
-        background-color: {current_theme['box_bg']};
-        border: 1px solid {current_theme['border']};
-        border-radius: 6px;
-        padding: 15px;
-        margin-top: 10px;
-        margin-bottom: 15px;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-        line-height: 1.6;
-        color: {current_theme['text']};
-    }}
-    .ict-header {{
-        font-size: 0.9rem;
-        font-weight: 700;
-        color: #1e3a8a;
-        border-bottom: 2px solid #e5e7eb;
-        padding-bottom: 8px;
-        margin-bottom: 10px;
-    }}
-    .ict-section-title {{
-        font-weight: 700;
-        color: #64748B;
-        margin-top: 10px;
-        margin-bottom: 5px;
-        text-decoration: underline;
-    }}
-    .ict-row {{
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 4px;
-    }}
-    .ict-key {{
-        font-weight: 600;
-    }}
-    .ict-term {{
-        font-weight: 700;
-        color: #4338ca; /* Indigo */
-    }}
+    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+    .info-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
     
-    /* LOGO STİLİ (Düzeltildi) */
+    /* Teknik Kart Etiketleri (Kısa) */
+    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+    
+    /* ICT Kart Etiketleri (Uzun) */
+    .label-long {{ font-weight: 600; color: #64748B; width: 165px; flex-shrink: 0; }}
+    
+    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }}
+    
+    /* LOGO STİLİ */
     .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
 </style>
 """, unsafe_allow_html=True)
@@ -257,7 +222,7 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- ANALİZ MOTORLARI (CACHED - Hız Tuzağına Karşı Kalkan) ---
+# --- ANALİZ MOTORLARI (CACHED) ---
 @st.cache_data(ttl=3600)  # 1 Saatlik Cache
 def analyze_market_intelligence(asset_list):
     signals = []
@@ -399,24 +364,56 @@ def calculate_ict_concepts(ticker):
         recent_high = high.tail(20).max()
         recent_low = low.tail(20).min()
         
+        # Market Yapısı
         market_structure = "Nötr / Yatay"
+        is_bullish = False
         if close.iloc[-1] > high.tail(20).iloc[-5:].max():
             market_structure = "🟢 YÜKSELİŞ (Trend Güçlü)"
+            is_bullish = True
         elif close.iloc[-1] < low.tail(20).iloc[-5:].min():
             market_structure = "🔴 DÜŞÜŞ (Yapı Bozuldu)"
+            is_bullish = False
             
+        # Range ve Konum (Discount/Premium)
         range_high = high.tail(60).max()
         range_low = low.tail(60).min()
         mid_point = (range_high + range_low) / 2
         
-        position = "Nötr Bölge"
+        position_text = "Nötr Bölge"
+        is_discount = False
         if curr_price < mid_point:
             discount_pct = 100 - ((curr_price - range_low) / (range_high - range_low) * 100)
-            position = f"✅ UCUZ BÖLGE (Discount: %{discount_pct:.1f})"
+            position_text = f"✅ UCUZ BÖLGE (Discount: %{discount_pct:.1f})"
+            is_discount = True
         else:
             premium_pct = ((curr_price - range_low) / (range_high - range_low) * 100)
-            position = f"⚠️ PAHALI BÖLGE (Premium: %{premium_pct:.1f})"
+            position_text = f"⚠️ PAHALI BÖLGE (Premium: %{premium_pct:.1f})"
+            is_discount = False
             
+        # Özet Cümlesi
+        summary = "Piyasa kararsız; işlem için belirgin bir kırılım bekle."
+        if is_bullish and is_discount:
+            summary = "💡 ÖZET: Rüzgar arkada (Boğa); fiyat alım için uygun ucuzlukta."
+        elif not is_bullish and not is_discount: # Ayı ve Pahalı
+             summary = "💡 ÖZET: Trend düşüşte; fiyat satış için pahalı bölgede."
+        elif is_bullish and not is_discount:
+            summary = "💡 ÖZET: Trend yukarı ama fiyat pahalı (Premium); düzeltme beklenebilir."
+        elif not is_bullish and is_discount:
+             summary = "💡 ÖZET: Fiyat ucuz ama trend düşüşte; dip dönüşü sinyali ara."
+
+        # Fibonacci Seviyeleri
+        fibo_50 = mid_point
+        # OTE (Optimal Trade Entry) - Basit yaklaşım: Trend yönüne göre 61.8% geri çekilme
+        # Eğer Boğa ise: Dipten tepeye hareketin %61.8'i kadar geri gelmesi beklenir (ama genelde range high'dan inilir)
+        # Basitlik için: Range'in %62 seviyesi (Discount'un derini) veya %38 seviyesi.
+        # Biz burada seviye olarak verelim.
+        # Bullish senaryo için OTE: Range Low + (Range * 0.382) -> %61.8 retracement from High
+        ote_level_bull = range_low + (range_high - range_low) * 0.382
+        ote_level_bear = range_low + (range_high - range_low) * 0.618
+        
+        fibo_text = f"📐 Fibo %50: {fibo_50:.2f}$ | OTE (%62): {ote_level_bull if is_bullish else ote_level_bear:.2f}$"
+
+        # FVG
         fvg_text = "Belirgin Gap Yok"
         for i in range(len(df)-1, len(df)-10, -1):
             if i < 2: break
@@ -424,24 +421,26 @@ def calculate_ict_concepts(ticker):
                 gap_low = high.iloc[i-2]
                 gap_high = low.iloc[i]
                 if abs(curr_price - gap_high) / curr_price < 0.05:
-                   fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$ (Alım Fırsatı)"
+                   fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$"
                    break
             elif high.iloc[i] < low.iloc[i-2]:
                 gap_low = high.iloc[i]
                 gap_high = low.iloc[i-2]
                 if abs(curr_price - gap_low) / curr_price < 0.05:
-                   fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$ (Direnç Boşluğu)"
+                   fvg_text = f"🔲 {gap_low:.2f}$ - {gap_high:.2f}$"
                    break
                    
-        ob_text = f"🛡️ {recent_low:.2f}$ (Son Swing Low)"
-        liq_text = f"🎯 {recent_high:.2f}$ (Eski Tepe)" if curr_price > mid_point else f"🔻 {recent_low:.2f}$ (Eski Dip)"
+        ob_text = f"🛡️ {recent_low:.2f}$"
+        liq_text = f"🎯 {recent_high:.2f}$" if curr_price > mid_point else f"🔻 {recent_low:.2f}$"
 
         return {
+            "summary": summary,
             "structure": market_structure,
-            "position": position,
+            "position": position_text,
             "fvg": fvg_text,
             "ob": ob_text,
-            "liquidity": liq_text
+            "liquidity": liq_text,
+            "fibo": fibo_text
         }
     except:
         return None
@@ -451,16 +450,20 @@ def render_ict_panel(analysis):
         st.info("ICT verisi hesaplanamadı.")
         return
 
+    # İkiz Kart Tasarımı (Teknik Kart ile Birebir Aynı CSS)
+    # Sol sütun genişliği (label-long) 165px olarak ayarlandı
     st.markdown(f"""
-    <div class="ict-container">
-        <div class="ict-header">🧠 GÜNLÜK PİYASA PUSULASI (Price Action & ICT)</div>
-        <div class="ict-section-title">1️⃣ GENEL DURUM</div>
-        <div class="ict-row"><span class="ict-key">• Piyasa Yönü:</span> <span class="ict-val">{analysis['structure']}</span></div>
-        <div class="ict-row"><span class="ict-key">• Fiyat Konumu:</span> <span class="ict-val">{analysis['position']}</span></div>
-        <div class="ict-section-title">2️⃣ İŞLEM SEVİYELERİ</div>
-        <div class="ict-row"><span class="ict-key">• Kurumsal Destek:</span> <span><span class="ict-term">Bullish Order Block (OB)</span> | {analysis['ob']}</span></div>
-        <div class="ict-row"><span class="ict-key">• Fırsat Boşluğu:</span> <span><span class="ict-term">Fair Value Gap (FVG)</span> | {analysis['fvg']}</span></div>
-        <div class="ict-row"><span class="ict-key">• Ana Hedef:</span> <span><span class="ict-term">Liquidity Pool (BSL/SSL)</span> | {analysis['liquidity']}</span></div>
+    <div class="info-card">
+        <div class="info-header">🧠 ICT & Price Action</div>
+        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
+        </div>
+        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
+        <div class="info-row"><div class="label-long">Fiyat Konumu:</div><div class="info-val">{analysis['position']}</div></div>
+        <div class="info-row"><div class="label-long">Kurumsal Ana Destek Bölgesi:</div><div class="info-val">{analysis['ob']} (Bullish OB)</div></div>
+        <div class="info-row"><div class="label-long">Olası Alım Yeri:</div><div class="info-val">{analysis['fvg']} (FVG)</div></div>
+        <div class="info-row"><div class="label-long">Ana Hedef:</div><div class="info-val">{analysis['liquidity']} (Liquidity)</div></div>
+        <div class="info-row"><div class="label-long">ICT Fibonacci:</div><div class="info-val">{analysis['fibo']}</div></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -504,13 +507,14 @@ def render_detail_card(ticker):
         ma_content = "Veri alınamadı."
         atr_content = "-"
 
+    # Teknik Kart (80px Label)
     st.markdown(f"""
-    <div class="tech-card">
-        <div class="tech-header">📋 Teknik Kart</div>
-        <div class="tech-row"><div class="tech-label">Radar 1:</div><div class="tech-val">{r1_content}</div></div>
-        <div class="tech-row"><div class="tech-label">Radar 2:</div><div class="tech-val">{r2_content}</div></div>
-        <div class="tech-row"><div class="tech-label">Ortalama:</div><div class="tech-val">{ma_content}</div></div>
-        <div class="tech-row"><div class="tech-label">🛡️ Stop:</div><div class="tech-val">{atr_content}</div></div>
+    <div class="info-card">
+        <div class="info-header">📋 Teknik Kart</div>
+        <div class="info-row"><div class="label-short">Radar 1:</div><div class="info-val">{r1_content}</div></div>
+        <div class="info-row"><div class="label-short">Radar 2:</div><div class="info-val">{r2_content}</div></div>
+        <div class="info-row"><div class="label-short">Ortalama:</div><div class="info-val">{ma_content}</div></div>
+        <div class="info-row"><div class="label-short">🛡️ Stop:</div><div class="info-val">{atr_content}</div></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -547,24 +551,22 @@ def fetch_google_news(ticker):
 
 # --- ARAYÜZ KURULUMU ---
 
-# Boğa ikonu ve başlık
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeCfjM0J4F2MyQngH4zVCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2N7QngHYmtCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2N7QngHYmtCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.2</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Stable Fix)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.3</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Standardized)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# FILTRELER (Düzeltilmiş Sıralama)
+# FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
-# Önce indeksi hesapla
 try:
     cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError:
@@ -607,14 +609,14 @@ with col_left:
     # 2. TRADINGVIEW GRAFİĞİ (800PX)
     render_tradingview_widget(st.session_state.ticker)
     
-    # 3. TEKNİK KART (STANDART FORMAT)
+    # 3. TEKNİK KART (STANDART)
     render_detail_card(st.session_state.ticker)
     
-    # 4. YENİ: ICT & PRICE ACTION PUSULASI
+    # 4. YENİ: ICT & PRICE ACTION PUSULASI (STANDARTLAŞTIRILMIŞ)
     ict_analysis = calculate_ict_concepts(st.session_state.ticker)
     render_ict_panel(ict_analysis)
 
-    # 5. HABERLER (En alta kaydırıldı)
+    # 5. HABERLER (En altta)
     st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
     news = fetch_google_news(st.session_state.ticker)
     if news:
@@ -625,7 +627,7 @@ with col_left:
     else: st.info("Haber yok.")
 
 with col_right:
-    # 1. ORTAK SİNYALLER (STANDART FORMAT)
+    # 1. ORTAK SİNYALLER
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px;color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     
     with st.container(height=250):
