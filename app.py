@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.0.1",
+    page_title="Patronun Terminali v4.0.2",
     layout="wide",
     page_icon="🐂"
 )
@@ -29,6 +29,7 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
+# CSS NOTU: Python f-string içinde CSS süslü parantezleri {{ ve }} olarak çiftlenmiştir.
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -112,6 +113,9 @@ st.markdown(f"""
         font-weight: 700;
         color: #4338ca; /* Indigo */
     }}
+    
+    /* LOGO STİLİ (Düzeltildi) */
+    .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -220,13 +224,41 @@ with st.sidebar:
     
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("ChatGPT/Gemini için analiz metni:")
-        if st.button("📋 Analiz Metnini Kopyala", type="primary"):
-            # Prompt oluşturma kodu buraya (Metin olarak gösterilecek, API çağrısı yok)
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             t = st.session_state.ticker
-            st.code(f"{t} için Price Action, ICT ve Teknik Analiz yap. Destek, Direnç ve FVG seviyelerini belirt.", language="text")
+            # Sadece metin oluşturur, API çağırmaz
+            st.code(f"Rol: Profesyonel Trader.\nGörev: {t} hissesi için Price Action ve ICT konseptlerine (FVG, Order Block) dayalı günlük analiz yap.\n- Yön ne?\n- Alım/Satım bölgesi neresi?\n- Stop seviyesi (ATR) nedir?", language="text")
 
-# --- ANALİZ MOTORLARI (CACHED) ---
-@st.cache_data(ttl=3600)  # 1 Saatlik Cache - Rate Limit'i engeller
+# --- CALLBACKLER ---
+def on_category_change():
+    new_cat = st.session_state.get("selected_category_key")
+    if new_cat and new_cat in ASSET_GROUPS:
+        st.session_state.category = new_cat
+        st.session_state.ticker = ASSET_GROUPS[new_cat][0]
+        st.session_state.scan_data = None
+        st.session_state.radar2_data = None
+
+def on_asset_change():
+    new_asset = st.session_state.get("selected_asset_key")
+    if new_asset: st.session_state.ticker = new_asset
+
+def on_manual_button_click():
+    if st.session_state.manual_input_key: st.session_state.ticker = st.session_state.manual_input_key.upper()
+
+def on_scan_result_click(symbol): st.session_state.ticker = symbol
+
+def toggle_watchlist(symbol):
+    wl = st.session_state.watchlist
+    if symbol in wl:
+        remove_watchlist_db(symbol)
+        wl.remove(symbol)
+    else:
+        add_watchlist_db(symbol)
+        wl.append(symbol)
+    st.session_state.watchlist = wl
+
+# --- ANALİZ MOTORLARI (CACHED - Hız Tuzağına Karşı Kalkan) ---
+@st.cache_data(ttl=3600)  # 1 Saatlik Cache
 def analyze_market_intelligence(asset_list):
     signals = []
     try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
@@ -248,7 +280,6 @@ def analyze_market_intelligence(asset_list):
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             
-            # Basit Göstergeler
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
@@ -288,9 +319,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 
     results = []
     
-    # Progress Bar burada kullanılamaz çünkü cache fonksiyonu UI elemanı güncellemez. 
-    # Tek seferde işleyip döneceğiz.
-    
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
@@ -320,7 +348,6 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 
             delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
             
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
@@ -335,6 +362,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             setup = "-"; tags = []; score = 0
             avg_vol_20 = max(avg_vol_20, 1)
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
 
             if trend == "Boğa" and breakout_ratio >= 0.97:
                 setup = "Breakout"; score += 2; tags.append("Zirve")
@@ -358,14 +386,14 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
         except: continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-@st.cache_data(ttl=600) # 10 Dakikalık Cache (Analiz için)
+@st.cache_data(ttl=600) # 10 Dakikalık Cache
 def calculate_ict_concepts(ticker):
     try:
         df = yf.download(ticker, period="3mo", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
+        close = df['Close']; high = df['High']; low = df['Low']
         curr_price = close.iloc[-1]
         
         recent_high = high.tail(20).max()
@@ -426,32 +454,19 @@ def render_ict_panel(analysis):
     st.markdown(f"""
     <div class="ict-container">
         <div class="ict-header">🧠 GÜNLÜK PİYASA PUSULASI (Price Action & ICT)</div>
-        
         <div class="ict-section-title">1️⃣ GENEL DURUM</div>
         <div class="ict-row"><span class="ict-key">• Piyasa Yönü:</span> <span class="ict-val">{analysis['structure']}</span></div>
         <div class="ict-row"><span class="ict-key">• Fiyat Konumu:</span> <span class="ict-val">{analysis['position']}</span></div>
-        
         <div class="ict-section-title">2️⃣ İŞLEM SEVİYELERİ</div>
-        <div class="ict-row">
-            <span class="ict-key">• Kurumsal Destek:</span> 
-            <span><span class="ict-term">Bullish Order Block (OB)</span> | {analysis['ob']}</span>
-        </div>
-        <div class="ict-row">
-            <span class="ict-key">• Fırsat Boşluğu:</span> 
-            <span><span class="ict-term">Fair Value Gap (FVG)</span> | {analysis['fvg']}</span>
-        </div>
-        <div class="ict-row">
-            <span class="ict-key">• Ana Hedef:</span> 
-            <span><span class="ict-term">Liquidity Pool (BSL/SSL)</span> | {analysis['liquidity']}</span>
-        </div>
+        <div class="ict-row"><span class="ict-key">• Kurumsal Destek:</span> <span><span class="ict-term">Bullish Order Block (OB)</span> | {analysis['ob']}</span></div>
+        <div class="ict-row"><span class="ict-key">• Fırsat Boşluğu:</span> <span><span class="ict-term">Fair Value Gap (FVG)</span> | {analysis['fvg']}</span></div>
+        <div class="ict-row"><span class="ict-key">• Ana Hedef:</span> <span><span class="ict-term">Liquidity Pool (BSL/SSL)</span> | {analysis['liquidity']}</span></div>
     </div>
     """, unsafe_allow_html=True)
 
-
-# --- TEKNİK KART (STANDART SKOR FORMATI + ATR) ---
+# --- TEKNİK KART (Cached) ---
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
-    # Bu fonksiyon sadece veri çeker ve hesaplar, UI çizmez (Cache için)
     try:
         df = yf.download(ticker, period="2y", progress=False)
         if df.empty: return None
@@ -462,30 +477,24 @@ def get_tech_card_data(ticker):
         sma100 = close.rolling(100).mean().iloc[-1]
         sma200 = close.rolling(200).mean().iloc[-1]
         ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
-        
         tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
         atr = tr.rolling(14).mean().iloc[-1]
         stop_level = close.iloc[-1] - (2 * atr)
         risk_pct = (2*atr)/close.iloc[-1]*100
         
-        return {
-            "sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144,
-            "stop_level": stop_level, "risk_pct": risk_pct
-        }
+        return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": stop_level, "risk_pct": risk_pct}
     except: return None
 
 def render_detail_card(ticker):
     r1_content = "<span style='color:#94a3b8; font-style:italic;'>Veri yok (Tara'ya bas)</span>"
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty:
-            r1_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> • {row.iloc[0]['Nedenler']}"
+        if not row.empty: r1_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> • {row.iloc[0]['Nedenler']}"
 
     r2_content = "<span style='color:#94a3b8; font-style:italic;'>Veri yok (Radar 2 Tara'ya bas)</span>"
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty:
-            r2_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> | {row.iloc[0]['Trend']} | {row.iloc[0]['Setup']} | RS: %{row.iloc[0]['RS']}"
+        if not row.empty: r2_content = f"<b>Skor {row.iloc[0]['Skor']}/8</b> | {row.iloc[0]['Trend']} | {row.iloc[0]['Setup']} | RS: %{row.iloc[0]['RS']}"
 
     data = get_tech_card_data(ticker)
     if data:
@@ -538,25 +547,27 @@ def fetch_google_news(ticker):
 
 # --- ARAYÜZ KURULUMU ---
 
-st.markdown("""
-<div class="header-container" style="display:flex; align-items:center; gap:10px;">
-    <div style="font-size:1.8rem;">🐂</div>
+# Boğa ikonu ve başlık
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeCfjM0J4F2MyQngH4zVCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2N7QngHYmtCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+
+st.markdown(f"""
+<div class="header-container" style="display:flex; align-items:center;">
+    <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.1</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Cached)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.2</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Stable Fix)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# FILTRELER (NameError Fix: Değişkeni dışarıda tanımladık)
+# FILTRELER (Düzeltilmiş Sıralama)
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
-# Varsayılan index hesaplama (Hata önleyici)
-current_cat = st.session_state.category
-if current_cat in ASSET_GROUPS:
-    cat_index = list(ASSET_GROUPS.keys()).index(current_cat)
-else:
+# Önce indeksi hesapla
+try:
+    cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
+except ValueError:
     cat_index = 0
 
 with col_cat:
@@ -564,9 +575,9 @@ with col_cat:
 
 with col_ass:
     opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    if st.session_state.ticker in opts:
+    try:
         asset_idx = opts.index(st.session_state.ticker)
-    else:
+    except ValueError:
         asset_idx = 0
     st.selectbox("Varlık Listesi", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
 
@@ -638,7 +649,6 @@ with col_right:
                     row1 = item["r1"]; row2 = item["r2"]
                     c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"c_s_{sym}"): toggle_watchlist(sym); st.rerun()
-                    # FORMAT: Sembol | R1: Skr/8 | R2: Skr/8 | Setup
                     label = f"{sym} | R1: {row1['Skor']}/8 | R2: {row2['Skor']}/8 | {row2['Setup']}"
                     if c2.button(label, key=f"c_b_{sym}"): on_scan_result_click(sym); st.rerun()
             else:
