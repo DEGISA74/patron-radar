@@ -9,12 +9,11 @@ import streamlit.components.v1 as components
 import numpy as np
 import sqlite3
 import os
-import asyncio
-import concurrent.futures
+import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.5.0 (Async + Original Logic)",
+    page_title="Patronun Terminali v4.3.2",
     layout="wide",
     page_icon="🐂"
 )
@@ -107,7 +106,7 @@ def remove_watchlist_db(symbol):
     conn.close()
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ (ORİJİNAL) ---
+# --- VARLIK LİSTELERİ (GÜNCELLENMİŞ VE SIRALI) ---
 raw_sp500 = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
     "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
@@ -216,26 +215,12 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
-# --- ASYNC MOTORU (YENİ EKLENEN KISIM) ---
-async def fetch_data_chunk(tickers, period="6mo"):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, lambda: yf.download(tickers, period=period, group_by='ticker', threads=True, progress=False))
-
-async def get_bulk_data_async(asset_list, period="6mo", chunk_size=50):
-    chunks = [asset_list[i:i + chunk_size] for i in range(0, len(asset_list), chunk_size)]
-    tasks = [fetch_data_chunk(chunk, period) for chunk in chunks]
-    results = await asyncio.gather(*tasks)
-    final_df = pd.DataFrame()
-    for res in results:
-        if not res.empty:
-            if final_df.empty: final_df = res
-            else: final_df = pd.concat([final_df, res], axis=1)
-    return final_df
-
-# --- ANALİZ MOTORLARI (MANTIK %100 ORİJİNAL, INPUT/OUTPUT ASYNC UYUMLU) ---
-def analyze_market_intelligence_sync(data, asset_list):
+# --- ANALİZ MOTORLARI (CACHED) ---
+@st.cache_data(ttl=3600)
+def analyze_market_intelligence(asset_list):
     signals = []
-    # (Veri indirme kısmı kaldırıldı, parametre olarak gelen data kullanılıyor)
+    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
+    except: return pd.DataFrame()
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
@@ -244,11 +229,9 @@ def analyze_market_intelligence_sync(data, asset_list):
             else:
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
-            
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
             if len(df) < 60: continue
-            
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
@@ -261,8 +244,6 @@ def analyze_market_intelligence_sync(data, asset_list):
             score = 0; reasons = []
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
-            
-            # ORİJİNAL MANTIK AYNEN KORUNDU
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
             if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend")
@@ -272,22 +253,18 @@ def analyze_market_intelligence_sync(data, asset_list):
             if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout")
             rsi_c = rsi.iloc[-1]
             if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
-            
             if score > 0: signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
         except: continue
-    
-    # CRASH FIX EKLENDİ
-    if signals:
-        return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
-    else:
-        return pd.DataFrame(columns=["Sembol", "Fiyat", "Skor", "Nedenler"])
+    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
-def radar2_scan_sync(data, asset_list, idx_data=None):
-    # ORİJİNAL PARAMETRELER KORUNDU (min_price=5, min_avg_vol_m=1.0)
-    min_price=5; max_price=500; min_avg_vol_m=1.0
-    
+@st.cache_data(ttl=3600)
+def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
+    if not asset_list: return pd.DataFrame()
+    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
+    except: return pd.DataFrame()
+    try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
+    except: idx = None
     results = []
-    # (Veri indirme kısmı kaldırıldı, parametre olarak gelen data kullanılıyor)
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
@@ -296,18 +273,14 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             else:
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
-            
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close']); 
             if len(df) < 120: continue
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
-            
-            # ORİJİNAL MANTIK AYNEN KORUNDU
             if curr_c < min_price or curr_c > max_price: continue
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
             if avg_vol_20 < min_avg_vol_m * 1e6: continue
-            
             sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
             sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
             trend = "Yatay"
@@ -320,15 +293,13 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
             rs_score = 0.0
-            if idx_data is not None and len(close)>60 and len(idx_data)>60:
-                common_index = close.index.intersection(idx_data.index)
+            if idx is not None and len(close)>60 and len(idx)>60:
+                common_index = close.index.intersection(idx.index)
                 if len(common_index) > 60:
-                    cs = close.reindex(common_index); isx = idx_data.reindex(common_index)
+                    cs = close.reindex(common_index); isx = idx.reindex(common_index)
                     rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
-            
             setup = "-"; tags = []; score = 0
             avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
-            
             if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve"); 
             if vol_spike: score += 1; tags.append("Hacim+")
             if trend == "Boğa" and setup == "-":
@@ -339,26 +310,9 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             if rs_score > 0: score += 1; tags.append("RS+")
             if trend == "Boğa": score += 1
             elif trend == "Ayı": score -= 1
-            
             if score > 0: results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
         except: continue
-    
-    # CRASH FIX EKLENDİ
-    if results:
-        return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50)
-    else:
-        return pd.DataFrame(columns=["Sembol", "Fiyat", "Trend", "Setup", "Skor", "RS", "Etiketler"])
-
-# PIPELINE (YENİ EKLENEN KISIM)
-async def run_analysis_pipeline(asset_list):
-    data = await get_bulk_data_async(asset_list, period="1y")
-    loop = asyncio.get_event_loop()
-    # GSPC verisi için de index kontrolü
-    idx_data = await loop.run_in_executor(None, lambda: yf.download("^GSPC", period="1y", progress=False)["Close"])
-    
-    r1 = analyze_market_intelligence_sync(data, asset_list)
-    r2 = radar2_scan_sync(data, asset_list, idx_data)
-    return r1, r2
+    return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
@@ -539,20 +493,15 @@ def render_ict_panel(analysis):
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
-    
-    # SÜTUN KONTROLÜ EKLENDİ (CRASH FIX)
-    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty and "Sembol" in st.session_state.scan_data.columns:
+    if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
         if not row.empty: r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-            
-    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty and "Sembol" in st.session_state.radar2_data.columns:
+    if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty: r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-            
     dt = get_tech_card_data(ticker)
     ma_t = "-"
     if dt: ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
-    
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">📋 Teknik Kart</div>
@@ -593,20 +542,21 @@ def fetch_google_news(ticker):
         return news
     except: return []
 
-# --- ARAYÜZ ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3v/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+# --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Async Core + Original High Score Logic</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
+# FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError: cat_index = 0
@@ -632,6 +582,7 @@ if st.session_state.generate_prompt:
         price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
     except: price = "Bilinmiyor"
     
+    # STATİK PROMPT
     prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
 
 Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
@@ -698,7 +649,7 @@ with col_right:
     with st.container(height=250):
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
-        if df1 is not None and df2 is not None and not df1.empty and not df2.empty and "Sembol" in df1.columns and "Sembol" in df2.columns:
+        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
             commons = []
             symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
             if symbols:
@@ -715,52 +666,35 @@ with col_right:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # UI BUTTONS FOR ASYNC SCAN
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara (ASYNC)", type="primary"):
-            with st.spinner("Taranıyor..."):
-                r1_res, r2_res = asyncio.run(run_analysis_pipeline(ASSET_GROUPS.get(st.session_state.category, [])))
-                st.session_state.scan_data = r1_res
-                st.session_state.radar2_data = r2_res
-                st.rerun()
-                
-        if st.session_state.scan_data is not None and not st.session_state.scan_data.empty and "Sembol" in st.session_state.scan_data.columns:
+        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
+            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+        if st.session_state.scan_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.scan_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(row['Nedenler'])
-        else: st.write("Tarama yapılmadı veya sonuç bulunamadı.")
 
     with tab2:
-        if st.button(f"🚀 RADAR 2 Tara (ASYNC)", type="primary"):
-            with st.spinner("Taranıyor..."):
-                r1_res, r2_res = asyncio.run(run_analysis_pipeline(ASSET_GROUPS.get(st.session_state.category, [])))
-                st.session_state.scan_data = r1_res
-                st.session_state.radar2_data = r2_res
-                st.rerun()
-
-        if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty and "Sembol" in st.session_state.radar2_data.columns:
+        if st.button(f"🚀 RADAR 2 Tara", type="primary"):
+            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+        if st.session_state.radar2_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.radar2_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
-        else: st.write("Tarama yapılmadı veya sonuç bulunamadı.")
 
     with tab3:
         if st.button("⚡ Listeyi Tara", type="secondary"):
-            with st.spinner("..."):
-                r1_res, r2_res = asyncio.run(run_analysis_pipeline(st.session_state.watchlist))
-                st.session_state.scan_data = r1_res
-                st.session_state.radar2_data = r2_res
-                st.rerun()
-                
+            with st.spinner("..."): st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
         for sym in st.session_state.watchlist:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
