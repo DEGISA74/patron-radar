@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.3.2",
+    page_title="Patronun Terminali v4.4.0",
     layout="wide",
     page_icon="🐂"
 )
@@ -383,160 +383,149 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT (YENİ NESİL - PRICE ACTION ODAKLI) ---
+# --- ICT (YENİ NESİL - SENARYO BAZLI ANALİZ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
-        # Fraktal yapıları doğru tespit etmek için geniş veri (6 Ay)
+        # 1. VERİ HAZIRLIĞI
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        # MultiIndex temizliği
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
-            
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        open_p = df['Open']
+        close = df['Close']; high = df['High']; low = df['Low']; open_p = df['Open']
         curr_price = float(close.iloc[-1])
-        
-        # Volatilite (ATR) Hesabı (FVG Filtresi için)
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
 
-        # 1. FRAKTAL GEOMETRİ: GERÇEK SWING NOKTALARI
-        # Tepe için: Solunda ve sağında 2'şer düşük tepe olmalı.
+        # 2. FRAKTAL GEOMETRİ (SWING NOKTALARI)
         swing_highs = []
         swing_lows = []
-        
         for i in range(2, len(df)-2):
-            # Swing High
             if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
                 swing_highs.append((i, float(high.iloc[i])))
-            # Swing Low
             if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
                 swing_lows.append((i, float(low.iloc[i])))
-                
-        # Swing noktaları yoksa (yeni halka arz vb.)
-        if not swing_highs or not swing_lows:
-            return {"summary": "Veri Yetersiz", "structure": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False}
 
-        # 2. MARKET YAPISI (BOS & MSS)
-        last_sh = swing_highs[-1][1] # Son Swing High
-        last_sl = swing_lows[-1][1]  # Son Swing Low
-        
-        structure_verdict = "KONSOLİDASYON"
+        if not swing_highs or not swing_lows: return None
+
+        # 3. YAPISAL ANALİZ (MARKET STRUCTURE)
+        last_sh = swing_highs[-1][1]; last_sl = swing_lows[-1][1]
         bias = "Nötr"
+        structure_verdict = "KONSOLİDASYON"
         
-        # Fiyat, son Swing High'ın üzerinde kapattı mı?
-        if curr_price > last_sh:
-            structure_verdict = "BULLISH (BOS)"
-            bias = "Long"
-        # Fiyat, son Swing Low'un altında kapattı mı?
-        elif curr_price < last_sl:
-            structure_verdict = "BEARISH (BOS)"
-            bias = "Short"
+        # BOS Kontrolü
+        if curr_price > last_sh: bias = "Long"; structure_verdict = "BULLISH (BOS)"
+        elif curr_price < last_sl: bias = "Short"; structure_verdict = "BEARISH (BOS)"
         else:
-            # İç yapı kontrolü (Internal Structure)
-            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
-                structure_verdict = "BEARISH (Internal)"
-                bias = "Short"
-            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
-                structure_verdict = "BULLISH (Internal)"
-                bias = "Long"
+            # Sweep (Likitide Temizliği) Kontrolü: Fitil attı ama kapanış yapamadı mı?
+            recent_high_max = high.tail(5).max()
+            if recent_high_max > last_sh and curr_price < last_sh:
+                bias = "Short"; structure_verdict = "BEARISH (Sweep/Fakeout)"
+            elif low.tail(5).min() < last_sl and curr_price > last_sl:
+                bias = "Long"; structure_verdict = "BULLISH (Sweep/Fakeout)"
 
-        # 3. DEALING RANGE (OYUN ALANI)
-        # Mevcut işlem aralığı son swing high ve low arasıdır
-        range_high = last_sh
-        range_low = last_sl
+        # 4. DEALING RANGE & OTE HESABI
+        range_high = last_sh; range_low = last_sl
         mid_point = (range_high + range_low) / 2
+        
+        # OTE (Optimal Trade Entry) Seviyeleri (%62 - %79)
+        ote_long_entry = range_low + (range_high - range_low) * 0.62
+        ote_short_entry = range_low + (range_high - range_low) * 0.38 # (1-0.62)
         
         position_label = "DENGEDE"
         is_discount = False
+        is_ote = False
         
         if curr_price < mid_point:
             is_discount = True
-            if curr_price < range_low: position_label = "DEEP DISCOUNT (Alım Fırsatı)"
-            else: position_label = "DISCOUNT (Ucuz)"
+            position_label = "DISCOUNT (Ucuz)"
+            if bias == "Long" and curr_price <= ote_long_entry: is_ote = True
         else:
-            is_discount = False
-            if curr_price > range_high: position_label = "PREMIUM+ (Momentum)"
-            else: position_label = "PREMIUM (Pahalı)"
-
-        # 4. KALİTELİ FVG TARAMASI (ATR FİLTRELİ)
-        # Sadece ATR'nin %20'sinden büyük ve henüz doldurulmamış gapler
-        valid_fvgs = []
-        for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]: # Bullish Gap
-                gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]: # Bearish Gap
-                gap_size = low.iloc[i-2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1: break # En yakını al
+            position_label = "PREMIUM (Pahalı)"
+            if bias == "Short" and curr_price >= ote_short_entry: is_ote = True
             
-        fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
+        if curr_price > range_high: position_label = "DEEP PREMIUM (Aşırı Pahalı)"
+        if curr_price < range_low: position_label = "DEEP DISCOUNT (Aşırı Ucuz)"
 
-        # 5. ORDER BLOCK (OB) & LİKİDİTE HEDEFİ
-        ob_text = "-"
-        liq_target = "-"
-        ob_lbl = "Güvenli Giriş"
-        
-        if bias == "Long":
-            # Hedef: Son Zirve (Buy Side Liquidity)
-            liq_target = f"{last_sh:.2f}$ (BSL)"
-            # Giriş: Son Dibi Yapan Hareketin Başlangıcı
-            recent_sl_idx = swing_lows[-1][0]
-            ob_low = low.iloc[recent_sl_idx]
-            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
-            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
-            ob_lbl = "Bullish OB"
-        elif bias == "Short":
-            # Hedef: Son Dip (Sell Side Liquidity)
-            liq_target = f"{last_sl:.2f}$ (SSL)"
-            # Giriş: Son Tepeyi Yapan Hareketin Başlangıcı
-            recent_sh_idx = swing_highs[-1][0]
-            ob_high_val = high.iloc[recent_sh_idx]
-            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
-            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
-            ob_lbl = "Bearish OB"
-            
-        # 6. ÖZET METNİ (Seçenek 1 Formatı)
-        # Satır 1: Yapı ve Konum
-        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
-        
-        # Golden Setup Kontrolü (Ekstra Görsellik İçin)
+        # 5. ORDER BLOCK & FVG (Smart Money İzleri)
+        # Basitleştirilmiş OB tespiti
+        ob_text = "-"; ob_val = 0
+        if bias == "Long" and swing_lows:
+            idx = swing_lows[-1][0]
+            ob_val = low.iloc[idx]
+            ob_text = f"🛡️ {ob_val:.2f}$"
+        elif bias == "Short" and swing_highs:
+            idx = swing_highs[-1][0]
+            ob_val = high.iloc[idx]
+            ob_text = f"⚔️ {ob_val:.2f}$"
+
+        # FVG Taraması
+        fvg_text = "Yok"; has_fvg = False
+        for i in range(len(df)-2, len(df)-20, -1):
+            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
+                gap = low.iloc[i] - high.iloc[i-2]
+                if gap > current_atr * 0.2 and curr_price > high.iloc[i-2]:
+                    fvg_text = f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}"; has_fvg = True; break
+            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
+                gap = low.iloc[i-2] - high.iloc[i]
+                if gap > current_atr * 0.2 and curr_price < low.iloc[i-2]:
+                    fvg_text = f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}"; has_fvg = True; break
+
+        # 6. SENARYO MOTORU (DECISION TREE)
+        summary = ""
         golden_setup = False
-        golden_txt = "-"
-        if bias == "Long" and is_discount and "🟢" in fvg_text:
+        
+        # Senaryo 1: Golden Long Setup
+        if bias == "Long" and is_discount:
+            if is_ote:
+                summary = f"🔥 **GOLDEN LONG:** Fiyat OTE (%62) bölgesinde tepki arıyor. | 🛡️ **PLAN:** {ob_text} OB seviyesi üzerinde tutunursa hedef {last_sh:.2f}$ (BSL)."
+                golden_setup = True
+            else:
+                summary = f"✅ **ALIM FIRSATI:** Trend Bullish ve fiyat ucuzladı. | 📍 **BEKLE:** İdeal giriş için {ote_long_entry:.2f}$ (OTE) seviyesine çekilme beklenmeli."
+        
+        # Senaryo 2: Reversal / Liquidity Sweep
+        elif "Sweep" in structure_verdict:
+            target = last_sl if bias == "Short" else last_sh
+            summary = f"🪤 **LİKİDİTE TUZAĞI:** Fiyat stopları temizledi ama ters yöne döndü. | 📉 **STRATEJİ:** {('Yükselişler satış' if bias=='Short' else 'Düşüşler alış')} fırsatıdır. Hedef: {target:.2f}$."
             golden_setup = True
-            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
-        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
+
+        # Senaryo 3: High Momentum (Kaçan Tren)
+        elif bias == "Long" and "PREMIUM" in position_label and has_fvg:
+            summary = f"🚀 **YÜKSEK MOMENTUM:** Boğalar çok güçlü, OTE'ye inmiyor. | 🎯 **GİRİŞ:** Derin düzeltme bekleme, mevcut FVG ({fvg_text}) bölgesinden katıl."
+
+        # Senaryo 4: Overextended (Aşırı Pahalı)
+        elif bias == "Long" and "DEEP PREMIUM" in position_label:
+             summary = f"⚠️ **AŞIRI PAHALI:** Trend yukarı ama fiyat çok şişti. | 🛑 **UYARI:** Buradan girilmez. Fiyatın {mid_point:.2f}$ (EQ) seviyesine dönmesini bekle."
+
+        # Senaryo 5: Strong Bearish
+        elif bias == "Short" and not is_ote:
+            summary = f"🩸 **GÜÇLÜ SATIŞ:** Ayılar baskın, fiyat düşüyor. | 📉 **HEDEF:** Sıradaki likidite havuzu {last_sl:.2f}$ (SSL). Düşen bıçak tutulmaz."
+            
+        # Senaryo 6: Consolidation
+        else:
+            summary = f"💤 **KONSOLİDASYON:** Fiyat {mid_point:.2f}$ (EQ) etrafında sıkıştı. | ⏳ **PLAN:** İşlem yapma. {last_sh:.2f}$ veya {last_sl:.2f}$ seviyelerinden birinin kırılmasını bekle."
 
         return {
-            "summary": summary_line,
+            "summary": summary,
             "structure": structure_verdict,
             "position": position_label,
             "fvg": fvg_text,
             "ob": ob_text,
-            "ob_label": ob_lbl,
-            "liquidity": liq_target,
-            "liq_label": "Bir Sonraki Hedef",
-            "eqh": liq_target,
-            "fibo": f"EQ: {mid_point:.2f}$",
-            "bb": "-", # Breaker Block şimdilik pasif
-            "golden_text": golden_txt,
+            "ob_label": "Smart Money Footprint",
+            "liquidity": f"{last_sh:.2f}$ / {last_sl:.2f}$",
+            "liq_label": "Likidite Havuzları (BSL/SSL)",
+            "eqh": f"{last_sh:.2f}$", # Eski uyumluluk için
+            "fibo": f"OTE: {ote_long_entry:.2f}$" if bias == "Long" else f"OTE: {ote_short_entry:.2f}$",
+            "bb": "-",
+            "golden_text": "AKTİF" if golden_setup else "-",
             "golden_setup": golden_setup
         }
+
     except Exception as e:
         return None
+
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
     try:
@@ -548,6 +537,7 @@ def get_tech_card_data(ticker):
         atr = (high-low).rolling(14).mean().iloc[-1]
         return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
+
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
@@ -582,20 +572,116 @@ def render_deep_xray_card(xray):
 
 def render_ict_panel(analysis):
     if not analysis: return
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
+    
+    # 1. TEMA RENGİNİ BELİRLE
+    text_dump = (analysis['structure'] + analysis['summary']).upper()
+    bias = "Nötr"
+    color = "#64748b"
+    bg_color = "#f8fafc"
+    
+    if "BULLISH" in text_dump or "LONG" in text_dump:
+        bias = "BULLISH"
+        color = "#16a34a"
+        bg_color = "#f0fdf4"
+    elif "BEARISH" in text_dump or "SHORT" in text_dump:
+        bias = "BEARISH"
+        color = "#dc2626"
+        bg_color = "#fef2f2"
+    elif "KONSOLİDASYON" in text_dump:
+        bias = "YATAY"
+        color = "#d97706"
+        bg_color = "#fffbeb"
+
+    # 2. METİN FORMATLAMA
+    summary_clean = analysis['summary'].replace("**", "")
+    summary_parts = summary_clean.split("|")
+    
+    summary_html = ""
+    for part in summary_parts:
+        if any(x in part for x in ["🔥", "🚀", "⚠️", "✅", "🪤", "💤", "🩸"]):
+            summary_html += f'<div style="margin-bottom:4px; font-weight:700; color:{color};">{part.strip()}</div>'
+        else:
+            summary_html += f'<div style="margin-bottom:4px; font-size:0.75rem; color:#475569;">{part.strip()}</div>'
+
+    golden_html = ""
+    if analysis['golden_setup']:
+        golden_html = f"""
+        <div style="margin-top:10px; padding:8px; background-color:{color}15; border:1px dashed {color}; border-radius:6px; text-align:center;">
+            <div style="color:{color}; font-weight:800; font-size:0.8rem; animation: pulse 2s infinite;">
+                {analysis['golden_text']}
+            </div>
+        </div>"""
+
+    # 3. HTML OLUŞTURMA (DÜZELTİLDİ: textwrap ile sola yaslama)
+    html_code = textwrap.dedent(f"""
+    <style>
+        @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} 100% {{ opacity: 1; }} }}
+        .ict-card {{
+            font-family: 'Inter', sans-serif;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid {color};
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            padding: 12px;
+            margin-top: 10px;
+        }}
+        .ict-badge {{
+            background-color: {color};
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .ict-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #f1f5f9;
+        }}
+        .ict-item {{ display: flex; flex-direction: column; }}
+        .ict-label {{ font-size: 0.65rem; color: #64748b; font-weight: 600; text-transform: uppercase; }}
+        .ict-val {{ font-size: 0.8rem; font-weight: 700; color: #1e293b; font-family: 'JetBrains Mono', monospace; }}
+    </style>
+
+    <div class="ict-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:700; color:#1e3a8a; font-size:0.9rem;">🧠 ICT & Price Action</div>
+            <span class="ict-badge">{bias}</span>
         </div>
-        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
-        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
-        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
-        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
-        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
+
+        <div style="background-color:{bg_color}; padding:8px; border-radius:6px; border:1px solid {color}30;">
+            {summary_html}
+        </div>
+
+        <div class="ict-grid">
+            <div class="ict-item">
+                <span class="ict-label">KONUM (Range)</span>
+                <span class="ict-val" style="color:{color}">{analysis['position'].split('(')[0]}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">{analysis['ob_label']}</span>
+                <span class="ict-val">{analysis['ob'].replace('🛡️','').replace('⚔️','')}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">FIRSAT (FVG)</span>
+                <span class="ict-val">{analysis['fvg'].replace('🟢','').replace('🔴','')}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">{analysis['liq_label']}</span>
+                <span class="ict-val">{analysis['eqh'].split('(')[0]}</span>
+            </div>
+        </div>
+        {golden_html}
     </div>
-    """, unsafe_allow_html=True)
+    """)
+    
+    st.markdown(html_code, unsafe_allow_html=True)
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
@@ -649,13 +735,13 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.0</div>
         <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
     </div>
 </div>
@@ -803,7 +889,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
-
-
-
