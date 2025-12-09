@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.3.0",
+    page_title="Patronun Terminali v4.3.1",
     layout="wide",
     page_icon="🐂"
 )
@@ -265,6 +265,7 @@ def calculate_sentiment_score(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
+        # 1. Momentum (30p)
         score_mom = 0; reasons_mom = []
         rsi = 100 - (100 / (1 + (close.diff().clip(lower=0).rolling(14).mean() / close.diff().clip(upper=0).abs().rolling(14).mean())))
         if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score_mom += 10; reasons_mom.append("RSI ↑")
@@ -275,23 +276,27 @@ def calculate_sentiment_score(ticker):
         elif rsi.iloc[-1] > 70: reasons_mom.append("OB")
         else: score_mom += 10; reasons_mom.append("Stoch Stabil")
         
+        # 2. Hacim (25p)
         score_vol = 0; reasons_vol = []
         if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]: score_vol += 15; reasons_vol.append("Vol ↑")
         else: reasons_vol.append("Vol ↓")
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]: score_vol += 10; reasons_vol.append("OBV ↑")
         
+        # 3. Trend (20p)
         score_tr = 0; reasons_tr = []
         sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
         if sma50.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("GoldCross")
         if close.iloc[-1] > sma50.iloc[-1]: score_tr += 10; reasons_tr.append("P > SMA50")
         
+        # 4. Volatilite (15p)
         score_vola = 0; reasons_vola = []
         std = close.rolling(20).std(); upper = close.rolling(20).mean() + (2 * std)
         if close.iloc[-1] > upper.iloc[-1]: score_vola += 10; reasons_vola.append("BB Break")
         atr = (high-low).rolling(14).mean()
         if atr.iloc[-1] < atr.iloc[-5]: score_vola += 5; reasons_vola.append("Vola ↓")
         
+        # 5. Yapı (10p)
         score_str = 0; reasons_str = []
         if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
         
@@ -364,10 +369,11 @@ def calculate_ict_concepts(ticker):
         elif is_bullish and is_discount: summary = "💡 Rüzgar arkada (Boğa); fiyat ucuz."
         elif not is_bullish and not is_discount: summary = "💡 Trend düşüşte; fiyat pahalı."
         
+        # HATA DÜZELTME: eqh anahtarı eklendi
         return {
             "summary": summary, "structure": market_structure, "position": position_text, 
             "fvg": fvg_text, "ob": ob_text, "ob_label": ob_label, 
-            "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, 
+            "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, # Render için eklendi
             "fibo": fibo_text, "bb": bb_text, "golden_text": golden_text, "golden_setup": golden_setup
         }
     except: return None
@@ -484,15 +490,15 @@ def fetch_google_news(ticker):
         return news
     except: return []
 
-# --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jMkJ4B+MyQngHY3v/4H7jMkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+# --- ARAYÜZ ---
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Reorganized UI)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.1</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Final Stable + Sentiment)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -519,22 +525,37 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
-    inf = fetch_stock_info(t); ict = calculate_ict_concepts(t); tech = get_tech_card_data(t); sent = calculate_sentiment_score(t)
-    price = inf['price'] if inf else "-"
+    try:
+        inf = yf.Ticker(t).info
+        price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
+    except: price = "Bilinmiyor"
     
-    tech_text = f"SMA50={tech['sma50']:.1f}, SMA200={tech['sma200']:.1f}, ATR={tech['atr']:.1f}" if tech else "-"
-    ict_text = f"OB: {ict['ob']}, FVG: {ict['fvg']}, Golden: {ict['golden_text']}" if ict else "-"
-    sent_text = f"Sentiment Skor: {sent['total']}/100" if sent else "-"
-    
-    prompt = f"""Rol: Profesyonel Trader.
+    # STATİK PROMPT (HATA RİSKİ YOK)
+    prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
+
 Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
 
---- VERİLER ---
-Fiyat: {price} USD. {tech_text}
-{ict_text}
-{sent_text}
+1. Sentiment & Psikoloji: Piyasanın korku/iştah durumu (0-100 Puan).
+2. Radar Sinyalleri: Momentum ve Trend algoritmalarının skorları.
+3. Teknik Kart: Ortalamalar (SMA/EMA) ve ATR bazlı risk seviyeleri.
+4. ICT & Price Action: Kurumsal ayak izleri (Order Block, FVG, Breaker, Likidite, Golden Setup).
 
-Görev: Günlük grafikte yön, alım/satım bölgeleri ve stop seviyesini belirle. Net emir ver."""
+GÖREVİN:
+Bu 4 katmanı birleştirerek bir "Multidimensional Market Analysis" (Çok Boyutlu Piyasa Analizi) yapman gerekiyor.
+
+ANALİZ ADIMLARI:
+1. Duygu Kontrolü: Sentiment skoru ve Derin Röntgen verilerine bak. Piyasa şu an panikte mi, coşkuda mı yoksa kararsız mı? Hacim fiyatı destekliyor mu?
+2. Kurumsal Tuzaklar (ICT): Fiyat şu an "Ucuz" (Discount) mu yoksa "Pahalı" (Premium) mu? Yakınlarda bir "Golden Setup" veya "Breaker Block" var mı? Likidite (EQH/EQL) nerede birikmiş?
+3. Trend Teyidi: Radar puanları ve hareketli ortalamalar (SMA50/200) ana yönü destekliyor mu?
+4. Çelişki Analizi: Eğer Sentiment "AL" derken, ICT "SAT" (Premium bölge) diyorsa, bu riski açıkça belirt.
+
+ÇIKTI FORMATI (SONUÇ):
+Bana hikaye anlatma, net emirler ver:
+* YÖN (BIAS): (Long / Short / Nötr)
+* GİRİŞ STRATEJİSİ: (Hangi FVG veya OB seviyesinden girilmeli?)
+* GEÇERSİZLİK (STOP): (ATR veya Market Structure bozulma seviyesi neresi?)
+* HEDEF (TP): (Hangi likidite havuzu hedeflenmeli?)"""
+    
     with st.sidebar: st.code(prompt, language="text")
     st.session_state.generate_prompt = False
 
@@ -553,10 +574,7 @@ with col_left:
     
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
-    # render_detail_card BURADAN KALDIRILDI (SAĞA GİTTİ)
-    
-    ict = calculate_ict_concepts(st.session_state.ticker)
-    render_ict_panel(ict)
+    render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
     
     st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
     news = fetch_google_news(st.session_state.ticker)
@@ -567,18 +585,14 @@ with col_left:
     else: st.info("Haber yok.")
 
 with col_right:
-    # 1. SENTIMENT KARTI (EN ÜSTTE)
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
     
-    # 2. TEKNİK KART (BURAYA TAŞINDI)
     render_detail_card(st.session_state.ticker)
-
-    # 3. DERİN RÖNTGEN
+    
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
 
-    # 4. ORTAK FIRSATLAR
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     with st.container(height=250):
         df1 = st.session_state.scan_data
@@ -600,7 +614,6 @@ with col_right:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # 5. RADARLAR (EN ALTTA)
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
@@ -632,4 +645,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
