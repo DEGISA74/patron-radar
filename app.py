@@ -920,7 +920,7 @@ st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.3</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.1.0</div>
         <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Standardized)</div>
     </div>
 </div>
@@ -1147,4 +1147,5 @@ with col_right:
                 if c2.button(sym, key=f"wl_g_{sym}"):
                     on_scan_result_click(sym)
                     st.rerun()
+
 
