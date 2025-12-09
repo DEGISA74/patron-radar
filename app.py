@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.3.1",
+    page_title="Patronun Terminali v4.3.2",
     layout="wide",
     page_icon="🐂"
 )
@@ -106,12 +106,70 @@ def remove_watchlist_db(symbol):
     conn.close()
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ ---
+# --- VARLIK LİSTELERİ (GÜNCELLENMİŞ VE SIRALI) ---
+raw_sp500 = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
+    "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
+    "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
+    "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
+    "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
+    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ",
+    "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
+    "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
+    "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
+    "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN",
+    "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
+    "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
+    "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
+    "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
+    "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
+    "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC",
+    "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
+    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
+    "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
+    "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
+    "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
+    "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
+    "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
+    "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
+    "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
+    "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
+    "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR",
+    "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
+    "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
+]
+
+# Patronun Özel Hisseleri Eklendi
+raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
+
+# Kripto Listesi
+raw_crypto = [
+    "GC=F", "SI=F", # Altın ve Gümüş
+    "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
+    "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
+]
+
+# Nasdaq 100
+raw_nasdaq = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
+    "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
+    "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
+    "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
+    "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP",
+    "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD",
+    "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR",
+    "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT",
+    "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK",
+    "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
+]
+
+# Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH", "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL", "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV", "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW", "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG", "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF", "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX", "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN", "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO", "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS", "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST", "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM", "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI", "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR", "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII", "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV", "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC", "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB", "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES", "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP", "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY", "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR", "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF", "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"],
-    "NASDAQ (TOP 100)": ["AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST", "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN", "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI", "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR", "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP", "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD", "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR", "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT", "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK", "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"],
-    "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
+    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))), # Set ile çiftleri temizledik, sorted ile sıraladık
+    "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
+    "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
 }
+
 INITIAL_CATEGORY = "S&P 500 (TOP 300)"
 
 # --- STATE ---
@@ -256,7 +314,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
         except: continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- SENTIMENT & DERİN RÖNTGEN MOTORLARI (V4.2.2 YAMASI) ---
+# --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -265,7 +323,6 @@ def calculate_sentiment_score(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        # 1. Momentum (30p)
         score_mom = 0; reasons_mom = []
         rsi = 100 - (100 / (1 + (close.diff().clip(lower=0).rolling(14).mean() / close.diff().clip(upper=0).abs().rolling(14).mean())))
         if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score_mom += 10; reasons_mom.append("RSI ↑")
@@ -276,27 +333,23 @@ def calculate_sentiment_score(ticker):
         elif rsi.iloc[-1] > 70: reasons_mom.append("OB")
         else: score_mom += 10; reasons_mom.append("Stoch Stabil")
         
-        # 2. Hacim (25p)
         score_vol = 0; reasons_vol = []
         if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]: score_vol += 15; reasons_vol.append("Vol ↑")
         else: reasons_vol.append("Vol ↓")
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]: score_vol += 10; reasons_vol.append("OBV ↑")
         
-        # 3. Trend (20p)
         score_tr = 0; reasons_tr = []
         sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
         if sma50.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("GoldCross")
         if close.iloc[-1] > sma50.iloc[-1]: score_tr += 10; reasons_tr.append("P > SMA50")
         
-        # 4. Volatilite (15p)
         score_vola = 0; reasons_vola = []
         std = close.rolling(20).std(); upper = close.rolling(20).mean() + (2 * std)
         if close.iloc[-1] > upper.iloc[-1]: score_vola += 10; reasons_vola.append("BB Break")
         atr = (high-low).rolling(14).mean()
         if atr.iloc[-1] < atr.iloc[-5]: score_vola += 5; reasons_vola.append("Vola ↓")
         
-        # 5. Yapı (10p)
         score_str = 0; reasons_str = []
         if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
         
@@ -369,11 +422,10 @@ def calculate_ict_concepts(ticker):
         elif is_bullish and is_discount: summary = "💡 Rüzgar arkada (Boğa); fiyat ucuz."
         elif not is_bullish and not is_discount: summary = "💡 Trend düşüşte; fiyat pahalı."
         
-        # HATA DÜZELTME: eqh anahtarı eklendi
         return {
             "summary": summary, "structure": market_structure, "position": position_text, 
             "fvg": fvg_text, "ob": ob_text, "ob_label": ob_label, 
-            "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, # Render için eklendi
+            "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, 
             "fibo": fibo_text, "bb": bb_text, "golden_text": golden_text, "golden_setup": golden_setup
         }
     except: return None
@@ -490,15 +542,15 @@ def fetch_google_news(ticker):
         return news
     except: return []
 
-# --- ARAYÜZ ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+# --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.1</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Final Stable + Sentiment)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -530,7 +582,7 @@ if st.session_state.generate_prompt:
         price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
     except: price = "Bilinmiyor"
     
-    # STATİK PROMPT (HATA RİSKİ YOK)
+    # STATİK PROMPT
     prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
 
 Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
