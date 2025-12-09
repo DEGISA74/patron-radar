@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.0.3",
+    page_title="Patronun Terminali v4.1.0",
     layout="wide",
     page_icon="🐂"
 )
@@ -1147,3 +1147,4 @@ with col_right:
                 if c2.button(sym, key=f"wl_g_{sym}"):
                     on_scan_result_click(sym)
                     st.rerun()
+
