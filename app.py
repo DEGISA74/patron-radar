@@ -525,6 +525,7 @@ def calculate_ict_concepts(ticker):
 
     except Exception as e:
         return None
+
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
     try:
@@ -536,6 +537,7 @@ def get_tech_card_data(ticker):
         atr = (high-low).rolling(14).mean().iloc[-1]
         return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
+
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
@@ -896,8 +898,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
-
-
-
-
