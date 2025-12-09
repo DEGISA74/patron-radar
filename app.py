@@ -14,7 +14,7 @@ import concurrent.futures
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.4.0 (Async)",
+    page_title="Patronun Terminali v4.4.1 (Stable)",
     layout="wide",
     page_icon="🐂"
 )
@@ -272,7 +272,12 @@ def analyze_market_intelligence_sync(data, asset_list):
             if score > 0: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
         except: continue
-    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
+    
+    # GÜVENLİ DÖNÜŞ (CRASH FIX)
+    if signals:
+        return pd.DataFrame(signals).sort_values(by="Skor", ascending=False)
+    else:
+        return pd.DataFrame(columns=["Sembol", "Fiyat", "Skor", "Nedenler"])
 
 def radar2_scan_sync(data, asset_list, idx_data=None):
     results = []
@@ -335,7 +340,12 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             
             if score > 0: results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
         except: continue
-    return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
+    
+    # GÜVENLİ DÖNÜŞ (CRASH FIX)
+    if results:
+        return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50)
+    else:
+        return pd.DataFrame(columns=["Sembol", "Fiyat", "Trend", "Setup", "Skor", "RS", "Etiketler"])
 
 # Streamlit Cache ile Async Fonksiyonu Çağırma
 async def run_analysis_pipeline(asset_list):
@@ -479,7 +489,7 @@ def get_tech_card_data(ticker):
         return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
 
-# --- RENDER FONKSİYONLARI (Aynı Kaldı) ---
+# --- RENDER FONKSİYONLARI ---
 def render_sentiment_card(sent):
     if not sent: return
     color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
@@ -530,15 +540,20 @@ def render_ict_panel(analysis):
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
-    if st.session_state.scan_data is not None:
+    
+    # HATA ÖNLEYİCİ KONTROL: Data var mı VE boş değil mi VE "Sembol" sütunu var mı?
+    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty and "Sembol" in st.session_state.scan_data.columns:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
         if not row.empty: r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-    if st.session_state.radar2_data is not None:
+            
+    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty and "Sembol" in st.session_state.radar2_data.columns:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty: r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
+            
     dt = get_tech_card_data(ticker)
     ma_t = "-"
     if dt: ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
+    
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">📋 Teknik Kart</div>
@@ -580,13 +595,13 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3v/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.0</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.1</div>
         <div style="font-size:0.8rem; color:#64748B;">Async Core Engine (S&P 500 Full + VIP)</div>
     </div>
 </div>
@@ -685,7 +700,7 @@ with col_right:
     with st.container(height=250):
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
-        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
+        if df1 is not None and df2 is not None and not df1.empty and not df2.empty and "Sembol" in df1.columns and "Sembol" in df2.columns:
             commons = []
             symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
             if symbols:
@@ -698,7 +713,7 @@ with col_right:
                     if c1.button("★", key=f"c_s_{sym}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"{sym} | R1: {item['r1']['Skor']}/8 | R2: {item['r2']['Skor']}/8", key=f"c_b_{sym}"): on_scan_result_click(sym); st.rerun()
             else: st.info("Kesişim yok.")
-        else: st.caption("İki radar da çalıştırılmalı.")
+        else: st.caption("İki radar da çalıştırılmalı veya sonuç bulunamadı.")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -708,7 +723,6 @@ with col_right:
         st.info("Bu işlem S&P 500'deki ~500 hisseyi aynı anda tarar.")
         if st.button("🚀 ASYNC TARAMAYI BAŞLAT", type="primary"):
             with st.spinner("Motorlar çalışıyor... Veriler chunklar halinde indiriliyor..."):
-                # Asenkron fonksiyonu burada çağırıyoruz
                 r1_res, r2_res = asyncio.run(run_analysis_pipeline(ASSET_GROUPS.get(st.session_state.category, [])))
                 st.session_state.scan_data = r1_res
                 st.session_state.radar2_data = r2_res
@@ -716,21 +730,21 @@ with col_right:
                 st.rerun()
 
     with tab2:
-        if st.session_state.scan_data is not None:
+        if st.session_state.scan_data is not None and not st.session_state.scan_data.empty and "Sembol" in st.session_state.scan_data.columns:
             with st.container(height=500):
                 for i, row in st.session_state.scan_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(row['Nedenler'])
-        else: st.write("Henüz tarama yapılmadı.")
+        else: st.write("Henüz tarama yapılmadı veya sonuç bulunamadı.")
 
     with tab3:
-        if st.session_state.radar2_data is not None:
+        if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty and "Sembol" in st.session_state.radar2_data.columns:
             with st.container(height=500):
                 for i, row in st.session_state.radar2_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
-        else: st.write("Henüz tarama yapılmadı.")
+        else: st.write("Henüz tarama yapılmadı veya sonuç bulunamadı.")
