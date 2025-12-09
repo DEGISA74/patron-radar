@@ -523,7 +523,7 @@ if st.session_state.generate_prompt:
     price = inf['price'] if inf else "-"
     
     tech_text = f"SMA50={tech['sma50']:.1f}, SMA200={tech['sma200']:.1f}, ATR={tech['atr']:.1f}" if tech else "-"
-    ict_text = f"OB: {ict['ob']}, FVG: {ict['fvg']}, Golden: {ict['golden']}" if ict else "-"
+    ict_text = f"OB: {ict['ob']}, FVG: {ict['fvg']}, Golden: {ict['golden_text']}" if ict else "-"
     sent_text = f"Sentiment Skor: {sent['total']}/100" if sent else "-"
     
     prompt = f"""Rol: Profesyonel Trader.
@@ -632,3 +632,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
