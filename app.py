@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.0.5",
+    page_title="Patronun Terminali v4.1.0",
     layout="wide",
     page_icon="🐂"
 )
@@ -29,7 +29,7 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-# DİKKAT: f-string içinde CSS yazarken süslü parantezler {{ }} olarak çiftlenmelidir.
+# DİKKAT: CSS içindeki süslü parantezler {{ }} olarak çiftlenmiştir (Python Hatasını Önler)
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -62,7 +62,7 @@ st.markdown(f"""
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
     
-    /* ORTAK KART STİLİ (Teknik & ICT) */
+    /* ORTAK KART STİLİ (Teknik & ICT İkiz Tasarım) */
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
@@ -71,13 +71,13 @@ st.markdown(f"""
     .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
     .info-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
     
-    /* Etiket Genişlikleri (Hizalama İçin) */
+    /* Etiket Genişlikleri (Hizalama İçin Kritik) */
     .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .label-long {{ font-weight: 600; color: #64748B; width: 165px; flex-shrink: 0; }}
+    .label-long {{ font-weight: 600; color: #64748B; width: 160px; flex-shrink: 0; }}
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }}
     
-    /* LOGO STİLİ - DÜZELTİLDİ */
+    /* LOGO STİLİ */
     .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
 </style>
 """, unsafe_allow_html=True)
@@ -176,7 +176,7 @@ if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
 
-# --- ANALİZ MOTORLARI (CACHED - Hız Tuzağına Karşı Kalkan) ---
+# --- ANALİZ MOTORLARI (CACHED - Yahoo Engeli Kalkanı) ---
 @st.cache_data(ttl=3600)  # 1 Saatlik Cache
 def analyze_market_intelligence(asset_list):
     signals = []
@@ -305,7 +305,8 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
         except: continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-@st.cache_data(ttl=600) # 10 Dakikalık Cache
+# --- ICT & PRICE ACTION HESAPLAMA (YENİLENMİŞ) ---
+@st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
         df = yf.download(ticker, period="3mo", progress=False)
@@ -318,9 +319,9 @@ def calculate_ict_concepts(ticker):
         recent_high = high.tail(20).max()
         recent_low = low.tail(20).min()
         
-        # Market Yapısı
-        market_structure = "Nötr / Yatay"
+        # 1. Market Structure
         is_bullish = False
+        market_structure = "Nötr / Yatay"
         if close.iloc[-1] > high.tail(20).iloc[-5:].max():
             market_structure = "🟢 YÜKSELİŞ (Trend Güçlü)"
             is_bullish = True
@@ -328,12 +329,13 @@ def calculate_ict_concepts(ticker):
             market_structure = "🔴 DÜŞÜŞ (Yapı Bozuldu)"
             is_bullish = False
             
-        # Range ve Konum (Discount/Premium)
+        # 2. Premium / Discount & Fibonacci
         range_high = high.tail(60).max()
         range_low = low.tail(60).min()
         mid_point = (range_high + range_low) / 2
+        ote_bull = range_low + (range_high - range_low) * 0.382
+        ote_bear = range_low + (range_high - range_low) * 0.618
         
-        position_text = "Nötr Bölge"
         is_discount = False
         if curr_price < mid_point:
             discount_pct = 100 - ((curr_price - range_low) / (range_high - range_low) * 100)
@@ -357,12 +359,10 @@ def calculate_ict_concepts(ticker):
 
         # Fibonacci Seviyeleri
         fibo_50 = mid_point
-        ote_bull = range_low + (range_high - range_low) * 0.382
-        ote_bear = range_low + (range_high - range_low) * 0.618
         
         fibo_text = f"📐 Fibo %50: {fibo_50:.2f}$ | OTE (%62): {ote_bull if is_bullish else ote_bear:.2f}$"
 
-        # FVG
+        # 3. FVG & Golden Setup
         fvg_text = "Belirgin Gap Yok"
         golden_setup = False
         for i in range(len(df)-1, len(df)-10, -1):
@@ -420,7 +420,7 @@ def calculate_ict_concepts(ticker):
             "fvg": fvg_text, "ob": ob_text, "ob_label": ob_label,
             "liquidity": liq_text, "liq_label": liq_label, "fibo": fibo_text,
             "raw_ob": ob_level, "raw_ote": ote_bull if is_bullish else ote_bear,
-            "range_fvg": fvg_text # Prompt için
+            "range_fvg": fvg_text
         }
     except: return None
 
@@ -429,6 +429,7 @@ def render_ict_panel(analysis):
         st.info("ICT verisi hesaplanamadı.")
         return
 
+    # İkiz Kart Tasarımı
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT & Price Action</div>
@@ -491,71 +492,104 @@ def render_detail_card(ticker):
     </div>
     """, unsafe_allow_html=True)
 
-def render_tradingview_widget(ticker, height=800):
-    tv_symbol = ticker
-    if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    html = f"""<div class="tradingview-widget-container"><div id="tradingview_chart"></div><script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script><script type="text/javascript">new TradingView.widget({{"width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true, "container_id": "tradingview_chart"}});</script></div>"""
-    components.html(html, height=height)
+# --- SIDEBAR (AI PROMPT GÜNCELLENDİ) ---
+with st.sidebar:
+    st.markdown("### ⚙️ Ayarlar")
+    selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
+    if selected_theme_name != st.session_state.theme: st.session_state.theme = selected_theme_name; st.rerun()
+    st.divider()
+    
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
+            t = st.session_state.ticker
+            # Verileri çek
+            inf = fetch_stock_info(t)
+            price = inf['price'] if inf else "Bilinmiyor"
+            ict = calculate_ict_concepts(t)
+            tech = get_tech_card_data(t)
+            
+            # Radar verisi
+            r1_s = "Yok"; r1_n = "-"; r2_tr = "-"; r2_st = "-"; r2_rs = "0"
+            if st.session_state.scan_data is not None:
+                r = st.session_state.scan_data[st.session_state.scan_data["Sembol"]==t]
+                if not r.empty: r1_s = r.iloc[0]['Skor']; r1_n = r.iloc[0]['Nedenler']
+            if st.session_state.radar2_data is not None:
+                r = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"]==t]
+                if not r.empty: r2_tr = r.iloc[0]['Trend']; r2_st = r.iloc[0]['Setup']; r2_rs = r.iloc[0]['RS']
 
-@st.cache_data(ttl=300)
-def fetch_stock_info(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return {'price': info.get('currentPrice') or info.get('regularMarketPrice'), 'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target': info.get('targetMeanPrice', '-')}
-    except: return None
+            # GÜNCELLENMİŞ DETAYLI PROMPT
+            prompt = f"""Rol: Profesyonel borsa traderı.
+Görev: {t} grafiğinde Teknik Analiz ve Formasyon Avcılığı.
 
-@st.cache_data(ttl=1200) # 20 Dakikalık Cache
-def fetch_google_news(ticker):
-    try:
-        clean = ticker.replace(".IS", "").replace("=F", "")
-        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(f'{clean} stock news site:investing.com OR site:seekingalpha.com')}&hl=tr&gl=TR&ceid=TR:tr"
-        feed = feedparser.parse(rss_url)
-        news = []
-        for entry in feed.entries[:6]:
-            try: dt = datetime(*entry.published_parsed[:6])
-            except: dt = datetime.now()
-            if dt < datetime.now() - timedelta(days=10): continue
-            pol = TextBlob(entry.title).sentiment.polarity
-            color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
-            news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
-        return news
-    except: return []
+--- VERİLER ---
+Fiyat: {price} USD
 
-# --- ARAYÜZ KURULUMU ---
+Radar 1 (Momentum): Skor {r1_s}/8. Nedenler: {r1_n}
+Radar 2 (Trend/Yapı): {r2_tr} Trend | {r2_st} | RS: {r2_rs}%
 
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B2N7/+B+4zZCeAdjd//gfmM3QngHY3v/4H7jNkJ4B+N7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2N7QngHYmtCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+Ortalamalar: SMA50: {tech['sma50'] if tech else '-'}, SMA200: {tech['sma200'] if tech else '-'}, EMA144: {tech['ema144'] if tech else '-'}
+Risk Yönetimi: ATR (14): {tech['atr'] if tech else '-'} (2x Stop: {tech['stop'] if tech else '-'})
+
+ICT Seviyeleri (60 Günlük Range Analizi):
+- Piyasada Gözlemlenen Fiyat Konumu: {ict['position'] if ict else '-'}
+- Kurumsal Destek Bölgesi ({ict['ob_label'] if ict else 'OB'}): {ict['ob'] if ict else '-'}
+- Olası Alım/Satım Bölgesi (FVG): {ict['range_fvg'] if ict else '-'}
+- OTE (Optimal Trade Entry) Fibonacci Seviyesi: {ict['raw_ote'] if ict else '-'}
+
+--- EMİRLER ---
+1. "Al/Sat/Bekle" tavsiyesi VERMEKTEN ÇEKİNME. (Net duruş sergile).
+2. Günlük grafikte Formasyon ara (TOBO, OBO, Bayrak, Flama, Üçgen, Kama, Consolidation, Built-up). Varsa mutlaka belirt.
+3. Destek/Direnç ve Trend hakkında çok kısa, vurucu ve teknik 5 cümle kur.
+4. Risk/Getiri durumunu değerlendir.
+5. Ayrıca Price Action ve ICT konseptlerine (FVG, Order Block) dayalı günlük analiz yap:
+   - Yön ne?
+   - Alım/Satım bölgesi neresi?
+   - Stop seviyesi (ATR) nedir?
+   - Son Fibonacci sayımına göre OTE yeri neresi?
+6. Türkçe yanıtla.
+"""
+            st.code(prompt, language="text")
+
+# --- ANA EKRAN DÜZENİ ---
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY1tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.0.5</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Final Stable)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.1.0</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Stable & Deep AI)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# Filtreler (Index Hatası Düzeltilmiş)
+# FILTRELER (SIRALAMA HATASI DÜZELTİLDİ)
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
-# Önce indeksi hesapla (Sıralama Hatası Çözümü)
+# Değişkeni ÖNCE hesaplıyoruz
 try: cat_idx = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except: cat_idx = 0
 
-with col_cat: st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_idx, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+with col_cat:
+    st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_idx, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
 
+# İkinci değişkeni de ÖNCE hesaplıyoruz
 opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
 try: asset_idx = opts.index(st.session_state.ticker)
 except: asset_idx = 0
 
-with col_ass: st.selectbox("Varlık", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
-with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
-with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
+with col_ass:
+    st.selectbox("Varlık", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
+
+with col_search_in:
+    st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
+
+with col_search_btn:
+    st.button("Ara", on_click=on_manual_button_click)
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# Ana İçerik
+# ANA İÇERİK
 info = fetch_stock_info(st.session_state.ticker)
 col_left, col_right = st.columns([3, 1])
 
@@ -569,6 +603,7 @@ with col_left:
         sc4.markdown(f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p><p class="stat-value-small">{str(info["sector"])[:12]}</p></div>', unsafe_allow_html=True)
     
     st.write("")
+    # 650px YÜKSEKLİK
     render_tradingview_widget(st.session_state.ticker, height=650)
     render_detail_card(st.session_state.ticker)
     
@@ -598,7 +633,6 @@ with col_right:
                     sym = item["symbol"]
                     c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"c_s_{sym}"): toggle_watchlist(sym); st.rerun()
-                    # STANDART FORMAT
                     if c2.button(f"{sym} | R1: {item['r1']['Skor']}/8 | R2: {item['r2']['Skor']}/8", key=f"c_b_{sym}"): on_scan_result_click(sym); st.rerun()
             else: st.info("Kesişim yok.")
         else: st.caption("İki radar da çalıştırılmalı.")
@@ -606,6 +640,7 @@ with col_right:
     st.markdown("<hr>", unsafe_allow_html=True)
     tab1, tab2, tab3 = st.tabs(["🧠 Radar 1", "🚀 Radar 2", "📜 İzleme"])
     
+    # RADAR PENCERELERİ (500px YÜKSEKLİK + SCROLLBAR)
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
             with st.spinner("..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
