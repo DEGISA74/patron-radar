@@ -383,158 +383,146 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT (YENİ NESİL - PRICE ACTION ODAKLI) ---
+# --- ICT (YENİ NESİL - SENARYO BAZLI ANALİZ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
-        # Fraktal yapıları doğru tespit etmek için geniş veri (6 Ay)
+        # 1. VERİ HAZIRLIĞI
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        # MultiIndex temizliği
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
-            
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        open_p = df['Open']
+        close = df['Close']; high = df['High']; low = df['Low']; open_p = df['Open']
         curr_price = float(close.iloc[-1])
-        
-        # Volatilite (ATR) Hesabı (FVG Filtresi için)
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
 
-        # 1. FRAKTAL GEOMETRİ: GERÇEK SWING NOKTALARI
-        # Tepe için: Solunda ve sağında 2'şer düşük tepe olmalı.
+        # 2. FRAKTAL GEOMETRİ (SWING NOKTALARI)
         swing_highs = []
         swing_lows = []
-        
         for i in range(2, len(df)-2):
-            # Swing High
             if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
                 swing_highs.append((i, float(high.iloc[i])))
-            # Swing Low
             if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
                 swing_lows.append((i, float(low.iloc[i])))
-                
-        # Swing noktaları yoksa (yeni halka arz vb.)
-        if not swing_highs or not swing_lows:
-            return {"summary": "Veri Yetersiz", "structure": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False}
 
-        # 2. MARKET YAPISI (BOS & MSS)
-        last_sh = swing_highs[-1][1] # Son Swing High
-        last_sl = swing_lows[-1][1]  # Son Swing Low
-        
-        structure_verdict = "KONSOLİDASYON"
+        if not swing_highs or not swing_lows: return None
+
+        # 3. YAPISAL ANALİZ (MARKET STRUCTURE)
+        last_sh = swing_highs[-1][1]; last_sl = swing_lows[-1][1]
         bias = "Nötr"
+        structure_verdict = "KONSOLİDASYON"
         
-        # Fiyat, son Swing High'ın üzerinde kapattı mı?
-        if curr_price > last_sh:
-            structure_verdict = "BULLISH (BOS)"
-            bias = "Long"
-        # Fiyat, son Swing Low'un altında kapattı mı?
-        elif curr_price < last_sl:
-            structure_verdict = "BEARISH (BOS)"
-            bias = "Short"
+        # BOS Kontrolü
+        if curr_price > last_sh: bias = "Long"; structure_verdict = "BULLISH (BOS)"
+        elif curr_price < last_sl: bias = "Short"; structure_verdict = "BEARISH (BOS)"
         else:
-            # İç yapı kontrolü (Internal Structure)
-            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
-                structure_verdict = "BEARISH (Internal)"
-                bias = "Short"
-            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
-                structure_verdict = "BULLISH (Internal)"
-                bias = "Long"
+            # Sweep (Likitide Temizliği) Kontrolü: Fitil attı ama kapanış yapamadı mı?
+            recent_high_max = high.tail(5).max()
+            if recent_high_max > last_sh and curr_price < last_sh:
+                bias = "Short"; structure_verdict = "BEARISH (Sweep/Fakeout)"
+            elif low.tail(5).min() < last_sl and curr_price > last_sl:
+                bias = "Long"; structure_verdict = "BULLISH (Sweep/Fakeout)"
 
-        # 3. DEALING RANGE (OYUN ALANI)
-        # Mevcut işlem aralığı son swing high ve low arasıdır
-        range_high = last_sh
-        range_low = last_sl
+        # 4. DEALING RANGE & OTE HESABI
+        range_high = last_sh; range_low = last_sl
         mid_point = (range_high + range_low) / 2
+        
+        # OTE (Optimal Trade Entry) Seviyeleri (%62 - %79)
+        ote_long_entry = range_low + (range_high - range_low) * 0.62
+        ote_short_entry = range_low + (range_high - range_low) * 0.38 # (1-0.62)
         
         position_label = "DENGEDE"
         is_discount = False
+        is_ote = False
         
         if curr_price < mid_point:
             is_discount = True
-            if curr_price < range_low: position_label = "DEEP DISCOUNT (Alım Fırsatı)"
-            else: position_label = "DISCOUNT (Ucuz)"
+            position_label = "DISCOUNT (Ucuz)"
+            if bias == "Long" and curr_price <= ote_long_entry: is_ote = True
         else:
-            is_discount = False
-            if curr_price > range_high: position_label = "PREMIUM+ (Momentum)"
-            else: position_label = "PREMIUM (Pahalı)"
-
-        # 4. KALİTELİ FVG TARAMASI (ATR FİLTRELİ)
-        # Sadece ATR'nin %20'sinden büyük ve henüz doldurulmamış gapler
-        valid_fvgs = []
-        for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]: # Bullish Gap
-                gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]: # Bearish Gap
-                gap_size = low.iloc[i-2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1: break # En yakını al
+            position_label = "PREMIUM (Pahalı)"
+            if bias == "Short" and curr_price >= ote_short_entry: is_ote = True
             
-        fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
+        if curr_price > range_high: position_label = "DEEP PREMIUM (Aşırı Pahalı)"
+        if curr_price < range_low: position_label = "DEEP DISCOUNT (Aşırı Ucuz)"
 
-        # 5. ORDER BLOCK (OB) & LİKİDİTE HEDEFİ
-        ob_text = "-"
-        liq_target = "-"
-        ob_lbl = "Güvenli Giriş"
-        
-        if bias == "Long":
-            # Hedef: Son Zirve (Buy Side Liquidity)
-            liq_target = f"{last_sh:.2f}$ (BSL)"
-            # Giriş: Son Dibi Yapan Hareketin Başlangıcı
-            recent_sl_idx = swing_lows[-1][0]
-            ob_low = low.iloc[recent_sl_idx]
-            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
-            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
-            ob_lbl = "Bullish OB"
-        elif bias == "Short":
-            # Hedef: Son Dip (Sell Side Liquidity)
-            liq_target = f"{last_sl:.2f}$ (SSL)"
-            # Giriş: Son Tepeyi Yapan Hareketin Başlangıcı
-            recent_sh_idx = swing_highs[-1][0]
-            ob_high_val = high.iloc[recent_sh_idx]
-            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
-            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
-            ob_lbl = "Bearish OB"
-            
-        # 6. ÖZET METNİ (Seçenek 1 Formatı)
-        # Satır 1: Yapı ve Konum
-        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
-        
-        # Golden Setup Kontrolü (Ekstra Görsellik İçin)
+        # 5. ORDER BLOCK & FVG (Smart Money İzleri)
+        # Basitleştirilmiş OB tespiti
+        ob_text = "-"; ob_val = 0
+        if bias == "Long" and swing_lows:
+            idx = swing_lows[-1][0]
+            ob_val = low.iloc[idx]
+            ob_text = f"🛡️ {ob_val:.2f}$"
+        elif bias == "Short" and swing_highs:
+            idx = swing_highs[-1][0]
+            ob_val = high.iloc[idx]
+            ob_text = f"⚔️ {ob_val:.2f}$"
+
+        # FVG Taraması
+        fvg_text = "Yok"; has_fvg = False
+        for i in range(len(df)-2, len(df)-20, -1):
+            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
+                gap = low.iloc[i] - high.iloc[i-2]
+                if gap > current_atr * 0.2 and curr_price > high.iloc[i-2]:
+                    fvg_text = f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}"; has_fvg = True; break
+            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
+                gap = low.iloc[i-2] - high.iloc[i]
+                if gap > current_atr * 0.2 and curr_price < low.iloc[i-2]:
+                    fvg_text = f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}"; has_fvg = True; break
+
+        # 6. SENARYO MOTORU (DECISION TREE)
+        summary = ""
         golden_setup = False
-        golden_txt = "-"
-        if bias == "Long" and is_discount and "🟢" in fvg_text:
+        
+        # Senaryo 1: Golden Long Setup
+        if bias == "Long" and is_discount:
+            if is_ote:
+                summary = f"🔥 **GOLDEN LONG:** Fiyat OTE (%62) bölgesinde tepki arıyor. | 🛡️ **PLAN:** {ob_text} OB seviyesi üzerinde tutunursa hedef {last_sh:.2f}$ (BSL)."
+                golden_setup = True
+            else:
+                summary = f"✅ **ALIM FIRSATI:** Trend Bullish ve fiyat ucuzladı. | 📍 **BEKLE:** İdeal giriş için {ote_long_entry:.2f}$ (OTE) seviyesine çekilme beklenmeli."
+        
+        # Senaryo 2: Reversal / Liquidity Sweep
+        elif "Sweep" in structure_verdict:
+            target = last_sl if bias == "Short" else last_sh
+            summary = f"🪤 **LİKİDİTE TUZAĞI:** Fiyat stopları temizledi ama ters yöne döndü. | 📉 **STRATEJİ:** {('Yükselişler satış' if bias=='Short' else 'Düşüşler alış')} fırsatıdır. Hedef: {target:.2f}$."
             golden_setup = True
-            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
-        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
+
+        # Senaryo 3: High Momentum (Kaçan Tren)
+        elif bias == "Long" and "PREMIUM" in position_label and has_fvg:
+            summary = f"🚀 **YÜKSEK MOMENTUM:** Boğalar çok güçlü, OTE'ye inmiyor. | 🎯 **GİRİŞ:** Derin düzeltme bekleme, mevcut FVG ({fvg_text}) bölgesinden katıl."
+
+        # Senaryo 4: Overextended (Aşırı Pahalı)
+        elif bias == "Long" and "DEEP PREMIUM" in position_label:
+             summary = f"⚠️ **AŞIRI PAHALI:** Trend yukarı ama fiyat çok şişti. | 🛑 **UYARI:** Buradan girilmez. Fiyatın {mid_point:.2f}$ (EQ) seviyesine dönmesini bekle."
+
+        # Senaryo 5: Strong Bearish
+        elif bias == "Short" and not is_ote:
+            summary = f"🩸 **GÜÇLÜ SATIŞ:** Ayılar baskın, fiyat düşüyor. | 📉 **HEDEF:** Sıradaki likidite havuzu {last_sl:.2f}$ (SSL). Düşen bıçak tutulmaz."
+            
+        # Senaryo 6: Consolidation
+        else:
+            summary = f"💤 **KONSOLİDASYON:** Fiyat {mid_point:.2f}$ (EQ) etrafında sıkıştı. | ⏳ **PLAN:** İşlem yapma. {last_sh:.2f}$ veya {last_sl:.2f}$ seviyelerinden birinin kırılmasını bekle."
 
         return {
-            "summary": summary_line,
+            "summary": summary,
             "structure": structure_verdict,
             "position": position_label,
             "fvg": fvg_text,
             "ob": ob_text,
-            "ob_label": ob_lbl,
-            "liquidity": liq_target,
-            "liq_label": "Bir Sonraki Hedef",
-            "eqh": liq_target,
-            "fibo": f"EQ: {mid_point:.2f}$",
-            "bb": "-", # Breaker Block şimdilik pasif
-            "golden_text": golden_txt,
+            "ob_label": "Smart Money Footprint",
+            "liquidity": f"{last_sh:.2f}$ / {last_sl:.2f}$",
+            "liq_label": "Likidite Havuzları (BSL/SSL)",
+            "eqh": f"{last_sh:.2f}$", # Eski uyumluluk için
+            "fibo": f"OTE: {ote_long_entry:.2f}$" if bias == "Long" else f"OTE: {ote_short_entry:.2f}$",
+            "bb": "-",
+            "golden_text": "AKTİF" if golden_setup else "-",
             "golden_setup": golden_setup
         }
+
     except Exception as e:
         return None
 @st.cache_data(ttl=600)
@@ -803,6 +791,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
