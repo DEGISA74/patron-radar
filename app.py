@@ -1041,6 +1041,7 @@ with col_right:
         unsafe_allow_html=True
     )
     
+    # BURASI SCROLL'LU KISIM (yükseklik sabit, içinde scroll var)
     with st.container(height=250):
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
@@ -1059,8 +1060,7 @@ with col_right:
                 
                 for item in commons_sorted:
                     sym = item["symbol"]
-                    row1 = item["r1"]
-                    row2 = item["r2"]
+                    row1 = item["r1"]; row2 = item["r2"]
                     c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"c_s_{sym}"):
                         toggle_watchlist(sym)
@@ -1087,17 +1087,19 @@ with col_right:
         
         if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
             for i, row in st.session_state.scan_data.iterrows():
-                sym = row["Sembol"]
-                score = row['Skor']
+                sym = row["Sembol"]; score = row['Skor']
                 c1, c2 = st.columns([0.2, 0.8])
-                if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"r1_s_{sym}_{i}"):
+                if c1.button("★" if sym in st.session_state.watchlist else "☆",
+                            key=f"r1_s_{sym}_{i}"):
                     toggle_watchlist(sym)
                     st.rerun()
-                if c2.button(f"{'🔥' if score>=7 else '✅'} {score}/8 | {sym}", key=f"r1_b_{sym}_{i}"):
+                if c2.button(f"{'🔥' if score>=7 else '✅'} {score}/8 | {sym}",
+                            key=f"r1_b_{sym}_{i}"):
                     on_scan_result_click(sym)
                     st.rerun()
                 st.markdown(
-                    f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; padding-left:5px;'>{row['Nedenler']}</div>",
+                    f"<div style='font-size:0.6rem; color:#64748B; "
+                    f"margin-top:-8px; padding-left:5px;'>{row['Nedenler']}</div>",
                     unsafe_allow_html=True
                 )
         else:
@@ -1114,7 +1116,8 @@ with col_right:
             for i, row in st.session_state.radar2_data.iterrows():
                 sym = row["Sembol"]
                 c1, c2 = st.columns([0.2, 0.8])
-                if c1.button("★" if sym in st.session_state.watchlist else "☆", key=f"r2_s_{sym}_{i}"):
+                if c1.button("★" if sym in st.session_state.watchlist else "☆",
+                            key=f"r2_s_{sym}_{i}"):
                     toggle_watchlist(sym)
                     st.rerun()
                 
@@ -1124,8 +1127,9 @@ with col_right:
                     on_scan_result_click(sym)
                     st.rerun()
                 st.markdown(
-                    f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; padding-left:5px;'>"
-                    f"Fiyat: {row['Fiyat']} • RS: {row['RS']}% • {row['Etiketler']}</div>",
+                    f"<div style='font-size:0.6rem; color:#64748B; margin-top:-8px; "
+                    f"padding-left:5px;'>Fiyat: {row['Fiyat']} • RS: {row['RS']}% • "
+                    f"{row['Etiketler']}</div>",
                     unsafe_allow_html=True
                 )
         else:
@@ -1147,5 +1151,3 @@ with col_right:
                 if c2.button(sym, key=f"wl_g_{sym}"):
                     on_scan_result_click(sym)
                     st.rerun()
-
-
