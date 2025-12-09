@@ -14,7 +14,7 @@ import concurrent.futures
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.4.1 (Stable)",
+    page_title="Patronun Terminali v4.4.2 (High Score Fix)",
     layout="wide",
     page_icon="🐂"
 )
@@ -204,7 +204,7 @@ async def get_bulk_data_async(asset_list, period="6mo", chunk_size=50):
             else: final_df = pd.concat([final_df, res], axis=1)
     return final_df
 
-# --- ANALİZ MOTORLARI (ASYNC WRAPPER) ---
+# --- ANALİZ MOTORLARI (ASYNC WRAPPER - SKOR DÜZELTİLDİ) ---
 def analyze_market_intelligence_sync(data, asset_list):
     # Veri zaten çekildi, sadece hesaplama yapılıyor (CPU Bound)
     signals = []
@@ -252,22 +252,28 @@ def analyze_market_intelligence_sync(data, asset_list):
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
 
-            # Sinyal Mantığı
+            # Sinyal Mantığı - FABRİKA AYARLARINA DÖNÜŞ (v4.3.2)
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
             
             # Trend Dönüşü
             if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])): score += 1; reasons.append("⚡ Trend Start")
             
-            if hist.iloc[-1] > hist.iloc[-2] and hist.iloc[-1] > 0: score += 1; reasons.append("🟢 MACD Güçlü")
-            if williams_r.iloc[-1] > -20: score += 1; reasons.append("🔫 W%R Aşırı Alım") # Momentum
-            if curr_vol > avg_vol * 1.5: score += 1; reasons.append("🔊 Hacim Patlaması")
+            # MACD (Sadece artış yeterli)
+            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
+            
+            # Williams %R (Momentum başlangıcı -50)
+            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R") 
+            
+            # Hacim (1.2x ortalama yeterli)
+            if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim")
             
             # Breakout
-            if curr_c >= high.tail(20).max() * 0.99: score += 1; reasons.append("🔨 Breakout")
+            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout")
             
+            # RSI (Güvenli Bölge)
             rsi_c = rsi.iloc[-1]
-            if 50 < rsi_c < 70 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Pozitif")
+            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Pozitif")
             
             if score > 0: 
                 signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
@@ -298,10 +304,11 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             curr_c = float(close.iloc[-1])
             
             # Fiyat Filtresi (Gürültüyü azalt)
-            if curr_c < 5: continue 
+            if curr_c < 2: continue 
             
+            # Hacim filtresi (Biraz gevşettik)
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-            if avg_vol_20 < 500000: continue # Likidite Filtresi
+            # if avg_vol_20 < 100000: continue 
 
             sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
             sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
@@ -318,13 +325,15 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
             rs_score = 0.0
             if idx_data is not None and len(close)>60 and len(idx_data)>60:
                  # Basit RS hesaplama
-                 rs_score = (curr_c / float(close.iloc[-60]) - 1) - (float(idx_data.iloc[-1]) / float(idx_data.iloc[-60]) - 1)
+                 try:
+                    rs_score = (curr_c / float(close.iloc[-60]) - 1) - (float(idx_data.iloc[-1]) / float(idx_data.iloc[-60]) - 1)
+                 except: rs_score = 0
 
             setup = "-"; tags = []; score = 0
             
             # Setup Taramaları
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
-            if trend == "Boğa" and curr_c >= recent_high_60 * 0.98: setup = "Breakout"; score += 2; tags.append("Zirve")
+            if trend == "Boğa" and curr_c >= recent_high_60 * 0.97: setup = "Breakout"; score += 2; tags.append("Zirve")
             
             if trend == "Boğa" and setup == "-":
                 if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.05 and 40 <= rsi_c <= 60: setup = "Pullback"; score += 2; tags.append("Düzeltme")
@@ -335,8 +344,8 @@ def radar2_scan_sync(data, asset_list, idx_data=None):
                 hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
                 if rsi.iloc[-2] < 40 and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip")
 
-            if rs_score > 0.05: score += 1; tags.append("RS+")
-            if volume.iloc[-1] > avg_vol_20 * 1.5: score += 1; tags.append("Hacim+")
+            if rs_score > 0.0: score += 1; tags.append("RS+")
+            if volume.iloc[-1] > avg_vol_20 * 1.2: score += 1; tags.append("Hacim+")
             
             if score > 0: results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
         except: continue
@@ -601,8 +610,8 @@ st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.1</div>
-        <div style="font-size:0.8rem; color:#64748B;">Async Core Engine (S&P 500 Full + VIP)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.2</div>
+        <div style="font-size:0.8rem; color:#64748B;">Async Core (High Score Logic Restored)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
