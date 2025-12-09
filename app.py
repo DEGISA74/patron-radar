@@ -573,43 +573,36 @@ def render_deep_xray_card(xray):
 def render_ict_panel(analysis):
     if not analysis: return
     
-    # 1. TEMA RENGİNİ BELİRLE (Smart Color Logic)
-    # Analiz sonuçlarına göre rengi otomatik seç
-    bias = "Nötr"
-    color = "#64748b" # Varsayılan Gri
-    bg_color = "#f8fafc"
-    
-    # Structure veya Summary içinde geçen kelimelere göre renk ata
+    # 1. TEMA RENGİNİ BELİRLE
     text_dump = (analysis['structure'] + analysis['summary']).upper()
+    bias = "Nötr"
+    color = "#64748b"
+    bg_color = "#f8fafc"
     
     if "BULLISH" in text_dump or "LONG" in text_dump:
         bias = "BULLISH"
-        color = "#16a34a" # Yeşil
+        color = "#16a34a"
         bg_color = "#f0fdf4"
     elif "BEARISH" in text_dump or "SHORT" in text_dump:
         bias = "BEARISH"
-        color = "#dc2626" # Kırmızı
+        color = "#dc2626"
         bg_color = "#fef2f2"
     elif "KONSOLİDASYON" in text_dump:
         bias = "YATAY"
-        color = "#d97706" # Turuncu
+        color = "#d97706"
         bg_color = "#fffbeb"
 
-    # 2. METİN TEMİZLİĞİ VE FORMATLAMA
-    # Markdown yıldızlarını (**) temizle ve HTML bold etiketiyle sarmala
+    # 2. METİN FORMATLAMA
     summary_clean = analysis['summary'].replace("**", "")
-    # " | " işaretinden bölüp alt alta yazdıracağız
     summary_parts = summary_clean.split("|")
     
     summary_html = ""
     for part in summary_parts:
-        # Her parçayı ayrı bir satır ve ikonlu yap
-        if "🔥" in part or "🚀" in part or "⚠️" in part or "✅" in part or "🪤" in part or "💤" in part or "🩸" in part:
+        if any(x in part for x in ["🔥", "🚀", "⚠️", "✅", "🪤", "💤", "🩸"]):
             summary_html += f'<div style="margin-bottom:4px; font-weight:700; color:{color};">{part.strip()}</div>'
         else:
             summary_html += f'<div style="margin-bottom:4px; font-size:0.75rem; color:#475569;">{part.strip()}</div>'
 
-    # Golden Setup Stili
     golden_html = ""
     if analysis['golden_setup']:
         golden_html = f"""
@@ -617,11 +610,13 @@ def render_ict_panel(analysis):
             <div style="color:{color}; font-weight:800; font-size:0.8rem; animation: pulse 2s infinite;">
                 {analysis['golden_text']}
             </div>
-        </div>
-        """
+        </div>"""
 
-    # 3. HTML KART TASARIMI (Bloomberg Style)
-    html_code = f"""
+    # 3. HTML OLUŞTURMA (DÜZELTİLMİŞ - TEXTWRAP DEDENT)
+    # Not: f-string içindeki süslü parantezleri (CSS için) çift {{ }} yaptık.
+    # HTML kodunu sola yasladık ki Streamlit bunu 'kod bloğu' sanmasın.
+    
+    html_code = textwrap.dedent(f"""
     <style>
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} 100% {{ opacity: 1; }} }}
         .ict-card {{
@@ -685,10 +680,9 @@ def render_ict_panel(analysis):
                 <span class="ict-val">{analysis['eqh'].split('(')[0]}</span>
             </div>
         </div>
-        
         {golden_html}
     </div>
-    """
+    """)
     
     st.markdown(html_code, unsafe_allow_html=True)
 
@@ -898,3 +892,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
