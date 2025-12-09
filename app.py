@@ -9,11 +9,12 @@ import streamlit.components.v1 as components
 import numpy as np
 import sqlite3
 import os
-import textwrap
+import asyncio
+import concurrent.futures
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.3.2",
+    page_title="Patronun Terminali v4.4.0 (Async)",
     layout="wide",
     page_icon="🐂"
 )
@@ -106,81 +107,48 @@ def remove_watchlist_db(symbol):
     conn.close()
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ (GÜNCELLENMİŞ VE SIRALI) ---
-raw_sp500 = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
-    "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
-    "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
-    "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
-    "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
-    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ",
-    "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
-    "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
-    "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
-    "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN",
-    "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
-    "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
-    "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
-    "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
-    "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
-    "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC",
-    "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
-    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
-    "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
-    "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
-    "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
-    "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
-    "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
-    "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
-    "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
-    "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
-    "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR",
-    "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
-    "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
-]
+# --- VARLIK LİSTELERİ (DİNAMİK VE GENİŞLETİLMİŞ) ---
+@st.cache_data(ttl=86400) # Günde 1 kez güncelle
+def get_sp500_tickers():
+    # Wikipedia'dan güncel S&P 500 listesini çeker
+    try:
+        table = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+        df = table[0]
+        tickers = df['Symbol'].tolist()
+        # "." yı "-" ile değiştir (BRK.B -> BRK-B)
+        tickers = [t.replace('.', '-') for t in tickers]
+        return tickers
+    except:
+        # Yedek Liste (Wikipedia çalışmazsa)
+        return ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "BRK-B", "JPM", "JNJ", "V", "XOM", "PG", "MA", "HD", "CVX", "MRK", "ABBV", "PEP", "KO", "LLY", "BAC", "AVGO", "COST", "TMO", "MCD", "CSCO", "ACN", "ABT", "DHR", "LIN", "VZ", "DIS", "NEE", "PM", "WFC", "TXN", "UPS", "BMY", "RTX", "NKE", "HON", "INTC", "QCOM", "UNP", "LOW", "IBM", "AMGN", "SPGI", "GS", "CAT", "GE", "BA", "ISRG", "DE", "PLD", "MMM", "LMT", "BKNG", "BLK", "SYK", "T", "MDLZ", "GILD", "AXP", "ADI", "ADP", "NOW", "C", "TJX", "AMT", "CVS", "MMC", "VRTX", "LRCX", "ELV", "REGN", "ISRG", "PGR", "CI", "ZTS", "SCHW", "MO", "EOG", "TMUS", "SO", "BSX", "MU", "SLB", "TGT", "PFE"]
 
-# Patronun Özel Hisseleri Eklendi
-raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
+# PATRONUN ÖZEL HİSSELERİ
+my_holdings = ["AGNC", "ARCC", "JEPI", "EPD"]
 
-# Kripto Listesi
+# KRİPTO
 raw_crypto = [
-    "GC=F", "SI=F", # Altın ve Gümüş
-    "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
-    "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
+    "GC=F", "SI=F", "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", 
+    "AVAX-USD", "SOL-USD", "DOGE-USD", "ADA-USD", "LINK-USD"
 ]
 
-# Nasdaq 100
-raw_nasdaq = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
-    "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
-    "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
-    "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
-    "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP",
-    "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD",
-    "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR",
-    "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT",
-    "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK",
-    "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
-]
+# LİSTELERİ OLUŞTUR
+sp500_list = get_sp500_tickers()
+# Portföyü en başa ekle, tekrarı önle
+full_sp500_vip = sorted(list(set(my_holdings + sp500_list)), key=lambda x: (x not in my_holdings, x))
 
-# Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))), # Set ile çiftleri temizledik, sorted ile sıraladık
-    "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
-    "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
+    "S&P 500 (TAM LİSTE + VIP)": full_sp500_vip,
+    "EMTİA & KRİPTO": sorted(raw_crypto)
 }
 
-INITIAL_CATEGORY = "S&P 500 (TOP 300)"
+INITIAL_CATEGORY = "S&P 500 (TAM LİSTE + VIP)"
 
 # --- STATE ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
-if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
+if 'ticker' not in st.session_state: st.session_state.ticker = "AGNC"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
-if 'ict_analysis' not in st.session_state: st.session_state.ict_analysis = None
-if 'tech_card_data' not in st.session_state: st.session_state.tech_card_data = None
-if 'sentiment_deep' not in st.session_state: st.session_state.sentiment_deep = None
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -210,60 +178,103 @@ with st.sidebar:
     selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
     if selected_theme_name != st.session_state.theme: st.session_state.theme = selected_theme_name; st.rerun()
     st.divider()
-    
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
-# --- ANALİZ MOTORLARI (CACHED) ---
-@st.cache_data(ttl=3600)
-def analyze_market_intelligence(asset_list):
+# --- ASYNC MOTORU (PARALEL VERİ ÇEKME) ---
+async def fetch_data_chunk(tickers, period="6mo"):
+    # Bu fonksiyon thread içinde çalışacak ve yfinance'in blocking yapısını izole edecek
+    loop = asyncio.get_event_loop()
+    # threads=True parametresi yfinance'in kendi içindeki optimizasyonunu açar
+    # Ancak burada biz chunk'ları yönetiyoruz
+    return await loop.run_in_executor(None, lambda: yf.download(tickers, period=period, group_by='ticker', threads=True, progress=False))
+
+async def get_bulk_data_async(asset_list, period="6mo", chunk_size=50):
+    # Dev listeyi parçala
+    chunks = [asset_list[i:i + chunk_size] for i in range(0, len(asset_list), chunk_size)]
+    tasks = [fetch_data_chunk(chunk, period) for chunk in chunks]
+    results = await asyncio.gather(*tasks)
+    
+    # Sonuçları tek bir DataFrame'de birleştir
+    final_df = pd.DataFrame()
+    for res in results:
+        if not res.empty:
+            if final_df.empty: final_df = res
+            else: final_df = pd.concat([final_df, res], axis=1)
+    return final_df
+
+# --- ANALİZ MOTORLARI (ASYNC WRAPPER) ---
+def analyze_market_intelligence_sync(data, asset_list):
+    # Veri zaten çekildi, sadece hesaplama yapılıyor (CPU Bound)
     signals = []
-    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
-    except: return pd.DataFrame()
+    # Data columns MultiIndex kontrolü
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]: df = data[symbol].copy()
                 else: continue
             else:
+                # Tek hisse varsa yapı farklı olabilir
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
+            
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
             if len(df) < 60: continue
+
+            # Vektörel işlemler (Hız için)
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
-            ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
-            sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
+            
+            ema5 = close.ewm(span=5, adjust=False).mean()
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
-            delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))); williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
+            
+            # MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd = ema12 - ema26
+            signal_line = macd.ewm(span=9, adjust=False).mean()
+            hist = macd - signal_line
+            
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            
+            williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
             daily_range = high - low
+            
             score = 0; reasons = []
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+
+            # Sinyal Mantığı
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
-            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend")
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim")
-            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout")
+            
+            # Trend Dönüşü
+            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])): score += 1; reasons.append("⚡ Trend Start")
+            
+            if hist.iloc[-1] > hist.iloc[-2] and hist.iloc[-1] > 0: score += 1; reasons.append("🟢 MACD Güçlü")
+            if williams_r.iloc[-1] > -20: score += 1; reasons.append("🔫 W%R Aşırı Alım") # Momentum
+            if curr_vol > avg_vol * 1.5: score += 1; reasons.append("🔊 Hacim Patlaması")
+            
+            # Breakout
+            if curr_c >= high.tail(20).max() * 0.99: score += 1; reasons.append("🔨 Breakout")
+            
             rsi_c = rsi.iloc[-1]
-            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
-            if score > 0: signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
+            if 50 < rsi_c < 70 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Pozitif")
+            
+            if score > 0: 
+                signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
         except: continue
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
-    if not asset_list: return pd.DataFrame()
-    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
-    try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
-    except: idx = None
+def radar2_scan_sync(data, asset_list, idx_data=None):
     results = []
     for symbol in asset_list:
         try:
@@ -273,48 +284,75 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             else:
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
+            
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close']); 
             if len(df) < 120: continue
+            
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
-            if curr_c < min_price or curr_c > max_price: continue
+            
+            # Fiyat Filtresi (Gürültüyü azalt)
+            if curr_c < 5: continue 
+            
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-            if avg_vol_20 < min_avg_vol_m * 1e6: continue
+            if avg_vol_20 < 500000: continue # Likidite Filtresi
+
             sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
             sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
+            
             trend = "Yatay"
             if not np.isnan(sma200.iloc[-1]):
-                if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
-                elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
+                if curr_c > sma50.iloc[-1] > sma200.iloc[-1]: trend = "Boğa"
+                elif curr_c < sma200.iloc[-1]: trend = "Ayı"
+            
             delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
-            recent_high_60 = float(high.rolling(60).max().iloc[-1])
-            breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
+            
+            # RS Skoru (Endekse Göre)
             rs_score = 0.0
-            if idx is not None and len(close)>60 and len(idx)>60:
-                common_index = close.index.intersection(idx.index)
-                if len(common_index) > 60:
-                    cs = close.reindex(common_index); isx = idx.reindex(common_index)
-                    rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
+            if idx_data is not None and len(close)>60 and len(idx_data)>60:
+                 # Basit RS hesaplama
+                 rs_score = (curr_c / float(close.iloc[-60]) - 1) - (float(idx_data.iloc[-1]) / float(idx_data.iloc[-60]) - 1)
+
             setup = "-"; tags = []; score = 0
-            avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
-            if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve"); 
-            if vol_spike: score += 1; tags.append("Hacim+")
+            
+            # Setup Taramaları
+            recent_high_60 = float(high.rolling(60).max().iloc[-1])
+            if trend == "Boğa" and curr_c >= recent_high_60 * 0.98: setup = "Breakout"; score += 2; tags.append("Zirve")
+            
             if trend == "Boğa" and setup == "-":
-                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55: setup = "Pullback"; score += 2; tags.append("Düzeltme")
-                if volume.iloc[-1] < avg_vol_20 * 0.9: score += 1; tags.append("Sığ Satış")
+                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.05 and 40 <= rsi_c <= 60: setup = "Pullback"; score += 2; tags.append("Düzeltme")
+            
             if setup == "-":
-                if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
-            if rs_score > 0: score += 1; tags.append("RS+")
-            if trend == "Boğa": score += 1
-            elif trend == "Ayı": score -= 1
+                # MACD Hist dönüşü
+                ema12 = close.ewm(span=12, adjust=False).mean(); ema26 = close.ewm(span=26, adjust=False).mean()
+                hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
+                if rsi.iloc[-2] < 40 and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip")
+
+            if rs_score > 0.05: score += 1; tags.append("RS+")
+            if volume.iloc[-1] > avg_vol_20 * 1.5: score += 1; tags.append("Hacim+")
+            
             if score > 0: results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
         except: continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- SENTIMENT & DERİN RÖNTGEN ---
+# Streamlit Cache ile Async Fonksiyonu Çağırma
+async def run_analysis_pipeline(asset_list):
+    # Veri İndirme (Async & Chunked)
+    data = await get_bulk_data_async(asset_list, period="1y")
+    
+    # Endeks Verisi (Tek başına hızlıca alalım)
+    loop = asyncio.get_event_loop()
+    idx_data = await loop.run_in_executor(None, lambda: yf.download("^GSPC", period="1y", progress=False)["Close"] if "^GSPC" not in asset_list else None)
+    
+    # İşleme (Senkron ama hızlı vektörel)
+    r1 = analyze_market_intelligence_sync(data, asset_list)
+    r2 = radar2_scan_sync(data, asset_list, idx_data)
+    
+    return r1, r2
+
+# --- DİĞER FONKSİYONLAR (Tekil Analizler - Aynı Kaldı) ---
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -383,7 +421,6 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT (DÜZELTİLMİŞ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
@@ -442,7 +479,7 @@ def get_tech_card_data(ticker):
         return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
 
-# --- RENDER ---
+# --- RENDER FONKSİYONLARI (Aynı Kaldı) ---
 def render_sentiment_card(sent):
     if not sent: return
     color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
@@ -543,14 +580,14 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.4.0</div>
+        <div style="font-size:0.8rem; color:#64748B;">Async Core Engine (S&P 500 Full + VIP)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -582,7 +619,6 @@ if st.session_state.generate_prompt:
         price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
     except: price = "Bilinmiyor"
     
-    # STATİK PROMPT
     prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
 
 Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
@@ -666,11 +702,20 @@ with col_right:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
+    tab1, tab2, tab3 = st.tabs(["⚡ TAM TARAMA", "🧠 SONUÇLAR (R1)", "🚀 SONUÇLAR (R2)"])
     
     with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
-            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+        st.info("Bu işlem S&P 500'deki ~500 hisseyi aynı anda tarar.")
+        if st.button("🚀 ASYNC TARAMAYI BAŞLAT", type="primary"):
+            with st.spinner("Motorlar çalışıyor... Veriler chunklar halinde indiriliyor..."):
+                # Asenkron fonksiyonu burada çağırıyoruz
+                r1_res, r2_res = asyncio.run(run_analysis_pipeline(ASSET_GROUPS.get(st.session_state.category, [])))
+                st.session_state.scan_data = r1_res
+                st.session_state.radar2_data = r2_res
+                st.success("Tarama Tamamlandı!")
+                st.rerun()
+
+    with tab2:
         if st.session_state.scan_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.scan_data.iterrows():
@@ -678,10 +723,9 @@ with col_right:
                     if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(row['Nedenler'])
+        else: st.write("Henüz tarama yapılmadı.")
 
-    with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary"):
-            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+    with tab3:
         if st.session_state.radar2_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.radar2_data.iterrows():
@@ -689,11 +733,4 @@ with col_right:
                     if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
                     if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"): on_scan_result_click(sym); st.rerun()
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
-
-    with tab3:
-        if st.button("⚡ Listeyi Tara", type="secondary"):
-            with st.spinner("..."): st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
-        for sym in st.session_state.watchlist:
-            c1, c2 = st.columns([0.2, 0.8])
-            if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
-            if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+        else: st.write("Henüz tarama yapılmadı.")
