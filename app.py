@@ -570,20 +570,125 @@ def render_deep_xray_card(xray):
 
 def render_ict_panel(analysis):
     if not analysis: return
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
+    
+    # 1. TEMA RENGİNİ BELİRLE (Smart Color Logic)
+    # Analiz sonuçlarına göre rengi otomatik seç
+    bias = "Nötr"
+    color = "#64748b" # Varsayılan Gri
+    bg_color = "#f8fafc"
+    
+    # Structure veya Summary içinde geçen kelimelere göre renk ata
+    text_dump = (analysis['structure'] + analysis['summary']).upper()
+    
+    if "BULLISH" in text_dump or "LONG" in text_dump:
+        bias = "BULLISH"
+        color = "#16a34a" # Yeşil
+        bg_color = "#f0fdf4"
+    elif "BEARISH" in text_dump or "SHORT" in text_dump:
+        bias = "BEARISH"
+        color = "#dc2626" # Kırmızı
+        bg_color = "#fef2f2"
+    elif "KONSOLİDASYON" in text_dump:
+        bias = "YATAY"
+        color = "#d97706" # Turuncu
+        bg_color = "#fffbeb"
+
+    # 2. METİN TEMİZLİĞİ VE FORMATLAMA
+    # Markdown yıldızlarını (**) temizle ve HTML bold etiketiyle sarmala
+    summary_clean = analysis['summary'].replace("**", "")
+    # " | " işaretinden bölüp alt alta yazdıracağız
+    summary_parts = summary_clean.split("|")
+    
+    summary_html = ""
+    for part in summary_parts:
+        # Her parçayı ayrı bir satır ve ikonlu yap
+        if "🔥" in part or "🚀" in part or "⚠️" in part or "✅" in part or "🪤" in part or "💤" in part or "🩸" in part:
+            summary_html += f'<div style="margin-bottom:4px; font-weight:700; color:{color};">{part.strip()}</div>'
+        else:
+            summary_html += f'<div style="margin-bottom:4px; font-size:0.75rem; color:#475569;">{part.strip()}</div>'
+
+    # Golden Setup Stili
+    golden_html = ""
+    if analysis['golden_setup']:
+        golden_html = f"""
+        <div style="margin-top:10px; padding:8px; background-color:{color}15; border:1px dashed {color}; border-radius:6px; text-align:center;">
+            <div style="color:{color}; font-weight:800; font-size:0.8rem; animation: pulse 2s infinite;">
+                {analysis['golden_text']}
+            </div>
         </div>
-        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
-        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
-        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
-        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
-        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
+        """
+
+    # 3. HTML KART TASARIMI (Bloomberg Style)
+    html_code = f"""
+    <style>
+        @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} 100% {{ opacity: 1; }} }}
+        .ict-card {{
+            font-family: 'Inter', sans-serif;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid {color};
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            padding: 12px;
+            margin-top: 10px;
+        }}
+        .ict-badge {{
+            background-color: {color};
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .ict-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #f1f5f9;
+        }}
+        .ict-item {{ display: flex; flex-direction: column; }}
+        .ict-label {{ font-size: 0.65rem; color: #64748b; font-weight: 600; text-transform: uppercase; }}
+        .ict-val {{ font-size: 0.8rem; font-weight: 700; color: #1e293b; font-family: 'JetBrains Mono', monospace; }}
+    </style>
+
+    <div class="ict-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:700; color:#1e3a8a; font-size:0.9rem;">🧠 ICT & Price Action</div>
+            <span class="ict-badge">{bias}</span>
+        </div>
+
+        <div style="background-color:{bg_color}; padding:8px; border-radius:6px; border:1px solid {color}30;">
+            {summary_html}
+        </div>
+
+        <div class="ict-grid">
+            <div class="ict-item">
+                <span class="ict-label">KONUM (Range)</span>
+                <span class="ict-val" style="color:{color}">{analysis['position'].split('(')[0]}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">{analysis['ob_label']}</span>
+                <span class="ict-val">{analysis['ob'].replace('🛡️','').replace('⚔️','')}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">FIRSAT (FVG)</span>
+                <span class="ict-val">{analysis['fvg'].replace('🟢','').replace('🔴','')}</span>
+            </div>
+            <div class="ict-item">
+                <span class="ict-label">{analysis['liq_label']}</span>
+                <span class="ict-val">{analysis['eqh'].split('(')[0]}</span>
+            </div>
+        </div>
+        
+        {golden_html}
     </div>
-    """, unsafe_allow_html=True)
+    """
+    
+    st.markdown(html_code, unsafe_allow_html=True)
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
@@ -791,6 +896,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
