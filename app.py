@@ -612,7 +612,7 @@ def render_ict_panel(analysis):
             </div>
         </div>"""
 
-    # 3. HTML OLUŞTURMA (DÜZELTİLMİŞ)
+    # 3. HTML OLUŞTURMA (DÜZELTİLDİ: textwrap ile sola yaslama)
     html_code = textwrap.dedent(f"""
     <style>
         @keyframes pulse {{ 0% {{ opacity: 1; }} 50% {{ opacity: 0.7; }} 100% {{ opacity: 1; }} }}
