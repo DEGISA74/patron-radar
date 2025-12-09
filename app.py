@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.2.0",
+    page_title="Patronun Terminali v4.2.1",
     layout="wide",
     page_icon="🐂"
 )
@@ -29,7 +29,6 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-# CSS NOTU: Python f-string içinde CSS süslü parantezleri {{ ve }} olarak çiftlenmiştir.
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -37,7 +36,6 @@ st.markdown(f"""
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
     
-    /* Layout Sıkılaştırma */
     section.main > div.block-container {{ padding-top: 2rem; padding-bottom: 2rem; }}
     
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
@@ -62,7 +60,6 @@ st.markdown(f"""
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     .stButton button {{ width: 100%; border-radius: 4px; font-size: 0.78rem; padding: 0.2rem 0.5rem; }}
     
-    /* ORTAK KART STİLİ (Hem Teknik hem ICT için) */
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; padding: 8px; margin-top: 5px; margin-bottom: 10px;
@@ -71,29 +68,23 @@ st.markdown(f"""
     .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
     .info-row {{ display: flex; align-items: center; margin-bottom: 3px; }}
     
-    /* Teknik Kart Etiketleri (Kısa) */
     .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    
-    /* ICT Kart Etiketleri (Uzun) */
     .label-long {{ font-weight: 600; color: #64748B; width: 165px; flex-shrink: 0; }}
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }}
     
-    /* LOGO STİLİ */
     .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
 </style>
 """, unsafe_allow_html=True)
 
-# --- VERİTABANI (SQLITE) ---
+# --- VERİTABANI ---
 DB_FILE = "patron.db"
-
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS watchlist (symbol TEXT PRIMARY KEY)')
     conn.commit()
     conn.close()
-
 def load_watchlist_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -101,72 +92,24 @@ def load_watchlist_db():
     data = c.fetchall()
     conn.close()
     return [x[0] for x in data]
-
 def add_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    try:
-        c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        pass
+    try: c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,)); conn.commit()
+    except sqlite3.IntegrityError: pass
     conn.close()
-
 def remove_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('DELETE FROM watchlist WHERE symbol = ?', (symbol,))
     conn.commit()
     conn.close()
-
-if not os.path.exists(DB_FILE):
-    init_db()
+if not os.path.exists(DB_FILE): init_db()
 
 # --- VARLIK LİSTELERİ ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": [
-        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
-        "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
-        "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
-        "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL",
-        "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
-        "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ",
-        "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
-        "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
-        "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
-        "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN",
-        "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
-        "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
-        "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
-        "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
-        "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
-        "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC",
-        "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
-        "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
-        "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR",
-        "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII",
-        "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV",
-        "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC",
-        "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB",
-        "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES",
-        "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
-        "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
-        "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR",
-        "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
-        "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
-    ],
-    "NASDAQ (TOP 100)": [
-        "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
-        "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
-        "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI",
-        "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR",
-        "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP",
-        "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD",
-        "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR",
-        "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT",
-        "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK",
-        "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
-    ],
+    "S&P 500 (TOP 300)": ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD", "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH", "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL", "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV", "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ", "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW", "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG", "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF", "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN", "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX", "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN", "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO", "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS", "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST", "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM", "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI", "GE", "CAT", "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR", "BA", "LMT", "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII", "UPS", "FDX", "UNP", "CSX", "NSC", "DAL", "UAL", "AAL", "LUV", "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", "SHW", "PPG", "ECL", "APD", "VMC", "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", "AME", "DOV", "XYL", "WAB", "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", "ED", "XEL", "PCG", "WEC", "ES", "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP", "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY", "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR", "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF", "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"],
+    "NASDAQ (TOP 100)": ["AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST", "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN", "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI", "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR", "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP", "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD", "DOCU", "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR", "MRVL", "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT", "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK", "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"],
     "EMTİA (ALTIN/GÜMÜŞ)": ["GC=F", "SI=F"]
 }
 INITIAL_CATEGORY = "S&P 500 (TOP 300)"
@@ -177,6 +120,8 @@ if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
+if 'ict_analysis' not in st.session_state: st.session_state.ict_analysis = None
+if 'tech_card_data' not in st.session_state: st.session_state.tech_card_data = None
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -310,7 +255,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
         except: continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- SENTIMENT & ICT & TEKNİK MOTORLAR ---
+# --- SENTIMENT & ICT (GELİŞMİŞ MOTOR - GÜNCELLENDİ) ---
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -354,14 +299,10 @@ def calculate_sentiment_score(ticker):
         if low.iloc[-1] > low.rolling(5).min().shift(1).iloc[-1]: score_str += 5
         
         total = score_mom + score_vol + score_tr + score_vola + score_str
-        
-        # Progress Bar Görseli
-        bars = int(total / 5) # 20 bar max
-        bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
+        bars = int(total / 5); bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
         
         return {
-            "total": total, "bar": bar_str,
-            "mom": score_mom, "vol": score_vol, "tr": score_tr, "vola": score_vola, "str": score_str
+            "total": total, "bar": bar_str, "mom": score_mom, "vol": score_vol, "tr": score_tr, "vola": score_vola, "str": score_str
         }
     except: return None
 
@@ -374,46 +315,67 @@ def calculate_ict_concepts(ticker):
         close = df['Close']; high = df['High']; low = df['Low']
         curr_price = close.iloc[-1]
         
-        market_structure = "🟢 YÜKSELİŞ" if close.iloc[-1] > high.tail(20).iloc[:-5].max() else "🔴 DÜŞÜŞ"
-        is_bullish = "YÜKSELİŞ" in market_structure
-        
-        range_high = high.tail(60).max(); range_low = low.tail(60).min()
-        mid = (range_high + range_low)/2
-        ote = range_low + (range_high - range_low) * (0.382 if is_bullish else 0.618)
-        
-        fvg = "-"; golden = "-"
-        for i in range(len(df)-1, len(df)-10, -1):
-            if i<2: break
-            if is_bullish and low.iloc[i] > high.iloc[i-2]:
-                gl=high.iloc[i-2]; gh=low.iloc[i]
-                if abs(curr_price-gh)/curr_price < 0.05:
-                    fvg = f"{gl:.2f}-{gh:.2f}"
-                    if gl <= ote <= gh: golden = "🔥 AKTİF"
-                    break
-            elif not is_bullish and high.iloc[i] < low.iloc[i-2]:
-                gl=high.iloc[i]; gh=low.iloc[i-2]
-                if abs(curr_price-gl)/curr_price < 0.05:
-                    fvg = f"{gl:.2f}-{gh:.2f}"
-                    if gl <= ote <= gh: golden = "🔥 AKTİF"
-                    break
+        # 1. Market Structure & Trend
+        market_structure = "Nötr / Yatay"
+        is_bullish = False
+        if close.iloc[-1] > high.tail(20).iloc[-5:].max():
+            market_structure = "🟢 YÜKSELİŞ (Trend Güçlü)"; is_bullish = True
+        elif close.iloc[-1] < low.tail(20).iloc[-5:].min():
+            market_structure = "🔴 DÜŞÜŞ (Yapı Bozuldu)"
 
+        # 2. Premium / Discount & Fibonacci
+        range_high = high.tail(60).max(); range_low = low.tail(60).min()
+        mid_point = (range_high + range_low) / 2
+        ote_bull = range_low + (range_high - range_low) * 0.382
+        ote_bear = range_low + (range_high - range_low) * 0.618
+        
+        position_text = "Nötr"; is_discount = False
+        if curr_price < mid_point: position_text = "✅ UCUZ (Discount)"; is_discount = True
+        else: position_text = "⚠️ PAHALI (Premium)"
+        
+        # 3. FVG (Boşluk) + Golden Setup
+        fvg_text = "-"; golden_setup = False; golden_text = "-"
+        for i in range(len(df)-1, len(df)-10, -1):
+            if i < 2: break
+            if low.iloc[i] > high.iloc[i-2]: # Bullish FVG
+                gl = high.iloc[i-2]; gh = low.iloc[i]
+                if abs(curr_price - gh) / curr_price < 0.05:
+                   fvg_text = f"{gl:.2f}-{gh:.2f}"
+                   if gl <= ote_bull <= gh and is_bullish: golden_setup = True
+                   break
+            elif high.iloc[i] < low.iloc[i-2]: # Bearish FVG
+                gl = high.iloc[i]; gh = low.iloc[i-2]
+                if abs(curr_price - gl) / curr_price < 0.05:
+                   fvg_text = f"{gl:.2f}-{gh:.2f}"
+                   if gl <= ote_bear <= gh and not is_bullish: golden_setup = True
+                   break
+        
+        if golden_setup: golden_text = "🔥 AKTİF (FVG+OTE)"
+
+        # 4. Breaker Block & Order Block
         ob_label = "OB"; ob_val = low.tail(20).min()
         if is_bullish and curr_price > range_high * 0.95:
              ob_label = "Breaker (BB)"; ob_val = high.tail(60).iloc[:-20].max()
         
-        eqh_val = "-"
+        # 5. EQH / EQL
+        eqh_val = "-"; eql_val = "-"
         if is_bullish:
              h_counts = high.tail(60).round(2).value_counts()
-             if not h_counts.empty and h_counts.iloc[0] >= 2: eqh_val = f"{h_counts.index[0]} (EQH)"
+             if not h_counts.empty and h_counts.iloc[0] >= 2: eqh_val = f"{h_counts.index[0]}"
+        else:
+             l_counts = low.tail(60).round(2).value_counts()
+             if not l_counts.empty and l_counts.iloc[0] >= 2: eql_val = f"{l_counts.index[0]}"
 
+        # Summary
         summary = "Yön belirsiz."
-        if "🔥" in golden: summary = "🔥 DİKKAT: Golden Setup (OTE+FVG) bölgesi."
-        elif is_bullish and curr_price < mid: summary = "Rüzgar arkada, fiyat ucuz."
-        
+        if golden_setup: summary = "🔥 DİKKAT: Golden Setup (Fırsat) bölgesi."
+        elif is_bullish and is_discount: summary = "Trend Boğa, Fiyat Ucuz."
+
         return {
-            "summary": summary, "structure": market_structure, "position": "Ucuz" if curr_price < mid else "Pahalı",
-            "fvg": fvg, "ob": f"{ob_val:.2f}", "ob_label": ob_label, "eqh": eqh_val,
-            "ote": f"{ote:.2f}", "golden": golden
+            "summary": summary, "structure": market_structure, "position": position_text,
+            "fvg": fvg_text, "ob": f"{ob_val:.2f}", "ob_label": ob_label, 
+            "eqh": eqh_val if is_bullish else eql_val, "liq_label": "EQH" if is_bullish else "EQL",
+            "fibo": f"{ote_bull:.2f}" if is_bullish else f"{ote_bear:.2f}", "golden": golden_text
         }
     except: return None
 
@@ -460,7 +422,7 @@ def render_ict_panel(analysis):
         <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
         <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
         <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs:</div><div class="info-val">{analysis['eqh']}</div></div>
+        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
         <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden']}</div></div>
     </div>
     """, unsafe_allow_html=True)
@@ -519,20 +481,20 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2N7QngHYmtCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,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"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.2.0</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Sentiment Engine Added)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.2.1</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Full Features)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
 """, unsafe_allow_html=True)
 
-# FILTRELER (YERİ DEĞİŞMEDİ)
+# FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
