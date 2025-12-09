@@ -10,37 +10,13 @@ import numpy as np
 import sqlite3
 import os
 import textwrap
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-import concurrent.futures
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.0 Turbo",
+    page_title="Patronun Terminali v4.3.2",
     layout="wide",
     page_icon="🐂"
 )
-
-# --- 1. OPTİMİZASYON: GÜÇLENDİRİLMİŞ SESSION (ANTİ-BLOKAJ) ---
-def create_session():
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=0.5,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "OPTIONS"]
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    })
-    return session
-
-# Global session nesnesi
-my_session = create_session()
 
 # --- TEMA VE CSS ---
 if 'theme' not in st.session_state:
@@ -189,7 +165,7 @@ raw_nasdaq = [
 
 # Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))),
+    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))), # Set ile çiftleri temizledik, sorted ile sıraladık
     "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
     "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
 }
@@ -239,12 +215,11 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
-# --- ANALİZ MOTORLARI (CACHED & SESSION ENABLED) ---
+# --- ANALİZ MOTORLARI (CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     signals = []
-    # Değişiklik: Session parametresi eklendi
-    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False, session=my_session)
+    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except: return pd.DataFrame()
     for symbol in asset_list:
         try:
@@ -285,10 +260,9 @@ def analyze_market_intelligence(asset_list):
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
-    # Değişiklik: Session parametresi eklendi
-    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False, session=my_session)
+    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
     except: return pd.DataFrame()
-    try: idx = yf.download("^GSPC", period="1y", progress=False, session=my_session)["Close"]
+    try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except: idx = None
     results = []
     for symbol in asset_list:
@@ -344,8 +318,7 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
-        # Değişiklik: Session parametresi eklendi
-        df = yf.download(ticker, period="6mo", progress=False, session=my_session)
+        df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
@@ -386,38 +359,35 @@ def calculate_sentiment_score(ticker):
         def fmt(lst): return f"<span style='font-size:0.65rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
         
         return {
-           "total": total, "bar": bar_str,
-           "mom": f"{score_mom}/30 {fmt(reasons_mom)}",
-           "vol": f"{score_vol}/25 {fmt(reasons_vol)}",
-           "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
-           "vola": f"{score_vola}/15 {fmt(reasons_vola)}",
-           "str": f"{score_str}/10 {fmt(reasons_str)}",
-           "raw_rsi": rsi.iloc[-1], "raw_macd": hist.iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": atr.iloc[-1]
+            "total": total, "bar": bar_str,
+            "mom": f"{score_mom}/30 {fmt(reasons_mom)}",
+            "vol": f"{score_vol}/25 {fmt(reasons_vol)}",
+            "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
+            "vola": f"{score_vola}/15 {fmt(reasons_vola)}",
+            "str": f"{score_str}/10 {fmt(reasons_str)}",
+            "raw_rsi": rsi.iloc[-1], "raw_macd": hist.iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": atr.iloc[-1]
         }
     except: return None
 
-def get_deep_xray_data(ticker, sent=None):
-    # Eğer sentiment önceden hesaplandıysa tekrar çağırma (Optimization)
-    if sent is None:
-        sent = calculate_sentiment_score(ticker)
+def get_deep_xray_data(ticker):
+    sent = calculate_sentiment_score(ticker)
     if not sent: return None
     def icon(cond): return "✅" if cond else "❌"
     return {
-       "mom_rsi": f"{icon(sent['raw_rsi']>50)} RSI Trendi",
-       "mom_macd": f"{icon(sent['raw_macd']>0)} MACD Hist",
-       "vol_obv": f"{icon('OBV ↑' in sent['vol'])} OBV Akışı",
-       "tr_ema": f"{icon('GoldCross' in sent['tr'])} EMA Dizilimi",
-       "tr_adx": f"{icon('P > SMA50' in sent['tr'])} Trend Gücü",
-       "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
-       "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
+        "mom_rsi": f"{icon(sent['raw_rsi']>50)} RSI Trendi",
+        "mom_macd": f"{icon(sent['raw_macd']>0)} MACD Hist",
+        "vol_obv": f"{icon('OBV ↑' in sent['vol'])} OBV Akışı",
+        "tr_ema": f"{icon('GoldCross' in sent['tr'])} EMA Dizilimi",
+        "tr_adx": f"{icon('P > SMA50' in sent['tr'])} Trend Gücü",
+        "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
+        "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
 # --- ICT (DÜZELTİLMİŞ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
-        # Değişiklik: Session parametresi eklendi
-        df = yf.download(ticker, period="3mo", progress=False, session=my_session)
+        df = yf.download(ticker, period="3mo", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']
@@ -453,23 +423,21 @@ def calculate_ict_concepts(ticker):
         elif not is_bullish and not is_discount: summary = "💡 Trend düşüşte; fiyat pahalı."
         
         return {
-           "summary": summary, "structure": market_structure, "position": position_text, 
-           "fvg": fvg_text, "ob": ob_text, "ob_label": ob_label, 
-           "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, 
-           "fibo": fibo_text, "bb": bb_text, "golden_text": golden_text, "golden_setup": golden_setup
+            "summary": summary, "structure": market_structure, "position": position_text, 
+            "fvg": fvg_text, "ob": ob_text, "ob_label": ob_label, 
+            "liquidity": liq_text, "liq_label": liq_label, "eqh": liq_text, 
+            "fibo": fibo_text, "bb": bb_text, "golden_text": golden_text, "golden_setup": golden_setup
         }
     except: return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
     try:
-        # Değişiklik: Session parametresi eklendi
-        df = yf.download(ticker, period="2y", progress=False, session=my_session)
+        df = yf.download(ticker, period="2y", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']
-        sma50 = close.rolling(50).mean().iloc[-1]; sma100 = close.rolling(100).mean().iloc[-1];
-        sma200 = close.rolling(200).mean().iloc[-1]; ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
+        sma50 = close.rolling(50).mean().iloc[-1]; sma100 = close.rolling(100).mean().iloc[-1]; sma200 = close.rolling(200).mean().iloc[-1]; ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
         atr = (high-low).rolling(14).mean().iloc[-1]
         return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
@@ -523,7 +491,7 @@ def render_ict_panel(analysis):
     </div>
     """, unsafe_allow_html=True)
 
-def render_detail_card(ticker, tech_data=None):
+def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
@@ -531,9 +499,7 @@ def render_detail_card(ticker, tech_data=None):
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty: r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-    
-    # Optimization: tech_data argüman olarak gelebilir
-    dt = tech_data if tech_data else get_tech_card_data(ticker)
+    dt = get_tech_card_data(ticker)
     ma_t = "-"
     if dt: ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
     st.markdown(f"""
@@ -555,9 +521,7 @@ def render_tradingview_widget(ticker, height=650):
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
-        # Değişiklik: Session'ı Ticker nesnesine gömüyoruz
-        t = yf.Ticker(ticker, session=my_session)
-        info = t.info
+        info = yf.Ticker(ticker).info
         return {'price': info.get('currentPrice') or info.get('regularMarketPrice'), 'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target': info.get('targetMeanPrice', '-')}
     except: return None
 
@@ -579,13 +543,13 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDj/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v5.0 Turbo</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
         <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
     </div>
 </div>
@@ -614,8 +578,7 @@ if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt =
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     try:
-        # Session kullanımı
-        inf = yf.Ticker(t, session=my_session).info
+        inf = yf.Ticker(t).info
         price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
     except: price = "Bilinmiyor"
     
@@ -648,29 +611,8 @@ Bana hikaye anlatma, net emirler ver:
     with st.sidebar: st.code(prompt, language="text")
     st.session_state.generate_prompt = False
 
-# --- 2. OPTİMİZASYON: PARALEL VERİ ÇEKME MOTORU ---
-# Eski kodda burası sırayla çalışıyordu. Şimdi ThreadPool ile aynı anda çalışacak.
-curr_ticker = st.session_state.ticker
-
-with st.spinner("Veriler paralel kanallardan çekiliyor..."):
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Görevleri dağıt
-        future_info = executor.submit(fetch_stock_info, curr_ticker)
-        future_ict = executor.submit(calculate_ict_concepts, curr_ticker)
-        future_sent = executor.submit(calculate_sentiment_score, curr_ticker)
-        future_news = executor.submit(fetch_google_news, curr_ticker)
-        future_tech = executor.submit(get_tech_card_data, curr_ticker)
-        
-        # Sonuçları topla
-        info = future_info.result()
-        ict_data = future_ict.result()
-        sent_data = future_sent.result()
-        news_data = future_news.result()
-        tech_data = future_tech.result()
-        
-        # Derin röntgen için sentiment verisini tekrar kullan (cache friendly)
-        xray_data = get_deep_xray_data(curr_ticker, sent=sent_data)
-
+# İÇERİK
+info = fetch_stock_info(st.session_state.ticker)
 col_left, col_right = st.columns([3, 1])
 
 with col_left:
@@ -684,21 +626,23 @@ with col_left:
     
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
-    render_ict_panel(ict_data)
+    render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
     
     st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
-    if news_data:
+    news = fetch_google_news(st.session_state.ticker)
+    if news:
         cols = st.columns(2)
-        for i, n in enumerate(news_data):
+        for i, n in enumerate(news):
             with cols[i%2]: st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
     else: st.info("Haber yok.")
 
 with col_right:
+    sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
     
-    # Tech datayı optimize edilmiş şekilde pass ediyoruz
-    render_detail_card(st.session_state.ticker, tech_data=tech_data)
+    render_detail_card(st.session_state.ticker)
     
+    xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
 
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
@@ -753,3 +697,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
