@@ -508,7 +508,7 @@ def calculate_ict_concepts(ticker):
         # Daha uzun bir periyot ve daha küçük aralık ile swing noktalarını daha güvenilir yakalama
         df = yf.download(ticker, period="1y", interval="1d", progress=False)
         if df.empty or len(df) < 100:
-            return {"summary": "Veri Yetersiz", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "-", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": ["Veri yetersiz."], "range_high": "-", "range_low": "-"}
+            return {"summary": "Veri Yetersiz", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "1:0.0", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": ["Veri yetersiz."], "range_high": "-", "range_low": "-"}
             
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -532,7 +532,7 @@ def calculate_ict_concepts(ticker):
         swing_highs, swing_lows = find_swings(df, n=5)
 
         if not swing_highs or not swing_lows:
-            return {"summary": "Yetersiz Swing Verisi", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "-", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": ["Yetersiz swing verisi."], "range_high": "-", "range_low": "-"}
+            return {"summary": "Yetersiz Swing Verisi", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "1:0.0", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": ["Yetersiz swing verisi."], "range_high": "-", "range_low": "-"}
 
 
         last_sh_val = swing_highs[-1][1]
@@ -645,36 +645,46 @@ def calculate_ict_concepts(ticker):
         entry_level = "-"; stop_level = "-"; target_level = liq_target
         risk_reward = "1:0.0"
         
-        # Basit R/R hesaplaması için varsayımsal giriş/stop noktaları (Sadece Golden Setup için)
-        if bias == "Long" and is_discount and "B-FVG" in fvg_text:
-            golden_setup = True
-            fvg_range = fvg_text.split("(")[1].replace(")","").replace("$","").split("-")
-            entry_level_f = (float(fvg_range[0]) + float(fvg_range[1])) / 2
-            stop_level_f = range_low - current_atr * 0.5
-            target_level_f = range_high
-            
-            entry_level = f"{entry_level_f:.2f}$"
-            stop_level = f"{stop_level_f:.2f}$"
-            target_level = f"{target_level_f:.2f}$"
+        # Risk/Reward Hesaplama Bloğu (Hata Korumalı)
+        try:
+            # Basit R/R hesaplaması için varsayımsal giriş/stop noktaları (Sadece Golden Setup için)
+            if bias == "Long" and is_discount and "B-FVG" in fvg_text:
+                golden_setup = True
+                fvg_range = fvg_text.split("(")[1].replace(")","").replace("$","").split("-")
+                entry_level_f = (float(fvg_range[0]) + float(fvg_range[1])) / 2
+                stop_level_f = range_low - current_atr * 0.5
+                target_level_f = range_high
+                
+                entry_level = f"{entry_level_f:.2f}$"
+                stop_level = f"{stop_level_f:.2f}$"
+                target_level = f"{target_level_f:.2f}$"
 
-            risk = abs(entry_level_f - stop_level_f)
-            reward = abs(target_level_f - entry_level_f)
-            risk_reward = f"1:{reward/risk:.1f}" if risk > 0 and reward > 0 else "1:0.0"
-            
-        elif bias == "Short" and not is_discount and "S-FVG" in fvg_text:
-            golden_setup = True
-            fvg_range = fvg_text.split("(")[1].replace(")","").replace("$","").split("-")
-            entry_level_f = (float(fvg_range[0]) + float(fvg_range[1])) / 2
-            stop_level_f = range_high + current_atr * 0.5
-            target_level_f = range_low
-            
-            entry_level = f"{entry_level_f:.2f}$"
-            stop_level = f"{stop_level_f:.2f}$"
-            target_level = f"{target_level_f:.2f}$"
-            
-            risk = abs(entry_level_f - stop_level_f)
-            reward = abs(target_level_f - entry_level_f)
-            risk_reward = f"1:{abs(reward/risk):.1f}" if risk > 0 and reward > 0 else "1:0.0"
+                risk = abs(entry_level_f - stop_level_f)
+                reward = abs(target_level_f - entry_level_f)
+                risk_reward = f"1:{reward/risk:.1f}" if risk > 0 and reward > 0 else "1:0.0"
+                
+            elif bias == "Short" and not is_discount and "S-FVG" in fvg_text:
+                golden_setup = True
+                fvg_range = fvg_text.split("(")[1].replace(")","").replace("$","").split("-")
+                entry_level_f = (float(fvg_range[0]) + float(fvg_range[1])) / 2
+                stop_level_f = range_high + current_atr * 0.5
+                target_level_f = range_low
+                
+                entry_level = f"{entry_level_f:.2f}$"
+                stop_level = f"{stop_level_f:.2f}$"
+                target_level = f"{target_level_f:.2f}$"
+                
+                risk = abs(entry_level_f - stop_level_f)
+                reward = abs(target_level_f - entry_level_f)
+                risk_reward = f"1:{abs(reward/risk):.1f}" if risk > 0 and reward > 0 else "1:0.0"
+        
+        except Exception:
+            # Hata oluştuğunda (ValueError: '-' to float) çökmesini engeller
+            risk_reward = "1:0.0"
+            entry_level = "-"
+            stop_level = "-"
+            target_level = liq_target
+
 
         # --- Karakter, Uzaklık ve Strateji Metni Üretimi ---
         char_text = "Nötr (Ortalama Mum)"
@@ -694,7 +704,8 @@ def calculate_ict_concepts(ticker):
                 distance_to_entry = f"%{pct_dist:.1f}"
                 if pct_dist < atr_pct * 1.5:
                     distance_to_entry += " (Fiyat yaklaşıyor)"
-            except: pass
+            except: 
+                pass # Hata oluşursa "-" olarak kalır
                 
         strategy_text = []
         rr_f = float(risk_reward.split(":")[1]) if "1:" in risk_reward else 0
@@ -740,7 +751,7 @@ def calculate_ict_concepts(ticker):
             "range_low": f"{range_low:.2f}$"
         }
     except Exception as e:
-        return {"summary": f"Analiz Hatası: {str(e)[:50]}...", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "-", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": [f"Hata: {str(e)[:50]}..."], "range_high": "-", "range_low": "-"}
+        return {"summary": f"Analiz Hatası: {str(e)[:50]}...", "structure": "-", "bias": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-", "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-", "golden_text": "-", "golden_setup": False, "risk_reward": "1:0.0", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "-", "distance_to_entry": "-", "strategy": [f"Hata: {str(e)[:50]}..."], "range_high": "-", "range_low": "-"}
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
