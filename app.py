@@ -505,10 +505,9 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     # Fonksiyonun tamamını sarmalayan büyük bir try-except bloğu
+    default_output = {"summary": "Analiz Hazırlanıyor", "structure": "N/A", "bias": "Nötr", "position": "DENGEDE (Equilibrium)", "fvg": "Yok", "ob": "Yok", "ob_label": "-", "liquidity": "Yok", "liq_label": "Likidite Hedefi", "eqh": "-", "fibo": "Yok", "golden_text": "Beklemede", "golden_setup": False, "risk_reward": "1:0.0", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "Nötr", "distance_to_entry": "-", "strategy": ["Veri işleniyor..."], "range_high": "-", "range_low": "-"}
+    
     try:
-        # Başlangıçta varsayılan güvenli (hata olmayan) değerler atandı
-        default_output = {"summary": "Analiz Hazırlanıyor", "structure": "N/A", "bias": "Nötr", "position": "DENGEDE (Equilibrium)", "fvg": "Yok", "ob": "Yok", "ob_label": "-", "liquidity": "Yok", "liq_label": "Likidite Hedefi", "eqh": "-", "fibo": "Yok", "golden_text": "Beklemede", "golden_setup": False, "risk_reward": "1:0.0", "entry_level": "-", "stop_level": "-", "target_level": "-", "char_text": "Nötr", "distance_to_entry": "-", "strategy": ["Veri işleniyor..."], "range_high": "-", "range_low": "-"}
-
         df = yf.download(ticker, period="1y", interval="1d", progress=False)
         if df.empty or len(df) < 100:
             default_output["summary"] = "Veri Yetersiz"
@@ -551,6 +550,7 @@ def calculate_ict_concepts(ticker):
 
         # Yapısal Bias Belirleme (HH/HL, LL/LH)
         recent_swings = sorted(swing_highs[-2:] + swing_lows[-2:], key=lambda x: x[0])
+        
         if len(recent_swings) >= 4:
              if recent_swings[-1][1] > recent_swings[-3][1] and recent_swings[-2][1] > recent_swings[-4][1]:
                  structure_verdict = "BULLISH (HH/HL)"
@@ -612,6 +612,8 @@ def calculate_ict_concepts(ticker):
         # --- Order Block (OB) ---
         ob_text = "Yok"; ob_lbl = "-"
         
+        ob_low_val = None; ob_high_val = None # R/R hesaplaması için varsayılan float değerleri
+        
         if bias == "Long" and len(swing_lows) > 1:
             ob_idx = swing_lows[-1][0]
             if ob_idx > 0:
@@ -639,6 +641,7 @@ def calculate_ict_concepts(ticker):
         else: # Konsolidasyon
             liq_target = f"Hedefler: BSL ({range_high:.2f}$), SSL ({range_low:.2f}$)"
 
+
         # --- GOLDEN SETUP & R/R HESAPLAMA ---
         golden_setup = False
         entry_level = "-"; stop_level = "-"; target_level = liq_target
@@ -646,7 +649,7 @@ def calculate_ict_concepts(ticker):
         
         # Risk/Reward Hesaplama Bloğu (Hata Korumalı)
         try:
-            # Giriş/Stop noktalarını hesaplama ve atama
+            # Giriş/Stop noktalarını hesaplama ve atama için float değişkenleri
             entry_level_f = 0
             stop_level_f = 0
             target_level_f = 0
@@ -665,8 +668,9 @@ def calculate_ict_concepts(ticker):
                 stop_level_f = range_high + current_atr * 0.5
                 target_level_f = range_low
             
-            # Eğer Golden Setup kurulduysa, R/R hesapla
-            if golden_setup:
+            # Eğer Golden Setup kurulduysa, R/R hesapla ve string'lere ata
+            if golden_setup and entry_level_f != 0:
+                
                 entry_level = f"{entry_level_f:.2f}$"
                 stop_level = f"{stop_level_f:.2f}$"
                 target_level = f"{target_level_f:.2f}$"
@@ -680,11 +684,8 @@ def calculate_ict_concepts(ticker):
                     risk_reward = "1:0.0"
         
         except Exception:
-            # Hesaplama hatalarında güvenli varsayılan değerleri koru
-            risk_reward = "1:0.0"
-            entry_level = "-"
-            stop_level = "-"
-            target_level = liq_target # Hedefi yine de likidite havuzu yapabiliriz
+            # Kritik hata durumunda güvenli string değerleri koru
+            pass # Zaten risk_reward = "1:0.0" ve diğerleri "-" olarak kalacak
 
         # --- Karakter, Uzaklık ve Strateji Metni Üretimi ---
         char_text = "Nötr (Ortalama Mum)"
@@ -697,7 +698,7 @@ def calculate_ict_concepts(ticker):
              char_text = "⚠️ Zayıf Momentum (Sığ Mumlar)"
 
         distance_to_entry = "-"
-        # Uzaklık hesaplaması da hata korumasına alındı
+        # Uzaklık hesaplaması (Hata koruması güçlendirildi)
         try:
             if entry_level != "-" and entry_level != "Yok" and entry_level.endswith("$"):
                 entry_f_calc = float(entry_level.replace("$", ""))
@@ -706,7 +707,7 @@ def calculate_ict_concepts(ticker):
                 if pct_dist < atr_pct * 1.5:
                     distance_to_entry += " (Fiyat yaklaşıyor)"
         except Exception: 
-            distance_to_entry = "-" # Hata oluşursa "-" kalır
+            distance_to_entry = "-" 
                 
         strategy_text = []
         rr_f = float(risk_reward.split(":")[1]) if "1:" in risk_reward else 0
@@ -1157,7 +1158,7 @@ with col_left:
     yahoo_url            = f"https://finance.yahoo.com/quote/{base_symbol}/news"
     nasdaq_url           = f"https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines"
     stockanalysis_url    = f"https://stockanalysis.com/stocks/{lower_symbol}/"
-    finviz_url           = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
+    finviz_url           f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
     unusual_url          = f"https://unusualwhales.com/stock/{base_symbol}/overview"
 
     st.markdown(f"""
