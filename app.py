@@ -877,11 +877,35 @@ def render_detail_card(ticker):
     """, unsafe_allow_html=True)
 
 def render_tradingview_widget(ticker, height=650):
+    # Varsayılan sembol
     tv_symbol = ticker
-    if ".IS" in ticker:
-        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker:
-        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
+
+    # --- ÖZEL ÇEVİRİLER (MAPPING) ---
+    # Yahoo Kodları -> TradingView Kodları
+    mapping = {
+        "GC=F": "TVC:GOLD",       # Altın
+        "SI=F": "TVC:SILVER",     # Gümüş
+        "BTC-USD": "BINANCE:BTCUSDT", # Bitcoin
+        "ETH-USD": "BINANCE:ETHUSDT", # Ethereum
+        "SOL-USD": "BINANCE:SOLUSDT",
+        "XRP-USD": "BINANCE:XRPUSDT",
+        "AVAX-USD": "BINANCE:AVAXUSDT",
+        "DOGE-USD": "BINANCE:DOGEUSDT"
+    }
+
+    # Eğer özel listede varsa oradan al, yoksa standart kuralları uygula
+    if ticker in mapping:
+        tv_symbol = mapping[ticker]
+    else:
+        # Standart BIST ve Forex Kuralları
+        if ".IS" in ticker:
+            tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+        elif "=X" in ticker: # USDTRY=X gibi
+            tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
+        elif "-USD" in ticker: # Diğer Kriptolar (Genel)
+            tv_symbol = f"COINBASE:{ticker.replace('-USD', 'USD')}"
+
+    # Widget HTML
     html = f"""
     <div class="tradingview-widget-container">
         <div id="tradingview_chart"></div>
@@ -1248,4 +1272,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
