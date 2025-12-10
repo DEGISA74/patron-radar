@@ -498,149 +498,191 @@ def get_deep_xray_data(ticker):
         "tr_ema": f"{icon('GoldCross' in sent['tr'])} EMA Dizilimi",
         "tr_adx": f"{icon('P > SMA50' in sent['tr'])} Trend Gücü",
         "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
-        "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
+        "str_bos": f"{icon('Yeni Tepe (BOS)' in sent['str'])} Yapı Kırılımı" # Güncellenmiş
     }
 
 # --- ICT (YENİ NESİL - PRICE ACTION ODAKLI) ---
 @st.cache_data(ttl=600)
-def calculate_ict_concepts(ticker):
+def calculate_ict_concepts_v2(ticker):
+    """
+    Gelişmiş ICT konseptlerini (BOS, FVG, OB, Premium/Discount) hesaplar.
+    """
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        # Veri İndirme (6 aylık Günlük Veri)
+        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         if df.empty: return None
-        
-        if isinstance(df.columns, pd.MultiIndex): 
+
+        if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        open_p = df['Open']
+
+        close = df['Close']; high = df['High']; low = df['Low']; open_p = df['Open']
         curr_price = float(close.iloc[-1])
         
+        # Güncel Volatilite (ATR) ve Eşik Değeri
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
+        atr_thresh = current_atr * 0.2 # FVG/OB için minimum boyut eşiği (Örnek: %20 ATR)
 
-        swing_highs = []
-        swing_lows = []
-        
+        # 1. SWING NOKTALARI (5 mumlu)
+        swing_points = {"high": [], "low": []}
         for i in range(2, len(df)-2):
+            # Swing High (2 sol, 2 sağ)
             if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
-                swing_highs.append((i, float(high.iloc[i])))
+                swing_points["high"].append((i, float(high.iloc[i])))
+            # Swing Low (2 sol, 2 sağ)
             if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
-                swing_lows.append((i, float(low.iloc[i])))
-                
-        if not swing_highs or not swing_lows:
-            return {
-                "summary": "Veri Yetersiz", "structure": "-", "position": "-",
-                "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-",
-                "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-",
-                "golden_text": "-", "golden_setup": False
-            }
+                swing_points["low"].append((i, float(low.iloc[i])))
 
-        last_sh = swing_highs[-1][1]
-        last_sl = swing_lows[-1][1]
+        # Yeterli veri yoksa erken çıkış
+        if len(swing_points["high"]) < 2 or len(swing_points["low"]) < 2:
+            return {"summary": "Veri/Swing Yetersiz", "structure": "Nötr", "position": "Nötr", "fvg": "Yok", "ob": "Yok", "liq": "Yok", "golden_text": "-", "golden_setup": False, "sh": "-", "sl": "-", "mid": "-"}
+
+        # En son ve bir önceki ana swing noktaları
+        last_sh_idx, last_sh_val = swing_points["high"][-1]
+        last_sl_idx, last_sl_val = swing_points["low"][-1]
         
+        # Major swing noktaları (genellikle sondan ikinci)
+        major_sh_val = swing_points["high"][-2][1] if len(swing_points["high"]) >= 2 else last_sh_val
+        major_sl_val = swing_points["low"][-2][1] if len(swing_points["low"]) >= 2 else last_sl_val
+
+        # 2. MARKET YAPISI (BOS/CHoCH) ve BIAS
         structure_verdict = "KONSOLİDASYON"
         bias = "Nötr"
         
-        if curr_price > last_sh:
-            structure_verdict = "BULLISH (BOS)"
+        if curr_price > major_sh_val:
+            structure_verdict = "BULLISH (BOS-ONAY)"
             bias = "Long"
-        elif curr_price < last_sl:
-            structure_verdict = "BEARISH (BOS)"
+        elif curr_price < major_sl_val:
+            structure_verdict = "BEARISH (BOS-ONAY)"
             bias = "Short"
         else:
-            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
-                structure_verdict = "BEARISH (Internal)"
-                bias = "Short"
-            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
-                structure_verdict = "BULLISH (Internal)"
+            # İç Yapı Kırılımı Kontrolü
+            if last_sh_val > swing_points["high"][-2][1] and last_sl_val > swing_points["low"][-2][1]:
+                # Yüksek dipler ve yüksek tepeler (iç yapı)
+                structure_verdict = "BULLISH (İç Yapı)"
                 bias = "Long"
-
-        range_high = last_sh
-        range_low = last_sl
+            elif last_sh_val < swing_points["high"][-2][1] and last_sl_val < swing_points["low"][-2][1]:
+                # Alçak dipler ve alçak tepeler (iç yapı)
+                structure_verdict = "BEARISH (İç Yapı)"
+                bias = "Short"
+            elif curr_price > last_sh_val:
+                structure_verdict = "CHoCH (Bulls)" # CHoCH/Erken Yapı Değişimi
+                bias = "Long"
+            elif curr_price < last_sl_val:
+                structure_verdict = "CHoCH (Bears)" # CHoCH/Erken Yapı Değişimi
+                bias = "Short"
+        
+        # 3. PREMIUM / DISCOUNT (FIBO)
+        range_high = last_sh_val 
+        range_low = last_sl_val 
         mid_point = (range_high + range_low) / 2
         
+        is_discount = curr_price < mid_point
         position_label = "DENGEDE"
-        is_discount = False
         
-        if curr_price < mid_point:
-            is_discount = True
-            if curr_price < range_low:
-                position_label = "DEEP DISCOUNT (Alım Fırsatı)"
-            else:
-                position_label = "DISCOUNT (Ucuz)"
+        if curr_price < range_low:
+             position_label = "DEEP DISCOUNT"
+        elif curr_price < mid_point:
+            position_label = "DISCOUNT (Ucuz)"
+        elif curr_price > range_high:
+             position_label = "PREMIUM+"
         else:
-            is_discount = False
-            if curr_price > range_high:
-                position_label = "PREMIUM+ (Momentum)"
-            else:
-                position_label = "PREMIUM (Pahalı)"
+            position_label = "PREMIUM (Pahalı)"
 
-        valid_fvgs = []
+        # 4. FVG (FAIR VALUE GAP) Tespiti (Son 30 mum)
+        fvg_entry = "Belirgin Gap Yok"
+        fvg_type = "-"
+        
         for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
-                gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
-                gap_size = low.iloc[i-2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1:
+            if low.iloc[i] > high.iloc[i-2] and low.iloc[i] - high.iloc[i-2] > atr_thresh:
+                # Bullish FVG (Fiyatın altına inmesi beklenen yeşil gap)
+                fvg_low = high.iloc[i-2]
+                fvg_high = low.iloc[i]
+                if curr_price < fvg_low or curr_price > fvg_high: continue # İçi dolmuşsa veya çok uzaktaysa geç
+                
+                fvg_entry = f"🟢 {fvg_low:.2f}-{fvg_high:.2f}"
+                fvg_type = "Bullish FVG"
                 break
-            
-        fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
+            elif high.iloc[i] < low.iloc[i-2] and low.iloc[i-2] - high.iloc[i] > atr_thresh:
+                # Bearish FVG (Fiyatın üstüne çıkması beklenen kırmızı gap)
+                fvg_low = high.iloc[i]
+                fvg_high = low.iloc[i-2]
+                if curr_price > fvg_high or curr_price < fvg_low: continue # İçi dolmuşsa veya çok uzaktaysa geç
 
-        ob_text = "-"
+                fvg_entry = f"🔴 {fvg_low:.2f}-{fvg_high:.2f}"
+                fvg_type = "Bearish FVG"
+                break
+
+        # 5. ORDER BLOCK (OB) Tespiti
+        ob_entry = "-"
+        ob_type = "Güvenli Giriş"
+        
+        if bias == "Long" or structure_verdict == "CHoCH (Bulls)":
+            # Bullish OB: Son SL'den önceki düşüş mumu
+            if last_sl_idx > 0:
+                # Son SL'nin oluşmasına neden olan mum
+                ob_idx = last_sl_idx 
+                ob_low_val = low.iloc[ob_idx]
+                ob_high_val = max(open_p.iloc[ob_idx], close.iloc[ob_idx])
+                ob_entry = f"🛡️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
+                ob_type = "Bullish OB"
+        elif bias == "Short" or structure_verdict == "CHoCH (Bears)":
+            # Bearish OB: Son SH'den önceki yükseliş mumu
+            if last_sh_idx > 0:
+                # Son SH'nin oluşmasına neden olan mum
+                ob_idx = last_sh_idx 
+                ob_high_val = high.iloc[ob_idx]
+                ob_low_val = min(open_p.iloc[ob_idx], close.iloc[ob_idx])
+                ob_entry = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
+                ob_type = "Bearish OB"
+                
+        # 6. LİKİDİTE HEDEFİ (LIQ - BSL/SSL)
         liq_target = "-"
-        ob_lbl = "Güvenli Giriş"
+        liq_label = "Bir Sonraki Hedef (BSL/SSL)"
         
         if bias == "Long":
-            liq_target = f"{last_sh:.2f}$ (BSL)"
-            recent_sl_idx = swing_lows[-1][0]
-            ob_low = low.iloc[recent_sl_idx]
-            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
-            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
-            ob_lbl = "Bullish OB"
+             liq_target = f"BSL @ {major_sh_val:.2f}$ (Major)"
         elif bias == "Short":
-            liq_target = f"{last_sl:.2f}$ (SSL)"
-            recent_sh_idx = swing_highs[-1][0]
-            ob_high_val = high.iloc[recent_sh_idx]
-            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
-            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
-            ob_lbl = "Bearish OB"
-            
-        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
+             liq_target = f"SSL @ {major_sl_val:.2f}$ (Major)"
+        else:
+             liq_target = f"EQH @ {range_high:.2f}$ / EQL @ {range_low:.2f}$"
+             liq_label = "Range Sınırları"
         
+        # 7. GOLDEN SETUP (Discount'ta FVG ile Long veya Premium'da FVG ile Short)
         golden_setup = False
         golden_txt = "-"
-        if bias == "Long" and is_discount and "🟢" in fvg_text:
+        if bias == "Long" and is_discount and "🟢" in fvg_entry:
             golden_setup = True
-            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
-        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
+            golden_txt = "🔥 GOLDEN LONG (BOS/CHoCH+Ucuz+B-FVG)"
+        elif bias == "Short" and not is_discount and "🔴" in fvg_entry:
             golden_setup = True
-            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
+            golden_txt = "🔥 GOLDEN SHORT (BOS/CHoCH+Pahalı+B-FVG)"
 
+        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
+        
         return {
             "summary": summary_line,
             "structure": structure_verdict,
             "position": position_label,
-            "fvg": fvg_text,
-            "ob": ob_text,
-            "ob_label": ob_lbl,
+            "fvg": fvg_entry,
+            "ob": ob_entry,
+            "ob_label": ob_type,
             "liquidity": liq_target,
-            "liq_label": "Bir Sonraki Hedef",
-            "eqh": liq_target,
+            "liq_label": liq_label,
+            "eqh": liq_target, 
             "fibo": f"EQ: {mid_point:.2f}$",
-            "bb": "-",
             "golden_text": golden_txt,
-            "golden_setup": golden_setup
+            "golden_setup": golden_setup,
+            "sh": f"SH @ {last_sh_val:.2f}$",
+            "sl": f"SL @ {last_sl_val:.2f}$",
+            "mid": f"EQ @ {mid_point:.2f}$"
         }
-    except Exception:
-        return None
+    except Exception as e:
+        # Hata durumunda bilgilendirici çıktı
+        return {"summary": f"Hata: {e.__class__.__name__}", "structure": "HATA", "position": "HATA", "fvg": "HATA", "ob": "HATA", "liq": "HATA", "golden_text": "HATA", "golden_setup": False, "sh": "-", "sl": "-", "mid": "-"}
+
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -666,6 +708,7 @@ def get_tech_card_data(ticker):
         }
     except:
         return None
+    
 
 # --- RENDER ---
 def render_sentiment_card(sent):
@@ -688,6 +731,7 @@ def render_sentiment_card(sent):
 
 def render_deep_xray_card(xray):
     if not xray: return
+    def icon(cond): return "✅" if cond else "❌"
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">🔍 Derin Teknik Röntgen</div>
@@ -732,18 +776,34 @@ def render_radar_params_card():
 
 def render_ict_panel(analysis):
     if not analysis: return
+    
+    # Golden Setup için özel stil
+    golden_style = "background-color: #fef3c7; color: #b45309; border: 1px solid #f97316;" if analysis['golden_setup'] else "background-color: #f8f9fa; color: #64748B; border: 1px solid #dee2e6;"
+
     st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action</div>
+        <div class="info-header">🧠 ICT & Price Action | Güncel Yapı</div>
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
             <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
         </div>
         <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
         <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
-        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
-        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
-        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
+        
+        <hr style="margin-top:0.2rem; margin-bottom:0.5rem;"/>
+        
+        <div class="info-row"><div class="label-long">SWING HIGH:</div><div class="info-val">{analysis.get('sh', '-')}</div></div>
+        <div class="info-row"><div class="label-long">SWING LOW:</div><div class="info-val">{analysis.get('sl', '-')}</div></div>
+        <div class="info-row"><div class="label-long">EQUILIBRIUM:</div><div class="info-val">{analysis.get('mid', '-')}</div></div>
+        
+        <hr style="margin-top:0.2rem; margin-bottom:0.5rem;"/>
+        
+        <div class="info-row"><div class="label-long">GİRİŞ ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
+        <div class="info-row"><div class="label-long">FIRSAT (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
+        <div class="info-row"><div class="label-long">HEDEF ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
+        
+        <div style="margin-top: 8px; padding: 4px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-align: center; {golden_style}">
+            {analysis['golden_text']}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -833,311 +893,4 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
-
-st.markdown(f"""
-<div class="header-container" style="display:flex; align-items:center;">
-    <img src="{BULL_ICON_B64}" class="header-logo">
-    <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
-    </div>
-</div>
-<hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
-""", unsafe_allow_html=True)
-
-# FILTRELER
-col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
-try:
-    cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
-except ValueError:
-    cat_index = 0
-
-with col_cat:
-    st.selectbox(
-        "Kategori",
-        list(ASSET_GROUPS.keys()),
-        index=cat_index,
-        key="selected_category_key",
-        on_change=on_category_change,
-        label_visibility="collapsed"
-    )
-with col_ass:
-    opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    try:
-        asset_idx = opts.index(st.session_state.ticker)
-    except ValueError:
-        asset_idx = 0
-    st.selectbox(
-        "Varlık Listesi",
-        opts,
-        index=asset_idx,
-        key="selected_asset_key",
-        on_change=on_asset_change,
-        label_visibility="collapsed"
-    )
-with col_search_in:
-    st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
-with col_search_btn:
-    st.button("Ara", on_click=on_manual_button_click)
-
-st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
-
-# PROMPT TETİKLEYİCİ
-if 'generate_prompt' not in st.session_state:
-    st.session_state.generate_prompt = False
-if st.session_state.generate_prompt:
-    t = st.session_state.ticker
-    try:
-        inf = yf.Ticker(t).info
-        price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
-    except:
-        price = "Bilinmiyor"
-    
-    prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
-
-Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
-
-1. Sentiment & Psikoloji: Piyasanın korku/iştah durumu (0-100 Puan).
-2. Radar Sinyalleri: Momentum ve Trend algoritmalarının skorları.
-3. Teknik Kart: Ortalamalar (SMA/EMA) ve ATR bazlı risk seviyeleri.
-4. ICT & Price Action: Kurumsal ayak izleri (Order Block, FVG, Breaker, Likidite, Golden Setup).
-
-GÖREVİN:
-Bu 4 katmanı birleştirerek bir "Multidimensional Market Analysis" (Çok Boyutlu Piyasa Analizi) yapman gerekiyor.
-
-ANALİZ ADIMLARI:
-1. Duygu Kontrolü: Sentiment skoru ve Derin Röntgen verilerine bak. Piyasa şu an panikte mi, coşkuda mı yoksa kararsız mı? Hacim fiyatı destekliyor mu?
-2. Kurumsal Tuzaklar (ICT): Fiyat şu an "Ucuz" (Discount) mu yoksa "Pahalı" (Premium) mu? Yakınlarda bir "Golden Setup" veya "Breaker Block" var mı? Likidite (EQH/EQL) nerede birikmiş?
-3. Trend Teyidi: Radar puanları ve hareketli ortalamalar (SMA50/200) ana yönü destekliyor mu?
-4. Çelişki Analizi: Eğer Sentiment "AL" derken, ICT "SAT" (Premium bölge) diyorsa, bu riski açıkça belirt.
-
-ÇIKTI FORMATI (SONUÇ):
-Bana hikaye anlatma, net emirler ver:
-* YÖN (BIAS): (Long / Short / Nötr)
-* GİRİŞ STRATEJİSİ: (Hangi FVG veya OB seviyesinden girilmeli?)
-* GEÇERSİZLİK (STOP): (ATR veya Market Structure bozulma seviyesi neresi?)
-* HEDEF (TP): (Hangi likidite havuzu hedeflenmeli?)"""
-    
-    with st.sidebar:
-        st.code(prompt, language="text")
-    st.session_state.generate_prompt = False
-
-# İÇERİK
-info = fetch_stock_info(st.session_state.ticker)
-col_left, col_right = st.columns([3, 1])
-
-with col_left:
-    if info and info['price']:
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-        sc1.markdown(
-            f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p>'
-            f'<p class="stat-value-small money-text">{info["price"]:.2f}'
-            f'<span class="stat-delta-small {cls}">'
-            f'{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%'
-            f'</span></p></div>',
-            unsafe_allow_html=True
-        )
-        sc2.markdown(
-            f'<div class="stat-box-small"><p class="stat-label-small">HACİM</p>'
-            f'<p class="stat-value-small money-text">{info["volume"]/1e6:.1f}M</p></div>',
-            unsafe_allow_html=True
-        )
-        sc3.markdown(
-            f'<div class="stat-box-small"><p class="stat-label-small">HEDEF</p>'
-            f'<p class="stat-value-small money-text">{info["target"]}</p></div>',
-            unsafe_allow_html=True
-        )
-        sc4.markdown(
-            f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p>'
-            f'<p class="stat-value-small">{str(info["sector"])[:12]}</p></div>',
-            unsafe_allow_html=True
-        )
-    
-    st.write("")
-    render_tradingview_widget(st.session_state.ticker, height=650)
-    render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
-    
-    # --- GÜNCELLENEN HABER BAŞLIĞI ---
-    st.markdown(
-        f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>",
-        unsafe_allow_html=True
-    )
-
-    # --- HABER AKIŞI: SABİT HABER SİTESİ LİNKLERİ (SeekingAlpha, Yahoo, Nasdaq, StockAnalysis, Finviz, UnusualWhales) ---
-    symbol_raw = st.session_state.ticker
-
-    base_symbol = (
-        symbol_raw.replace(".IS", "")
-                  .replace("=F", "")
-                  .replace("-USD", "")
-    )
-    lower_symbol = base_symbol.lower()
-
-    seekingalpha_url   = f"https://seekingalpha.com/symbol/{base_symbol}/news"
-    yahoo_url          = f"https://finance.yahoo.com/quote/{base_symbol}/news"
-    nasdaq_url         = f"https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines"
-    stockanalysis_url  = f"https://stockanalysis.com/stocks/{lower_symbol}/"
-    finviz_url         = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
-    unusual_url        = f"https://unusualwhales.com/stock/{base_symbol}/overview"
-
-    st.markdown(f"""
-    <div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;">
-        <a href="{seekingalpha_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                SeekingAlpha
-            </div>
-        </a>
-        <a href="{yahoo_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                Yahoo Finance
-            </div>
-        </a>
-        <a href="{nasdaq_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                Nasdaq
-            </div>
-        </a>
-        <a href="{stockanalysis_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                StockAnalysis
-            </div>
-        </a>
-        <a href="{finviz_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                Finviz
-            </div>
-        </a>
-        <a href="{unusual_url}" target="_blank" style="text-decoration:none;">
-            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
-                UnusualWhales
-            </div>
-        </a>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_right:
-    sent_data = calculate_sentiment_score(st.session_state.ticker)
-    render_sentiment_card(sent_data)
-    
-    render_detail_card(st.session_state.ticker)
-    render_radar_params_card() 
-    
-    xray_data = get_deep_xray_data(st.session_state.ticker)
-    render_deep_xray_card(xray_data)
-
-    st.markdown(
-        f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>",
-        unsafe_allow_html=True
-    )
-    with st.container(height=250):
-        df1 = st.session_state.scan_data
-        df2 = st.session_state.radar2_data
-        
-        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
-            commons = []
-            symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
-            
-            if symbols:
-                for sym in symbols:
-                    row1 = df1[df1["Sembol"] == sym].iloc[0]
-                    row2 = df2[df2["Sembol"] == sym].iloc[0]
-                    
-                    r1_score = float(row1["Skor"])
-                    r2_score = float(row2["Skor"])
-                    combined_score = r1_score + r2_score
-                    
-                    commons.append({
-                        "symbol": sym, 
-                        "r1_score": r1_score,
-                        "r2_score": r2_score,
-                        "combined": combined_score,
-                        "r1_max": 8,
-                        "r2_max": 8
-                    })
-                
-                sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
-                
-                for i, item in enumerate(sorted_commons):
-                    sym = item["symbol"]
-                    
-                    if i == 0: rank = "🥇"
-                    elif i == 1: rank = "🥈"
-                    elif i == 2: rank = "🥉"
-                    else: rank = f"{i+1}."
-
-                    score_text_safe = (
-                        f"{rank} {sym} ({int(item['combined'])}/{item['r1_max'] + item['r2_max']}) | "
-                        f"R1:{int(item['r1_score'])}/{item['r1_max']} | R2:{int(item['r2_score'])}/{item['r2_max']}"
-                    )
-                    
-                    c1, c2 = st.columns([0.2, 0.8]) 
-                    
-                    is_watchlist = sym in st.session_state.watchlist
-                    star_icon = "★" if is_watchlist else "☆"
-
-                    if c1.button(star_icon, key=f"c_star_{sym}", help="İzleme Listesine Ekle/Kaldır"):
-                        toggle_watchlist(sym)
-                        st.rerun()
-                    
-                    if c2.button(score_text_safe, key=f"c_select_{sym}", help="Detaylar için seç"):
-                        on_scan_result_click(sym)
-                        st.rerun()
-
-            else:
-                st.info("Kesişim yok.")
-        else:
-            st.caption("İki radar da çalıştırılmalı.")
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
-    
-    with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
-            with st.spinner("Taranıyor..."):
-                st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.scan_data is not None:
-            with st.container(height=500):
-                for i, row in st.session_state.scan_data.iterrows():
-                    sym = row["Sembol"]
-                    c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r1_{i}"):
-                        toggle_watchlist(sym)
-                        st.rerun()
-                    if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"):
-                        on_scan_result_click(sym)
-                        st.rerun()
-                    st.caption(row['Nedenler'])
-
-    with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary"):
-            with st.spinner("Taranıyor..."):
-                st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.radar2_data is not None:
-            with st.container(height=500):
-                for i, row in st.session_state.radar2_data.iterrows():
-                    sym = row["Sembol"]
-                    c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r2_{i}"):
-                        toggle_watchlist(sym)
-                        st.rerun()
-                    if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"):
-                        on_scan_result_click(sym)
-                        st.rerun()
-                    st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
-
-    with tab3:
-        if st.button("⚡ Listeyi Tara", type="secondary"):
-            with st.spinner("..."):
-                st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
-        for sym in st.session_state.watchlist:
-            c1, c2 = st.columns([0.2, 0.8])
-            if c1.button("❌", key=f"wl_d_{sym}"):
-                toggle_watchlist(sym)
-                st.rerun()
-            if c2.button(sym, key=f"wl_g_{sym}"):
-                on_scan_result_click(sym)
-                st.rerun()
-
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNs
