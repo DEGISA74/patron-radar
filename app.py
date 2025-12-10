@@ -501,336 +501,86 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT (YENİ NESİL - PRICE ACTION ODAKLI) ---
-@st.cache_data(ttl=600)
-def calculate_ict_concepts(ticker):
-    try:
-        df = yf.download(ticker, period="6mo", progress=False)
-        if df.empty: return None
-        
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
-            
-        close = df['Close']
-        high = df['High']
-        low = df['Low']
-        open_p = df['Open']
-        curr_price = float(close.iloc[-1])
-        
-        atr = (high - low).rolling(14).mean()
-        current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
-
-        swing_highs = []
-        swing_lows = []
-        
-        for i in range(2, len(df)-2):
-            if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
-               high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
-                swing_highs.append((i, float(high.iloc[i])))
-            if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
-               low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
-                swing_lows.append((i, float(low.iloc[i])))
-                
-        if not swing_highs or not swing_lows:
-            return {
-                "summary": "Veri Yetersiz", "structure": "-", "position": "-",
-                "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-",
-                "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-",
-                "golden_text": "-", "golden_setup": False
-            }
-
-        last_sh = swing_highs[-1][1]
-        last_sl = swing_lows[-1][1]
-        
-        structure_verdict = "KONSOLİDASYON"
-        bias = "Nötr"
-        
-        if curr_price > last_sh:
-            structure_verdict = "BULLISH (BOS)"
-            bias = "Long"
-        elif curr_price < last_sl:
-            structure_verdict = "BEARISH (BOS)"
-            bias = "Short"
-        else:
-            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
-                structure_verdict = "BEARISH (Internal)"
-                bias = "Short"
-            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
-                structure_verdict = "BULLISH (Internal)"
-                bias = "Long"
-
-        range_high = last_sh
-        range_low = last_sl
-        mid_point = (range_high + range_low) / 2
-        
-        position_label = "DENGEDE"
-        is_discount = False
-        
-        if curr_price < mid_point:
-            is_discount = True
-            if curr_price < range_low:
-                position_label = "DEEP DISCOUNT (Alım Fırsatı)"
-            else:
-                position_label = "DISCOUNT (Ucuz)"
-        else:
-            is_discount = False
-            if curr_price > range_high:
-                position_label = "PREMIUM+ (Momentum)"
-            else:
-                position_label = "PREMIUM (Pahalı)"
-
-        valid_fvgs = []
-        for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
-                gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
-                gap_size = low.iloc[i-2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1:
-                break
-            
-        fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
-
-        ob_text = "-"
-        liq_target = "-"
-        ob_lbl = "Güvenli Giriş"
-        
-        if bias == "Long":
-            liq_target = f"{last_sh:.2f}$ (BSL)"
-            recent_sl_idx = swing_lows[-1][0]
-            ob_low = low.iloc[recent_sl_idx]
-            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
-            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
-            ob_lbl = "Bullish OB"
-        elif bias == "Short":
-            liq_target = f"{last_sl:.2f}$ (SSL)"
-            recent_sh_idx = swing_highs[-1][0]
-            ob_high_val = high.iloc[recent_sh_idx]
-            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
-            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
-            ob_lbl = "Bearish OB"
-            
-        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
-        
-        golden_setup = False
-        golden_txt = "-"
-        if bias == "Long" and is_discount and "🟢" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
-        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
-
-        return {
-            "summary": summary_line,
-            "structure": structure_verdict,
-            "position": position_label,
-            "fvg": fvg_text,
-            "ob": ob_text,
-            "ob_label": ob_lbl,
-            "liquidity": liq_target,
-            "liq_label": "Bir Sonraki Hedef",
-            "eqh": liq_target,
-            "fibo": f"EQ: {mid_point:.2f}$",
-            "bb": "-",
-            "golden_text": golden_txt,
-            "golden_setup": golden_setup
-        }
-    except Exception:
-        return None
-
-@st.cache_data(ttl=600)
-def get_tech_card_data(ticker):
-    try:
-        df = yf.download(ticker, period="2y", progress=False)
-        if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        close = df['Close']; high = df['High']; low = df['Low']
-        sma50 = close.rolling(50).mean().iloc[-1]
-        sma100 = close.rolling(100).mean().iloc[-1]
-        sma200 = close.rolling(200).mean().iloc[-1]
-        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
-        atr = (high-low).rolling(14).mean().iloc[-1]
-        return {
-            "sma50": sma50,
-            "sma100": sma100,
-            "sma200": sma200,
-            "ema144": ema144,
-            "stop_level": close.iloc[-1] - (2 * atr),
-            "risk_pct": (2 * atr) / close.iloc[-1] * 100,
-            "atr": atr
-        }
-    except:
-        return None
-
-# --- RENDER ---
-def render_sentiment_card(sent):
-    if not sent: return
-    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🎭 Piyasa Duygusu (Sentiment)</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
-        </div>
-        <div style="font-family:'Courier New'; font-size:0.7rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
-        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
-        <div class="info-row"><div class="label-long">2. Hacim:</div><div class="info-val">{sent['vol']}</div></div>
-        <div class="info-row"><div class="label-long">3. Trend:</div><div class="info-val">{sent['tr']}</div></div>
-        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{sent['vola']}</div></div>
-        <div class="info-row"><div class="label-long">5. Yapı:</div><div class="info-val">{sent['str']}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_deep_xray_card(xray):
-    if not xray: return
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🔍 Derin Teknik Röntgen</div>
-        <div class="info-row"><div class="label-long">Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
-        <div class="info-row"><div class="label-long">Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
-        <div class="info-row"><div class="label-long">Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
-        <div class="info-row"><div class="label-long">Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
-        <div class="info-row"><div class="label-long">Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_radar_params_card():
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🎛️ Radar Parametreleri</div>
-        <div style="margin-bottom:6px;">
-            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 1 (Sinyal):</div>
-            <div style="display:flex; flex-wrap:wrap; gap:3px;">
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">W%R</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MFI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">CCI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Stoch</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">ADX</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Mom</span>
-            </div>
-        </div>
-        <div>
-            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 2 (Setup):</div>
-            <div style="display:flex; flex-wrap:wrap; gap:3px;">
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">SMA Sıralı</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RS(S&P500)</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Hacim+</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">60G Zirve</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI Bölgesi</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD Hist</span>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
 def render_ict_panel(analysis):
-    if not analysis: return
-    st.markdown(f"""
+    if not analysis:
+        return
+
+    st.markdown(
+        f"""
     <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action</div>
+        <div class="info-header">🧠 ICT & Price Action – Stratejik Savaş Odası</div>
+
+        <!-- Özet Satırı -->
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">
+                {analysis['summary']}
+            </div>
         </div>
-        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
-        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
-        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
-        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
-        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
+
+        <!-- Yapı + Karakter -->
+        <div class="info-row">
+            <div class="label-long">Genel Yön:</div>
+            <div class="info-val">
+                {analysis['structure']}  |  {analysis.get('structure_character', '-')}
+            </div>
+        </div>
+
+        <!-- Konum -->
+        <div class="info-row">
+            <div class="label-long">Konum:</div>
+            <div class="info-val">{analysis['position']}</div>
+        </div>
+
+        <!-- OTE Bölgesi -->
+        <div class="info-row">
+            <div class="label-long">🎯 OTE Giriş:</div>
+            <div class="info-val">
+                {analysis.get('ote_zone', '-')}<br/>
+                <span style="font-size:0.65rem; color:#64748B;">
+                    {analysis.get('ote_distance', '')}
+                </span>
+            </div>
+        </div>
+
+        <!-- Order Block -->
+        <div class="info-row">
+            <div class="label-long">Destek ({analysis['ob_label']}):</div>
+            <div class="info-val">{analysis['ob']}</div>
+        </div>
+
+        <!-- FVG -->
+        <div class="info-row">
+            <div class="label-long">Fırsat (FVG):</div>
+            <div class="info-val">{analysis['fvg']}</div>
+        </div>
+
+        <!-- Likidite + Magnet -->
+        <div class="info-row">
+            <div class="label-long">🧲 Mıknatıs:</div>
+            <div class="info-val">
+                {analysis['eqh']}<br/>
+                <span style="font-size:0.65rem; color:#64748B;">
+                    {analysis.get('magnet_text', '')}
+                </span>
+            </div>
+        </div>
+
+        <!-- R:R Oranı -->
+        <div class="info-row">
+            <div class="label-long">R:R Skoru:</div>
+            <div class="info-val">{analysis.get('rr_text', '-')}</div>
+        </div>
+
+        <!-- Golden Setup -->
+        <div class="info-row">
+            <div class="label-long">Golden Setup:</div>
+            <div class="info-val">{analysis.get('golden_text', '-')}</div>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
-def render_detail_card(ticker):
-    r1_t = "Veri yok"; r2_t = "Veri yok"
-    if st.session_state.scan_data is not None:
-        row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty:
-            r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-    if st.session_state.radar2_data is not None:
-        row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty:
-            r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-    dt = get_tech_card_data(ticker)
-    ma_t = "-"
-    if dt:
-        ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">📋 Teknik Kart</div>
-        <div class="info-row"><div class="label-short">Radar 1:</div><div class="info-val">{r1_t}</div></div>
-        <div class="info-row"><div class="label-short">Radar 2:</div><div class="info-val">{r2_t}</div></div>
-        <div class="info-row"><div class="label-short">Ortalama:</div><div class="info-val">{ma_t}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_tradingview_widget(ticker, height=650):
-    tv_symbol = ticker
-    if ".IS" in ticker:
-        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker:
-        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    html = f"""
-    <div class="tradingview-widget-container">
-        <div id="tradingview_chart"></div>
-        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-        <script type="text/javascript">
-        new TradingView.widget({{
-            "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D",
-            "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr",
-            "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true,
-            "container_id": "tradingview_chart"
-        }});
-        </script>
-    </div>
-    """
-    components.html(html, height=height)
-
-@st.cache_data(ttl=300)
-def fetch_stock_info(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return {
-            'price': info.get('currentPrice') or info.get('regularMarketPrice'),
-            'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0,
-            'volume': info.get('volume', 0),
-            'sector': info.get('sector', '-'),
-            'target': info.get('targetMeanPrice', '-')
-        }
-    except:
-        return None
-
-@st.cache_data(ttl=1200)
-def fetch_google_news(ticker):
-    try:
-        clean = ticker.replace(".IS", "").replace("=F", "")
-        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(f'{clean} stock news site:investing.com OR site:seekingalpha.com')}&hl=tr&gl=TR&ceid=TR:tr"
-        feed = feedparser.parse(rss_url)
-        news = []
-        for entry in feed.entries[:6]:
-            try:
-                dt = datetime(*entry.published_parsed[:6])
-            except:
-                dt = datetime.now()
-            if dt < datetime.now() - timedelta(days=10): continue
-            pol = TextBlob(entry.title).sentiment.polarity
-            color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
-            news.append({
-                'title': entry.title,
-                'link': entry.link,
-                'date': dt.strftime('%d %b'),
-                'source': entry.source.title,
-                'color': color
-            })
-        return news
-    except:
-        return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
 BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
@@ -1140,4 +890,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
