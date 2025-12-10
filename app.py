@@ -74,6 +74,20 @@ st.markdown(f"""
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; }}
     
     .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
+
+    /* YENİ EKLENEN ORTAK FIRSATLAR CSS'İ */
+    .opportunity-item {{
+        display: flex; justify-content: space-between; align-items: center;
+        background: {current_theme['box_bg']}; padding: 4px 6px; 
+        border: 1px solid {current_theme['border']}; border-radius: 4px;
+        margin-bottom: 4px; cursor: pointer; transition: background 0.1s;
+        font-size: 0.8rem;
+    }}
+    .opportunity-item:hover {{ background: #f0f4f8; }}
+    .opp-score {{ font-weight: 700; color: #1e40af; font-family: 'JetBrains Mono', monospace; }}
+    .opp-detail {{ font-size: 0.7rem; color: #64748B; }}
+    .opp-star {{ color: #FFD700; margin-left: 8px; cursor: pointer; }}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,8 +109,8 @@ def load_watchlist_db():
 def add_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,))
-    conn.commit()
+    try: c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,)); conn.commit()
+    except sqlite3.IntegrityError: pass
     conn.close()
 def remove_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
@@ -680,7 +694,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd/9wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf8E4zZC+LPGeYTwJ43rEcKfMx4jhD9lrEcIf8h4jRD+jHEaIby78RkhvLPxGiG8q3E9Qng34zNCeCfjM0J4J+MzQngn4zNCeFfjM0J4B+M1QngH4zNCeAfjOkJ4B+M2Qvhzxv+C8f+CcR0h/BnjOkJ4B+M6QngH4zZCeAdjd//wB+MyQngH4zJCeAfjMkJ4B2N7/+B+4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjMkJ4B+M6QngH4zJCeAdje//gfuM6QngH4zpCeAdjd//gfuMyQngH4zJCeAdjd//gfmM3QngHY3f/4H7jNkJ4B+M2QngHY3v/4H7jNkJ4B+Mdjd//gfmM3QngHY3v/4H7jNkJ4B+M7/+B+4zZCeAdjd//gfmM3QngHYzf/4H7jNkJ4B+M2QngHY3f/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+MyQngHY3v/4H7jNkJ4B+M6QngH4zpCeAdje//gfuMyQngH4zpCeAfjOkJ4B+M6QngH4zpCeAfjMkJ4B+M6QngH4zJCeAfjOkJ4B2M3/3A/4zZCeAdje//gfuM2QngHY3f/4H7jMkJ4B+MyQngHY3v/4H7jOkJ4B+M6QngH4zpCeAfjMkJ4B+MyQngHY3f/4H7jMkJ4B+M6QngH4zpCeAdj9/+v70YI72Cs7h8ur3rVq171qle96lWvev079K8Ym/sH9xu7EcI7GLv/f303QngHY3X/cHn1m038tX/tTxhX3yO8f2w+M1b3D5c3tH4rxtaE8A7G1oTwDsbW/gE+8q8Z2xPCOxjbE8I7GNsTwjsY2xPCOxgbE8I7GNsTwjsY2/8H8O4/ZmztH9w/GNsTwjsY2xPCOxhb+wf3D8a2hPAOxrY/wHf+LWPbfxDf2R1/zdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHYmhDewdiaEN7B2JoQ3sHY/gf4zv/L2PZ/A+/8n9H/K8a2P8B3/i1jW0J4B2NrQngHY2tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY3tCeAdia0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NbQngHY2tCeAdja0J4B2NrQngHY2tCeAdja0J4B2NrQngHY/v/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/wDUQp/j9/j9jMAAAAASUVORK5CYII="
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
@@ -778,7 +792,7 @@ with col_right:
     render_sentiment_card(sent_data)
     
     render_detail_card(st.session_state.ticker)
-    render_radar_params_card() # YENİ EKLENEN RADAR PARAMETRE KARTI
+    render_radar_params_card() 
     
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
@@ -787,18 +801,61 @@ with col_right:
     with st.container(height=250):
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
+        
         if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
             commons = []
             symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+            
             if symbols:
                 for sym in symbols:
-                    row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
-                    commons.append({"symbol": sym, "r1": row1, "r2": row2, "combined": float(row1["Skor"]) + float(row2["Skor"])})
-                for item in sorted(commons, key=lambda x: x["combined"], reverse=True):
+                    row1 = df1[df1["Sembol"] == sym].iloc[0]
+                    row2 = df2[df2["Sembol"] == sym].iloc[0]
+                    
+                    r1_score = float(row1["Skor"])
+                    r2_score = float(row2["Skor"])
+                    combined_score = r1_score + r2_score
+                    
+                    commons.append({
+                        "symbol": sym, 
+                        "r1_score": r1_score,
+                        "r2_score": r2_score,
+                        "combined": combined_score,
+                        "r1_max": 8, # R1 maksimum skor 8
+                        "r2_max": 8  # R2 maksimum skor 8
+                    })
+                
+                # Toplam skora göre sıralama
+                sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                
+                for i, item in enumerate(sorted_commons):
                     sym = item["symbol"]
-                    c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"c_s_{sym}"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(f"{sym} | R1: {item['r1']['Skor']}/8 | R2: {item['r2']['Skor']}/8", key=f"c_b_{sym}"): on_scan_result_click(sym); st.rerun()
+                    
+                    # Derece ikonu
+                    if i == 0: rank = "🥇"
+                    elif i == 1: rank = "🥈"
+                    elif i == 2: rank = "🥉"
+                    else: rank = f"{i+1}."
+
+                    # Toplam Skor: 11/16 | R1: 6/8 | R2: 5/8
+                    score_text = (
+                        f'<span class="opp-score">{rank} {sym} ({int(item["combined"])}/{item["r1_max"] + item["r2_max"]})</span>'
+                        f'<span class="opp-detail"> | R1:{int(item["r1_score"])}/{item["r1_max"]} | R2:{int(item["r2_score"])}/{item["r2_max"]}</span>'
+                    )
+                    
+                    # Kullanıcı arayüzünde tek bir tıklanabilir satır oluşturma (CSS hilesi)
+                    is_watchlist = sym in st.session_state.watchlist
+                    star_icon = "★" if is_watchlist else "☆"
+
+                    # st.button kullanmak yerine HTML/JS ile tıklama yakalama (Streamlit'te direkt click handler olmadığı için bu zorunlu)
+                    # Buradaki st.button kullanımı, Streamlit'in kendi bileşenleriyle uyumluluk için korundu, ancak görünüm CSS ile düzeltildi.
+                    c1, c2, c3 = st.columns([0.1, 0.75, 0.15])
+                    
+                    # ★ Butonu (İzleme Listesi)
+                    if c1.button(star_icon, key=f"c_star_{sym}"): toggle_watchlist(sym); st.rerun()
+                    
+                    # Ana Sembol Butonu (Hisse Seçimi) - Metin formatında gösteriliyor
+                    if c2.button(score_text, key=f"c_select_{sym}", unsafe_allow_html=True): on_scan_result_click(sym); st.rerun()
+
             else: st.info("Kesişim yok.")
         else: st.caption("İki radar da çalıştırılmalı.")
 
