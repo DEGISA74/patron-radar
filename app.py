@@ -138,7 +138,11 @@ def remove_watchlist_db(symbol):
 if not os.path.exists(DB_FILE): init_db()
 
 # --- VARLIK LİSTELERİ ---
-raw_sp500 = [
+
+# 1. S&P 500 ÖZEL SIRALAMA (Öncelikliler + Alfabetik Diğerleri)
+priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD"]
+
+raw_sp500_rest = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
     "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
     "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
@@ -148,12 +152,12 @@ raw_sp500 = [
     "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW",
     "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG",
     "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
-    "LLY", "UNH", "JNJ", "MRK", "ABBV", "PFE", "TMO", "DHR", "ABT", "BMY", "AMGN",
+    "LLY", "UNH", "JNJ", "MRK", "ABBV", "TMO", "DHR", "ABT", "BMY", "AMGN",
     "ISRG", "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX",
     "HCA", "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN",
     "ZBH", "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO",
     "WMT", "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS",
-    "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "MO", "EL", "CL", "K", "GIS", "MNST",
+    "CMCSA", "NFLX", "TGT", "LOW", "TJX", "PM", "EL", "CL", "K", "GIS", "MNST",
     "TSCO", "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC",
     "HSY", "MKC", "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM",
     "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI",
@@ -166,18 +170,30 @@ raw_sp500 = [
     "AMT", "PLD", "CCI", "EQIX", "PSA", "O", "DLR", "SPG", "VICI", "CBRE", "CSGP",
     "WELL", "AVB", "EQR", "EXR", "MAA", "HST", "KIM", "REG", "SBAC", "WY",
     "PHM", "LEN", "DHI", "LVS", "MGM", "T", "VZ", "BKNG", "MAR",
-    "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
+    "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "CF",
     "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
 ]
 
-raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
+# Mantık: Öncelikli listeyi çıkar, kalanı sırala, sonra birleştir.
+raw_sp500_rest = list(set(raw_sp500_rest) - set(priority_sp))
+raw_sp500_rest.sort()
+final_sp500_list = priority_sp + raw_sp500_rest
 
-raw_crypto = [
-    "GC=F", "SI=F",
-    "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
-    "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
+
+# 2. EMTİA & KRİPTO ÖZEL SIRALAMA (Doğru Semboller)
+priority_crypto = ["GC=F", "SI=F", "BTC-USD", "ETH-USD"]
+
+other_crypto = [
+    "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD",
+    "TRX-USD", "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "BCH-USD",
+    "UNI-USD", "ATOM-USD", "XLM-USD", "ETC-USD", "FIL-USD", "HBAR-USD",
+    "APT-USD", "NEAR-USD", "VET-USD", "QNT-USD", "AAVE-USD", "ALGO-USD"
 ]
+other_crypto.sort()
+final_crypto_list = priority_crypto + other_crypto
 
+
+# 3. NASDAQ (Alfabetik)
 raw_nasdaq = [
     "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
     "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
@@ -190,11 +206,14 @@ raw_nasdaq = [
     "WBA", "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK",
     "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
 ]
+raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
+
+# --- GRUPLAMA (BURASI ÖNEMLİ: Sorted fonksiyonunu kaldırdık!) ---
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))),
-    "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
-    "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
+    "S&P 500 (TOP 300)": final_sp500_list,
+    "NASDAQ (TOP 100)": raw_nasdaq,
+    "EMTİA & KRİPTO": final_crypto_list
 }
 
 INITIAL_CATEGORY = "S&P 500 (TOP 300)"
@@ -1272,5 +1291,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
