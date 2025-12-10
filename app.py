@@ -705,7 +705,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
@@ -791,12 +791,52 @@ with col_left:
     render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
     
     st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
-    news = fetch_google_news(st.session_state.ticker)
-    if news:
-        cols = st.columns(2)
-        for i, n in enumerate(news):
-            with cols[i%2]: st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
-    else: st.info("Haber yok.")
+
+    # --- HABER AKIŞI: SABİT HABER SİTESİ LİNKLERİ ---
+    symbol_raw = st.session_state.ticker
+
+    # Haber siteleri için kullanılacak daha temiz sembol
+    base_symbol = (
+        symbol_raw.replace(".IS", "")
+                  .replace("=F", "")
+                  .replace("-USD", "")
+    )
+
+    # Investing özel slug örneği (AGNC için senin verdiğin URL)
+    investing_slug_map = {
+        "AGNC": "american-capital-agency"
+    }
+    investing_slug = investing_slug_map.get(base_symbol, base_symbol)
+
+    seekingalpha_url = f"https://seekingalpha.com/symbol/{base_symbol}/news"
+    investing_url    = f"https://www.investing.com/equities/{investing_slug}-news"
+    finviz_url       = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
+    unusual_url      = f"https://unusualwhales.com/stock/{base_symbol}/overview"
+
+    st.markdown(f"""
+    <div class="news-card" style="display:flex; align-items:center; gap:8px; border-left:none;">
+        <a href="{seekingalpha_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                SeekingAlpha
+            </div>
+        </a>
+        <a href="{investing_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                Investing
+            </div>
+        </a>
+        <a href="{finviz_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                Finviz
+            </div>
+        </a>
+        <a href="{unusual_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                UnusualWhales
+            </div>
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
