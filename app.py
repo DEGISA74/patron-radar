@@ -13,7 +13,7 @@ import textwrap
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.3.2",
+    page_title="Patronun Terminali v4.5 (ICT Hybrid)",
     layout="wide",
     page_icon="🐂"
 )
@@ -99,6 +99,12 @@ st.markdown(f"""
     .opp-detail {{ font-size: 0.65rem; color: #64748B; }}
     .opp-star {{ color: #FFD700; margin-left: 8px; cursor: pointer; }}
 
+    /* ICT BAR STİLİ */
+    .ict-bar-container {{
+        width: 100%; height: 6px; background-color: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 4px 0; display:flex;
+    }}
+    .ict-bar-fill {{ height: 100%; transition: width 0.5s ease; }}
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -131,7 +137,7 @@ def remove_watchlist_db(symbol):
     conn.close()
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ (GÜNCELLENMİŞ VE SIRALI) ---
+# --- VARLIK LİSTELERİ ---
 raw_sp500 = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
     "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
@@ -164,17 +170,14 @@ raw_sp500 = [
     "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
 ]
 
-# Patronun Özel Hisseleri Eklendi
 raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
 
-# Kripto Listesi
 raw_crypto = [
     "GC=F", "SI=F",
     "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
     "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
 ]
 
-# Nasdaq 100
 raw_nasdaq = [
     "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
     "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
@@ -188,7 +191,6 @@ raw_nasdaq = [
     "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
 ]
 
-# Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))),
     "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
@@ -501,11 +503,12 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT (YENİ NESİL - PRICE ACTION ODAKLI) ---
+# --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        # Daha geniş veri (Swing tespiti için 1 yıl)
+        df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
         if isinstance(df.columns, pd.MultiIndex): 
@@ -515,132 +518,166 @@ def calculate_ict_concepts(ticker):
         high = df['High']
         low = df['Low']
         open_p = df['Open']
+        
+        if len(df) < 50: return None
+
         curr_price = float(close.iloc[-1])
         
-        atr = (high - low).rolling(14).mean()
-        current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
-
-        swing_highs = []
-        swing_lows = []
+        # 1. SWING FRACTAL TESPİTİ
+        sw_highs = []
+        sw_lows = []
         
-        for i in range(2, len(df)-2):
-            if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
-               high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
-                swing_highs.append((i, float(high.iloc[i])))
-            if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
-               low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
-                swing_lows.append((i, float(low.iloc[i])))
+        lookback = 100
+        start_idx = max(2, len(df) - lookback)
+        
+        for i in range(start_idx, len(df)-2):
+            if (high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and 
+                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]):
+                sw_highs.append((df.index[i], float(high.iloc[i]), i))
                 
-        if not swing_highs or not swing_lows:
-            return {
-                "summary": "Veri Yetersiz", "structure": "-", "position": "-",
-                "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-",
-                "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-",
-                "golden_text": "-", "golden_setup": False
-            }
+            if (low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and 
+                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]):
+                sw_lows.append((df.index[i], float(low.iloc[i]), i))
 
-        last_sh = swing_highs[-1][1]
-        last_sl = swing_lows[-1][1]
-        
-        structure_verdict = "KONSOLİDASYON"
-        bias = "Nötr"
+        if not sw_highs or not sw_lows:
+            return {"summary": "Veri Yetersiz"}
+
+        last_sh = sw_highs[-1][1]
+        last_sl = sw_lows[-1][1]
+        prev_sh = sw_highs[-2][1] if len(sw_highs) > 1 else last_sh
+        prev_sl = sw_lows[-2][1] if len(sw_lows) > 1 else last_sl
+
+        # 2. MARKET YAPISI (Hibrit)
+        structure = "YATAY (Range)"
+        bias_color = "gray"
         
         if curr_price > last_sh:
-            structure_verdict = "BULLISH (BOS)"
-            bias = "Long"
+            structure = "BOS (Yükseliş Trendi)"
+            bias_color = "green"
         elif curr_price < last_sl:
-            structure_verdict = "BEARISH (BOS)"
-            bias = "Short"
+            structure = "BOS (Düşüş Trendi)"
+            bias_color = "red"
         else:
-            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
-                structure_verdict = "BEARISH (Internal)"
-                bias = "Short"
-            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
-                structure_verdict = "BULLISH (Internal)"
-                bias = "Long"
+            if last_sh < prev_sh and last_sl > prev_sl:
+                structure = "SIKIŞMA (Konsolidasyon)"
+                bias_color = "yellow"
+            elif curr_price > (last_sh + last_sl) / 2:
+                 structure = "BOS (Internal Bullish)"
+                 bias_color = "blue"
+            else:
+                 structure = "BOS (Internal Bearish)"
+                 bias_color = "blue"
 
-        range_high = last_sh
-        range_low = last_sl
-        mid_point = (range_high + range_low) / 2
+        # 3. DEALING RANGE & KONUM (Hibrit)
+        if sw_highs[-1][2] > sw_lows[-1][2]: 
+            r_low = sw_lows[-1][1]
+            r_high = sw_highs[-1][1]
+        else: 
+            r_low = sw_lows[-1][1]
+            r_high = sw_highs[-1][1]
+
+        range_pos_pct = (curr_price - r_low) / (r_high - r_low) * 100 if r_high != r_low else 50
         
-        position_label = "DENGEDE"
+        pos_label = ""
         is_discount = False
+        is_ote = False
         
-        if curr_price < mid_point:
-            is_discount = True
-            if curr_price < range_low:
-                position_label = "DEEP DISCOUNT (Alım Fırsatı)"
-            else:
-                position_label = "DISCOUNT (Ucuz)"
-        else:
+        if range_pos_pct > 50:
+            if range_pos_pct > 75: pos_label = "Premium++ (Aşırı Pahalı)"
+            elif range_pos_pct > 62: pos_label = "Premium (OTE Bölgesi)"
+            else: pos_label = "Premium (Pahalı)"
+            
             is_discount = False
-            if curr_price > range_high:
-                position_label = "PREMIUM+ (Momentum)"
-            else:
-                position_label = "PREMIUM (Pahalı)"
+            if 62 <= range_pos_pct <= 79: is_ote = True 
+        else:
+            if range_pos_pct < 25: pos_label = "Discount++ (Aşırı Ucuz)"
+            elif range_pos_pct < 38: pos_label = "Discount (OTE Bölgesi)"
+            else: pos_label = "Discount (Ucuz)"
 
-        valid_fvgs = []
+            is_discount = True
+            if 21 <= range_pos_pct <= 38: is_ote = True
+
+        # 4. FVG DURUMU
+        bullish_fvg = []
+        bearish_fvg = []
+        
         for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
-                gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
-                gap_size = low.iloc[i-2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1:
-                break
+            if low.iloc[i] > high.iloc[i-2]:
+                gap_top = low.iloc[i]
+                gap_bot = high.iloc[i-2]
+                if curr_price > gap_bot: bullish_fvg.append((gap_bot, gap_top))
             
-        fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
+            if high.iloc[i] < low.iloc[i-2]:
+                gap_top = low.iloc[i-2]
+                gap_bot = high.iloc[i]
+                if curr_price < gap_top: bearish_fvg.append((gap_bot, gap_top))
 
-        ob_text = "-"
-        liq_target = "-"
-        ob_lbl = "Güvenli Giriş"
+        active_fvg = "Dengeli Fiyat (Gap Yok)"
+        fvg_color = "gray"
         
-        if bias == "Long":
-            liq_target = f"{last_sh:.2f}$ (BSL)"
-            recent_sl_idx = swing_lows[-1][0]
-            ob_low = low.iloc[recent_sl_idx]
-            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
-            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
-            ob_lbl = "Bullish OB"
-        elif bias == "Short":
-            liq_target = f"{last_sl:.2f}$ (SSL)"
-            recent_sh_idx = swing_highs[-1][0]
-            ob_high_val = high.iloc[recent_sh_idx]
-            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
-            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
-            ob_lbl = "Bearish OB"
-            
-        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
+        if is_discount and bullish_fvg:
+            bg = bullish_fvg[0]
+            active_fvg = f"BISI: {bg[0]:.2f} - {bg[1]:.2f}"
+            fvg_color = "green"
+        elif not is_discount and bearish_fvg:
+            bg = bearish_fvg[0]
+            active_fvg = f"SIBI: {bg[0]:.2f} - {bg[1]:.2f}"
+            fvg_color = "red"
+        else:
+            if bullish_fvg: 
+                active_fvg = f"Destek FVG: {bullish_fvg[0][0]:.2f}"
+                fvg_color = "green"
+            elif bearish_fvg: 
+                active_fvg = f"Direnç FVG: {bearish_fvg[0][1]:.2f}"
+                fvg_color = "red"
+
+        # 5. FİYATI ÇEKEN SEVİYE (LIQUIDITY)
+        next_bsl = min([h[1] for h in sw_highs if h[1] > curr_price], default=None)
+        next_ssl = max([l[1] for l in sw_lows if l[1] < curr_price], default=None)
         
-        golden_setup = False
-        golden_txt = "-"
-        if bias == "Long" and is_discount and "🟢" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
-        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
-            golden_setup = True
-            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
+        liq_target = "Belirsiz"
+        if "Yükseliş" in structure and next_bsl:
+            liq_target = f"BSL: {next_bsl:.2f}"
+        elif "Düşüş" in structure and next_ssl:
+            liq_target = f"SSL: {next_ssl:.2f}"
+        else:
+            dist_bsl = abs(next_bsl - curr_price) if next_bsl else 99999
+            dist_ssl = abs(curr_price - next_ssl) if next_ssl else 99999
+            if dist_bsl < dist_ssl:
+                liq_target = f"BSL (Tepe): {next_bsl:.2f}"
+            else:
+                liq_target = f"SSL (Dip): {next_ssl:.2f}"
+
+        # 6. GOLDEN SETUP
+        golden_txt = "⏳ Oluşum Bekleniyor (İzlemede)"
+        is_golden = False
+        
+        if is_discount and "Yükseliş" in structure and bullish_fvg:
+            golden_txt = "LONG FIRSATI (Trend+Ucuz+FVG)"
+            is_golden = True
+        elif not is_discount and "Düşüş" in structure and bearish_fvg:
+            golden_txt = "SHORT FIRSATI (Trend+Pahalı+FVG)"
+            is_golden = True
+        elif is_ote:
+             golden_txt = "OTE Bölgesi (Karar Anı)"
 
         return {
-            "summary": summary_line,
-            "structure": structure_verdict,
-            "position": position_label,
-            "fvg": fvg_text,
-            "ob": ob_text,
-            "ob_label": ob_lbl,
+            "structure": structure,
+            "bias_color": bias_color,
+            "range_pos_pct": range_pos_pct,
+            "pos_label": pos_label,
+            "fvg": active_fvg,
+            "fvg_color": fvg_color,
             "liquidity": liq_target,
-            "liq_label": "Bir Sonraki Hedef",
-            "eqh": liq_target,
-            "fibo": f"EQ: {mid_point:.2f}$",
-            "bb": "-",
             "golden_text": golden_txt,
-            "golden_setup": golden_setup
+            "is_golden": is_golden,
+            "ote_level": is_ote,
+            "range_high": r_high,
+            "range_low": r_low
         }
-    except Exception:
-        return None
+
+    except Exception as e:
+        return {"summary": "Hata", "err": str(e)}
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -731,19 +768,62 @@ def render_radar_params_card():
     """, unsafe_allow_html=True)
 
 def render_ict_panel(analysis):
-    if not analysis: return
+    if not analysis or "summary" in analysis and analysis["summary"] == "Hata":
+        st.error("ICT Analizi yapılamadı (Veri yetersiz)")
+        return
+
+    # Renk Kodları
+    s_color = "#166534" if analysis['bias_color'] == "green" else "#991b1b" if analysis['bias_color'] == "red" else "#854d0e"
+    pos_pct = analysis['range_pos_pct']
+    
+    # Bar Genişliği (0-100% arası)
+    bar_width = min(max(pos_pct, 5), 95) 
+    
+    # Golden Setup veya OTE Durumu
+    golden_badge = ""
+    if analysis['is_golden']:
+        golden_badge = f"<div style='margin-top:6px; background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; padding:6px; border-radius:6px; font-weight:700; text-align:center; font-size:0.75rem;'>✨ {analysis['golden_text']}</div>"
+    elif analysis['ote_level']:
+        golden_badge = f"<div style='margin-top:6px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>🎯 {analysis['golden_text']}</div>"
+    else:
+        golden_badge = f"<div style='margin-top:6px; background:#f8fafc; border:1px solid #e2e8f0; color:#94a3b8; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>{analysis['golden_text']}</div>"
+
     st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
+        <div class="info-header">🧠 ICT Smart Money Concepts</div>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.65rem; color:#64748B; font-weight:600;">MARKET YAPISI</span>
+            <span style="font-size:0.7rem; font-weight:700; color:{s_color};">{analysis['structure']}</span>
         </div>
-        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
-        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
-        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
-        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
-        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
-        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
+
+        <div style="margin: 8px 0;">
+            <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
+                <span>Discount</span>
+                <span>EQ</span>
+                <span>Premium</span>
+            </div>
+            <div class="ict-bar-container">
+                <div class="ict-bar-fill" style="width:{bar_width}%; background: linear-gradient(90deg, #22c55e 0%, #cbd5e1 50%, #ef4444 100%);"></div>
+            </div>
+            <div style="text-align:center; font-size:0.7rem; font-weight:600; color:#0f172a; margin-top:2px;">
+                {analysis['pos_label']} <span style="color:#64748B; font-size:0.6rem;">(%{pos_pct:.1f})</span>
+            </div>
+        </div>
+
+        <div style="margin-top:8px;">
+            <div class="info-row">
+                <div class="label-long">FVG Durumu:</div>
+                <div class="info-val" style="color:{'#166534' if analysis['fvg_color']=='green' else '#991b1b' if analysis['fvg_color']=='red' else '#64748B'}; font-weight:600;">{analysis['fvg']}</div>
+            </div>
+            <div class="info-row">
+                <div class="label-long">🧲 Fiyatı Çeken Seviye:</div>
+                <div class="info-val">{analysis['liquidity']}</div>
+            </div>
+        </div>
+        
+        {golden_badge}
+        
     </div>
     """, unsafe_allow_html=True)
 
@@ -833,14 +913,14 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.3.2</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ordered & Expanded)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -957,15 +1037,13 @@ with col_left:
     
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
-    render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
     
-    # --- GÜNCELLENEN HABER BAŞLIĞI ---
     st.markdown(
         f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>",
         unsafe_allow_html=True
     )
 
-    # --- HABER AKIŞI: SABİT HABER SİTESİ LİNKLERİ (SeekingAlpha, Yahoo, Nasdaq, StockAnalysis, Finviz, UnusualWhales) ---
+    # --- HABER AKIŞI ---
     symbol_raw = st.session_state.ticker
 
     base_symbol = (
@@ -1021,6 +1099,10 @@ with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
     
+    # ICT Panel BURADA (GÜNCELLENMİŞ)
+    ict_data = calculate_ict_concepts(st.session_state.ticker)
+    render_ict_panel(ict_data)
+
     render_detail_card(st.session_state.ticker)
     render_radar_params_card() 
     
@@ -1140,4 +1222,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
