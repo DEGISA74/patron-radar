@@ -59,30 +59,24 @@ st.markdown(f"""
 
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     
-    /* --- GÖRSEL SIKIŞTIRMA (KOMPAKTLIK) AYARLARI --- */
-    
-    /* 1. Tüm Butonları Küçültme (Ortak Fırsatlar Dahil) */
+    /* ORTAK FIRSATLAR VE GENEL KOMPAKLIK AYARLARI */
     .stButton button {{ 
         width: 100%; border-radius: 4px; 
-        font-size: 0.75rem;  /* Yazıyı %30 civarı küçült */
-        padding: 0.1rem 0.4rem; /* İç boşluğu daralt */
-        min-height: 0px; /* Varsayılan yüksekliği kır */
-        height: auto;
+        font-size: 0.75rem;
+        padding: 0.1rem 0.4rem;
     }}
     
-    /* 2. Bilgi Kartlarını Sıkıştırma */
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; 
-        padding: 6px; /* 8px'den 6px'e düştü */
+        padding: 6px;
         margin-top: 5px; 
-        margin-bottom: 5px; /* Kartlar arası mesafe azaldı */
-        font-size: 0.7rem; /* Genel yazı boyutu küçüldü */
+        margin-bottom: 5px;
+        font-size: 0.7rem;
         font-family: 'Inter', sans-serif;
     }}
-    
     .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }} /* Satır aralığı azaldı */
+    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
     
     .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
     .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
@@ -96,9 +90,9 @@ st.markdown(f"""
         display: flex; justify-content: space-between; align-items: center;
         background: {current_theme['box_bg']}; padding: 4px 6px; 
         border: 1px solid {current_theme['border']}; border-radius: 4px;
-        margin-bottom: 2px; /* SATIR ARASI BOŞLUĞU %50 AZALTMA (4px -> 2px) */
+        margin-bottom: 2px;
         cursor: pointer; transition: background 0.1s;
-        font-size: 0.7rem; /* YAZI BOYUTUNU 0.8rem'den KÜÇÜLTME */
+        font-size: 0.7rem;
     }}
     .opportunity-item:hover {{ background: #f0f4f8; }}
     .opp-score {{ font-weight: 700; color: #1e40af; font-family: 'JetBrains Mono', monospace; }}
@@ -175,7 +169,7 @@ raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
 
 # Kripto Listesi
 raw_crypto = [
-    "GC=F", "SI=F", # Altın ve Gümüş
+    "GC=F", "SI=F",
     "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
     "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
 ]
@@ -196,7 +190,7 @@ raw_nasdaq = [
 
 # Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))), # Set ile çiftleri temizledik, sorted ile sıraladık
+    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))),
     "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
     "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
 }
@@ -217,29 +211,43 @@ if 'sentiment_deep' not in st.session_state: st.session_state.sentiment_deep = N
 def on_category_change():
     new_cat = st.session_state.get("selected_category_key")
     if new_cat and new_cat in ASSET_GROUPS:
-        st.session_state.category = new_cat; st.session_state.ticker = ASSET_GROUPS[new_cat][0]
-        st.session_state.scan_data = None; st.session_state.radar2_data = None
+        st.session_state.category = new_cat
+        st.session_state.ticker = ASSET_GROUPS[new_cat][0]
+        st.session_state.scan_data = None
+        st.session_state.radar2_data = None
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
     if new_asset: st.session_state.ticker = new_asset
 
 def on_manual_button_click():
-    if st.session_state.manual_input_key: st.session_state.ticker = st.session_state.manual_input_key.upper()
+    if st.session_state.manual_input_key:
+        st.session_state.ticker = st.session_state.manual_input_key.upper()
 
 def on_scan_result_click(symbol): st.session_state.ticker = symbol
 
 def toggle_watchlist(symbol):
     wl = st.session_state.watchlist
-    if symbol in wl: remove_watchlist_db(symbol); wl.remove(symbol)
-    else: add_watchlist_db(symbol); wl.append(symbol)
+    if symbol in wl:
+        remove_watchlist_db(symbol)
+        wl.remove(symbol)
+    else:
+        add_watchlist_db(symbol)
+        wl.append(symbol)
     st.session_state.watchlist = wl
 
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown("### ⚙️ Ayarlar")
-    selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
-    if selected_theme_name != st.session_state.theme: st.session_state.theme = selected_theme_name; st.rerun()
+    selected_theme_name = st.selectbox(
+        "",
+        ["Beyaz", "Kirli Beyaz", "Buz Mavisi"],
+        index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
+        label_visibility="collapsed"
+    )
+    if selected_theme_name != st.session_state.theme:
+        st.session_state.theme = selected_theme_name
+        st.rerun()
     st.divider()
     
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
@@ -250,51 +258,81 @@ with st.sidebar:
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     signals = []
-    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
-    except: return pd.DataFrame()
+    try:
+        data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
+    except:
+        return pd.DataFrame()
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]: df = data[symbol].copy()
-                else: continue
+                if symbol in data.columns.levels[0]:
+                    df = data[symbol].copy()
+                else:
+                    continue
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
+                if len(asset_list) == 1:
+                    df = data.copy()
+                else:
+                    continue
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
             if len(df) < 60: continue
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
-            ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
-            sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
+            ema5 = close.ewm(span=5, adjust=False).mean()
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
-            delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))); williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
             daily_range = high - low
             score = 0; reasons = []
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze")
-            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4")
-            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend")
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD")
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R")
-            if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim")
-            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout")
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1:
+                score += 1; reasons.append("🚀 Squeeze")
+            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0:
+                score += 1; reasons.append("🔇 NR4")
+            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])):
+                score += 1; reasons.append("⚡ Trend")
+            if hist.iloc[-1] > hist.iloc[-2]:
+                score += 1; reasons.append("🟢 MACD")
+            if williams_r.iloc[-1] > -50:
+                score += 1; reasons.append("🔫 W%R")
+            if curr_vol > avg_vol * 1.2:
+                score += 1; reasons.append("🔊 Hacim")
+            if curr_c >= high.tail(20).max() * 0.98:
+                score += 1; reasons.append("🔨 Breakout")
             rsi_c = rsi.iloc[-1]
-            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü")
-            if score > 0: signals.append({"Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons)})
-        except: continue
+            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]:
+                score += 1; reasons.append("⚓ RSI Güçlü")
+            if score > 0:
+                signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": f"{curr_c:.2f}",
+                    "Skor": score,
+                    "Nedenler": " | ".join(reasons)
+                })
+        except:
+            continue
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
-    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
-    try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
-    except: idx = None
+    try:
+        data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
+    except:
+        return pd.DataFrame()
+    try:
+        idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
+    except:
+        idx = None
     results = []
     for symbol in asset_list:
         try:
@@ -302,47 +340,76 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                 if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
+                if len(asset_list) == 1:
+                    df = data.copy()
+                else:
+                    continue
             if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close']); 
+            df = df.dropna(subset=['Close'])
             if len(df) < 120: continue
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
             if curr_c < min_price or curr_c > max_price: continue
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
             if avg_vol_20 < min_avg_vol_m * 1e6: continue
-            sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
-            sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
+            sma20 = close.rolling(20).mean()
+            sma50 = close.rolling(50).mean()
+            sma100 = close.rolling(100).mean()
+            sma200 = close.rolling(200).mean()
             trend = "Yatay"
             if not np.isnan(sma200.iloc[-1]):
-                if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
-                elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
-            delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
+                if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]:
+                    trend = "Boğa"
+                elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]:
+                    trend = "Ayı"
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            rsi_c = float(rsi.iloc[-1])
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
             rs_score = 0.0
-            if idx is not None and len(close)>60 and len(idx)>60:
+            if idx is not None and len(close) > 60 and len(idx) > 60:
                 common_index = close.index.intersection(idx.index)
                 if len(common_index) > 60:
-                    cs = close.reindex(common_index); isx = idx.reindex(common_index)
+                    cs = close.reindex(common_index)
+                    isx = idx.reindex(common_index)
                     rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
             setup = "-"; tags = []; score = 0
-            avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
-            if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve"); 
-            if vol_spike: score += 1; tags.append("Hacim+")
+            avg_vol_20 = max(avg_vol_20, 1)
+            vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
+            if trend == "Boğa" and breakout_ratio >= 0.97:
+                setup = "Breakout"; score += 2; tags.append("Zirve")
+            if vol_spike:
+                score += 1; tags.append("Hacim+")
             if trend == "Boğa" and setup == "-":
-                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55: setup = "Pullback"; score += 2; tags.append("Düzeltme")
-                if volume.iloc[-1] < avg_vol_20 * 0.9: score += 1; tags.append("Sığ Satış")
+                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55:
+                    setup = "Pullback"; score += 2; tags.append("Düzeltme")
+                if volume.iloc[-1] < avg_vol_20 * 0.9:
+                    score += 1; tags.append("Sığ Satış")
             if setup == "-":
-                if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
-            if rs_score > 0: score += 1; tags.append("RS+")
-            if trend == "Boğa": score += 1
-            elif trend == "Ayı": score -= 1
-            if score > 0: results.append({"Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags)})
-        except: continue
+                if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]:
+                    setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
+            if rs_score > 0:
+                score += 1; tags.append("RS+")
+            if trend == "Boğa":
+                score += 1
+            elif trend == "Ayı":
+                score -= 1
+            if score > 0:
+                results.append({
+                    "Sembol": symbol,
+                    "Fiyat": round(curr_c, 2),
+                    "Trend": trend,
+                    "Setup": setup,
+                    "Skor": score,
+                    "RS": round(rs_score * 100, 1),
+                    "Etiketler": " | ".join(tags)
+                })
+        except:
+            continue
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
@@ -351,43 +418,61 @@ def calculate_sentiment_score(ticker):
     try:
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
         score_mom = 0; reasons_mom = []
         rsi = 100 - (100 / (1 + (close.diff().clip(lower=0).rolling(14).mean() / close.diff().clip(upper=0).abs().rolling(14).mean())))
-        if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score_mom += 10; reasons_mom.append("RSI ↑")
+        if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]:
+            score_mom += 10; reasons_mom.append("RSI ↑")
         macd = close.ewm(span=12).mean() - close.ewm(span=26).mean()
         hist = macd - macd.ewm(span=9).mean()
-        if hist.iloc[-1] > 0 and hist.iloc[-1] > hist.iloc[-2]: score_mom += 10; reasons_mom.append("MACD ↑")
-        if rsi.iloc[-1] < 30: reasons_mom.append("OS")
-        elif rsi.iloc[-1] > 70: reasons_mom.append("OB")
-        else: score_mom += 10; reasons_mom.append("Stoch Stabil")
+        if hist.iloc[-1] > 0 and hist.iloc[-1] > hist.iloc[-2]:
+            score_mom += 10; reasons_mom.append("MACD ↑")
+        if rsi.iloc[-1] < 30:
+            reasons_mom.append("OS")
+        elif rsi.iloc[-1] > 70:
+            reasons_mom.append("OB")
+        else:
+            score_mom += 10; reasons_mom.append("Stoch Stabil")
         
         score_vol = 0; reasons_vol = []
-        if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]: score_vol += 15; reasons_vol.append("Vol ↑")
-        else: reasons_vol.append("Vol ↓")
+        if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]:
+            score_vol += 15; reasons_vol.append("Vol ↑")
+        else:
+            reasons_vol.append("Vol ↓")
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
-        if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]: score_vol += 10; reasons_vol.append("OBV ↑")
+        if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]:
+            score_vol += 10; reasons_vol.append("OBV ↑")
         
         score_tr = 0; reasons_tr = []
-        sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
-        if sma50.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("GoldCross")
-        if close.iloc[-1] > sma50.iloc[-1]: score_tr += 10; reasons_tr.append("P > SMA50")
+        sma50 = close.rolling(50).mean()
+        sma200 = close.rolling(200).mean()
+        if sma50.iloc[-1] > sma200.iloc[-1]:
+            score_tr += 10; reasons_tr.append("GoldCross")
+        if close.iloc[-1] > sma50.iloc[-1]:
+            score_tr += 10; reasons_tr.append("P > SMA50")
         
         score_vola = 0; reasons_vola = []
-        std = close.rolling(20).std(); upper = close.rolling(20).mean() + (2 * std)
-        if close.iloc[-1] > upper.iloc[-1]: score_vola += 10; reasons_vola.append("BB Break")
+        std = close.rolling(20).std()
+        upper = close.rolling(20).mean() + (2 * std)
+        if close.iloc[-1] > upper.iloc[-1]:
+            score_vola += 10; reasons_vola.append("BB Break")
         atr = (high-low).rolling(14).mean()
-        if atr.iloc[-1] < atr.iloc[-5]: score_vola += 5; reasons_vola.append("Vola ↓")
+        if atr.iloc[-1] < atr.iloc[-5]:
+            score_vola += 5; reasons_vola.append("Vola ↓")
         
         score_str = 0; reasons_str = []
-        if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
+        if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]:
+            score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
         
         total = score_mom + score_vol + score_tr + score_vola + score_str
-        bars = int(total / 5); bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
+        bars = int(total / 5)
+        bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
         
-        def fmt(lst): return f"<span style='font-size:0.65rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
+        def fmt(lst):
+            return f"<span style='font-size:0.65rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
         
         return {
             "total": total, "bar": bar_str,
@@ -396,9 +481,11 @@ def calculate_sentiment_score(ticker):
             "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
             "vola": f"{score_vola}/15 {fmt(reasons_vola)}",
             "str": f"{score_str}/10 {fmt(reasons_str)}",
-            "raw_rsi": rsi.iloc[-1], "raw_macd": hist.iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": atr.iloc[-1]
+            "raw_rsi": rsi.iloc[-1], "raw_macd": hist.iloc[-1],
+            "raw_obv": obv.iloc[-1], "raw_atr": atr.iloc[-1]
         }
-    except: return None
+    except:
+        return None
 
 def get_deep_xray_data(ticker):
     sent = calculate_sentiment_score(ticker)
@@ -418,11 +505,9 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
-        # Fraktal yapıları doğru tespit etmek için geniş veri (6 Ay)
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         
-        # MultiIndex temizliği
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
             
@@ -432,61 +517,48 @@ def calculate_ict_concepts(ticker):
         open_p = df['Open']
         curr_price = float(close.iloc[-1])
         
-        # Volatilite (ATR) Hesabı (FVG Filtresi için)
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
 
-        # 1. FRAKTAL GEOMETRİ: GERÇEK SWING NOKTALARI
-        # Tepe için: Solunda ve sağında 2'şer düşük tepe olmalı.
         swing_highs = []
         swing_lows = []
         
         for i in range(2, len(df)-2):
-            # Swing High
             if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
                 swing_highs.append((i, float(high.iloc[i])))
-            # Swing Low
             if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
                 swing_lows.append((i, float(low.iloc[i])))
                 
-        # Swing noktaları yoksa (yeni halka arz vb.)
         if not swing_highs or not swing_lows:
-            return {"summary": "Veri Yetersiz", "structure": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "eqh": "-", "rr_text": "-", "golden_text": "-"}
+            return {
+                "summary": "Veri Yetersiz", "structure": "-", "position": "-",
+                "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-",
+                "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-",
+                "golden_text": "-", "golden_setup": False
+            }
 
-        # 2. MARKET YAPISI & KARAKTER (BOS Strength)
-        last_sh = swing_highs[-1][1] # Son Swing High
-        last_sl = swing_lows[-1][1]  # Son Swing Low
+        last_sh = swing_highs[-1][1]
+        last_sl = swing_lows[-1][1]
         
         structure_verdict = "KONSOLİDASYON"
         bias = "Nötr"
-        structure_char = "⚠️ Zayıf Momentum"
         
-        # Kırılım Gücü Analizi (Close vs High/Low)
         if curr_price > last_sh:
             structure_verdict = "BULLISH (BOS)"
             bias = "Long"
-            # Güçlü mü? (Kapanış, iğnenin çok üzerindeyse)
-            if curr_price > last_sh + (current_atr * 0.2):
-                structure_char = "🚀 GÜÇLÜ (Gövde Kırılımı)"
-            else:
-                structure_char = "⚠️ ZAYIF (Olası SFP)"
-                
         elif curr_price < last_sl:
             structure_verdict = "BEARISH (BOS)"
             bias = "Short"
-            if curr_price < last_sl - (current_atr * 0.2):
-                structure_char = "🚀 GÜÇLÜ (Gövde Kırılımı)"
-            else:
-                structure_char = "⚠️ ZAYIF (Olası SFP)"
         else:
-            # İç yapı kontrolü (Internal Structure)
-            structure_verdict = "RANGE (Yatay)"
-            bias = "Nötr"
+            if len(swing_highs) >= 2 and swing_highs[-1][1] < swing_highs[-2][1]:
+                structure_verdict = "BEARISH (Internal)"
+                bias = "Short"
+            elif len(swing_lows) >= 2 and swing_lows[-1][1] > swing_lows[-2][1]:
+                structure_verdict = "BULLISH (Internal)"
+                bias = "Long"
 
-        # 3. DEALING RANGE & OTE (Optimal Trade Entry)
-        # Mevcut işlem aralığı son swing high ve low arasıdır
         range_high = last_sh
         range_low = last_sl
         mid_point = (range_high + range_low) / 2
@@ -494,158 +566,80 @@ def calculate_ict_concepts(ticker):
         position_label = "DENGEDE"
         is_discount = False
         
-        ote_zone_text = "-"
-        ote_dist_text = ""
-        ote_entry_price = mid_point # Varsayılan
-        
-        # OTE Hesaplama (Fib 0.62 - 0.79)
-        range_size = range_high - range_low
-        
-        if bias == "Long" or (bias == "Nötr" and curr_price < mid_point):
-            # Long OTE: Dipten Tepeye fib
-            ote_high_fib = range_low + (range_size * 0.382) # %61.8 geri çekilme
-            ote_low_fib = range_low + (range_size * 0.21)   # %79 geri çekilme
-            
-            ote_zone_text = f"${ote_low_fib:.2f} - ${ote_high_fib:.2f}"
-            ote_entry_price = (ote_low_fib + ote_high_fib) / 2
-            
-            if curr_price < mid_point:
-                is_discount = True
-                position_label = "DISCOUNT (Alım Fırsatı)"
-                if ote_low_fib <= curr_price <= ote_high_fib:
-                    ote_dist_text = "✅ Fiyat OTE İçinde!"
-                elif curr_price > ote_high_fib:
-                    dist = ((curr_price - ote_high_fib) / curr_price) * 100
-                    ote_dist_text = f"OTE'ye Uzaklık: %{dist:.1f}"
+        if curr_price < mid_point:
+            is_discount = True
+            if curr_price < range_low:
+                position_label = "DEEP DISCOUNT (Alım Fırsatı)"
             else:
-                is_discount = False
-                position_label = "PREMIUM (Pahalı)"
-                
-        elif bias == "Short" or (bias == "Nötr" and curr_price > mid_point):
-            # Short OTE: Tepeden Dibe
-            ote_low_fib = range_high - (range_size * 0.382) # %61.8 geri çekilme
-            ote_high_fib = range_high - (range_size * 0.21) # %79 geri çekilme
-            
-            ote_zone_text = f"${ote_low_fib:.2f} - ${ote_high_fib:.2f}"
-            ote_entry_price = (ote_low_fib + ote_high_fib) / 2
-            
-            if curr_price > mid_point:
-                is_discount = False
-                position_label = "PREMIUM (Satış Fırsatı)"
-                if ote_low_fib <= curr_price <= ote_high_fib:
-                    ote_dist_text = "✅ Fiyat OTE İçinde!"
-                elif curr_price < ote_low_fib:
-                    dist = ((ote_low_fib - curr_price) / curr_price) * 100
-                    ote_dist_text = f"OTE'ye Uzaklık: %{dist:.1f}"
-            else:
-                is_discount = True
                 position_label = "DISCOUNT (Ucuz)"
+        else:
+            is_discount = False
+            if curr_price > range_high:
+                position_label = "PREMIUM+ (Momentum)"
+            else:
+                position_label = "PREMIUM (Pahalı)"
 
-        # 4. FVG VE ORDER BLOCK
         valid_fvgs = []
         for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]: # Bullish Gap
+            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
                 gap_size = low.iloc[i] - high.iloc[i-2]
                 if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
                     valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]: # Bearish Gap
+            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
                 gap_size = low.iloc[i-2] - high.iloc[i]
                 if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
                     valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1: break # En yakını al
+            if len(valid_fvgs) >= 1:
+                break
             
         fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
 
         ob_text = "-"
         liq_target = "-"
-        ob_lbl = "Destek"
+        ob_lbl = "Güvenli Giriş"
         
         if bias == "Long":
-            # Hedef: Son Zirve (Buy Side Liquidity)
             liq_target = f"{last_sh:.2f}$ (BSL)"
-            # Giriş: Son Dibi Yapan Hareketin Başlangıcı
             recent_sl_idx = swing_lows[-1][0]
             ob_low = low.iloc[recent_sl_idx]
             ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
             ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
             ob_lbl = "Bullish OB"
         elif bias == "Short":
-            # Hedef: Son Dip (Sell Side Liquidity)
             liq_target = f"{last_sl:.2f}$ (SSL)"
-            # Giriş: Son Tepeyi Yapan Hareketin Başlangıcı
             recent_sh_idx = swing_highs[-1][0]
             ob_high_val = high.iloc[recent_sh_idx]
             ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
             ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
             ob_lbl = "Bearish OB"
-
-        # 5. HEDEF, STOP VE R:R (YENİ)
-        liq_target_price = 0
-        stop_loss_price = 0
-        magnet_text = "-"
-        rr_text = "-"
+            
+        summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
         
-        if bias == "Long":
-            liq_target_price = last_sh
-            stop_loss_price = last_sl
-            magnet_text = f"${liq_target_price:.2f} (BSL - Buy Side Liq)"
-            # R:R Hesapla: Hedef - Giriş / Giriş - Stop
-            if ote_entry_price > stop_loss_price:
-                risk = ote_entry_price - stop_loss_price
-                reward = liq_target_price - ote_entry_price
-                if risk > 0:
-                    rr = reward / risk
-                    icon = "🔥" if rr > 3 else "✅" if rr > 2 else "⚠️"
-                    rr_text = f"{icon} 1 : {rr:.1f} R"
-        elif bias == "Short":
-            liq_target_price = last_sl
-            stop_loss_price = last_sh
-            magnet_text = f"${liq_target_price:.2f} (SSL - Sell Side Liq)"
-            if stop_loss_price > ote_entry_price:
-                risk = stop_loss_price - ote_entry_price
-                reward = ote_entry_price - liq_target_price
-                if risk > 0:
-                    rr = reward / risk
-                    icon = "🔥" if rr > 3 else "✅" if rr > 2 else "⚠️"
-                    rr_text = f"{icon} 1 : {rr:.1f} R"
-        
-        # 6. STRATEJİK EYLEM PLANI (Decision Tree)
-        action_plan = "İzlemeye devam et."
-        
-        if bias == "Long":
-            if position_label.startswith("DISCOUNT"):
-                action_plan = f"Fiyat ucuz bölgede. **{ote_zone_text}** aralığına LIMIT ALIM emri girilebilir. Hedef BSL."
-            elif position_label.startswith("PREMIUM"):
-                action_plan = f"Fiyat pahalı. ALIM YAPMA. **{ote_zone_text}** seviyesine geri çekilmesini bekle."
-        elif bias == "Short":
-            if position_label.startswith("PREMIUM"):
-                action_plan = f"Fiyat satış bölgesinde. **{ote_zone_text}** aralığına LIMIT SATIŞ emri girilebilir. Hedef SSL."
-            elif position_label.startswith("DISCOUNT"):
-                action_plan = f"Fiyat çok düştü. SATIŞ YAPMA. **{ote_zone_text}** seviyesine tepki yükselişi bekle."
-        else: # Nötr/Range
-            action_plan = f"Yatay piyasa. Range Low ({range_low:.2f}) alım, Range High ({range_high:.2f}) satış için izle."
-
-        # ÖZET VE FORMATLAMA
-        summary_line = f"🧩 ÖZET: {structure_verdict} | KONUM: {position_label}"
-        golden_txt = "Var" if (bias != "Nötr" and "OTE İçinde" in ote_dist_text) else "-"
+        golden_setup = False
+        golden_txt = "-"
+        if bias == "Long" and is_discount and "🟢" in fvg_text:
+            golden_setup = True
+            golden_txt = "🔥 GOLDEN LONG (Trend+Ucuz+FVG)"
+        elif bias == "Short" and not is_discount and "🔴" in fvg_text:
+            golden_setup = True
+            golden_txt = "🔥 GOLDEN SHORT (Trend+Pahalı+FVG)"
 
         return {
             "summary": summary_line,
             "structure": structure_verdict,
-            "structure_character": structure_char,
             "position": position_label,
-            "ote_zone": ote_zone_text,
-            "ote_distance": ote_dist_text,
             "fvg": fvg_text,
             "ob": ob_text,
             "ob_label": ob_lbl,
-            "eqh": magnet_text,
-            "stop_loss": f"${stop_loss_price:.2f}",
-            "rr_text": rr_text,
+            "liquidity": liq_target,
+            "liq_label": "Bir Sonraki Hedef",
+            "eqh": liq_target,
+            "fibo": f"EQ: {mid_point:.2f}$",
+            "bb": "-",
             "golden_text": golden_txt,
-            "action_plan": action_plan
+            "golden_setup": golden_setup
         }
-    except Exception as e:
+    except Exception:
         return None
 
 @st.cache_data(ttl=600)
@@ -653,12 +647,26 @@ def get_tech_card_data(ticker):
     try:
         df = yf.download(ticker, period="2y", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']
-        sma50 = close.rolling(50).mean().iloc[-1]; sma100 = close.rolling(100).mean().iloc[-1]; sma200 = close.rolling(200).mean().iloc[-1]; ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
+        sma50 = close.rolling(50).mean().iloc[-1]
+        sma100 = close.rolling(100).mean().iloc[-1]
+        sma200 = close.rolling(200).mean().iloc[-1]
+        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
         atr = (high-low).rolling(14).mean().iloc[-1]
-        return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
-    except: return None
+        return {
+            "sma50": sma50,
+            "sma100": sma100,
+            "sma200": sma200,
+            "ema144": ema144,
+            "stop_level": close.iloc[-1] - (2 * atr),
+            "risk_pct": (2 * atr) / close.iloc[-1] * 100,
+            "atr": atr
+        }
+    except:
+        return None
+
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
@@ -724,86 +732,35 @@ def render_radar_params_card():
 
 def render_ict_panel(analysis):
     if not analysis: return
-    
-    action_color = "#166534" 
-    if "SATIŞ" in analysis['action_plan']: action_color = "#991b1b" 
-    elif "İZLE" in analysis['action_plan']: action_color = "#854d0e"
-
-    html_content = textwrap.dedent(f"""
+    st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">🧠 ICT & Price Action | Analiz</div>
-        
+        <div class="info-header">🧠 ICT & Price Action</div>
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">
-                {analysis['summary']}
-            </div>
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
         </div>
-
-        <div class="info-row">
-            <div class="label-long">Yapı & Güç:</div>
-            <div class="info-val">
-                {analysis['structure']}<br/>
-                <span style="font-size:0.65rem; color:#64748B;">{analysis.get('structure_character', '-')}</span>
-            </div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">🎯 OTE Giriş:</div>
-            <div class="info-val">
-                {analysis.get('ote_zone', '-')}<br/>
-                <span style="font-size:0.65rem; color:#15803d; font-weight:600;">{analysis.get('ote_distance', '')}</span>
-            </div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">Destek ({analysis['ob_label']}):</div>
-            <div class="info-val">{analysis['ob']}</div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">Fırsat (FVG):</div>
-            <div class="info-val">{analysis['fvg']}</div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">🧲 Mıknatıs:</div>
-            <div class="info-val">
-                {analysis['eqh']}
-            </div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">🚫 Geçersizlik:</div>
-            <div class="info-val">{analysis.get('stop_loss', '-')}</div>
-        </div>
-
-        <div class="info-row">
-            <div class="label-long">⚖️ R:R Skoru:</div>
-            <div class="info-val">{analysis.get('rr_text', '-')}</div>
-        </div>
-
-        <div style="margin-top:8px; padding:6px; background-color:#f8fafc; border-left:3px solid {action_color}; border-radius:4px;">
-            <div style="font-size:0.65rem; font-weight:700; color:#64748B; text-transform:uppercase;">⚡ Stratejik Eylem Planı</div>
-            <div style="font-size:0.75rem; color:{current_theme['text']}; line-height:1.3;">
-                {analysis.get('action_plan', 'Veri bekleniyor...')}
-            </div>
-        </div>
-
+        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
+        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
+        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
+        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
+        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
+        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
     </div>
-    """)
-    st.markdown(html_content, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty: r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
+        if not row.empty:
+            r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty: r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
+        if not row.empty:
+            r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
     dt = get_tech_card_data(ticker)
     ma_t = "-"
-    if dt: ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
+    if dt:
+        ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">📋 Teknik Kart</div>
@@ -815,17 +772,39 @@ def render_detail_card(ticker):
 
 def render_tradingview_widget(ticker, height=650):
     tv_symbol = ticker
-    if ".IS" in ticker: tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
-    elif "=X" in ticker: tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-    html = f"""<div class="tradingview-widget-container"><div id="tradingview_chart"></div><script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script><script type="text/javascript">new TradingView.widget({{"width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr", "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true, "container_id": "tradingview_chart"}});</script></div>"""
+    if ".IS" in ticker:
+        tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+    elif "=X" in ticker:
+        tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
+    html = f"""
+    <div class="tradingview-widget-container">
+        <div id="tradingview_chart"></div>
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+        <script type="text/javascript">
+        new TradingView.widget({{
+            "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D",
+            "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr",
+            "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true,
+            "container_id": "tradingview_chart"
+        }});
+        </script>
+    </div>
+    """
     components.html(html, height=height)
 
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
         info = yf.Ticker(ticker).info
-        return {'price': info.get('currentPrice') or info.get('regularMarketPrice'), 'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0, 'volume': info.get('volume', 0), 'sector': info.get('sector', '-'), 'target': info.get('targetMeanPrice', '-')}
-    except: return None
+        return {
+            'price': info.get('currentPrice') or info.get('regularMarketPrice'),
+            'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0,
+            'volume': info.get('volume', 0),
+            'sector': info.get('sector', '-'),
+            'target': info.get('targetMeanPrice', '-')
+        }
+    except:
+        return None
 
 @st.cache_data(ttl=1200)
 def fetch_google_news(ticker):
@@ -835,17 +814,26 @@ def fetch_google_news(ticker):
         feed = feedparser.parse(rss_url)
         news = []
         for entry in feed.entries[:6]:
-            try: dt = datetime(*entry.published_parsed[:6])
-            except: dt = datetime.now()
+            try:
+                dt = datetime(*entry.published_parsed[:6])
+            except:
+                dt = datetime.now()
             if dt < datetime.now() - timedelta(days=10): continue
             pol = TextBlob(entry.title).sentiment.polarity
             color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
-            news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
+            news.append({
+                'title': entry.title,
+                'link': entry.link,
+                'date': dt.strftime('%d %b'),
+                'source': entry.source.title,
+                'color': color
+            })
         return news
-    except: return []
+    except:
+        return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
@@ -860,31 +848,52 @@ st.markdown(f"""
 
 # FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
-try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
-except ValueError: cat_index = 0
+try:
+    cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
+except ValueError:
+    cat_index = 0
 
 with col_cat:
-    st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+    st.selectbox(
+        "Kategori",
+        list(ASSET_GROUPS.keys()),
+        index=cat_index,
+        key="selected_category_key",
+        on_change=on_category_change,
+        label_visibility="collapsed"
+    )
 with col_ass:
     opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    try: asset_idx = opts.index(st.session_state.ticker)
-    except ValueError: asset_idx = 0
-    st.selectbox("Varlık Listesi", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed")
-with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
-with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
+    try:
+        asset_idx = opts.index(st.session_state.ticker)
+    except ValueError:
+        asset_idx = 0
+    st.selectbox(
+        "Varlık Listesi",
+        opts,
+        index=asset_idx,
+        key="selected_asset_key",
+        on_change=on_asset_change,
+        label_visibility="collapsed"
+    )
+with col_search_in:
+    st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
+with col_search_btn:
+    st.button("Ara", on_click=on_manual_button_click)
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
 # PROMPT TETİKLEYİCİ
-if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
+if 'generate_prompt' not in st.session_state:
+    st.session_state.generate_prompt = False
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     try:
         inf = yf.Ticker(t).info
         price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
-    except: price = "Bilinmiyor"
+    except:
+        price = "Bilinmiyor"
     
-    # STATİK PROMPT
     prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
 
 Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
@@ -910,7 +919,8 @@ Bana hikaye anlatma, net emirler ver:
 * GEÇERSİZLİK (STOP): (ATR veya Market Structure bozulma seviyesi neresi?)
 * HEDEF (TP): (Hangi likidite havuzu hedeflenmeli?)"""
     
-    with st.sidebar: st.code(prompt, language="text")
+    with st.sidebar:
+        st.code(prompt, language="text")
     st.session_state.generate_prompt = False
 
 # İÇERİK
@@ -921,22 +931,91 @@ with col_left:
     if info and info['price']:
         sc1, sc2, sc3, sc4 = st.columns(4)
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-        sc1.markdown(f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
-        sc2.markdown(f'<div class="stat-box-small"><p class="stat-label-small">HACİM</p><p class="stat-value-small money-text">{info["volume"]/1e6:.1f}M</p></div>', unsafe_allow_html=True)
-        sc3.markdown(f'<div class="stat-box-small"><p class="stat-label-small">HEDEF</p><p class="stat-value-small money-text">{info["target"]}</p></div>', unsafe_allow_html=True)
-        sc4.markdown(f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p><p class="stat-value-small">{str(info["sector"])[:12]}</p></div>', unsafe_allow_html=True)
+        sc1.markdown(
+            f'<div class="stat-box-small"><p class="stat-label-small">FİYAT</p>'
+            f'<p class="stat-value-small money-text">{info["price"]:.2f}'
+            f'<span class="stat-delta-small {cls}">'
+            f'{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%'
+            f'</span></p></div>',
+            unsafe_allow_html=True
+        )
+        sc2.markdown(
+            f'<div class="stat-box-small"><p class="stat-label-small">HACİM</p>'
+            f'<p class="stat-value-small money-text">{info["volume"]/1e6:.1f}M</p></div>',
+            unsafe_allow_html=True
+        )
+        sc3.markdown(
+            f'<div class="stat-box-small"><p class="stat-label-small">HEDEF</p>'
+            f'<p class="stat-value-small money-text">{info["target"]}</p></div>',
+            unsafe_allow_html=True
+        )
+        sc4.markdown(
+            f'<div class="stat-box-small"><p class="stat-label-small">SEKTÖR</p>'
+            f'<p class="stat-value-small">{str(info["sector"])[:12]}</p></div>',
+            unsafe_allow_html=True
+        )
     
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
     render_ict_panel(calculate_ict_concepts(st.session_state.ticker))
     
-    st.markdown("<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 Haber Akışı</div>", unsafe_allow_html=True)
-    news = fetch_google_news(st.session_state.ticker)
-    if news:
-        cols = st.columns(2)
-        for i, n in enumerate(news):
-            with cols[i%2]: st.markdown(f"""<div class="news-card" style="border-left-color: {n['color']};"><a href="{n['link']}" target="_blank" class="news-title">{n['title']}</a><div class="news-meta">{n['date']} • {n['source']}</div></div>""", unsafe_allow_html=True)
-    else: st.info("Haber yok.")
+    # --- GÜNCELLENEN HABER BAŞLIĞI ---
+    st.markdown(
+        f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>",
+        unsafe_allow_html=True
+    )
+
+    # --- HABER AKIŞI: SABİT HABER SİTESİ LİNKLERİ (SeekingAlpha, Yahoo, Nasdaq, StockAnalysis, Finviz, UnusualWhales) ---
+    symbol_raw = st.session_state.ticker
+
+    base_symbol = (
+        symbol_raw.replace(".IS", "")
+                  .replace("=F", "")
+                  .replace("-USD", "")
+    )
+    lower_symbol = base_symbol.lower()
+
+    seekingalpha_url   = f"https://seekingalpha.com/symbol/{base_symbol}/news"
+    yahoo_url          = f"https://finance.yahoo.com/quote/{base_symbol}/news"
+    nasdaq_url         = f"https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines"
+    stockanalysis_url  = f"https://stockanalysis.com/stocks/{lower_symbol}/"
+    finviz_url         = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
+    unusual_url        = f"https://unusualwhales.com/stock/{base_symbol}/overview"
+
+    st.markdown(f"""
+    <div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;">
+        <a href="{seekingalpha_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                SeekingAlpha
+            </div>
+        </a>
+        <a href="{yahoo_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                Yahoo Finance
+            </div>
+        </a>
+        <a href="{nasdaq_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                Nasdaq
+            </div>
+        </a>
+        <a href="{stockanalysis_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                StockAnalysis
+            </div>
+        </a>
+        <a href="{finviz_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                Finviz
+            </div>
+        </a>
+        <a href="{unusual_url}" target="_blank" style="text-decoration:none;">
+            <div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">
+                UnusualWhales
+            </div>
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
@@ -948,7 +1027,10 @@ with col_right:
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
 
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e3a8a; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>",
+        unsafe_allow_html=True
+    )
     with st.container(height=250):
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
@@ -971,43 +1053,42 @@ with col_right:
                         "r1_score": r1_score,
                         "r2_score": r2_score,
                         "combined": combined_score,
-                        "r1_max": 8, # R1 maksimum skor 8
-                        "r2_max": 8  # R2 maksimum skor 8
+                        "r1_max": 8,
+                        "r2_max": 8
                     })
                 
-                # Toplam skora göre sıralama
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
                 
                 for i, item in enumerate(sorted_commons):
                     sym = item["symbol"]
                     
-                    # Derece ikonu
                     if i == 0: rank = "🥇"
                     elif i == 1: rank = "🥈"
                     elif i == 2: rank = "🥉"
                     else: rank = f"{i+1}."
 
-                    # Hata vermeyecek SAF METİN formatı
                     score_text_safe = (
                         f"{rank} {sym} ({int(item['combined'])}/{item['r1_max'] + item['r2_max']}) | "
                         f"R1:{int(item['r1_score'])}/{item['r1_max']} | R2:{int(item['r2_score'])}/{item['r2_max']}"
                     )
                     
-                    # Kullanıcı arayüzünde tek bir tıklanabilir satır oluşturma (Streamlit'e uygun)
-                    # st.columns oranı yeni padding değerlerine göre optimize edildi
                     c1, c2 = st.columns([0.2, 0.8]) 
                     
-                    # ★ Butonu (İzleme Listesi)
                     is_watchlist = sym in st.session_state.watchlist
                     star_icon = "★" if is_watchlist else "☆"
 
-                    if c1.button(star_icon, key=f"c_star_{sym}", help="İzleme Listesine Ekle/Kaldır"): toggle_watchlist(sym); st.rerun()
+                    if c1.button(star_icon, key=f"c_star_{sym}", help="İzleme Listesine Ekle/Kaldır"):
+                        toggle_watchlist(sym)
+                        st.rerun()
                     
-                    # Ana Sembol Butonu (Hisse Seçimi) - Saf metin kullanıldı (Hata düzeltildi)
-                    if c2.button(score_text_safe, key=f"c_select_{sym}", help="Detaylar için seç"): on_scan_result_click(sym); st.rerun()
+                    if c2.button(score_text_safe, key=f"c_select_{sym}", help="Detaylar için seç"):
+                        on_scan_result_click(sym)
+                        st.rerun()
 
-            else: st.info("Kesişim yok.")
-        else: st.caption("İki radar da çalıştırılmalı.")
+            else:
+                st.info("Kesişim yok.")
+        else:
+            st.caption("İki radar da çalıştırılmalı.")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -1015,30 +1096,48 @@ with col_right:
     
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
-            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+            with st.spinner("Taranıyor..."):
+                st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.scan_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.scan_data.iterrows():
-                    sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"): on_scan_result_click(sym); st.rerun()
+                    sym = row["Sembol"]
+                    c1, c2 = st.columns([0.2, 0.8])
+                    if c1.button("★", key=f"r1_{i}"):
+                        toggle_watchlist(sym)
+                        st.rerun()
+                    if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"):
+                        on_scan_result_click(sym)
+                        st.rerun()
                     st.caption(row['Nedenler'])
 
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary"):
-            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+            with st.spinner("Taranıyor..."):
+                st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.radar2_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.radar2_data.iterrows():
-                    sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"): on_scan_result_click(sym); st.rerun()
+                    sym = row["Sembol"]
+                    c1, c2 = st.columns([0.2, 0.8])
+                    if c1.button("★", key=f"r2_{i}"):
+                        toggle_watchlist(sym)
+                        st.rerun()
+                    if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"):
+                        on_scan_result_click(sym)
+                        st.rerun()
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
 
     with tab3:
         if st.button("⚡ Listeyi Tara", type="secondary"):
-            with st.spinner("..."): st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
+            with st.spinner("..."):
+                st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
         for sym in st.session_state.watchlist:
             c1, c2 = st.columns([0.2, 0.8])
-            if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
-            if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+            if c1.button("❌", key=f"wl_d_{sym}"):
+                toggle_watchlist(sym)
+                st.rerun()
+            if c2.button(sym, key=f"wl_g_{sym}"):
+                on_scan_result_click(sym)
+                st.rerun()
+
