@@ -506,69 +506,45 @@ def get_deep_xray_data(ticker):
 def calculate_ict_concepts(ticker):
     try:
         df = yf.download(ticker, period="6mo", progress=False)
-        if df.empty:
-            return None
-
-        if isinstance(df.columns, pd.MultiIndex):
+        if df.empty: return None
+        
+        if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
-
-        close = df["Close"]
-        high = df["High"]
-        low = df["Low"]
-        open_p = df["Open"]
+            
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        open_p = df['Open']
         curr_price = float(close.iloc[-1])
-
+        
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
 
-        # Fraktal Swing Noktaları
         swing_highs = []
         swing_lows = []
-        for i in range(2, len(df) - 2):
-            if (
-                high.iloc[i] > high.iloc[i - 1]
-                and high.iloc[i] > high.iloc[i - 2]
-                and high.iloc[i] > high.iloc[i + 1]
-                and high.iloc[i] > high.iloc[i + 2]
-            ):
+        
+        for i in range(2, len(df)-2):
+            if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
+               high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
                 swing_highs.append((i, float(high.iloc[i])))
-            if (
-                low.iloc[i] < low.iloc[i - 1]
-                and low.iloc[i] < low.iloc[i - 2]
-                and low.iloc[i] < low.iloc[i + 1]
-                and low.iloc[i] < low.iloc[i + 2]
-            ):
+            if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
+               low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
                 swing_lows.append((i, float(low.iloc[i])))
-
+                
         if not swing_highs or not swing_lows:
             return {
-                "summary": "Veri Yetersiz",
-                "structure": "-",
-                "position": "-",
-                "fvg": "-",
-                "ob": "-",
-                "ob_label": "-",
-                "liquidity": "-",
-                "liq_label": "-",
-                "eqh": "-",
-                "fibo": "-",
-                "bb": "-",
-                "golden_text": "-",
-                "golden_setup": False,
-                "ote_zone": "-",
-                "ote_distance": "-",
-                "rr_text": "-",
-                "magnet_text": "-",
-                "structure_character": "-",
+                "summary": "Veri Yetersiz", "structure": "-", "position": "-",
+                "fvg": "-", "ob": "-", "ob_label": "-", "liquidity": "-",
+                "liq_label": "-", "eqh": "-", "fibo": "-", "bb": "-",
+                "golden_text": "-", "golden_setup": False
             }
 
-        last_sh_idx, last_sh = swing_highs[-1]
-        last_sl_idx, last_sl = swing_lows[-1]
-
-        # Market Yapısı & Bias
+        last_sh = swing_highs[-1][1]
+        last_sl = swing_lows[-1][1]
+        
         structure_verdict = "KONSOLİDASYON"
         bias = "Nötr"
-
+        
         if curr_price > last_sh:
             structure_verdict = "BULLISH (BOS)"
             bias = "Long"
@@ -583,14 +559,13 @@ def calculate_ict_concepts(ticker):
                 structure_verdict = "BULLISH (Internal)"
                 bias = "Long"
 
-        # Dealing Range
         range_high = last_sh
         range_low = last_sl
-        mid_point = (range_high + range_low) / 2.0
-
-        # Konum
+        mid_point = (range_high + range_low) / 2
+        
         position_label = "DENGEDE"
         is_discount = False
+        
         if curr_price < mid_point:
             is_discount = True
             if curr_price < range_low:
@@ -604,142 +579,42 @@ def calculate_ict_concepts(ticker):
             else:
                 position_label = "PREMIUM (Pahalı)"
 
-        # OTE (0.62–0.79)
-        ote_zone = "-"
-        ote_distance_text = "-"
-        if range_high > range_low and bias in ("Long", "Short"):
-            dr = range_high - range_low
-
-            if bias == "Long":
-                ote_low = range_low + dr * 0.62
-                ote_high = range_low + dr * 0.79
-            else:
-                ote_high = range_high - dr * 0.62
-                ote_low = range_high - dr * 0.79
-                if ote_low > ote_high:
-                    ote_low, ote_high = ote_high, ote_low
-
-            ote_zone = f"{ote_low:.2f} - {ote_high:.2f}$"
-
-            if ote_low <= curr_price <= ote_high:
-                ote_distance_text = "🎯 Fiyat OTE bölgesi içinde"
-            elif curr_price < ote_low:
-                dist = (ote_low - curr_price) / curr_price * 100
-                ote_distance_text = f"⬆ OTE'ye {dist:.1f}% mesafe"
-            else:
-                dist = (curr_price - ote_high) / curr_price * 100
-                ote_distance_text = f"⬇ OTE'nin {dist:.1f}% dışında"
-        else:
-            ote_distance_text = "OTE sadece net trend olduğunda anlamlı"
-
-        # FVG (ATR filtresi)
         valid_fvgs = []
-        for i in range(len(df) - 2, max(len(df) - 30, 2), -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i - 2]:
-                gap_size = low.iloc[i] - high.iloc[i - 2]
-                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i - 2]:
-                    valid_fvgs.append(f"🟢 {high.iloc[i - 2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i - 2]:
-                gap_size = low.iloc[i - 2] - high.iloc[i]
-                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i - 2]:
-                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i - 2]:.2f}")
-            if valid_fvgs:
+        for i in range(len(df)-2, len(df)-30, -1):
+            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
+                gap_size = low.iloc[i] - high.iloc[i-2]
+                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
+                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
+            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
+                gap_size = low.iloc[i-2] - high.iloc[i]
+                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
+                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
+            if len(valid_fvgs) >= 1:
                 break
-
+            
         fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
 
-        # Order Block & Likidite
         ob_text = "-"
-        ob_lbl = "Güvenli Giriş"
         liq_target = "-"
-        target_price = None
-        stop_price = None
-
+        ob_lbl = "Güvenli Giriş"
+        
         if bias == "Long":
             liq_target = f"{last_sh:.2f}$ (BSL)"
-            target_price = last_sh
-
-            recent_sl_idx = last_sl_idx
+            recent_sl_idx = swing_lows[-1][0]
             ob_low = low.iloc[recent_sl_idx]
             ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
             ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
             ob_lbl = "Bullish OB"
-            stop_price = float(ob_low)
-
         elif bias == "Short":
             liq_target = f"{last_sl:.2f}$ (SSL)"
-            target_price = last_sl
-
-            recent_sh_idx = last_sh_idx
+            recent_sh_idx = swing_highs[-1][0]
             ob_high_val = high.iloc[recent_sh_idx]
             ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
             ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
             ob_lbl = "Bearish OB"
-            stop_price = float(ob_high_val)
-
-        # R:R
-        rr = None
-        rr_text = "R:R hesaplanamadı"
-        if target_price is not None and stop_price is not None:
-            if bias == "Long" and curr_price > stop_price and target_price > curr_price:
-                risk = curr_price - stop_price
-                reward = target_price - curr_price
-                if risk > 0 and reward > 0:
-                    rr = reward / risk
-            elif bias == "Short" and curr_price < stop_price and target_price < curr_price:
-                risk = stop_price - curr_price
-                reward = curr_price - target_price
-                if risk > 0 and reward > 0:
-                    rr = reward / risk
-
-        if rr is not None:
-            if rr < 1.5:
-                rr_text = f"⚠️ Zayıf R:R (1:{rr:.2f})"
-            elif rr < 3:
-                rr_text = f"🟡 Orta R:R (1:{rr:.2f})"
-            else:
-                rr_text = f"✅ Güçlü R:R (1:{rr:.2f})"
-        else:
-            rr_text = "R:R geçerli değil (hedef/stop konumu sorunlu)"
-
-        # Mıknatıs (Likidite Mesafesi)
-        magnet_text = "-"
-        if bias == "Long" and last_sh > curr_price:
-            pot = (last_sh - curr_price) / curr_price * 100
-            magnet_text = f"+{pot:.1f}% potansiyel (BSL)"
-        elif bias == "Short" and last_sl < curr_price:
-            pot = (curr_price - last_sl) / curr_price * 100
-            magnet_text = f"+{pot:.1f}% potansiyel (SSL)"
-        elif liq_target != "-":
-            magnet_text = "Hedefe çok yakın / ulaşılmış"
-
-        # Yapı Karakteri (Strong / Weak / SFP)
-        structure_character = "-"
-        last_high = float(high.iloc[-1])
-        last_low = float(low.iloc[-1])
-        last_open = float(open_p.iloc[-1])
-        last_close = float(close.iloc[-1])
-        rng = last_high - last_low if last_high > last_low else 0.0
-
-        if "BULLISH" in structure_verdict and rng > 0:
-            if last_high > last_sh and last_close < last_sh:
-                structure_character = "Zayıf Bullish / SFP"
-            elif abs(last_close - last_open) / rng > 0.6 and last_close > last_open:
-                structure_character = "Güçlü Bullish Gövde"
-            else:
-                structure_character = "Orta Güçte Bullish"
-        elif "BEARISH" in structure_verdict and rng > 0:
-            if last_low < last_sl and last_close > last_sl:
-                structure_character = "Zayıf Bearish / SFP"
-            elif abs(last_close - last_open) / rng > 0.6 and last_close < last_open:
-                structure_character = "Güçlü Bearish Gövde"
-            else:
-                structure_character = "Orta Güçte Bearish"
-        elif "KONSOLİDASYON" in structure_verdict:
-            structure_character = "Kutu / Range"
-
+            
         summary_line = f"🧩 YAPI: {structure_verdict} | KONUM: {position_label}"
-
+        
         golden_setup = False
         golden_txt = "-"
         if bias == "Long" and is_discount and "🟢" in fvg_text:
@@ -762,12 +637,7 @@ def calculate_ict_concepts(ticker):
             "fibo": f"EQ: {mid_point:.2f}$",
             "bb": "-",
             "golden_text": golden_txt,
-            "golden_setup": golden_setup,
-            "ote_zone": ote_zone,
-            "ote_distance": ote_distance_text,
-            "rr_text": rr_text,
-            "magnet_text": magnet_text,
-            "structure_character": structure_character,
+            "golden_setup": golden_setup
         }
     except Exception:
         return None
@@ -861,76 +731,19 @@ def render_radar_params_card():
     """, unsafe_allow_html=True)
 
 def render_ict_panel(analysis):
-    if not analysis:
-        return
+    if not analysis: return
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT & Price Action</div>
-
-        <!-- Özet Satırı -->
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">
-                {analysis['summary']}
-            </div>
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">{analysis['summary']}</div>
         </div>
-
-        <!-- Yapı & Karakter -->
-        <div class="info-row">
-            <div class="label-long">Genel Yön:</div>
-            <div class="info-val">
-                {analysis['structure']} &nbsp;|&nbsp; {analysis.get('structure_character', '')}
-            </div>
-        </div>
-
-        <!-- Konum & OTE -->
-        <div class="info-row">
-            <div class="label-long">Konum / OTE:</div>
-            <div class="info-val">
-                {analysis['position']}<br/>
-                <span style="font-size:0.65rem; color:#10b981;">
-                    🎯 OTE: {analysis.get('ote_zone', '-')} &nbsp;|&nbsp; {analysis.get('ote_distance', '')}
-                </span>
-            </div>
-        </div>
-
-        <!-- OB & R:R -->
-        <div class="info-row">
-            <div class="label-long">Destek ({analysis['ob_label']}):</div>
-            <div class="info-val">
-                {analysis['ob']}<br/>
-                <span style="font-size:0.65rem; color:#f97316;">
-                    {analysis.get('rr_text', '')}
-                </span>
-            </div>
-        </div>
-
-        <!-- FVG & Golden -->
-        <div class="info-row">
-            <div class="label-long">Fırsat (FVG):</div>
-            <div class="info-val">
-                {analysis['fvg']}<br/>
-                <span style="font-size:0.65rem; color:#e11d48;">
-                    {analysis.get('golden_text', '')}
-                </span>
-            </div>
-        </div>
-
-        <!-- Likidite / Mıknatıs -->
-        <div class="info-row">
-            <div class="label-long">Mıknatıs ({analysis['liq_label']}):</div>
-            <div class="info-val">
-                {analysis['eqh']}<br/>
-                <span style="font-size:0.65rem; color:#6366f1;">
-                    🧲 {analysis.get('magnet_text', '')}
-                </span>
-            </div>
-        </div>
-
-        <!-- Dealing Range Orta Nokta -->
-        <div class="info-row">
-            <div class="label-long">EQ / Orta Hat:</div>
-            <div class="info-val">{analysis['fibo']}</div>
-        </div>
+        <div class="info-row"><div class="label-long">Genel Yön:</div><div class="info-val">{analysis['structure']}</div></div>
+        <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{analysis['position']}</div></div>
+        <div class="info-row"><div class="label-long">Destek ({analysis['ob_label']}):</div><div class="info-val">{analysis['ob']}</div></div>
+        <div class="info-row"><div class="label-long">Fırsat (FVG):</div><div class="info-val">{analysis['fvg']}</div></div>
+        <div class="info-row"><div class="label-long">Mıknatıs ({analysis['liq_label']}):</div><div class="info-val">{analysis['eqh']}</div></div>
+        <div class="info-row"><div class="label-long">Golden Setup:</div><div class="info-val">{analysis['golden_text']}</div></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1327,3 +1140,4 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
