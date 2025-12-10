@@ -91,6 +91,20 @@ st.markdown(f"""
     
     .header-logo {{ width: 40px; height: auto; margin-right: 10px; }}
 
+    /* ORTAK FIRSATLAR LİSTE SATIRLARI */
+    .opportunity-item {{
+        display: flex; justify-content: space-between; align-items: center;
+        background: {current_theme['box_bg']}; padding: 4px 6px; 
+        border: 1px solid {current_theme['border']}; border-radius: 4px;
+        margin-bottom: 2px; /* SATIR ARASI BOŞLUĞU %50 AZALTMA (4px -> 2px) */
+        cursor: pointer; transition: background 0.1s;
+        font-size: 0.7rem; /* YAZI BOYUTUNU 0.8rem'den KÜÇÜLTME */
+    }}
+    .opportunity-item:hover {{ background: #f0f4f8; }}
+    .opp-score {{ font-weight: 700; color: #1e40af; font-family: 'JetBrains Mono', monospace; }}
+    .opp-detail {{ font-size: 0.65rem; color: #64748B; }}
+    .opp-star {{ color: #FFD700; margin-left: 8px; cursor: pointer; }}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -123,7 +137,7 @@ def remove_watchlist_db(symbol):
     conn.close()
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ ---
+# --- VARLIK LİSTELERİ (GÜNCELLENMİŞ VE SIRALI) ---
 raw_sp500 = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
     "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM",
@@ -155,12 +169,18 @@ raw_sp500 = [
     "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", "AAL", "CF",
     "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
 ]
+
+# Patronun Özel Hisseleri Eklendi
 raw_sp500.extend(["AGNC", "ARCC", "JEPI", "EPD"])
+
+# Kripto Listesi
 raw_crypto = [
-    "GC=F", "SI=F",
+    "GC=F", "SI=F", # Altın ve Gümüş
     "BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "AVAX-USD", "SOL-USD", 
     "DOGE-USD", "TRX-USD", "ADA-USD", "LINK-USD", "XLM-USD", "LTC-USD"
 ]
+
+# Nasdaq 100
 raw_nasdaq = [
     "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST",
     "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN",
@@ -174,11 +194,13 @@ raw_nasdaq = [
     "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
 ]
 
+# Otomatik Alfabetik Sıralama (A-Z)
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))),
+    "S&P 500 (TOP 300)": sorted(list(set(raw_sp500))), # Set ile çiftleri temizledik, sorted ile sıraladık
     "NASDAQ (TOP 100)": sorted(list(set(raw_nasdaq))),
     "EMTİA & KRİPTO": sorted(list(set(raw_crypto)))
 }
+
 INITIAL_CATEGORY = "S&P 500 (TOP 300)"
 
 # --- STATE ---
@@ -224,7 +246,7 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
-# --- ANALİZ MOTORLARI ---
+# --- ANALİZ MOTORLARI (CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     signals = []
@@ -410,28 +432,32 @@ def calculate_ict_concepts(ticker):
         open_p = df['Open']
         curr_price = float(close.iloc[-1])
         
-        # Volatilite (ATR) Hesabı
+        # Volatilite (ATR) Hesabı (FVG Filtresi için)
         atr = (high - low).rolling(14).mean()
         current_atr = float(atr.iloc[-1]) if not atr.empty else 1.0
 
-        # 1. SWING NOKTALARI (Fractals)
+        # 1. FRAKTAL GEOMETRİ: GERÇEK SWING NOKTALARI
+        # Tepe için: Solunda ve sağında 2'şer düşük tepe olmalı.
         swing_highs = []
         swing_lows = []
         
         for i in range(2, len(df)-2):
+            # Swing High
             if high.iloc[i] > high.iloc[i-1] and high.iloc[i] > high.iloc[i-2] and \
                high.iloc[i] > high.iloc[i+1] and high.iloc[i] > high.iloc[i+2]:
                 swing_highs.append((i, float(high.iloc[i])))
+            # Swing Low
             if low.iloc[i] < low.iloc[i-1] and low.iloc[i] < low.iloc[i-2] and \
                low.iloc[i] < low.iloc[i+1] and low.iloc[i] < low.iloc[i+2]:
                 swing_lows.append((i, float(low.iloc[i])))
                 
+        # Swing noktaları yoksa (yeni halka arz vb.)
         if not swing_highs or not swing_lows:
             return {"summary": "Veri Yetersiz", "structure": "-", "position": "-", "fvg": "-", "ob": "-", "ob_label": "-", "eqh": "-", "rr_text": "-", "golden_text": "-"}
 
         # 2. MARKET YAPISI & KARAKTER (BOS Strength)
-        last_sh = swing_highs[-1][1]
-        last_sl = swing_lows[-1][1]
+        last_sh = swing_highs[-1][1] # Son Swing High
+        last_sl = swing_lows[-1][1]  # Son Swing Low
         
         structure_verdict = "KONSOLİDASYON"
         bias = "Nötr"
@@ -455,19 +481,22 @@ def calculate_ict_concepts(ticker):
             else:
                 structure_char = "⚠️ ZAYIF (Olası SFP)"
         else:
-            # İç yapı
+            # İç yapı kontrolü (Internal Structure)
             structure_verdict = "RANGE (Yatay)"
             bias = "Nötr"
 
         # 3. DEALING RANGE & OTE (Optimal Trade Entry)
+        # Mevcut işlem aralığı son swing high ve low arasıdır
         range_high = last_sh
         range_low = last_sl
         mid_point = (range_high + range_low) / 2
         
         position_label = "DENGEDE"
+        is_discount = False
+        
         ote_zone_text = "-"
         ote_dist_text = ""
-        ote_entry_price = mid_point # Varsayılan giriş
+        ote_entry_price = mid_point # Varsayılan
         
         # OTE Hesaplama (Fib 0.62 - 0.79)
         range_size = range_high - range_low
@@ -481,6 +510,7 @@ def calculate_ict_concepts(ticker):
             ote_entry_price = (ote_low_fib + ote_high_fib) / 2
             
             if curr_price < mid_point:
+                is_discount = True
                 position_label = "DISCOUNT (Alım Fırsatı)"
                 if ote_low_fib <= curr_price <= ote_high_fib:
                     ote_dist_text = "✅ Fiyat OTE İçinde!"
@@ -488,6 +518,7 @@ def calculate_ict_concepts(ticker):
                     dist = ((curr_price - ote_high_fib) / curr_price) * 100
                     ote_dist_text = f"OTE'ye Uzaklık: %{dist:.1f}"
             else:
+                is_discount = False
                 position_label = "PREMIUM (Pahalı)"
                 
         elif bias == "Short" or (bias == "Nötr" and curr_price > mid_point):
@@ -499,6 +530,7 @@ def calculate_ict_concepts(ticker):
             ote_entry_price = (ote_low_fib + ote_high_fib) / 2
             
             if curr_price > mid_point:
+                is_discount = False
                 position_label = "PREMIUM (Satış Fırsatı)"
                 if ote_low_fib <= curr_price <= ote_high_fib:
                     ote_dist_text = "✅ Fiyat OTE İçinde!"
@@ -506,32 +538,48 @@ def calculate_ict_concepts(ticker):
                     dist = ((ote_low_fib - curr_price) / curr_price) * 100
                     ote_dist_text = f"OTE'ye Uzaklık: %{dist:.1f}"
             else:
+                is_discount = True
                 position_label = "DISCOUNT (Ucuz)"
 
         # 4. FVG VE ORDER BLOCK
         valid_fvgs = []
         for i in range(len(df)-2, len(df)-30, -1):
-            if bias == "Long" and low.iloc[i] > high.iloc[i-2]:
-                gap = low.iloc[i] - high.iloc[i-2]
-                if gap > current_atr * 0.2: valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
-            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]:
-                gap = low.iloc[i-2] - high.iloc[i]
-                if gap > current_atr * 0.2: valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
-            if len(valid_fvgs) >= 1: break
+            if bias == "Long" and low.iloc[i] > high.iloc[i-2]: # Bullish Gap
+                gap_size = low.iloc[i] - high.iloc[i-2]
+                if gap_size > current_atr * 0.2 and curr_price > high.iloc[i-2]:
+                    valid_fvgs.append(f"🟢 {high.iloc[i-2]:.2f}-{low.iloc[i]:.2f}")
+            elif bias == "Short" and high.iloc[i] < low.iloc[i-2]: # Bearish Gap
+                gap_size = low.iloc[i-2] - high.iloc[i]
+                if gap_size > current_atr * 0.2 and curr_price < low.iloc[i-2]:
+                    valid_fvgs.append(f"🔴 {high.iloc[i]:.2f}-{low.iloc[i-2]:.2f}")
+            if len(valid_fvgs) >= 1: break # En yakını al
+            
         fvg_text = valid_fvgs[0] if valid_fvgs else "Belirgin Gap Yok"
 
         ob_text = "-"
+        liq_target = "-"
         ob_lbl = "Destek"
+        
         if bias == "Long":
+            # Hedef: Son Zirve (Buy Side Liquidity)
+            liq_target = f"{last_sh:.2f}$ (BSL)"
+            # Giriş: Son Dibi Yapan Hareketin Başlangıcı
             recent_sl_idx = swing_lows[-1][0]
-            ob_text = f"🛡️ {low.iloc[recent_sl_idx]:.2f} - {max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx]):.2f}$"
+            ob_low = low.iloc[recent_sl_idx]
+            ob_high = max(open_p.iloc[recent_sl_idx], close.iloc[recent_sl_idx])
+            ob_text = f"🛡️ {ob_low:.2f} - {ob_high:.2f}$"
             ob_lbl = "Bullish OB"
         elif bias == "Short":
+            # Hedef: Son Dip (Sell Side Liquidity)
+            liq_target = f"{last_sl:.2f}$ (SSL)"
+            # Giriş: Son Tepeyi Yapan Hareketin Başlangıcı
             recent_sh_idx = swing_highs[-1][0]
-            ob_text = f"⚔️ {min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx]):.2f} - {high.iloc[recent_sh_idx]:.2f}$"
+            ob_high_val = high.iloc[recent_sh_idx]
+            ob_low_val = min(open_p.iloc[recent_sh_idx], close.iloc[recent_sh_idx])
+            ob_text = f"⚔️ {ob_low_val:.2f} - {ob_high_val:.2f}$"
             ob_lbl = "Bearish OB"
 
-        # 5. HEDEF, STOP VE R:R
+        # 5. HEDEF, STOP VE R:R (YENİ)
         liq_target_price = 0
         stop_loss_price = 0
         magnet_text = "-"
@@ -541,6 +589,7 @@ def calculate_ict_concepts(ticker):
             liq_target_price = last_sh
             stop_loss_price = last_sl
             magnet_text = f"${liq_target_price:.2f} (BSL - Buy Side Liq)"
+            # R:R Hesapla: Hedef - Giriş / Giriş - Stop
             if ote_entry_price > stop_loss_price:
                 risk = ote_entry_price - stop_loss_price
                 reward = liq_target_price - ote_entry_price
@@ -576,6 +625,7 @@ def calculate_ict_concepts(ticker):
         else: # Nötr/Range
             action_plan = f"Yatay piyasa. Range Low ({range_low:.2f}) alım, Range High ({range_high:.2f}) satış için izle."
 
+        # ÖZET VE FORMATLAMA
         summary_line = f"🧩 ÖZET: {structure_verdict} | KONUM: {position_label}"
         golden_txt = "Var" if (bias != "Nötr" and "OTE İçinde" in ote_dist_text) else "-"
 
@@ -605,22 +655,10 @@ def get_tech_card_data(ticker):
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']
-        sma50 = close.rolling(50).mean().iloc[-1]
-        sma100 = close.rolling(100).mean().iloc[-1]
-        sma200 = close.rolling(200).mean().iloc[-1]
-        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
+        sma50 = close.rolling(50).mean().iloc[-1]; sma100 = close.rolling(100).mean().iloc[-1]; sma200 = close.rolling(200).mean().iloc[-1]; ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
         atr = (high-low).rolling(14).mean().iloc[-1]
-        return {
-            "sma50": sma50,
-            "sma100": sma100,
-            "sma200": sma200,
-            "ema144": ema144,
-            "stop_level": close.iloc[-1] - (2 * atr),
-            "risk_pct": (2 * atr) / close.iloc[-1] * 100,
-            "atr": atr
-        }
+        return {"sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144, "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100, "atr": atr}
     except: return None
-
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
@@ -687,12 +725,11 @@ def render_radar_params_card():
 def render_ict_panel(analysis):
     if not analysis: return
     
-    # Strateji Metni için Renk (Basit logic)
-    action_color = "#166534" # Yeşil tonu varsayılan
-    if "SATIŞ" in analysis['action_plan']: action_color = "#991b1b" # Kırmızı tonu
-    elif "İZLE" in analysis['action_plan']: action_color = "#854d0e" # Sarı tonu
+    action_color = "#166534" 
+    if "SATIŞ" in analysis['action_plan']: action_color = "#991b1b" 
+    elif "İZLE" in analysis['action_plan']: action_color = "#854d0e"
 
-    st.markdown(f"""
+    html_content = textwrap.dedent(f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT & Price Action | Analiz</div>
         
@@ -753,7 +790,8 @@ def render_ict_panel(analysis):
         </div>
 
     </div>
-    """, unsafe_allow_html=True)
+    """)
+    st.markdown(html_content, unsafe_allow_html=True)
 
 def render_detail_card(ticker):
     r1_t = "Veri yok"; r2_t = "Veri yok"
@@ -807,7 +845,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2/8H8O6n/2Ls/v8Xf+3f/w/GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+FwOBwOh8PhcDg/I+7H8zz/i2E3/uI4/o1xM0L4F8d2hPA/jqsRwj84niOEf26cRgj/2HiOENZ3H/8B4/z57mP4AONqhPDnjf+CceOC8a2t+wfj2l+96lWvevWrX/36L8Jm3b3z/cbtxPCPi+0J4R+3d/9w++K9Y2xPCA9jrO4fbq961ate9apXvesq4+p7hPfPzWeG+5vZHr/iVzW2J4R3MLYnhHcwtifE8I7G1v4BPvKvGdsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijO2J4R2MbQjhHYytCeEdjG0J4R2MbQjhHYwtCeEdiv//gfmM2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNsTwjsY2xPCOxjbE8I7GNv/B/Duf4ixNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOxNSG8g7E1IbyDsTUhvIOx/X8A7/6HGNsTwjsY2xPCOxjbE8I7GNv/B/Dup/9ijE0I72BsTgjvYMxHCA+Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
