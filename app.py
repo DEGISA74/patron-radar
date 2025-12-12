@@ -12,10 +12,13 @@ import os
 import textwrap
 import concurrent.futures
 import re  # HTML temizliği için eklendi
+import requests # Telegram için
+import time     # Zamanlama için
+import threading # Arka plan işlemi için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.5 (ICT Hybrid)",
+    page_title="Patronun Terminali v5.0 (ICT + Ajan)",
     layout="wide",
     page_icon="🐂"
 )
@@ -832,6 +835,98 @@ def get_tech_card_data(ticker):
     except:
         return None
 
+# --- AJAN: ARKA PLAN TARAMA SERVİSİ (TELEGRAM) ---
+# DİKKAT: Buradaki bilgileri kendi bot bilgilerinizle değiştirin.
+
+TELEGRAM_BOT_TOKEN = "8505517682:AAHLJI9Tqp72ToZQqohADN48GtWq2XBobXo"  # Örn: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+TELEGRAM_CHAT_ID = "1034525990"     # Örn: "123456789" (Sadece rakam)
+
+def send_private_telegram(msg):
+    """Sadece tanımlı tek kişiye mesaj atar."""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"}
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"Telegram Gönderim Hatası: {e}")
+
+def scanner_job():
+    """Arka planda çalışacak asıl işçi fonksiyon"""
+    print("--- 🕵️ AJAN BAŞLATILDI: Arka Plan Taraması Aktif ---")
+    
+    while True:
+        try:
+            # TÜM LİSTELERİ BİRLEŞTİR
+            # Hepsini taramak uzun sürer ama patron emretti.
+            full_scan_list = final_bist100_list + final_sp500_list + final_crypto_list
+            
+            # (Test için listeyi kısaltmak istersen burayı aç: full_scan_list = full_scan_list[:10])
+            
+            found_msg = []
+            
+            for symbol in full_scan_list:
+                try:
+                    # ICT Analizini çağır
+                    # Burada cache kullanmak yerine direkt çağırıyoruz, 
+                    # çünkü st.cache thread içinde bazen sorun çıkarabilir.
+                    # Ama fonksiyonumuz @st.cache_data ile süslü olduğu için Streamlit bunu yönetir.
+                    analysis = calculate_ict_concepts(symbol)
+                    
+                    # Eğer analiz başarılıysa ve GOLDEN varsa
+                    if analysis and analysis.get("is_golden", False):
+                        # Fiyatı çekelim
+                        price_info = fetch_stock_info(symbol)
+                        price_val = price_info['price'] if price_info else "?"
+                        
+                        txt = (
+                            f"🔥 *{symbol}*\n"
+                            f"Sinyal: {analysis['golden_text']}\n"
+                            f"Konum: {analysis['pos_label']} (%{analysis['range_pos_pct']:.1f})\n"
+                            f"Fiyat: {price_val}"
+                        )
+                        found_msg.append(txt)
+                except:
+                    pass # Tekil hata taramayı durdurmasın
+                
+                # Yahoo'dan ban yememek için minik bekleme
+                time.sleep(0.5)
+
+            # Eğer fırsat bulduysa Telegram'a at
+            if found_msg:
+                # Mesajı parçalara böl (Telegram karakter sınırı için)
+                header = f"🚨 **PATRONUN TERMİNALİ: {len(found_msg)} GOLDEN SETUP** 🚨\n\n"
+                
+                # Tüm listeyi tek string yap
+                full_body = "\n-------------------\n".join(found_msg)
+                
+                # Eğer çok uzunsa (4096 karakter sınırı) bölerek at
+                if len(full_body) > 3800:
+                    send_private_telegram(header + "Liste çok uzun, parça parça geliyor...")
+                    for i in range(0, len(found_msg), 10):
+                        chunk = "\n-------------------\n".join(found_msg[i:i+10])
+                        send_private_telegram(chunk)
+                else:
+                    send_private_telegram(header + full_body)
+                    
+                print(f"Telegram'a {len(found_msg)} fırsat gönderildi.")
+            else:
+                print("Tarama bitti, fırsat bulunamadı.")
+
+        except Exception as e:
+            print(f"Tarama döngüsünde genel hata: {e}")
+        
+        # 1 SAAT BEKLE (3600 Saniye)
+        time.sleep(3600)
+
+# Thread'in tekil olmasını sağlayan Wrapper
+@st.cache_resource
+def start_background_thread():
+    # Daemon=True: Ana program kapanınca bu thread de ölsün
+    t = threading.Thread(target=scanner_job, daemon=True)
+    t.start()
+    return t
+
+
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
@@ -1077,8 +1172,8 @@ st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
     <img src="{BULL_ICON_B64}" class="header-logo">
     <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
+        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v5.0</div>
+        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Ajan Destekli)</div>
     </div>
 </div>
 <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
@@ -1194,6 +1289,23 @@ Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, analist gi
         st.success("Metin kopyalanmaya hazır! 📋")
     
     st.session_state.generate_prompt = False
+
+# AJAN KONTROL PANELİ (SIDEBARA EKLENDİ)
+with st.sidebar:
+    st.divider()
+    st.markdown("### 🕵️ Arka Plan Ajanı")
+    
+    # Ajanı başlatmak için Checkbox
+    run_agent = st.toggle("Otomatik Tarama (1 Saat)", value=False)
+    
+    if run_agent:
+        # Fonksiyon @cache_resource olduğu için
+        # Sayfa yenilense bile thread yeniden BAŞLATILMAZ, 
+        # Zaten çalışıyorsa aynen devam eder.
+        start_background_thread()
+        st.caption("✅ Ajan arka planda aktif. Her saat başı tüm listeleri tarar ve Telegram'a atar.")
+    else:
+        st.caption("⛔ Ajan pasif.")
 
 # İÇERİK
 info = fetch_stock_info(st.session_state.ticker)
