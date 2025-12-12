@@ -11,6 +11,11 @@ import sqlite3
 import os
 import textwrap
 import concurrent.futures
+import google.generativeai as genai
+
+# --- API AYARLARI ---
+# Kendi API anahtarını buraya yapıştır. (Google AI Studio'dan ücretsiz alabilirsin)
+# genai.configure(api_key="SENIN_API_ANAHTARIN_BURAYA")
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -299,8 +304,10 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
-    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
-        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
+    # GÜNCELLENEN AI ANALİST BUTONU
+    with st.expander("🤖 AI Analist (Otomatik)", expanded=True):
+        st.caption("Ekranda hesaplanan verileri yapay zekaya gönderir.")
+        if st.button("✨ Analizi Başlat", type="primary"):
              st.session_state.generate_prompt = True
 
 # --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
@@ -723,6 +730,7 @@ def calculate_ict_concepts(ticker):
                 gap_top = low.iloc[i-2]
                 gap_bot = high.iloc[i]
                 
+                # Mitigasyon Kontrolü: Bu FVG oluştuktan sonraki mumlar içine girdi mi?
                 is_mitigated = False
                 for k in range(i+1, len(df)):
                     if high.iloc[k] >= gap_bot: # Fiyat boşluğa girmiş
@@ -1118,44 +1126,86 @@ with col_search_btn:
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# PROMPT TETİKLEYİCİ
+# PROMPT TETİKLEYİCİ (YENİ VERİ ODAKLI VE OTOMATİK API ENTEGRASYONLU BLOK)
 if 'generate_prompt' not in st.session_state:
     st.session_state.generate_prompt = False
+
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
-    try:
-        inf = yf.Ticker(t).info
-        price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
-    except:
-        price = "Bilinmiyor"
     
-    prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
+    with st.spinner(f"{t} için veriler toplanıyor ve AI'a gönderiliyor..."):
+        # 1. ARKA PLAN VERİLERİNİ TAZELE (Resim çekmek yerine veriyi çekiyoruz)
+        # Fonksiyonlar zaten cache'li olduğu için performans kaybı olmaz.
+        ict_data = calculate_ict_concepts(t) or {}
+        sent_data = calculate_sentiment_score(t) or {}
+        tech_data = get_tech_card_data(t) or {}
+        
+        # Radar verisini session_state'den güvenli çekelim
+        radar_val = "Veri Yok"
+        radar_setup = "Belirsiz"
+        if st.session_state.radar2_data is not None:
+            r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
+            if not r_row.empty:
+                radar_val = f"{r_row.iloc[0]['Skor']}/8"
+                radar_setup = r_row.iloc[0]['Setup']
 
-Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
+        # 2. DATA-DRIVEN PROMPT (VERİ ODAKLI KOMUT)
+        prompt = f"""
+*** SİSTEM ROLLERİ ***
+Sen Dünya çapında tanınan, risk yönetimi uzmanı, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.
+Aşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları yorumla.
 
-1. Sentiment & Psikoloji: Piyasanın korku/iştah durumu (0-100 Puan).
-2. Radar Sinyalleri: Momentum ve Trend algoritmalarının skorları.
-3. Teknik Kart: Ortalamalar (SMA/EMA) ve ATR bazlı risk seviyeleri.
-4. ICT & Price Action: Kurumsal ayak izleri (Order Block, FVG, Breaker, Likidite, Golden Setup).
+*** 1. TEKNİK VERİLER (Rakamlara Güven) ***
+- Fiyat vs SMA50: {'Fiyat SMA50 Üzerinde (Pozitif)' if tech_data.get('sma50', 999999) < float(sent_data.get('raw_obv', 0) or 0)*0+float(ict_data.get('range_high',0) or 0)*0+ float(tech_data.get('stop_level',0))*0 + float(tech_data.get('sma50',0)) + 1 else 'Fiyat SMA50 Altında (Negatif/Nötr)'}
+- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}
+- Radar 2 Skoru: {radar_val}
+- Radar Setup: {radar_setup}
 
-GÖREVİN:
-Bu 4 katmanı birleştirerek bir "Multidimensional Market Analysis" (Çok Boyutlu Piyasa Analizi) yapman gerekiyor.
+*** 2. DUYGU VE MOMENTUM ***
+- Sentiment Puanı: {sent_data.get('total', 0)}/100
+- Momentum Durumu: {sent_data.get('mom', 'Veri Yok')}
+- Hacim/Para Girişi: {sent_data.get('vol', 'Veri Yok')}
 
-ANALİZ ADIMLARI:
-1. Duygu Kontrolü: Sentiment skoru ve Derin Röntgen verilerine bak. Piyasa şu an panikte mi, coşkuda mı yoksa kararsız mı? Hacim fiyatı destekliyor mu?
-2. Kurumsal Tuzaklar (ICT): Fiyat şu an "Ucuz" (Discount) mu yoksa "Pahalı" (Premium) mu? Yakınlarda bir "Golden Setup" veya "Breaker Block" var mı? Likidite (EQH/EQL) nerede birikmiş?
-3. Trend Teyidi: Radar puanları ve hareketli ortalamalar (SMA50/200) ana yönü destekliyor mu?
-4. Çelişki Analizi: Eğer Sentiment "AL" derken, ICT "SAT" (Premium bölge) diyorsa, bu riski açıkça belirt.
+*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***
+- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
+- Bölge (PD Array): {ict_data.get('pos_label', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)
+- Fiyatın Konumu: %{ict_data.get('range_pos_pct', 0):.1f} (0=Dip, 100=Tepe)
+- Aktif FVG: {ict_data.get('fvg', 'Yok')}
+- Hedef Likidite: {ict_data.get('liquidity', 'Belirsiz')}
+- GOLDEN SETUP SİNYALİ: {ict_data.get('golden_text', 'Yok')}
 
-ÇIKTI FORMATI (SONUÇ):
-Bana hikaye anlatma, net emirler ver:
-* YÖN (BIAS): (Long / Short / Nötr)
-* GİRİŞ STRATEJİSİ: (Hangi FVG veya OB seviyesinden girilmeli?)
-* GEÇERSİZLİK (STOP): (ATR veya Market Structure bozulma seviyesi neresi?)
-* HEDEF (TP): (Hangi likidite havuzu hedeflenmeli?)"""
-    
-    with st.sidebar:
-        st.code(prompt, language="text")
+*** GÖREVİN ***
+Bu verilerdeki çelişkileri (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.
+Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, analist gibi konuş.
+
+ÇIKTI:
+🎯 YÖN: [LONG/SHORT/BEKLE]
+💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
+⚠️ RİSK: (Gördüğün en büyük tehlike)
+"""
+        
+        # 3. GEMINI API ENTEGRASYONU (Otomatik Yanıt)
+        try:
+            # Eğer API Key girilmediyse uyarı verip promptu gösterelim
+            if not hasattr(genai, 'configure') or "SENIN_API_ANAHTARIN_BURAYA" in str(genai):
+                 st.warning("⚠️ API Anahtarı girilmediği için promptu aşağıya yazıyorum. Kopyalayıp Chat GPT'ye yapıştır:")
+                 st.code(prompt)
+            else:
+                model = genai.GenerativeModel('gemini-pro')
+                response = model.generate_content(prompt)
+                
+                # Sonucu güzel bir kutuda göster
+                st.markdown(f"""
+                <div style="background-color:#f0f9ff; padding:15px; border-radius:10px; border:1px solid #bae6fd; margin-bottom:20px;">
+                    <h4 style="color:#0369a1; margin-top:0;">🤖 Yapay Zeka Analiz Raporu</h4>
+                    <div style="font-size:0.9rem; color:#0f172a;">{response.text}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        except Exception as e:
+            st.error(f"AI Bağlantı Hatası: {str(e)}")
+            st.code(prompt) # Hata olursa yine de promptu verelim
+
     st.session_state.generate_prompt = False
 
 # İÇERİK
