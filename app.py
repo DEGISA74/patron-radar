@@ -11,6 +11,7 @@ import sqlite3
 import os
 import textwrap
 import concurrent.futures
+import re  # HTML temizliği için eklendi
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -299,7 +300,9 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
+    # GÜNCELLENEN BUTON (SADECE PROMPT OLUŞTURUR)
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
              st.session_state.generate_prompt = True
 
@@ -723,6 +726,7 @@ def calculate_ict_concepts(ticker):
                 gap_top = low.iloc[i-2]
                 gap_bot = high.iloc[i]
                 
+                # Mitigasyon Kontrolü: Bu FVG oluştuktan sonraki mumlar içine girdi mi?
                 is_mitigated = False
                 for k in range(i+1, len(df)):
                     if high.iloc[k] >= gap_bot: # Fiyat boşluğa girmiş
@@ -1118,44 +1122,77 @@ with col_search_btn:
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# PROMPT TETİKLEYİCİ
+# PROMPT TETİKLEYİCİ (GÜNCELLENMİŞ VE TEMİZLENMİŞ VERSİYON)
 if 'generate_prompt' not in st.session_state:
     st.session_state.generate_prompt = False
+
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
-    try:
-        inf = yf.Ticker(t).info
-        price = inf.get('currentPrice') or inf.get('regularMarketPrice') or "Bilinmiyor"
-    except:
-        price = "Bilinmiyor"
     
-    prompt = f"""Rol: Kıdemli Fon Yöneticisi ve Algoritmik Trader (Market Maker Bakış Açısı).
-
-Bağlam: Sana "Patronun Terminali" adlı gelişmiş bir analiz panelinden alınan {t} hissesinin ekran görüntüsünü sunuyorum. Bu verilerde 4 farklı katman var:
-
-1. Sentiment & Psikoloji: Piyasanın korku/iştah durumu (0-100 Puan).
-2. Radar Sinyalleri: Momentum ve Trend algoritmalarının skorları.
-3. Teknik Kart: Ortalamalar (SMA/EMA) ve ATR bazlı risk seviyeleri.
-4. ICT & Price Action: Kurumsal ayak izleri (Order Block, FVG, Breaker, Likidite, Golden Setup).
-
-GÖREVİN:
-Bu 4 katmanı birleştirerek bir "Multidimensional Market Analysis" (Çok Boyutlu Piyasa Analizi) yapman gerekiyor.
-
-ANALİZ ADIMLARI:
-1. Duygu Kontrolü: Sentiment skoru ve Derin Röntgen verilerine bak. Piyasa şu an panikte mi, coşkuda mı yoksa kararsız mı? Hacim fiyatı destekliyor mu?
-2. Kurumsal Tuzaklar (ICT): Fiyat şu an "Ucuz" (Discount) mu yoksa "Pahalı" (Premium) mu? Yakınlarda bir "Golden Setup" veya "Breaker Block" var mı? Likidite (EQH/EQL) nerede birikmiş?
-3. Trend Teyidi: Radar puanları ve hareketli ortalamalar (SMA50/200) ana yönü destekliyor mu?
-4. Çelişki Analizi: Eğer Sentiment "AL" derken, ICT "SAT" (Premium bölge) diyorsa, bu riski açıkça belirt.
-
-ÇIKTI FORMATI (SONUÇ):
-Bana hikaye anlatma, net emirler ver:
-* YÖN (BIAS): (Long / Short / Nötr)
-* GİRİŞ STRATEJİSİ: (Hangi FVG veya OB seviyesinden girilmeli?)
-* GEÇERSİZLİK (STOP): (ATR veya Market Structure bozulma seviyesi neresi?)
-* HEDEF (TP): (Hangi likidite havuzu hedeflenmeli?)"""
+    # 1. VERİLERİ SESSİZCE TOPLA (Resim çekmek yerine sayısal veriyi çekiyoruz)
+    ict_data = calculate_ict_concepts(t) or {}
+    sent_data = calculate_sentiment_score(t) or {}
+    tech_data = get_tech_card_data(t) or {}
     
+    # Radar verisini session_state'den güvenli çekelim
+    radar_val = "Veri Yok"
+    radar_setup = "Belirsiz"
+    if st.session_state.radar2_data is not None:
+        r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
+        if not r_row.empty:
+            radar_val = f"{r_row.iloc[0]['Skor']}/8"
+            radar_setup = r_row.iloc[0]['Setup']
+
+    # HTML temizleme fonksiyonu (Prompt için)
+    def clean_text(text):
+        if not isinstance(text, str): return str(text)
+        # Regex ile <...> arasındaki her şeyi sil
+        return re.sub(r'<[^>]+>', '', text)
+
+    # Verileri temizle
+    mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
+    vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
+
+    # 2. DİNAMİK VE VERİ ODAKLI MEGA PROMPT
+    prompt = f"""
+*** SİSTEM ROLLERİ ***
+Sen Dünya çapında tanınan, risk yönetimi uzmanı, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.
+Aşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları yorumla.
+
+*** 1. TEKNİK VERİLER (Rakamlara Güven) ***
+- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}
+- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}
+- Radar 2 Skoru: {radar_val}
+- Radar Setup: {radar_setup}
+
+*** 2. DUYGU VE MOMENTUM ***
+- Sentiment Puanı: {sent_data.get('total', 0)}/100
+- Momentum Durumu: {mom_clean}
+- Hacim/Para Girişi: {vol_clean}
+
+*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***
+- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
+- Bölge (PD Array): {ict_data.get('pos_label', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)
+- Fiyatın Konumu: %{ict_data.get('range_pos_pct', 0):.1f} (0=Dip, 100=Tepe)
+- Aktif FVG: {ict_data.get('fvg', 'Yok')}
+- Hedef Likidite: {ict_data.get('liquidity', 'Belirsiz')}
+- GOLDEN SETUP SİNYALİ: {ict_data.get('golden_text', 'Yok')}
+
+*** GÖREVİN ***
+Bu verilerdeki çelişkileri (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.
+Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, analist gibi konuş.
+
+ÇIKTI:
+🎯 YÖN: [LONG/SHORT/BEKLE]
+💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
+⚠️ RİSK: (Gördüğün en büyük tehlike)
+"""
+    
+    # Promptu Sidebar'da göster (Kopyalamaya hazır)
     with st.sidebar:
         st.code(prompt, language="text")
+        st.success("Metin kopyalanmaya hazır! 📋")
+    
     st.session_state.generate_prompt = False
 
 # İÇERİK
