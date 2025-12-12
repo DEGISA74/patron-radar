@@ -11,11 +11,6 @@ import sqlite3
 import os
 import textwrap
 import concurrent.futures
-import google.generativeai as genai
-
-# --- API AYARLARI ---
-# Kendi API anahtarını buraya yapıştır. (Google AI Studio'dan ücretsiz alabilirsin)
-# genai.configure(api_key="SENIN_API_ANAHTARIN_BURAYA")
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -304,10 +299,10 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
-    # GÜNCELLENEN AI ANALİST BUTONU
-    with st.expander("🤖 AI Analist (Otomatik)", expanded=True):
-        st.caption("Ekranda hesaplanan verileri yapay zekaya gönderir.")
-        if st.button("✨ Analizi Başlat", type="primary"):
+    # GÜNCELLENEN BUTON (SADECE PROMPT OLUŞTURUR)
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
              st.session_state.generate_prompt = True
 
 # --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
@@ -1126,37 +1121,42 @@ with col_search_btn:
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# PROMPT TETİKLEYİCİ (YENİ VERİ ODAKLI VE OTOMATİK API ENTEGRASYONLU BLOK)
+# PROMPT TETİKLEYİCİ (GÜNCELLENMİŞ VE DATA-DRIVEN)
 if 'generate_prompt' not in st.session_state:
     st.session_state.generate_prompt = False
 
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     
-    with st.spinner(f"{t} için veriler toplanıyor ve AI'a gönderiliyor..."):
-        # 1. ARKA PLAN VERİLERİNİ TAZELE (Resim çekmek yerine veriyi çekiyoruz)
-        # Fonksiyonlar zaten cache'li olduğu için performans kaybı olmaz.
-        ict_data = calculate_ict_concepts(t) or {}
-        sent_data = calculate_sentiment_score(t) or {}
-        tech_data = get_tech_card_data(t) or {}
-        
-        # Radar verisini session_state'den güvenli çekelim
-        radar_val = "Veri Yok"
-        radar_setup = "Belirsiz"
-        if st.session_state.radar2_data is not None:
-            r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
-            if not r_row.empty:
-                radar_val = f"{r_row.iloc[0]['Skor']}/8"
-                radar_setup = r_row.iloc[0]['Setup']
+    # 1. VERİLERİ SESSİZCE TOPLA (Resim çekmek yerine sayısal veriyi çekiyoruz)
+    ict_data = calculate_ict_concepts(t) or {}
+    sent_data = calculate_sentiment_score(t) or {}
+    tech_data = get_tech_card_data(t) or {}
+    
+    # Radar verisini session_state'den güvenli çekelim
+    radar_val = "Veri Yok"
+    radar_setup = "Belirsiz"
+    if st.session_state.radar2_data is not None:
+        r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
+        if not r_row.empty:
+            radar_val = f"{r_row.iloc[0]['Skor']}/8"
+            radar_setup = r_row.iloc[0]['Setup']
 
-        # 2. DATA-DRIVEN PROMPT (VERİ ODAKLI KOMUT)
-        prompt = f"""
+    # 2. DİNAMİK VE VERİ ODAKLI MEGA PROMPT
+    # Fiyatın SMA50'ye göre durumunu matematiksel olarak belirleyelim
+    sma50_val = tech_data.get('sma50', 0)
+    price_status = "Bilinmiyor"
+    # Basit bir fiyat kontrolü (elimizdeki veriden)
+    # Eğer son kapanış fiyatı (tech verisinde yoksa ict verisinden çıkarım yapabiliriz ama burada basit tutalım)
+    # Promptun içinde zaten değerleri yazdırıyoruz, yorumu AI'a bırakalım.
+
+    prompt = f"""
 *** SİSTEM ROLLERİ ***
 Sen Dünya çapında tanınan, risk yönetimi uzmanı, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.
 Aşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları yorumla.
 
 *** 1. TEKNİK VERİLER (Rakamlara Güven) ***
-- Fiyat vs SMA50: {'Fiyat SMA50 Üzerinde (Pozitif)' if tech_data.get('sma50', 999999) < float(sent_data.get('raw_obv', 0) or 0)*0+float(ict_data.get('range_high',0) or 0)*0+ float(tech_data.get('stop_level',0))*0 + float(tech_data.get('sma50',0)) + 1 else 'Fiyat SMA50 Altında (Negatif/Nötr)'}
+- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}
 - Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}
 - Radar 2 Skoru: {radar_val}
 - Radar Setup: {radar_setup}
@@ -1183,29 +1183,12 @@ Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, analist gi
 💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
 ⚠️ RİSK: (Gördüğün en büyük tehlike)
 """
-        
-        # 3. GEMINI API ENTEGRASYONU (Otomatik Yanıt)
-        try:
-            # Eğer API Key girilmediyse uyarı verip promptu gösterelim
-            if not hasattr(genai, 'configure') or "SENIN_API_ANAHTARIN_BURAYA" in str(genai):
-                 st.warning("⚠️ API Anahtarı girilmediği için promptu aşağıya yazıyorum. Kopyalayıp Chat GPT'ye yapıştır:")
-                 st.code(prompt)
-            else:
-                model = genai.GenerativeModel('gemini-pro')
-                response = model.generate_content(prompt)
-                
-                # Sonucu güzel bir kutuda göster
-                st.markdown(f"""
-                <div style="background-color:#f0f9ff; padding:15px; border-radius:10px; border:1px solid #bae6fd; margin-bottom:20px;">
-                    <h4 style="color:#0369a1; margin-top:0;">🤖 Yapay Zeka Analiz Raporu</h4>
-                    <div style="font-size:0.9rem; color:#0f172a;">{response.text}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-        except Exception as e:
-            st.error(f"AI Bağlantı Hatası: {str(e)}")
-            st.code(prompt) # Hata olursa yine de promptu verelim
-
+    
+    # Promptu Sidebar'da göster (Kopyalamaya hazır)
+    with st.sidebar:
+        st.code(prompt, language="text")
+        st.success("Metin kopyalanmaya hazır! 📋")
+    
     st.session_state.generate_prompt = False
 
 # İÇERİK
