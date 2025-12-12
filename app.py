@@ -10,7 +10,7 @@ import numpy as np
 import sqlite3
 import os
 import textwrap
-import concurrent.futures # Paralel işlem için eklendi
+import concurrent.futures
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -207,10 +207,23 @@ raw_nasdaq = [
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
-# --- GRUPLAMA (BURASI ÖNEMLİ: Sorted fonksiyonunu kaldırdık!) ---
+# 4. BIST VIOP LİSTESİ (YENİ EKLENDİ)
+raw_viop = [
+    "AKBNK.IS", "ARCLK.IS", "ASELS.IS", "ASTOR.IS", "BIMAS.IS", "DOHOL.IS", "EKGYO.IS", 
+    "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "FROTO.IS", "GARAN.IS", "GUBRF.IS", "HALKB.IS", 
+    "HEKTS.IS", "ISCTR.IS", "KCHOL.IS", "KONTR.IS", "KOZAL.IS", "KRDMD.IS", "ODAS.IS", 
+    "OYAKC.IS", "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SASA.IS", "SISE.IS", "SOKM.IS", 
+    "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TOASO.IS", "TSKB.IS", "TTKOM.IS", 
+    "TUPRS.IS", "VAKBN.IS", "VESTL.IS", "YKBNK.IS"
+]
+final_viop_list = sorted(raw_viop)
+
+
+# --- GRUPLAMA (VIOP EKLENDİ) ---
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": final_sp500_list,
     "NASDAQ (TOP 100)": raw_nasdaq,
+    "BIST VIOP (TRY)": final_viop_list,
     "EMTİA & KRİPTO": final_crypto_list
 }
 
@@ -365,7 +378,7 @@ def analyze_market_intelligence(asset_list):
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
-def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
+def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # Fiyat ve hacim BIST için esnetildi
     if not asset_list: return pd.DataFrame()
     
     # 1. Veri İndirme (Bulk)
@@ -397,8 +410,10 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
             
+            # Fiyat ve Hacim Filtresi (BIST için parametreler yukarıda biraz esnetildi)
             if curr_c < min_price or curr_c > max_price: return None
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
+            # BIST hisseleri için hacim filtresi bazen takılabilir, bu yüzden esnek tutulabilir
             if avg_vol_20 < min_avg_vol_m * 1e6: return None
             
             sma20 = close.rolling(20).mean()
@@ -1066,7 +1081,8 @@ with col_ass:
         index=asset_idx,
         key="selected_asset_key",
         on_change=on_asset_change,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        format_func=lambda x: x.replace(".IS", "") # BURASI: .IS'i ekranda gizler
     )
 with col_search_in:
     st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
