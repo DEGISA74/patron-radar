@@ -11,6 +11,7 @@ import sqlite3
 import os
 import textwrap
 import concurrent.futures
+import re  # HTML temizliği için eklendi
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -1121,7 +1122,7 @@ with col_search_btn:
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-# PROMPT TETİKLEYİCİ (GÜNCELLENMİŞ VE DATA-DRIVEN)
+# PROMPT TETİKLEYİCİ (GÜNCELLENMİŞ VE TEMİZLENMİŞ VERSİYON)
 if 'generate_prompt' not in st.session_state:
     st.session_state.generate_prompt = False
 
@@ -1142,14 +1143,17 @@ if st.session_state.generate_prompt:
             radar_val = f"{r_row.iloc[0]['Skor']}/8"
             radar_setup = r_row.iloc[0]['Setup']
 
-    # 2. DİNAMİK VE VERİ ODAKLI MEGA PROMPT
-    # Fiyatın SMA50'ye göre durumunu matematiksel olarak belirleyelim
-    sma50_val = tech_data.get('sma50', 0)
-    price_status = "Bilinmiyor"
-    # Basit bir fiyat kontrolü (elimizdeki veriden)
-    # Eğer son kapanış fiyatı (tech verisinde yoksa ict verisinden çıkarım yapabiliriz ama burada basit tutalım)
-    # Promptun içinde zaten değerleri yazdırıyoruz, yorumu AI'a bırakalım.
+    # HTML temizleme fonksiyonu (Prompt için)
+    def clean_text(text):
+        if not isinstance(text, str): return str(text)
+        # Regex ile <...> arasındaki her şeyi sil
+        return re.sub(r'<[^>]+>', '', text)
 
+    # Verileri temizle
+    mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
+    vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
+
+    # 2. DİNAMİK VE VERİ ODAKLI MEGA PROMPT
     prompt = f"""
 *** SİSTEM ROLLERİ ***
 Sen Dünya çapında tanınan, risk yönetimi uzmanı, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.
@@ -1163,8 +1167,8 @@ Aşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları y
 
 *** 2. DUYGU VE MOMENTUM ***
 - Sentiment Puanı: {sent_data.get('total', 0)}/100
-- Momentum Durumu: {sent_data.get('mom', 'Veri Yok')}
-- Hacim/Para Girişi: {sent_data.get('vol', 'Veri Yok')}
+- Momentum Durumu: {mom_clean}
+- Hacim/Para Girişi: {vol_clean}
 
 *** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
