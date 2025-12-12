@@ -976,8 +976,8 @@ def render_tradingview_widget(ticker, height=650):
     else:
         # Standart BIST ve Forex Kuralları
         if ".IS" in ticker:
-            # BURASI DEĞİŞTİ: .IS'i kaldırıp başına BIST: ekliyoruz.
-            tv_symbol = f"BIST:{ticker.replace('.IS', '')}"
+            # DÜZELTME: BIST: öneki kaldırıldı ve .strip() ile boşluklar temizlendi.
+            tv_symbol = ticker.replace('.IS', '').strip()
         elif "=X" in ticker: # USDTRY=X gibi
             tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
         elif "-USD" in ticker: # Diğer Kriptolar (Genel)
