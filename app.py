@@ -207,12 +207,14 @@ raw_nasdaq = [
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
-# 4. BIST 100 (ÖNCELİKLİ SKILLING + DİĞERLERİ)
+# 4. BIST 100 LİSTESİ (SKILLING DESTEKLİLER BAŞTA)
+# Senin tespit ettiğin Skilling destekli hisseler
 priority_bist = [
     "AKBNK.IS", "BIMAS.IS", "DOHOL.IS", "FENER.IS", "KCHOL.IS",
     "SISE.IS", "TCELL.IS", "THYAO.IS", "TTKOM.IS", "VAKBN.IS"
 ]
 
+# Geriye kalan BIST 100 hisseleri
 raw_bist100_rest = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS",
     "ALARK.IS", "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS",
@@ -228,13 +230,13 @@ raw_bist100_rest = [
     "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
 ]
 
-# Önceliklileri rest listesinden temizleyip sıralama (Güvenlik)
+# Mantık: Önceliklileri rest listesinden temizleyip sıralama (Güvenlik)
 raw_bist100_rest = list(set(raw_bist100_rest) - set(priority_bist))
 raw_bist100_rest.sort()
 final_bist100_list = priority_bist + raw_bist100_rest
 
 
-# --- GRUPLAMA (BIST 100 EKLENDİ) ---
+# --- GRUPLAMA (BIST 100 GÜNCELLENDİ) ---
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": final_sp500_list,
     "NASDAQ (TOP 100)": raw_nasdaq,
@@ -829,10 +831,13 @@ def get_tech_card_data(ticker):
 # --- RENDER ---
 def render_sentiment_card(sent):
     if not sent: return
+    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
+    
     st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">🎭 Piyasa Duygusu (Sentiment)</div>
+        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
             <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
         </div>
@@ -894,6 +899,9 @@ def render_ict_panel(analysis):
         st.error("ICT Analizi yapılamadı (Veri yetersiz)")
         return
 
+    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+
     # Renk Kodları
     s_color = "#166534" if analysis['bias_color'] == "green" else "#991b1b" if analysis['bias_color'] == "red" else "#854d0e"
     pos_pct = analysis['range_pos_pct']
@@ -913,7 +921,7 @@ def render_ict_panel(analysis):
     # HTML Kodları, Markdown kod bloğu sanılmasın diye sola yaslanmıştır:
     st.markdown(f"""
 <div class="info-card">
-<div class="info-header">🧠 ICT Smart Money Concepts</div>
+<div class="info-header">🧠 ICT Smart Money Concepts: {display_ticker}</div>
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
 <span style="font-size:0.65rem; color:#64748B; font-weight:600;">MARKET YAPISI</span>
 <span style="font-size:0.7rem; font-weight:700; color:{s_color};">{analysis['structure']}</span>
@@ -946,6 +954,9 @@ def render_ict_panel(analysis):
 """, unsafe_allow_html=True)
 
 def render_detail_card(ticker):
+    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+    
     r1_t = "Veri yok"; r2_t = "Veri yok"
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
@@ -961,7 +972,7 @@ def render_detail_card(ticker):
         ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
     st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">📋 Teknik Kart</div>
+        <div class="info-header">📋 Teknik Kart: {display_ticker}</div>
         <div class="info-row"><div class="label-short">Radar 1:</div><div class="info-val">{r1_t}</div></div>
         <div class="info-row"><div class="label-short">Radar 2:</div><div class="info-val">{r2_t}</div></div>
         <div class="info-row"><div class="label-short">Ortalama:</div><div class="info-val">{ma_t}</div></div>
