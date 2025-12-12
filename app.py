@@ -179,7 +179,6 @@ raw_sp500_rest = list(set(raw_sp500_rest) - set(priority_sp))
 raw_sp500_rest.sort()
 final_sp500_list = priority_sp + raw_sp500_rest
 
-
 # 2. EMTİA & KRİPTO ÖZEL SIRALAMA (Doğru Semboller)
 priority_crypto = ["GC=F", "SI=F", "BTC-USD", "ETH-USD"]
 
@@ -191,7 +190,6 @@ other_crypto = [
 ]
 other_crypto.sort()
 final_crypto_list = priority_crypto + other_crypto
-
 
 # 3. NASDAQ (Alfabetik)
 raw_nasdaq = [
@@ -207,7 +205,6 @@ raw_nasdaq = [
     "ANSS", "SWKS", "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
-
 
 # --- GRUPLAMA (BURASI ÖNEMLİ: Sorted fonksiyonunu kaldırdık!) ---
 ASSET_GROUPS = {
@@ -275,160 +272,163 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
-# --- HIZLANDIRILMIŞ VEKTÖREL ANALİZ MOTORLARI ---
-
+# --- ANALİZ MOTORLARI (CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
-    if not asset_list: return pd.DataFrame()
-    
-    # 1. Toplu Veri İndirme (Tek Seferde)
+    signals = []
     try:
-        # Sadece son 3 ay yeterli (Hız için optimum)
-        data = yf.download(asset_list, period="3mo", group_by='ticker', threads=True, progress=False)
+        data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except:
         return pd.DataFrame()
-
-    # Veri setini düzelt (MultiIndex kontrolü)
-    if isinstance(data.columns, pd.MultiIndex):
+    for symbol in asset_list:
         try:
-            # Ticker seviyesini koruyarak Close, High, Low, Volume matrislerini ayır
-            close = data.xs('Close', level=1, axis=1)
-            high = data.xs('High', level=1, axis=1)
-            low = data.xs('Low', level=1, axis=1)
-            volume = data.xs('Volume', level=1, axis=1)
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    df = data[symbol].copy()
+                else:
+                    continue
+            else:
+                if len(asset_list) == 1:
+                    df = data.copy()
+                else:
+                    continue
+            if df.empty or 'Close' not in df.columns: continue
+            df = df.dropna(subset=['Close'])
+            if len(df) < 60: continue
+            close = df['Close']; high = df['High']; low = df['Low']
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            ema5 = close.ewm(span=5, adjust=False).mean()
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
+            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
+            daily_range = high - low
+            score = 0; reasons = []
+            curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
+            avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1:
+                score += 1; reasons.append("🚀 Squeeze")
+            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0:
+                score += 1; reasons.append("🔇 NR4")
+            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])):
+                score += 1; reasons.append("⚡ Trend")
+            if hist.iloc[-1] > hist.iloc[-2]:
+                score += 1; reasons.append("🟢 MACD")
+            if williams_r.iloc[-1] > -50:
+                score += 1; reasons.append("🔫 W%R")
+            if curr_vol > avg_vol * 1.2:
+                score += 1; reasons.append("🔊 Hacim")
+            if curr_c >= high.tail(20).max() * 0.98:
+                score += 1; reasons.append("🔨 Breakout")
+            rsi_c = rsi.iloc[-1]
+            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]:
+                score += 1; reasons.append("⚓ RSI Güçlü")
+            if score > 0:
+                signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": f"{curr_c:.2f}",
+                    "Skor": score,
+                    "Nedenler": " | ".join(reasons)
+                })
         except:
-            return pd.DataFrame()
-    else:
-        # Tek hisse varsa formatı uydur
-        close = pd.DataFrame({asset_list[0]: data['Close']})
-        high = pd.DataFrame({asset_list[0]: data['High']})
-        low = pd.DataFrame({asset_list[0]: data['Low']})
-        volume = pd.DataFrame({asset_list[0]: data['Volume']})
-
-    # Yetersiz verisi olanları ele (NaN temizliği)
-    close = close.dropna(axis=1, thresh=60)
-    valid_cols = close.columns
-    
-    if len(valid_cols) == 0: return pd.DataFrame()
-    
-    close = close[valid_cols]
-    high = high[valid_cols]
-    low = low[valid_cols]
-    volume = volume[valid_cols]
-
-    # --- 2. Vektörel Hesaplamalar (Döngüsüz - Anlık) ---
-    
-    # EMA & SMA
-    ema5 = close.ewm(span=5, adjust=False).mean()
-    ema20 = close.ewm(span=20, adjust=False).mean()
-    sma20 = close.rolling(20).mean()
-    std20 = close.rolling(20).std()
-    
-    # Bollinger
-    bb_upper = sma20 + 2*std20
-    bb_lower = sma20 - 2*std20
-    bb_width = (bb_upper - bb_lower) / (sma20.replace(0, np.nan))
-    min_bb_width_60 = bb_width.rolling(60).min()
-    
-    # MACD
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    macd_line = ema12 - ema26
-    signal_line = macd_line.ewm(span=9, adjust=False).mean()
-    hist = macd_line - signal_line
-    
-    # RSI
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    
-    # Williams %R
-    highest_high = high.rolling(14).max()
-    lowest_low = low.rolling(14).min()
-    wr = (highest_high - close) / (highest_high - lowest_low) * -100
-    
-    # NR4 (Daily Range)
-    daily_range = high - low
-    min_range_4 = daily_range.rolling(4).min()
-    
-    # Hacim
-    avg_vol_5 = volume.rolling(5).mean()
-    
-    # --- 3. Skorlama (Son Satır Üzerinden) ---
-    # Tüm hisselerin son değerlerini al
-    c_last = close.iloc[-1]
-    
-    # Skor Matrisi (Başlangıç 0)
-    scores = pd.Series(0, index=close.columns)
-    reasons = pd.Series("", index=close.columns)
-
-    # DataFrame maskelerini kullanarak toplu işlem
-    def apply_logic(condition_df, points, text):
-        nonlocal scores, reasons
-        # Son satırdaki True/False durumunu al
-        mask = condition_df.iloc[-1].fillna(False).astype(bool)
-        scores[mask] += points
-        reasons[mask] = reasons[mask] + text + " | "
-
-    # Mantıklar
-    apply_logic(bb_width <= min_bb_width_60 * 1.1, 1, "🚀 Squeeze")
-    apply_logic((daily_range == min_range_4) & (daily_range > 0), 1, "🔇 NR4")
-    apply_logic((ema5 > ema20) & (ema5.shift(1) <= ema20.shift(1)), 1, "⚡ Trend Başlangıcı")
-    apply_logic((ema5 > ema20), 0.5, "⚡ Trend") 
-    apply_logic(hist > hist.shift(1), 1, "🟢 MACD")
-    apply_logic(wr > -50, 1, "🔫 W%R")
-    apply_logic(volume > avg_vol_5 * 1.2, 1, "🔊 Hacim")
-    
-    recent_high = high.rolling(20).max()
-    apply_logic(close >= recent_high * 0.98, 1, "🔨 Breakout")
-    
-    apply_logic((rsi > 30) & (rsi < 65) & (rsi > rsi.shift(1)), 1, "⚓ RSI Güçlü")
-
-    # --- 4. Sonuçları Paketle ---
-    results_df = pd.DataFrame({
-        "Sembol": scores.index,
-        "Skor": scores.values,
-        "Nedenler": reasons.values,
-        "Fiyat": c_last.values
-    })
-    
-    results_df["Fiyat"] = results_df["Fiyat"].apply(lambda x: f"{x:.2f}")
-    results_df["Nedenler"] = results_df["Nedenler"].str.rstrip(" | ")
-    
-    return results_df[results_df["Skor"] > 0].sort_values(by="Skor", ascending=False)
+            continue
+    return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
-    
     try:
-        data = yf.download(asset_list, period="1y", group_by='ticker', threads=True, progress=False)
-        spy_data = yf.download("^GSPC", period="1y", progress=False)['Close']
+        data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
     except:
         return pd.DataFrame()
-
-    if isinstance(data.columns, pd.MultiIndex):
+    try:
+        idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
+    except:
+        idx = None
+    results = []
+    for symbol in asset_list:
         try:
-            close = data.xs('Close', level=1, axis=1)
-            high = data.xs('High', level=1, axis=1)
-            volume = data.xs('Volume', level=1, axis=1)
-        except: return pd.DataFrame()
-    else:
-        close = pd.DataFrame({asset_list[0]: data['Close']})
-        high = pd.DataFrame({asset_list[0]: data['High']})
-        volume = pd.DataFrame({asset_list[0]: data['Volume']})
-
-    close = close.dropna(axis=1, how='all')
-    if close.empty: return pd.DataFrame()
-    valid_cols = close.columns
-    high = high[valid_cols]
-    volume = volume[valid_cols]
-
-    # Vektörel Hesaplamalar
-    sma20 = close.rolling(20).mean()
-    sma50 = close.rolling(50).mean
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: continue
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1:
+                    df = data.copy()
+                else:
+                    continue
+            if df.empty or 'Close' not in df.columns: continue
+            df = df.dropna(subset=['Close'])
+            if len(df) < 120: continue
+            close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            curr_c = float(close.iloc[-1])
+            if curr_c < min_price or curr_c > max_price: continue
+            avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
+            if avg_vol_20 < min_avg_vol_m * 1e6: continue
+            sma20 = close.rolling(20).mean()
+            sma50 = close.rolling(50).mean()
+            sma100 = close.rolling(100).mean()
+            sma200 = close.rolling(200).mean()
+            trend = "Yatay"
+            if not np.isnan(sma200.iloc[-1]):
+                if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]:
+                    trend = "Boğa"
+                elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]:
+                    trend = "Ayı"
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+            rsi_c = float(rsi.iloc[-1])
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            recent_high_60 = float(high.rolling(60).max().iloc[-1])
+            breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
+            rs_score = 0.0
+            if idx is not None and len(close) > 60 and len(idx) > 60:
+                common_index = close.index.intersection(idx.index)
+                if len(common_index) > 60:
+                    cs = close.reindex(common_index)
+                    isx = idx.reindex(common_index)
+                    rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
+            setup = "-"; tags = []; score = 0
+            avg_vol_20 = max(avg_vol_20, 1)
+            vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
+            if trend == "Boğa" and breakout_ratio >= 0.97:
+                setup = "Breakout"; score += 2; tags.append("Zirve")
+            if vol_spike:
+                score += 1; tags.append("Hacim+")
+            if trend == "Boğa" and setup == "-":
+                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55:
+                    setup = "Pullback"; score += 2; tags.append("Düzeltme")
+                if volume.iloc[-1] < avg_vol_20 * 0.9:
+                    score += 1; tags.append("Sığ Satış")
+            if setup == "-":
+                if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]:
+                    setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
+            if rs_score > 0:
+                score += 1; tags.append("RS+")
+            if trend == "Boğa":
+                score += 1
+            elif trend == "Ayı":
+                score -= 1
+            if score > 0:
+                results.append({
+                    "Sembol": symbol,
+                    "Fiyat": round(curr_c, 2),
+                    "Trend": trend,
+                    "Setup": setup,
+                    "Skor": score,
+                    "RS": round(rs_score * 100, 1),
+                    "Etiketler": " | ".join(tags)
+                })
+        except:
+            continue
+    return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
@@ -1288,6 +1288,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
