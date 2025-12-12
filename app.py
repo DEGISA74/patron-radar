@@ -10,6 +10,7 @@ import numpy as np
 import sqlite3
 import os
 import textwrap
+import concurrent.futures # Paralel işlem için eklendi
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
@@ -61,7 +62,7 @@ st.markdown(f"""
     
     /* ORTAK FIRSATLAR VE GENEL KOMPAKLIK AYARLARI */
     .stButton button {{ 
-        width: 100%; border-radius: 4px; 
+        width: 100%; border-radius: 4px;
         font-size: 0.75rem;
         padding: 0.1rem 0.4rem;
     }}
@@ -270,33 +271,42 @@ with st.sidebar:
     
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
-            st.session_state.generate_prompt = True
+             st.session_state.generate_prompt = True
 
-# --- ANALİZ MOTORLARI (CACHED) ---
+# --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
-    signals = []
+    if not asset_list: return pd.DataFrame()
+    
+    # 1. Toplu Veri Çekme (I/O)
     try:
         data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except:
         return pd.DataFrame()
-    for symbol in asset_list:
+
+    # 2. İşlemci Fonksiyonu (Worker)
+    def process_symbol(symbol):
         try:
+            # MultiIndex kontrolü
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]:
                     df = data[symbol].copy()
                 else:
-                    continue
+                    return None
             else:
                 if len(asset_list) == 1:
                     df = data.copy()
                 else:
-                    continue
-            if df.empty or 'Close' not in df.columns: continue
+                    return None
+            
+            if df.empty or 'Close' not in df.columns: return None
             df = df.dropna(subset=['Close'])
-            if len(df) < 60: continue
+            if len(df) < 60: return None
+            
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+            
+            # Hesaplamalar
             ema5 = close.ewm(span=5, adjust=False).mean()
             ema20 = close.ewm(span=20, adjust=False).mean()
             sma20 = close.rolling(20).mean()
@@ -309,9 +319,11 @@ def analyze_market_intelligence(asset_list):
             rsi = 100 - (100 / (1 + (gain / loss)))
             williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
             daily_range = high - low
+            
             score = 0; reasons = []
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+            
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1:
                 score += 1; reasons.append("🚀 Squeeze")
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0:
@@ -329,65 +341,89 @@ def analyze_market_intelligence(asset_list):
             rsi_c = rsi.iloc[-1]
             if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]:
                 score += 1; reasons.append("⚓ RSI Güçlü")
+            
             if score > 0:
-                signals.append({
+                return {
                     "Sembol": symbol,
                     "Fiyat": f"{curr_c:.2f}",
                     "Skor": score,
                     "Nedenler": " | ".join(reasons)
-                })
+                }
+            return None
         except:
-            continue
+            return None
+
+    # 3. Paralel Çalıştırma (ThreadPoolExecutor)
+    signals = []
+    # CPU sayısı kadar veya biraz daha fazla thread açarak işlemi hızlandırıyoruz
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(process_symbol, asset_list))
+    
+    # None dönenleri temizle
+    signals = [r for r in results if r is not None]
+
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
     if not asset_list: return pd.DataFrame()
+    
+    # 1. Veri İndirme (Bulk)
     try:
         data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
     except:
         return pd.DataFrame()
+    
+    # Endeks verisi tek seferlik
     try:
         idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except:
         idx = None
-    results = []
-    for symbol in asset_list:
+
+    # 2. Worker Fonksiyonu
+    def process_radar2(symbol):
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
+                if symbol not in data.columns.levels[0]: return None
                 df = data[symbol].copy()
             else:
-                if len(asset_list) == 1:
-                    df = data.copy()
-                else:
-                    continue
-            if df.empty or 'Close' not in df.columns: continue
+                if len(asset_list) == 1: df = data.copy()
+                else: return None
+                
+            if df.empty or 'Close' not in df.columns: return None
             df = df.dropna(subset=['Close'])
-            if len(df) < 120: continue
+            if len(df) < 120: return None
+            
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
-            if curr_c < min_price or curr_c > max_price: continue
+            
+            if curr_c < min_price or curr_c > max_price: return None
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-            if avg_vol_20 < min_avg_vol_m * 1e6: continue
+            if avg_vol_20 < min_avg_vol_m * 1e6: return None
+            
             sma20 = close.rolling(20).mean()
             sma50 = close.rolling(50).mean()
             sma100 = close.rolling(100).mean()
             sma200 = close.rolling(200).mean()
+            
             trend = "Yatay"
             if not np.isnan(sma200.iloc[-1]):
                 if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]:
                     trend = "Boğa"
                 elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]:
                     trend = "Ayı"
+            
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss)))
             rsi_c = float(rsi.iloc[-1])
+            
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
+            
             rs_score = 0.0
             if idx is not None and len(close) > 60 and len(idx) > 60:
                 common_index = close.index.intersection(idx.index)
@@ -395,9 +431,11 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                     cs = close.reindex(common_index)
                     isx = idx.reindex(common_index)
                     rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
+            
             setup = "-"; tags = []; score = 0
             avg_vol_20 = max(avg_vol_20, 1)
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
+            
             if trend == "Boğa" and breakout_ratio >= 0.97:
                 setup = "Breakout"; score += 2; tags.append("Zirve")
             if vol_spike:
@@ -410,14 +448,13 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
             if setup == "-":
                 if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]:
                     setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
-            if rs_score > 0:
-                score += 1; tags.append("RS+")
-            if trend == "Boğa":
-                score += 1
-            elif trend == "Ayı":
-                score -= 1
+            
+            if rs_score > 0: score += 1; tags.append("RS+")
+            if trend == "Boğa": score += 1
+            elif trend == "Ayı": score -= 1
+            
             if score > 0:
-                results.append({
+                return {
                     "Sembol": symbol,
                     "Fiyat": round(curr_c, 2),
                     "Trend": trend,
@@ -425,9 +462,18 @@ def radar2_scan(asset_list, min_price=5, max_price=500, min_avg_vol_m=1.0):
                     "Skor": score,
                     "RS": round(rs_score * 100, 1),
                     "Etiketler": " | ".join(tags)
-                })
+                }
+            return None
         except:
-            continue
+            return None
+
+    # 3. Paralel Çalıştırma
+    results = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(process_radar2, asset_list))
+        
+    results = [r for r in results if r is not None]
+    
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
@@ -633,7 +679,7 @@ def calculate_ict_concepts(ticker):
                 is_mitigated = False
                 for k in range(i+1, len(df)):
                     if low.iloc[k] <= gap_top: # Fiyat boşluğa girmiş
-                         # Tamamen doldurulmuş mu? (Tercihe bağlı, şimdilik içine girmesi yeterli)
+                        # Tamamen doldurulmuş mu? (Tercihe bağlı, şimdilik içine girmesi yeterli)
                         is_mitigated = True
                         break
                 
@@ -1288,8 +1334,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
-
-
-
-
