@@ -264,6 +264,8 @@ def on_category_change():
         st.session_state.ticker = ASSET_GROUPS[new_cat][0]
         st.session_state.scan_data = None
         st.session_state.radar2_data = None
+        st.session_state.agent_ran = False
+        st.session_state.agent_df = None
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
@@ -1069,8 +1071,170 @@ def fetch_google_news(ticker):
     except:
         return []
 
+# --- SÜPER AJAN MOTORU (YENİ EKLENTİ) ---
+@st.cache_data(ttl=900)
+def run_super_agent_logic(asset_list):
+    # 1. Aşama: Hızlı Tarama (Geniş Havuz)
+    # Mevcut Radar 1 ve Radar 2 fonksiyonlarını kullanarak aday havuzu oluşturuyoruz.
+    df_r1 = analyze_market_intelligence(asset_list)
+    df_r2 = radar2_scan(asset_list)
+    
+    candidates = set()
+    r1_scores = {}
+    r2_data = {}
+
+    if df_r1 is not None and not df_r1.empty:
+        for _, row in df_r1.iterrows():
+            candidates.add(row['Sembol'])
+            r1_scores[row['Sembol']] = row['Skor']
+            
+    if df_r2 is not None and not df_r2.empty:
+        for _, row in df_r2.iterrows():
+            candidates.add(row['Sembol'])
+            r2_data[row['Sembol']] = {'score': row['Skor'], 'setup': row['Setup']}
+            
+    # Eğer hiç aday yoksa boş dön
+    if not candidates: return pd.DataFrame()
+    
+    # Performans için aday listesini en umut verici 40 hisse ile sınırla
+    # (Hem Radar 1 hem Radar 2'de olanlara öncelik ver)
+    priority_candidates = [c for c in candidates if c in r1_scores and c in r2_data]
+    other_candidates = [c for c in candidates if c not in priority_candidates]
+    final_candidates = (priority_candidates + other_candidates)[:40]
+
+    # 2. Aşama: Derin Analiz (Sentiment & ICT)
+    def analyze_candidate_deep(ticker):
+        score = 0
+        reasons = []
+        status = "Nötr"
+        
+        # A. Radar Puanları (Baz Puan: 40)
+        r1_s = r1_scores.get(ticker, 0)
+        r2_info = r2_data.get(ticker, {'score': 0, 'setup': '-'})
+        
+        if r1_s > 0: 
+            score += (r1_s / 8) * 20 # Max 20 Puan
+            reasons.append("Radar1 Sinyali")
+        if r2_info['score'] > 0: 
+            score += (r2_info['score'] / 8) * 20 # Max 20 Puan
+            reasons.append(f"Radar2: {r2_info['setup']}")
+
+        # B. ICT Analizi (Baz Puan: 30)
+        ict = calculate_ict_concepts(ticker)
+        is_fresh = False # "Yeni Başlamış" kontrolü
+        
+        if ict and "summary" not in ict:
+            if ict['bias_color'] == 'green':
+                score += 15
+                reasons.append("ICT Bullish")
+            if ict['pos_label'].startswith('Discount'):
+                score += 10
+                reasons.append("Ucuz Bölge")
+                is_fresh = True # Discount bölgesindeyse hareket yenidir/fırsattır
+            if ict['is_golden']:
+                score += 5
+                reasons.append("🔥 Golden Setup")
+                is_fresh = True
+        
+        # C. Sentiment Analizi (Baz Puan: 20)
+        sent = calculate_sentiment_score(ticker)
+        if sent:
+            s_score = sent['total']
+            score += (s_score / 100) * 20
+            if s_score > 60: reasons.append("Duygu Pozitif")
+
+        # D. Derin Röntgen (Momentum) (Baz Puan: 10)
+        # Basitçe Sentiment içindeki verilere bakarız
+        if sent and sent['raw_rsi'] > 50 and sent['raw_macd'] > 0:
+            score += 10
+            reasons.append("Momentum Onaylı")
+            
+        # "Yeni Başlamış" Filtresi (Son 3 gün mantığı)
+        # Radar 2 Setup'ı "Breakout", "Dip Dönüşü" ise veya ICT "Discount" ise
+        if r2_info['setup'] in ["Breakout", "Dip Dönüşü", "Pullback"] or is_fresh:
+            status = "🚀 Harekete Hazır/Yeni"
+        else:
+            status = "⚠️ İzlemede (Yüksek)"
+
+        return {
+            "Sembol": ticker,
+            "Puan": round(score, 1),
+            "Durum": status,
+            "Detaylar": " | ".join(reasons)
+        }
+
+    # Paralel Çalıştırma
+    results = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(analyze_candidate_deep, final_candidates))
+        
+    results = [r for r in results if r is not None]
+    
+    # 3. Sıralama ve Filtreleme
+    df_res = pd.DataFrame(results)
+    if not df_res.empty:
+        # Sadece "Harekete Hazır" olanları veya Puanı 50 üzeri olanları al
+        df_res = df_res[df_res["Puan"] > 40].sort_values(by="Puan", ascending=False).head(20)
+        
+    return df_res
+
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+# --- SÜPER AJAN ARAYÜZ ENTEGRASYONU ---
+if 'agent_ran' not in st.session_state:
+    st.session_state.agent_ran = False
+if 'agent_df' not in st.session_state:
+    st.session_state.agent_df = None
+
+# Sayfa ilk yüklendiğinde veya kategori değiştiğinde otomatik çalışsın
+# (State kontrolü ile sonsuz döngüyü engelliyoruz)
+current_asset_list = ASSET_GROUPS.get(st.session_state.category, [])
+if not st.session_state.agent_ran:
+    with st.spinner(f"🕵️ Süper Ajan {st.session_state.category} piyasasını tarıyor... (5 Modül Aktif)"):
+        st.session_state.agent_df = run_super_agent_logic(current_asset_list)
+        st.session_state.agent_ran = True
+
+# Ajan Panelini Göster
+if st.session_state.agent_df is not None and not st.session_state.agent_df.empty:
+    with st.expander("🕵️ Süper Ajan Raporu (Top 20 Fırsat)", expanded=True):
+        st.markdown(f"""
+        <div style="padding:10px; background-color:#eff6ff; border-radius:8px; border:1px solid #bfdbfe; margin-bottom:10px; font-size:0.8rem;">
+            <b>🤖 Ajanın Notu:</b> {len(current_asset_list)} varlık üzerinde 5 farklı tarama (Radar 1, Radar 2, ICT, Sentiment, Röntgen) yapıldı. 
+            Aşağıdaki liste, <b>son 3 gün içinde harekete geçen</b> veya <b>yükseliş kurulumu tamamlanmış</b> en yüksek puanlı adaylardır.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Dataframe Gösterimi (Özel Stil)
+        col_names = st.columns([1, 1, 1.5, 3])
+        col_names[0].markdown("**Sembol**")
+        col_names[1].markdown("**Puan (0-100)**")
+        col_names[2].markdown("**Durum**")
+        col_names[3].markdown("**Tespit Edilen Sinyaller**")
+        
+        st.markdown("<hr style='margin:5px 0'>", unsafe_allow_html=True)
+        
+        for i, row in st.session_state.agent_df.iterrows():
+            c1, c2, c3, c4 = st.columns([1, 1, 1.5, 3])
+            
+            # Sembol Butonu (Tıklayınca ana ekrana getirir)
+            if c1.button(f"🔎 {row['Sembol']}", key=f"agent_btn_{i}"):
+                on_scan_result_click(row['Sembol'])
+                st.rerun()
+                
+            # Puan Rengi
+            score_color = "#166534" if row['Puan'] >= 80 else "#1e40af" if row['Puan'] >= 60 else "#854d0e"
+            c2.markdown(f"<span style='font-family:monospace; font-weight:bold; color:{score_color}; font-size:1rem;'>{row['Puan']}</span>", unsafe_allow_html=True)
+            
+            # Durum Rozeti
+            status_bg = "#dcfce7" if "Hazır" in row['Durum'] else "#fef9c3"
+            status_txt = "#166534" if "Hazır" in row['Durum'] else "#854d0e"
+            c3.markdown(f"<span style='background:{status_bg}; color:{status_txt}; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:600;'>{row['Durum']}</span>", unsafe_allow_html=True)
+            
+            c4.caption(row['Detaylar'])
+            st.markdown("<hr style='margin:2px 0; border-top:1px dashed #e5e7eb;'>", unsafe_allow_html=True)
+elif st.session_state.agent_ran:
+    st.info("Ajan taramayı tamamladı ancak 40 puan üzeri güçlü bir fırsat bulamadı.")
+    
+    BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
 
 st.markdown(f"""
 <div class="header-container" style="display:flex; align-items:center;">
@@ -1413,5 +1577,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
