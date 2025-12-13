@@ -763,12 +763,13 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (SMOOTHED RSI MODELİ) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (SLOW STOCHASTIC) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Hesaplamaların oturması için en az 6 ay
-        df = yf.download(ticker, period="6mo", progress=False)
+        # 1. VERİ İNDİRME: "Warm-up" sorunu için 1 yıllık veri çekiyoruz.
+        # Hesaplama eskiye dayansın ki son 30 güne geldiğinde çizgi oturmuş olsun.
+        df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
         # MultiIndex düzeltmesi
@@ -780,30 +781,35 @@ def calculate_synthetic_sentiment(ticker):
         df = df.dropna()
 
         close = df['Close']
+        high = df['High']
+        low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: YUMUŞATILMIŞ RSI (SMOOTHED RSI)
-        # Hedeflediğin grafiklerdeki o "akışkan" yapıyı sağlamak için en iyi yöntem budur.
-        # Stokastik yerine RSI kullanıyoruz çünkü RSI trende daha sadıktır.
+        # 2. HESAPLAMA: SLOW STOCHASTIC (YAVAŞ STOKASTİK)
+        # Referans resimdeki o karakteristik dalga yapısı budur.
         
-        # A. RSI (14) Hesapla
-        delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        # A. Tipik Fiyat (High+Low+Close)/3 yerine, Stokastik genelde High/Low/Close kullanır.
+        # 14 Günlük En Yüksek ve En Düşük değerler
+        period = 14
+        lowest_l = low.rolling(window=period).min()
+        highest_h = high.rolling(window=period).max()
+
+        # B. Fast Stochastic %K Hesapla
+        # Formül: (O anki Kapanış - En Düşük) / (En Yüksek - En Düşük)
+        # 0'a bölünme hatasını engellemek için replace kullanıyoruz
+        range_v = (highest_h - lowest_l).replace(0, 1)
+        stoch_k = 100 * ((close - lowest_l) / range_v)
         
-        rs = gain / loss
-        rsi_raw = 100 - (100 / (1 + rs))
-        
-        # B. STP (Sarı Çizgi): RSI'ın Hareketli Ortalaması
-        # İdeal grafikteki pürüzsüzlüğü sağlamak için RSI'ı 10 gün boyunca yumuşatıyoruz.
-        # Bu işlem gürültüyü (tırtıkları) yok eder, ana trendi (iştahı) bırakır.
-        stp = rsi_raw.rolling(window=10).mean()
+        # C. SLOW STOCHASTIC (Düzeltme Burada)
+        # Referans resimdeki o "kıvrımlı ama tepkisel" çizgi için
+        # Fast Stochastic'in 3 günlük basit ortalamasını alıyoruz.
+        # 10 gün çok yavaştı, 1 gün çok dikenliydi. 3 gün (Slow %K) idealdir.
+        stp = stoch_k.rolling(window=3).mean()
         
         # Ölçekleme (0-100 arasını 0-10 arasına çekiyoruz)
         stp = stp / 10.0
         
         # 3. MOMENTUM BARLARI (Sol Grafik İçin)
-        # Burası aynı kalabilir, görsel olarak güzel duruyor.
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
@@ -815,11 +821,12 @@ def calculate_synthetic_sentiment(ticker):
         else:
             df['Date'] = pd.to_datetime(df['Date'])
             
-        # Son 30 iş günü (Grafik ferahlığı için)
+        # Son 30 iş gününü alıyoruz. 
+        # Ancak hesaplama 1 yıllık veriyle yapıldığı için başlangıç noktası artık doğru olacak.
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': stp.values, # Artık çok daha pürüzsüz
+            'STP': stp.values,
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1844,4 +1851,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
