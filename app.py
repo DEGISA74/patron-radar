@@ -763,11 +763,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (BASİT RSI + SMA) ---
+# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (HIZLI YUMUŞATMA) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Veri geçmişi artırıldı (6mo)
+        # 1. VERİ İNDİRME: Veri geçmişi (6mo)
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -779,8 +779,8 @@ def calculate_synthetic_sentiment(ticker):
         impulse = ((df['Close'] - open_safe) / open_safe) * df['Volume']
         momentum_bar = impulse.rolling(5).mean().fillna(0)
         
-        # 2. HESAPLAMA: BASİT VE DOĞAL (RSI / 10 + SMA 5)
-        # Karmaşık MFI veya Stokastik yok. Sadece gücün (RSI) yumuşatılmış hali.
+        # 2. HESAPLAMA: BASİT VE HIZLI (RSI / 10 + SMA 3)
+        # Yumuşatma periyodunu 5'ten 3'e indirdik.
         
         close = df['Close']
         delta = close.diff()
@@ -792,9 +792,9 @@ def calculate_synthetic_sentiment(ticker):
         ma_down = down.ewm(alpha=1/14, adjust=False).mean()
         rsi = 100 - (100 / (1 + ma_up / ma_down))
         
-        # STP (Sarı Çizgi): RSI'ı 10'a böl ve 5 günlük ortalamasını al.
-        # Bu, çizgiyi 3-8 arasına çeker ve o "tok" kıvrımları verir.
-        stp = (rsi / 10).rolling(window=5).mean()
+        # STP (Sarı Çizgi): RSI'ı 10'a böl ve 3 günlük ortalamasını al.
+        # Bu, çizgiyi daha hareketli hale getirir.
+        stp = (rsi / 10).rolling(window=3).mean()
         
         # Veri Seti Hazırlama (SON 30 GÜN)
         df = df.reset_index()
@@ -1837,3 +1837,4 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
