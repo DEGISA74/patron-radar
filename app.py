@@ -767,28 +767,38 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # VERİ SEYRELTME: tail(35) kullanılarak son 35 gün alınır
-        df = yf.download(ticker, period="3mo", progress=False) # Biraz geniş alıp sonra keseceğiz
+        # DÜZELTME 1: Veri geçmişi artırıldı (3mo -> 1y)
+        df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         
         # 1. HESAPLAMALAR
-        impulse = ((df['Close'] - df['Open']) / df['Open']) * df['Volume']
+        # DÜZELTME 2: 0'a bölünme hatasını önlemek için güvenli open
+        open_safe = df['Open'].replace(0, np.nan)
+        impulse = ((df['Close'] - open_safe) / open_safe) * df['Volume']
         momentum_bar = impulse.rolling(5).mean().fillna(0)
         
+        # DÜZELTME 3: RSI Hesaplaması (SMA yerine EMA/Wilder)
         delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + (gain / loss)))
+        up = delta.clip(lower=0)
+        down = -1 * delta.clip(upper=0)
+        ma_up = up.ewm(alpha=1/14, adjust=False).mean()
+        ma_down = down.ewm(alpha=1/14, adjust=False).mean()
+        rsi = 100 - (100 / (1 + ma_up / ma_down))
         
-        stp = rsi.rolling(5).mean() / 10 
-        hstp = rsi.rolling(50).mean() / 10 
+        stp = rsi.rolling(5).mean() / 10
+        hstp = rsi.rolling(50).mean() / 10
         
-        # Veri Seti Hazırlama (Date sütunu eklendi)
+        # Veri Seti Hazırlama
         df = df.reset_index()
-        df['Date'] = pd.to_datetime(df['Date'])
+        # Date sütunu kontrolü (yfinance versiyonuna göre)
+        if 'Date' not in df.columns:
+            df['Date'] = df.index
+        else:
+            df['Date'] = pd.to_datetime(df['Date'])
         
-        # Son 35 gün (User Request)
+        # Son 35 gün
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
@@ -1823,4 +1833,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
