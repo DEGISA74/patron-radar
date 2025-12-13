@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.3 (Final Sentiment)",
+    page_title="Patronun Terminali v5.5 (MACD Wave)",
     layout="wide",
     page_icon="🐂"
 )
@@ -515,15 +515,6 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
         except:
             return None
 
-    # 3. Paralel Çalıştırma
-    results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(executor.map(process_radar2, asset_list))
-        
-    results = [r for r in results if r is not None]
-    
-    return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
-
 # --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT & PRICE ACTION SCANNER) ---
 @st.cache_data(ttl=3600)
 def agent3_breakout_scan(asset_list):
@@ -749,32 +740,30 @@ def calculate_sentiment_score(ticker):
     except:
         return None
 
-def get_deep_xray_data(ticker):
-    sent = calculate_sentiment_score(ticker)
-    if not sent: return None
-    def icon(cond): return "✅" if cond else "❌"
-    return {
-        "mom_rsi": f"{icon(sent['raw_rsi']>50)} RSI Trendi",
-        "mom_macd": f"{icon(sent['raw_macd']>0)} MACD Hist",
-        "vol_obv": f"{icon('OBV ↑' in sent['vol'])} OBV Akışı",
-        "tr_ema": f"{icon('GoldCross' in sent['tr'])} EMA Dizilimi",
-        "tr_adx": f"{icon('P > SMA50' in sent['tr'])} Trend Gücü",
-        "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
-        "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
-    }
-
 # --- YENİ EKLENEN SENTETİK SENTIMENT (FİYAT TABANLI DUYGU) PANELİ ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
         # VERİ SEYRELTME: tail(35) kullanılarak son 35 gün alınır
-        df = yf.download(ticker, period="3mo", progress=False) # Biraz geniş alıp sonra keseceğiz
+        df = yf.download(ticker, period="6mo", progress=False) # Period 6mo yapıldı çünkü MACD için geçmiş veri lazım
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
         # 1. HESAPLAMALAR
-        impulse = ((df['Close'] - df['Open']) / df['Open']) * df['Volume']
-        momentum_bar = impulse.rolling(5).mean().fillna(0)
+        # YENİ MANTIK: MACD Histogram (Trend Takipçisi Momentum)
+        # Orijinal resimdeki gibi "Trende göre renk bloğu" oluşturur.
+        
+        # EMA Hesaplamaları
+        ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        hist = macd - signal # MACD Histogram (Momentum Barı)
+        
+        # Hacim ile Ağırlıklandırma (Opsiyonel ama "Para Akış" dediğimiz için ekliyoruz)
+        # Hacim ortalamasına göre normalize et
+        vol_ratio = df['Volume'] / df['Volume'].rolling(20).mean()
+        momentum_bar = hist * vol_ratio.fillna(1)
         
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
