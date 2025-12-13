@@ -346,7 +346,15 @@ def analyze_market_intelligence(asset_list):
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean() # Düzeltme: MACD
+            # MACD calculation might be simplified in your original code, keeping your logic mostly
+            # Standard MACD: EMA12 - EMA26
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            hist = macd_line - signal_line
+            
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -455,7 +463,10 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
             rsi = 100 - (100 / (1 + (gain / loss)))
             rsi_c = float(rsi.iloc[-1])
             
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()) - (close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+            # MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
             
             recent_high_60 = float(high.rolling(60).max().iloc[-1])
             breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
@@ -588,13 +599,13 @@ def agent3_breakout_scan(asset_list):
                 vol_inc_pct = ((vol_3 - vol_20) / vol_20) * 100
 
                 # Trend Metni
-                trend_display = f"EMA: ✅ | SMA: {'✅' if sma_ok else '❌'}"
+                trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
 
                 return {
                     "Sembol": symbol,
                     "Fiyat": f"{curr_price:.2f}",
                     "Zirveye Yakınlık": prox_str,
-                    "Hacim Artışı": f"+%{vol_inc_pct:.0f}",
+                    "Hacim Artışı": f"🚀 %{vol_inc_pct:.0f} Artış",
                     "Trend Durumu": trend_display,
                     "RSI": f"{rsi:.0f}"
                 }
@@ -1329,42 +1340,49 @@ with col_left:
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
     
-    # --- YENİ EKLENEN AJAN 3 ALANI (GRAFİK ALTINDA) ---
-    st.markdown("### 🕵️ AJAN 3: Breakout & Hacim Tarayıcısı")
+    # --- YENİ EKLENEN AJAN 3 ALANI (GÜNCELLENMİŞ TASARIM) ---
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı</div>', unsafe_allow_html=True)
+    
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} için Ajan 3'ü Çalıştır", type="primary"):
-            with st.spinner("Ajan 3 piyasayı kokluyor... (Trend + Hacim + Zirve)"):
+        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
+            with st.spinner("Ajan 3 piyasayı kokluyor..."):
                 st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
-            st.success(f"{len(st.session_state.agent3_data)} adet potansiyel fırsat bulundu.")
+            st.caption(f"{len(st.session_state.agent3_data)} fırsat bulundu.")
             
-            # Sonuçları Liste Halinde Göster
+            # Sonuçları Liste Halinde Göster (YENİ TASARIM)
             for i, row in st.session_state.agent3_data.iterrows():
                 sym = row["Sembol"]
                 
-                # Kart Tasarımı
-                st.markdown(f"""
-                <div style="background-color:{current_theme['box_bg']}; border:1px solid {current_theme['border']}; border-radius:6px; padding:8px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <div style="font-weight:700; color:#1e40af; font-size:0.9rem;">{sym} <span style="font-weight:400; color:{current_theme['text']}; font-size:0.8rem;">({row['Fiyat']})</span></div>
-                        <div style="font-size:0.75rem; color:#64748B;">{row['Zirveye Yakınlık']} | <span style="color:#15803d; font-weight:600;">Hacim: {row['Hacim Artışı']}</span></div>
-                        <div style="font-size:0.7rem; color:#475569; margin-top:2px; font-family:'JetBrains Mono';">{row['Trend Durumu']} | RSI: {row['RSI']}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                # Sütun yapısı: %75 KART, %25 BUTONLAR
+                col_main, col_btn1, col_btn2 = st.columns([0.75, 0.12, 0.13])
                 
-                # Aksiyon Butonları (Yan Yana)
-                c1, c2 = st.columns([0.15, 0.85])
-                if c1.button("★", key=f"a3_star_{sym}_{i}"):
-                    toggle_watchlist(sym)
-                    st.rerun()
-                if c2.button(f"🔍 {sym} İncele", key=f"a3_sel_{sym}_{i}"):
-                    on_scan_result_click(sym)
-                    st.rerun()
+                with col_main:
+                    st.markdown(f"""
+                    <div class="info-card" style="margin:0;">
+                        <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
+                            {sym} <span style="float:right; font-weight:400; font-family:'JetBrains Mono';">{row['Fiyat']}</span>
+                        </div>
+                        <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
+                        <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Artışı']}</div></div>
+                        <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
+                        <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Butonlar yan yana
+                with col_btn1:
+                     if st.button("★", key=f"a3_star_{sym}_{i}", help="İzlemeye Al"):
+                        toggle_watchlist(sym)
+                        st.rerun()
+                with col_btn2:
+                     if st.button("🔍", key=f"a3_sel_{sym}_{i}", help="Analiz Et"):
+                        on_scan_result_click(sym)
+                        st.rerun()
         
         elif st.session_state.agent3_data is not None:
-             st.info("Kriterlere uyan hisse bulunamadı. (Filtreler çok sıkı olabilir)")
+             st.info("Kriterlere uyan hisse yok.")
 
     
     st.markdown(
