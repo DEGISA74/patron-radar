@@ -347,8 +347,13 @@ def analyze_market_intelligence(asset_list):
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean()
-            # MACD Fix: Your formula seems correct logic for histogram. 
-            # EMA12 = close.ewm(span=12).mean(), EMA26 = ... MACD = EMA12-EMA26. Signal = MACD.ewm(9). Hist = MACD - Signal.
+            # MACD calculation might be simplified in your original code, keeping your logic mostly
+            # Standard MACD: EMA12 - EMA26
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            hist = macd_line - signal_line
             
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -518,7 +523,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
     
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT SCANNER) ---
+# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT SCANNER - GELİŞMİŞ) ---
 @st.cache_data(ttl=3600)
 def agent3_breakout_scan(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -543,6 +548,7 @@ def agent3_breakout_scan(asset_list):
 
             close = df['Close']
             high = df['High']
+            open_ = df['Open']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
 
             # 1. HESAPLAMALAR
@@ -551,12 +557,20 @@ def agent3_breakout_scan(asset_list):
             sma20 = close.rolling(20).mean()
             sma50 = close.rolling(50).mean()
             
+            # Bollinger Bands (Sıkışma Kontrolü İçin)
+            std20 = close.rolling(20).std()
+            bb_upper = sma20 + (2 * std20)
+            bb_lower = sma20 - (2 * std20)
+            bb_width = (bb_upper - bb_lower) / sma20
+            
+            # RVOL (Relative Volume)
+            vol_20 = volume.rolling(20).mean().iloc[-1]
+            curr_vol = volume.iloc[-1]
+            if vol_20 == 0: vol_20 = 1 
+            rvol = curr_vol / vol_20
+
             high_60 = high.rolling(60).max().iloc[-1]
             curr_price = close.iloc[-1]
-            
-            vol_3 = volume.rolling(3).mean().iloc[-1]
-            vol_20 = volume.rolling(20).mean().iloc[-1]
-            if vol_20 == 0: vol_20 = 1 # Sıfıra bölünme hatası önlemi
 
             # RSI Hesapla
             delta = close.diff()
@@ -565,44 +579,58 @@ def agent3_breakout_scan(asset_list):
             rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
 
             # 2. KOŞULLAR (FİLTRELER)
-            
-            # A) Trend: EMA 5 > EMA 20 (ZORUNLU)
             cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
-            
-            # B) Hacim: Son 3 gün ortalama hacim > 20 gün ortalamasının %20 fazlası
-            cond_vol = vol_3 > vol_20 * 1.20
-            
-            # C) Direnç/Breakout: Fiyat son 60 günün zirvesinin %90'ından büyük
+            cond_vol = rvol > 1.2 # En azından ilgi var olmalı
             cond_prox = curr_price > (high_60 * 0.90)
-            
-            # D) RSI Güvenlik: 70'ten küçük (Aşırı şişmemiş)
             cond_rsi = rsi < 70
-
-            # E) SMA Bilgisi (Filtre Değil, Gösterge)
             sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
 
-            # TÜM KOŞULLAR SAĞLANIYOR MU?
             if cond_ema and cond_vol and cond_prox and cond_rsi:
                 
-                # Zirveye yakınlık yüzdesi
+                # --- SIKIŞMA (SQUEEZE) KONTROLÜ ---
+                # Son 60 günün minimum bant genişliğinin %10 fazlası içindeyse sıkışma vardır
+                min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]
+                is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
+                
+                # Zirve Metni (Sıkışma Varsa Özel Mesaj)
                 prox_pct = (curr_price / high_60) * 100
-                prox_str = f"%{prox_pct:.1f}"
-                if prox_pct >= 98: prox_str += " (Sınıra Dayandı)"
-                else: prox_str += " (Hazırlanıyor)"
+                if is_squeeze:
+                    prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır"
+                else:
+                    prox_str = f"%{prox_pct:.1f}"
+                    if prox_pct >= 98: prox_str += " (Sınıra Dayandı)"
+                    else: prox_str += " (Hazırlanıyor)"
 
-                # Hacim Artış Yüzdesi
-                vol_inc_pct = ((vol_3 - vol_20) / vol_20) * 100
+                # --- TUZAK (WICK) FİLTRESİ ---
+                c_open = open_.iloc[-1]
+                c_close = close.iloc[-1]
+                c_high = high.iloc[-1]
+                body_size = abs(c_close - c_open)
+                upper_wick = c_high - max(c_open, c_close)
+                
+                # Eğer üst fitil, gövdenin 1.5 katından büyükse TUZAK UYARISI
+                is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
+                wick_warning = " <span style='color:#DC2626; font-weight:700; background:#fef2f2; padding:2px 4px; border-radius:4px;'>⚠️ Satış Baskısı (Uzun Fitil)</span>" if is_wick_rejected else ""
 
-                # Trend Metni
+                # --- RVOL METNİ ---
+                rvol_text = ""
+                if rvol > 2.0:
+                    rvol_text = "Olağanüstü para girişi 🐳"
+                elif rvol > 1.5: # 1.2 - 2.0 arası mantığı (1.5 üzeri artıyor diyelim)
+                    rvol_text = "İlgi artıyor 📈"
+                else:
+                    rvol_text = "İlgi var 👀"
+
                 trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
 
                 return {
                     "Sembol": symbol,
                     "Fiyat": f"{curr_price:.2f}",
-                    "Zirveye Yakınlık": prox_str,
-                    "Hacim Artışı": f"🚀 %{vol_inc_pct:.0f} Artış",
+                    "Zirveye Yakınlık": prox_str + wick_warning, # Wick uyarısını buraya ekledik
+                    "Hacim Durumu": rvol_text,
                     "Trend Durumu": trend_display,
-                    "RSI": f"{rsi:.0f}"
+                    "RSI": f"{rsi:.0f}",
+                    "SortKey": rvol # Sıralama için
                 }
             return None
 
@@ -614,7 +642,7 @@ def agent3_breakout_scan(asset_list):
         results = list(executor.map(process_agent3, asset_list))
     
     results = [r for r in results if r is not None]
-    return pd.DataFrame(results).sort_values(by="Hacim Artışı", ascending=False) if results else pd.DataFrame()
+    return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
@@ -1359,7 +1387,7 @@ with col_left:
                         <span style="font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
                     </div>
                     <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                    <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Artışı']}</div></div>
+                    <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
                     <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
                     <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
                 </div>
