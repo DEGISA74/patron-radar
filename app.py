@@ -11,11 +11,12 @@ import sqlite3
 import os
 import textwrap
 import concurrent.futures
-import re  # HTML temizliği için eklendi
+import re
+import altair as alt  # Görselleştirme için eklendi
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.5 (ICT Hybrid)",
+    page_title="Patronun Terminali v4.6 (Sentetik Sentiment)",
     layout="wide",
     page_icon="🐂"
 )
@@ -761,6 +762,82 @@ def get_deep_xray_data(ticker):
         "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
+
+# --- YENİ EKLENEN SENTETİK SENTIMENT (FİYAT TABANLI DUYGU) PANELİ ---
+@st.cache_data(ttl=600)
+def calculate_synthetic_sentiment(ticker):
+    try:
+        df = yf.download(ticker, period="6mo", progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # 1. HESAPLAMALAR
+        # Momentum (Sol Grafik): Para Akış İvmesi
+        # Formül: (Kapanış - Açılış) / Açılış * Hacim -> 5 Günlük Hareketli Ortalama
+        impulse = ((df['Close'] - df['Open']) / df['Open']) * df['Volume']
+        momentum_bar = impulse.rolling(5).mean().fillna(0)
+        
+        # Market Appetite (Sağ Grafik): RSI Tabanlı İştah
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss)))
+        
+        # Ölçeklendirme (0-10 Arası)
+        stp = rsi.rolling(5).mean() / 10 # Sarı Çizgi (Short Term Polarity)
+        hstp = rsi.rolling(50).mean() / 10 # Gri Çizgi (Historical Sentiment Trend)
+        
+        # Veri Seti Hazırlama (Son 60 gün)
+        plot_df = pd.DataFrame({
+            'Date': df.index,
+            'Momentum': momentum_bar,
+            'STP': stp,
+            'HSTP': hstp,
+            'Price': df['Close']
+        }).tail(60).reset_index(drop=True)
+        
+        return plot_df
+    except:
+        return None
+
+def render_synthetic_sentiment_panel(data):
+    if data is None or data.empty: return
+
+    st.markdown(f"""
+    <div class="info-card" style="margin-bottom:10px;">
+        <div class="info-header">🧠 Sentetik Sentiment (Piyasa İştahı)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        # SOL GRAFİK: Momentum Barları
+        chart_mom = alt.Chart(data).mark_bar().encode(
+            x=alt.X('index:O', axis=None), # X ekseni gizli
+            y=alt.Y('Momentum:Q', title="Para Akış İvmesi"),
+            color=alt.condition(
+                alt.datum.Momentum > 0,
+                alt.value("#7c3aed"),  # Pozitif: Mor
+                alt.value("#ef4444")   # Negatif: Kırmızı
+            ),
+            tooltip=['Price', 'Momentum']
+        ).properties(height=150, title="Para Akış Momentum (İvme)")
+        st.altair_chart(chart_mom, use_container_width=True)
+
+    with c2:
+        # SAĞ GRAFİK: İştah Trendi (Çizgiler)
+        base = alt.Chart(data).encode(x=alt.X('index:O', axis=None))
+        
+        line_stp = base.mark_line(color='#eab308', strokeWidth=2).encode(y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), title="İştah (0-10)")) # Sarı
+        line_hstp = base.mark_line(color='#94a3b8', strokeDash=[5,5]).encode(y='HSTP:Q') # Gri Kesikli
+        
+        # Fiyatı ayrı bir katman (layer) veya normalize ederek ekleyebiliriz.
+        # Basitlik için sadece İştah çizgilerini gösterelim, görsel kirlilik olmasın.
+        
+        chart_appetite = (line_stp + line_hstp).properties(height=150, title="Piyasa İştahı (Sarı) vs Ortalama (Gri)")
+        st.altair_chart(chart_appetite, use_container_width=True)
+
 
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
@@ -1599,6 +1676,10 @@ with col_left:
 with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
+    
+    # --- YENİ EKLENEN PANEL BURADA ---
+    synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
+    render_synthetic_sentiment_panel(synth_data)
     
     # ICT Panel BURADA (GÜNCELLENMİŞ)
     ict_data = calculate_ict_concepts(st.session_state.ticker)
