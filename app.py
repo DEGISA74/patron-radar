@@ -763,7 +763,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (STOCH RSI + 30 GÜN) ---
+# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (TİPİK FİYAT STOKASTİK) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -781,34 +781,32 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: STOCHASTIC RSI (İştah Trendi İçin)
-        # Adım A: Klasik RSI Hesapla
-        delta = close.diff()
-        up = delta.clip(lower=0)
-        down = -1 * delta.clip(upper=0)
-        # Wilder Smoothing (Daha pürüzsüz RSI)
-        ma_up = up.ewm(alpha=1/14, adjust=False).mean()
-        ma_down = down.ewm(alpha=1/14, adjust=False).mean()
-        rsi = 100 - (100 / (1 + ma_up / ma_down))
+        # 2. HESAPLAMA: TİPİK FİYAT ÜZERİNDEN STOKASTİK
+        # Bu yöntem, fiyat yatay gitse bile "High-Low" aralığına göre 
+        # fiyatın nerede olduğunu ölçer. Tepeye yapışmaz, düşüşte hemen tepki verir.
         
-        # Adım B: RSI Üzerine Stokastik Uygula (Aralık hesabı)
-        # Bu formül, fiyat yataya bağlasa bile indikatörün aşağı/yukarı sert gitmesini sağlar.
-        period_stoch = 14
-        rsi_min = rsi.rolling(window=period_stoch).min()
-        rsi_max = rsi.rolling(window=period_stoch).max()
+        # Tipik Fiyat
+        tp = (df['High'] + df['Low'] + df['Close']) / 3
+
+        # Stochastic Oscillator (%K) Formülü: (Current - Low) / (High - Low)
+        # Burada 14 günlük en yüksek ve en düşük fiyatlar referans alınır.
+        period = 14
+        lowest_l = df['Low'].rolling(window=period).min()
+        highest_h = df['High'].rolling(window=period).max()
+
+        # 0'a bölünme önlemi
+        range_v = (highest_h - lowest_l).replace(0, 1)
         
-        stoch_rsi = (rsi - rsi_min) / (rsi_max - rsi_min)
-        
-        # Adım C: STP (Sarı Çizgi) - Yumuşatma ve Ölçekleme
-        # StochRSI çok gürültülüdür, 3 günlük ortalama ile "kaymak" gibi yapıyoruz.
-        # 0-10 skalasına çekiyoruz.
-        stp = stoch_rsi.rolling(window=3).mean() * 10
+        # Ham Stokastik Değer
+        stoch_raw = (tp - lowest_l) / range_v
+
+        # STP (Sarı Çizgi): Ham değeri 5 günlük hareketli ortalama ile yumuşatıyoruz.
+        # Orijinal grafikteki "ağır" salınımı yakalamak için 3 yerine 5 kullandık.
+        stp = stoch_raw.rolling(window=5).mean() * 10
         
         # 3. MOMENTUM BARLARI (Sol Grafik)
-        # Fiyat değişimi * Hacim (Para Giriş/Çıkış Şiddeti)
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
-        # Barların çok titrek olmaması için hafif yumuşatma
         momentum_bar = impulse.rolling(3).mean().fillna(0)
         
         # 4. GÖRSELLEŞTİRME VERİ SETİ (SON 30 GÜN KURALI)
@@ -818,13 +816,13 @@ def calculate_synthetic_sentiment(ticker):
         else:
             df['Date'] = pd.to_datetime(df['Date'])
             
-        # Hesaplamalar bitti, şimdi sadece son 30 günü kesip alıyoruz.
+        # Son 30 iş günü
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
             'STP': stp.values, # Sadece Sarı Çizgi
             'Price': close.values
-        }).tail(30).reset_index(drop=True) # Son 30 iş günü
+        }).tail(30).reset_index(drop=True) 
         
         return plot_df
     except:
