@@ -346,7 +346,7 @@ def analyze_market_intelligence(asset_list):
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean() # Düzeltme: MACD
+            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean()
             # MACD calculation might be simplified in your original code, keeping your logic mostly
             # Standard MACD: EMA12 - EMA26
             ema12 = close.ewm(span=12, adjust=False).mean()
@@ -1344,7 +1344,8 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı</div>', unsafe_allow_html=True)
     
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
+        # BURASI DÜZELTİLDİ: key EKLENDİ
+        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
             with st.spinner("Ajan 3 piyasayı kokluyor..."):
                 st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
@@ -1524,7 +1525,8 @@ with col_right:
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary"):
+        # BURASI DÜZELTİLDİ: key EKLENDİ
+        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."):
                 st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.scan_data is not None:
@@ -1541,7 +1543,8 @@ with col_right:
                     st.caption(row['Nedenler'])
 
     with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary"):
+        # BURASI DÜZELTİLDİ: key EKLENDİ (Garanti olsun diye)
+        if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."):
                 st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.radar2_data is not None:
@@ -1558,7 +1561,8 @@ with col_right:
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
 
     with tab3:
-        if st.button("⚡ Listeyi Tara", type="secondary"):
+        # BURASI DÜZELTİLDİ: key EKLENDİ
+        if st.button("⚡ Listeyi Tara", type="secondary", key="wl_main_scan_btn"):
             with st.spinner("..."):
                 st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
         for sym in st.session_state.watchlist:
