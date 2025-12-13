@@ -763,11 +763,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (STOCHASTIC RSI MODELİ) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (RSI ON STP MODELİ) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Warm-up için 1 yıllık veri
+        # 1. VERİ İNDİRME: Warm-up için 1 yıllık veri (RSI'ın oturması için şart)
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
@@ -782,42 +782,35 @@ def calculate_synthetic_sentiment(ticker):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: STOCHASTIC RSI (STOCHRSI)
-        # Sır burada: Sadece fiyatın yerine, Fiyatın GÜCÜNÜN (RSI) Stokastiğini alıyoruz.
-        # Bu, iştah çizgisinin her zaman 0 ve 10 sınırlarını zorlamasını sağlar (Düzleşmez).
+        # 2. HESAPLAMA: RSI ON STP (SIRRI BURADA)
+        # Stokastik yerine RSI kullanıyoruz. Bu, "acayip" zıplamaları önler.
+        # Fiyat yerine STP (Yumuşak Fiyat) kullanıyoruz. Bu, "tırtıkları" önler.
 
-        # A. Tipik Fiyat (Typical Price) - Tooltip'teki STP'nin kaynağı
+        # A. Tipik Fiyat (High+Low+Close)/3
         tp = (high + low + close) / 3
         
-        # B. RSI Hesapla (Tipik Fiyat Üzerinden)
-        # Fiyat yerine TP kullanmak, mum fitillerindeki gürültüyü eler.
-        delta = tp.diff()
+        # B. STP (Smoothed Typical Price) - Tooltip'te görünen 445.46 vb. değer bu!
+        # Fiyatı 3 günle yumuşatıyoruz.
+        stp_price = tp.rolling(window=3).mean()
+        
+        # C. RSI HESAPLA (STP Üzerinden)
+        # Fiyatın değil, STP'nin RSI'ını alıyoruz. 
+        # Bu işlem grafiğin ana karakterini oluşturur.
+        delta = stp_price.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-
-        # C. STOCHASTIC RSI (RSI'ın Stokastiği)
-        # RSI'ı alıp, "Bu RSI değeri son 14 günün neresinde?" diye soruyoruz.
-        # Bu işlem grafiği 0-100 (bizde 0-10) arasına genişletir.
-        period = 14
-        min_rsi = rsi.rolling(window=period).min()
-        max_rsi = rsi.rolling(window=period).max()
+        rsi_raw = 100 - (100 / (1 + rs))
         
-        # StochRSI Formülü
-        stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi)
+        # D. FİNAL YUMUŞATMA (SARI ÇİZGİ)
+        # Ham RSI hala biraz köşeli olabilir. Referans resimdeki o "yağ gibi akan"
+        # görüntü için RSI'ın 3 günlük ortalamasını alıyoruz.
+        final_sentiment = rsi_raw.rolling(window=3).mean()
         
-        # D. YUMUŞATMA (SMOOTHING)
-        # Referans resimdeki o "kubbeli" estetik dönüşler için
-        # StochRSI sonucunu 3 veya 5 günlük ortalama ile yumuşatıyoruz.
-        # 3 Gün: Daha agresif (Hızlı tepki)
-        # 5 Gün: Daha dalgalı (Referans resimlere daha yakın) -> 5 Seçildi.
-        final_line = stoch_rsi.rolling(window=5).mean() * 10
+        # Ölçekleme: RSI normalde 0-100 arasıdır, biz 0-10 istiyoruz.
+        final_line = final_sentiment / 10.0
         
-        # Eksik verileri doldur (Baştaki NaN'lar için)
-        final_line = final_line.fillna(5)
-
-        # 3. MOMENTUM BARLARI
+        # 3. MOMENTUM BARLARI (Sol Grafik)
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
@@ -832,7 +825,8 @@ def calculate_synthetic_sentiment(ticker):
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': final_line.values, # Sarı Çizgi (0-10)
+            'STP': final_line.values, # Ekrana çizilen Sarı Çizgi (0-10 Puanı)
+            'STP_Price': stp_price.values, # Tooltip için STP Fiyatı (Opsiyonel, veri setinde dursun)
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1857,6 +1851,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
