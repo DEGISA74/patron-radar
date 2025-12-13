@@ -1405,8 +1405,15 @@ with col_left:
             
             # Sonuçları Liste Halinde Göster (YENİ TASARIM - FOOTER BUTON)
             for i, row in st.session_state.agent3_data.iterrows():
-                sym_raw = row["Sembol_Raw"]
-                sym_display = row["Sembol_Display"]
+                # --- GÜVENLİ VERİ OKUMA (KeyError Önlemi) ---
+                # Eğer Sembol_Raw yoksa (eski cache vb.), alternatiflere bak
+                sym_raw = row.get("Sembol_Raw")
+                if not sym_raw:
+                    # Alternatif olarak 'Sembol' veya index'i dene
+                    sym_raw = row.get("Sembol", row.name if isinstance(row.name, str) else "Bilinmiyor")
+                
+                # Sembol_Display yoksa ham sembolü kullan
+                sym_display = row.get("Sembol_Display", sym_raw)
                 
                 # Kart Tasarımı
                 st.markdown(f"""
