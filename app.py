@@ -763,11 +763,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (STOKASTİK STP) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (FULL STOCHASTIC) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Çizginin oturması için 1 yıllık veri
+        # 1. VERİ İNDİRME: "Warm-up" için 1 yıllık veri
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
@@ -784,33 +784,40 @@ def calculate_synthetic_sentiment(ticker):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: "STP STOCHASTIC" (Sırrı Çözdük)
-        # Önce Fiyatı Yumuşat (STP Bul), Sonra Osilatöre Çevir.
+        # 2. HESAPLAMA: FULL STOCHASTIC (TAM STOKASTİK)
+        # Hata buradaydı: Fiyatı değil, sonucu yumuşatacağız.
         
-        # A. Tipik Fiyat (Typical Price)
+        # A. Ham Tipik Fiyat (Typical Price)
+        # Burayı yumuşatmıyoruz! Ham haliyle alıyoruz ki 0 ve 100'ü görebilsin.
         tp = (high + low + close) / 3
 
-        # B. STP (Smoothed Typical Price) - Tooltip'te gördüğün "Fiyat" bu!
-        # Tipik fiyatın 3 günlük hareketli ortalaması. 
-        # Bu işlem fiyatın içindeki "gürültüyü" (noise) temizler.
-        stp_price = tp.rolling(window=3).mean()
-
-        # C. SARI ÇİZGİ (Risk İştahı Osilatörü)
-        # Şimdi soruyoruz: "Şu anki STP fiyatı, son 14 günün STP aralığında nerede?"
-        # Bu yöntem, grafiği hem çok yumuşak (smooth) yapar hem de 0 ve 10'a tam değdirir.
-        
+        # B. Ham Stokastik %K (Raw Stochastic)
+        # 14 Günlük periyotta TP nerede?
         period = 14
-        lowest_stp = stp_price.rolling(window=period).min()
-        highest_stp = stp_price.rolling(window=period).max()
+        lowest_tp = tp.rolling(window=period).min()
+        highest_tp = tp.rolling(window=period).max()
         
         # 0'a bölünme önlemi
-        range_stp = (highest_stp - lowest_stp).replace(0, 1)
+        range_tp = (highest_tp - lowest_tp).replace(0, 1)
         
-        # Formül: (Mevcut STP - En Düşük STP) / (Aralık)
-        sentiment_score = 100 * ((stp_price - lowest_stp) / range_stp)
+        # Bu değer çok oynaktır (Testere gibidir)
+        raw_stoch = 100 * ((tp - lowest_tp) / range_tp)
         
-        # 0-10 Ölçeğine çek
-        final_line = sentiment_score / 10.0
+        # C. ÇİFT YUMUŞATMA (DOUBLE SMOOTHING) - İŞİN SIRRI BU
+        # O resimdeki yuvarlak dönüşleri (kubbeli yapıları) elde etmek için:
+        
+        # Adım 1: Fast %D (3 günlük ortalama) -> Dikenleri temizler
+        smooth_k = raw_stoch.rolling(window=3).mean()
+        
+        # Adım 2: Slow %D (Bunun da 3 günlük ortalaması) -> O estetik "Sarı Çizgi"yi oluşturur
+        # Buna "Full Stochastic" denir. Sinyal gecikmez ama çok temiz görünür.
+        stp = smooth_k.rolling(window=3).mean()
+        
+        # Ölçekleme (0-10)
+        final_line = stp / 10.0
+
+        # NOT: Tooltip'te görünen "STP Fiyatı" sadece bilgi amaçlıymış, 
+        # grafik çizilirken kullanılan değer bu "final_line"dır.
         
         # 3. MOMENTUM BARLARI (Sol Grafik İçin)
         open_safe = df['Open'].replace(0, np.nan)
@@ -827,7 +834,7 @@ def calculate_synthetic_sentiment(ticker):
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': final_line.values, # Ekrana çizilen Sarı Çizgi (0-10 Puanı)
+            'STP': final_line.values,
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1852,6 +1859,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
