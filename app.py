@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.1 (Clean UI)",
+    page_title="Patronun Terminali v5.2 (Final UI)",
     layout="wide",
     page_icon="🐂"
 )
@@ -816,9 +816,9 @@ def render_synthetic_sentiment_panel(data):
         # SOL GRAFİK: Momentum Barları + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # Barlar (Momentum) - Sol Eksen (AXIS KALDIRILDI)
-        bars = base.mark_bar(size=15, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
-            y=alt.Y('Momentum:Q', axis=None), # Sol eksen tamamen gizli
+        # Barlar (Momentum) - Sol Eksen (AXIS LABELS=FALSE)
+        bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', labels=False, titleColor='#4338ca')), 
             color=alt.condition(
                 alt.datum.Momentum > 0,
                 alt.value("#4338ca"),  # Tok İndigo
@@ -840,9 +840,9 @@ def render_synthetic_sentiment_panel(data):
         # SAĞ GRAFİK: İştah Trendi + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # İştah Çizgileri - Sol Eksen (AXIS KALDIRILDI)
+        # İştah Çizgileri - Sol Eksen (AXIS LABELS=FALSE)
         line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=None) # Sol eksen gizli
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='İştah (0-10)', labels=False, titleColor='#fbbf24')) 
         )
         line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4], strokeWidth=2).encode(y='HSTP:Q')
         
