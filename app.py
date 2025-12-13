@@ -129,8 +129,11 @@ def load_watchlist_db():
 def add_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,)); conn.commit()
-    except sqlite3.IntegrityError: pass
+    try:
+        c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,))
+        conn.commit()
+    except sqlite3.IntegrityError: 
+        pass
     conn.close()
 def remove_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
