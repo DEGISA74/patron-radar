@@ -1426,18 +1426,34 @@ with col_left:
                     target_text = ict_vals.get('liquidity', 'Belirsiz')
                     stop_text = f"{tech_vals['stop_level']:.2f}" if tech_vals else "-"
 
-                    # Buton Etiketi (HTML desteklemez, düz metin)
-                    btn_label = f"{sym_raw} | {row['Fiyat']}"
+                    # --- SİNYAL YÖNÜNÜ BELİRLE (RENKLENDİRME İÇİN) ---
+                    # Sembol_Display veya Trend Durumu içinde "SHORT" geçiyor mu?
+                    is_short = "SHORT" in str(row.get('Sembol_Display', '')) or "SHORT" in str(row.get('Trend Durumu', ''))
+                    
+                    if is_short:
+                        # SHORT TASARIMI (Kırmızımsı)
+                        card_bg = "#fef2f2" # Çok açık kırmızı
+                        card_border = "#b91c1c" # Koyu kırmızı
+                        btn_icon = "🔻"
+                        signal_text = "SHORT"
+                    else:
+                        # LONG TASARIMI (Yeşilimsi)
+                        card_bg = "#f0fdf4" # Çok açık yeşil
+                        card_border = "#15803d" # Koyu yeşil
+                        btn_icon = "🚀"
+                        signal_text = "LONG"
+
+                    # Buton Etiketi
+                    btn_label = f"{btn_icon} {signal_text} | {sym_raw} | {row['Fiyat']}"
 
                     # Kart Başlığı (Buton Olarak)
-                    if st.button(f"📊 {btn_label}", key=f"a3_hdr_{sym_raw}_{i}", use_container_width=True):
+                    if st.button(f"{btn_label}", key=f"a3_hdr_{sym_raw}_{i}", use_container_width=True):
                          on_scan_result_click(sym_raw)
                          st.rerun()
 
-                    # Kart İçeriği (HTML)
-                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
+                    # Kart İçeriği (HTML - DİNAMİK RENKLENDİRME İLE)
                     card_html = f"""
-<div class="info-card" style="margin-top: 0px; height: 100%;">
+<div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};">
 <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
 <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
 <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
