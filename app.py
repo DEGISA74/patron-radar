@@ -763,19 +763,17 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (FULL STOCHASTIC) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (STOCHASTIC RSI MODELİ) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: "Warm-up" için 1 yıllık veri
+        # 1. VERİ İNDİRME: Warm-up için 1 yıllık veri
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
-        # MultiIndex düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # Temel Veri Kontrolü
         if 'Close' not in df.columns: return None
         df = df.dropna()
 
@@ -784,42 +782,42 @@ def calculate_synthetic_sentiment(ticker):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: FULL STOCHASTIC (TAM STOKASTİK)
-        # Hata buradaydı: Fiyatı değil, sonucu yumuşatacağız.
-        
-        # A. Ham Tipik Fiyat (Typical Price)
-        # Burayı yumuşatmıyoruz! Ham haliyle alıyoruz ki 0 ve 100'ü görebilsin.
+        # 2. HESAPLAMA: STOCHASTIC RSI (STOCHRSI)
+        # Sır burada: Sadece fiyatın yerine, Fiyatın GÜCÜNÜN (RSI) Stokastiğini alıyoruz.
+        # Bu, iştah çizgisinin her zaman 0 ve 10 sınırlarını zorlamasını sağlar (Düzleşmez).
+
+        # A. Tipik Fiyat (Typical Price) - Tooltip'teki STP'nin kaynağı
         tp = (high + low + close) / 3
+        
+        # B. RSI Hesapla (Tipik Fiyat Üzerinden)
+        # Fiyat yerine TP kullanmak, mum fitillerindeki gürültüyü eler.
+        delta = tp.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
 
-        # B. Ham Stokastik %K (Raw Stochastic)
-        # 14 Günlük periyotta TP nerede?
+        # C. STOCHASTIC RSI (RSI'ın Stokastiği)
+        # RSI'ı alıp, "Bu RSI değeri son 14 günün neresinde?" diye soruyoruz.
+        # Bu işlem grafiği 0-100 (bizde 0-10) arasına genişletir.
         period = 14
-        lowest_tp = tp.rolling(window=period).min()
-        highest_tp = tp.rolling(window=period).max()
+        min_rsi = rsi.rolling(window=period).min()
+        max_rsi = rsi.rolling(window=period).max()
         
-        # 0'a bölünme önlemi
-        range_tp = (highest_tp - lowest_tp).replace(0, 1)
+        # StochRSI Formülü
+        stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi)
         
-        # Bu değer çok oynaktır (Testere gibidir)
-        raw_stoch = 100 * ((tp - lowest_tp) / range_tp)
+        # D. YUMUŞATMA (SMOOTHING)
+        # Referans resimdeki o "kubbeli" estetik dönüşler için
+        # StochRSI sonucunu 3 veya 5 günlük ortalama ile yumuşatıyoruz.
+        # 3 Gün: Daha agresif (Hızlı tepki)
+        # 5 Gün: Daha dalgalı (Referans resimlere daha yakın) -> 5 Seçildi.
+        final_line = stoch_rsi.rolling(window=5).mean() * 10
         
-        # C. ÇİFT YUMUŞATMA (DOUBLE SMOOTHING) - İŞİN SIRRI BU
-        # O resimdeki yuvarlak dönüşleri (kubbeli yapıları) elde etmek için:
-        
-        # Adım 1: Fast %D (3 günlük ortalama) -> Dikenleri temizler
-        smooth_k = raw_stoch.rolling(window=3).mean()
-        
-        # Adım 2: Slow %D (Bunun da 3 günlük ortalaması) -> O estetik "Sarı Çizgi"yi oluşturur
-        # Buna "Full Stochastic" denir. Sinyal gecikmez ama çok temiz görünür.
-        stp = smooth_k.rolling(window=3).mean()
-        
-        # Ölçekleme (0-10)
-        final_line = stp / 10.0
+        # Eksik verileri doldur (Baştaki NaN'lar için)
+        final_line = final_line.fillna(5)
 
-        # NOT: Tooltip'te görünen "STP Fiyatı" sadece bilgi amaçlıymış, 
-        # grafik çizilirken kullanılan değer bu "final_line"dır.
-        
-        # 3. MOMENTUM BARLARI (Sol Grafik İçin)
+        # 3. MOMENTUM BARLARI
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
@@ -834,7 +832,7 @@ def calculate_synthetic_sentiment(ticker):
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': final_line.values,
+            'STP': final_line.values, # Sarı Çizgi (0-10)
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1859,6 +1857,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
