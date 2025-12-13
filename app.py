@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.9 (Pro Sentiment)",
+    page_title="Patronun Terminali v5.0 (Final Cut)",
     layout="wide",
     page_icon="🐂"
 )
@@ -817,8 +817,8 @@ def render_synthetic_sentiment_panel(data):
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
         # Barlar (Momentum) - Sol Eksen
-        # İNCE VE TOK BARLAR: size=15 (Dolgun görünüm için artırıldı)
-        bars = base.mark_bar(size=15, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+        # İNCE VE TOK BARLAR: size=8 (Ara boşluklu ve dolgun)
+        bars = base.mark_bar(size=8, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
             y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#4338ca')),
             color=alt.condition(
                 alt.datum.Momentum > 0,
@@ -841,9 +841,9 @@ def render_synthetic_sentiment_panel(data):
         # SAĞ GRAFİK: İştah Trendi + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # İştah Çizgileri - Sol Eksen
+        # İştah Çizgileri - Sol Eksen (Zero=False ile Zoom)
         line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode( # Amber Sarısı
-            y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(title='İştah (0-10)', titleColor='#fbbf24'))
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='İştah', titleColor='#fbbf24'))
         )
         line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4], strokeWidth=2).encode(y='HSTP:Q')
         
@@ -1620,7 +1620,6 @@ with col_left:
                          st.rerun()
 
                     # Kart İçeriği (HTML - DİNAMİK RENKLENDİRME İLE)
-                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
                     card_html = f"""
 <div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};">
 <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
