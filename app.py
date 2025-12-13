@@ -39,12 +39,7 @@ st.markdown(f"""
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
     
-    section.main > div.block-container { 
-        padding-top: 0.5rem; /* Üst boşluk minimuma indi */
-        padding-bottom: 1rem; 
-        padding-left: 2rem; /* Sol boşluk daraldı, sidebar'a yanaştı */
-        padding-right: 2rem; 
-    }
+    section.main > div.block-container {{ padding-top: 2rem; padding-bottom: 2rem; }}
     
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
@@ -1854,7 +1849,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
 
 
 
