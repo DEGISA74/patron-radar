@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.8 (Pro Vizyon)",
+    page_title="Patronun Terminali v4.9 (Pro Sentiment)",
     layout="wide",
     page_icon="🐂"
 )
@@ -817,20 +817,20 @@ def render_synthetic_sentiment_panel(data):
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
         # Barlar (Momentum) - Sol Eksen
-        # İNCE BARLAR: size=6
-        bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
-            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#8b5cf6')),
+        # İNCE VE TOK BARLAR: size=15 (Dolgun görünüm için artırıldı)
+        bars = base.mark_bar(size=15, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#4338ca')),
             color=alt.condition(
                 alt.datum.Momentum > 0,
-                alt.value("#8b5cf6"),  # Elektrik Moru
-                alt.value("#f87171")   # Pastel Kırmızı
+                alt.value("#4338ca"),  # Tok İndigo Mavisi/Moru (Pozitif)
+                alt.value("#e11d48")   # Tok Gül Kırmızısı (Negatif)
             ),
             tooltip=['Date', 'Price', 'Momentum']
         )
         
-        # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
+        # Fiyat Çizgisi - Sağ Eksen (Bağımsız ve Zero=False ile Özgür)
         price_line = base.mark_line(color='#2dd4bf', strokeWidth=3).encode( # Turkuaz
-            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
+            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
         )
         
         # Katmanları Birleştir
@@ -847,9 +847,9 @@ def render_synthetic_sentiment_panel(data):
         )
         line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4], strokeWidth=2).encode(y='HSTP:Q')
         
-        # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
+        # Fiyat Çizgisi - Sağ Eksen (Bağımsız ve Zero=False ile Özgür)
         price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode( # Turkuaz
-            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
+            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
         )
         
         # Katmanları Birleştir
@@ -1620,6 +1620,7 @@ with col_left:
                          st.rerun()
 
                     # Kart İçeriği (HTML - DİNAMİK RENKLENDİRME İLE)
+                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
                     card_html = f"""
 <div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};">
 <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
