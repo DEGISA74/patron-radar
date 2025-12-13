@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.3 (Final Sentiment)",
+    page_title="Patronun Terminali v5.3 (Smart Sentiment)",
     layout="wide",
     page_icon="🐂"
 )
@@ -749,20 +749,6 @@ def calculate_sentiment_score(ticker):
     except:
         return None
 
-def get_deep_xray_data(ticker):
-    sent = calculate_sentiment_score(ticker)
-    if not sent: return None
-    def icon(cond): return "✅" if cond else "❌"
-    return {
-        "mom_rsi": f"{icon(sent['raw_rsi']>50)} RSI Trendi",
-        "mom_macd": f"{icon(sent['raw_macd']>0)} MACD Hist",
-        "vol_obv": f"{icon('OBV ↑' in sent['vol'])} OBV Akışı",
-        "tr_ema": f"{icon('GoldCross' in sent['tr'])} EMA Dizilimi",
-        "tr_adx": f"{icon('P > SMA50' in sent['tr'])} Trend Gücü",
-        "vola_bb": f"{icon('BB Break' in sent['vola'])} BB Sıkışması",
-        "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
-    }
-
 # --- YENİ EKLENEN SENTETİK SENTIMENT (FİYAT TABANLI DUYGU) PANELİ ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
@@ -773,7 +759,8 @@ def calculate_synthetic_sentiment(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
         # 1. HESAPLAMALAR
-        impulse = ((df['Close'] - df['Open']) / df['Open']) * df['Volume']
+        # DEĞİŞİKLİK BURADA: Önceki Kapanışa Göre Değişim (Gap'leri yakalar)
+        impulse = df['Close'].pct_change() * df['Volume']
         momentum_bar = impulse.rolling(5).mean().fillna(0)
         
         delta = df['Close'].diff()
