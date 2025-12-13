@@ -767,12 +767,10 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: "Isınma Payı" için 6 aylık veri çekiyoruz.
-        # Bu sayede grafiğin ilk günündeki veri, geçmişten gelen hafızayla hesaplanmış oluyor.
+        # 1. VERİ İNDİRME (Daha geriden alıyoruz ki ortalamalar otursun)
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         
-        # MultiIndex düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
@@ -782,106 +780,145 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         high = df['High']
         low = df['Low']
-        open_ = df['Open']
-        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        # Hacim 0 ise 1 yap (Bölme hatası önlemi)
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # -----------------------------------------------------------
-        # 2. HESAPLAMA: STP (SMOOTHED TYPICAL PRICE)
-        # Hedef: Fiyatla aynı eksende hareket eden "Denge Fiyatı".
-        # Formül: (High + Low + Close) / 3 -> Tipik Fiyat
-        # İşlem: 3 Günlük EMA ile yumuşatma (Kıvrımlı yapı için)
+        # 2. HESAPLAMA: CMF TABANLI PARA AKIŞI (SMART MONEY)
         # -----------------------------------------------------------
         
-        # Adım A: Tipik Fiyat (O günün ağırlık merkezi)
+        # A. CLV (Close Location Value) - Fiyatın mum içindeki konumu
+        # 1 = En tepede kapattı (Tam Alıcılı)
+        # -1 = En dipte kapattı (Tam Satıcılı)
+        # 0 = Ortada kapattı
+        range_len = high - low
+        range_len = range_len.replace(0, 0.01) # Hata önleyici
+        
+        clv = ((2 * close) - high - low) / range_len
+        
+        # B. Smart Money Volume (Günlük Para Akış Gücü)
+        # CLV'yi Hacimle çarpıyoruz. 
+        # Hacim yüksek ve kapanış tepedeyse DEVASA bir yeşil bar olur.
+        money_flow_vol = clv * volume
+        
+        # C. Yumuşatma (Flow Smooth)
+        # Çok dikenli olmaması için 3 günlük EMA alıyoruz (İvme mantığı)
+        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
+
+        # D. Renklendirme Mantığı (Bar Rengi)
+        status = []
+        for val in mf_smooth:
+            if val >= 0: status.append("Giriş") 
+            else: status.append("Çıkış")
+
+        # -----------------------------------------------------------
+        # 3. HESAPLAMA: STP (DENGE FİYATI)
+        # -----------------------------------------------------------
         typical_price = (high + low + close) / 3
-        
-        # Adım B: STP (Sarı Çizgi)
-        # Fiyata çok yakın gitmesi ama gürültüyü atması için 3 barlık EMA kullanıyoruz.
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # -----------------------------------------------------------
-        # 3. MOMENTUM BARLARI (SOL GRAFİK İÇİN - AYNEN KORUNDU)
-        # -----------------------------------------------------------
-        open_safe = open_.replace(0, np.nan)
-        impulse = ((close - open_safe) / open_safe) * volume
-        momentum_bar = impulse.rolling(3).mean().fillna(0)
-        
-        # -----------------------------------------------------------
-        # 4. KESME İŞLEMİ (CROP)
-        # Hesaplama bitti, şimdi sadece son 30 günü alıyoruz.
-        # Böylece çizgi grafiğin en solunda "havadan inmiyor", akışın içinden geliyor.
-        # -----------------------------------------------------------
+        # 4. DATAFRAME HAZIRLIĞI (SON 40 GÜN - Sıkışık ve net görüntü)
         df = df.reset_index()
-        if 'Date' not in df.columns:
-            df['Date'] = df.index
-        else:
-            df['Date'] = pd.to_datetime(df['Date'])
-            
+        if 'Date' not in df.columns: df['Date'] = df.index
+        else: df['Date'] = pd.to_datetime(df['Date'])
+        
+        # Dataframe'i kesiyoruz
         plot_df = pd.DataFrame({
             'Date': df['Date'],
-            'Momentum': momentum_bar.values,
-            'STP': stp.values,   # Artık 440-450 bandında bir fiyat verisi
+            'MF_Raw': money_flow_vol.values, # Ham veri
+            'MF_Smooth': mf_smooth.values,   # Çizilecek veri
+            'Status': status,
+            'STP': stp.values,
             'Price': close.values
-        }).tail(30).reset_index(drop=True) 
+        }).tail(40).reset_index(drop=True) 
+
+        # *** KRİTİK DOKUNUŞ: HAFTA SONU BOŞLUĞUNU YOK ETMEK ***
+        # Tarihi 'Zaman' nesnesi değil, 'String' (Metin) yapıyoruz.
+        # Altair bunu "Kategori" sanıp yan yana dizecek.
+        plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
         return plot_df
+
     except Exception as e:
         return None
 
-def render_synthetic_sentiment_panel(data):
-    if data is None or data.empty: return
+@st.cache_data(ttl=600)
+def calculate_synthetic_sentiment(ticker):
+    try:
+        # 1. VERİ İNDİRME (Daha geriden alıyoruz ki ortalamalar otursun)
+        df = yf.download(ticker, period="6mo", progress=False)
+        if df.empty: return None
+        
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-    st.markdown(f"""
-    <div class="info-card" style="margin-bottom:10px;">
-        <div class="info-header">🧠 Sentetik Sentiment (Fiyat Dengesi)</div>
-    </div>
-    """, unsafe_allow_html=True)
+        if 'Close' not in df.columns: return None
+        df = df.dropna()
 
-    c1, c2 = st.columns([1, 1])
-    
-    with c1:
-        # SOL GRAFİK: Momentum Barları + Fiyat (Burası çift eksen kalabilir, mantığı farklı)
-        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        # Hacim 0 ise 1 yap (Bölme hatası önlemi)
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
-            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', labels=False, titleColor='#4338ca')), 
-            color=alt.condition(
-                alt.datum.Momentum > 0,
-                alt.value("#4338ca"),  # İndigo
-                alt.value("#e11d48")   # Kırmızı
-            ),
-            tooltip=['Date', 'Price', 'Momentum']
-        )
+        # -----------------------------------------------------------
+        # 2. HESAPLAMA: CMF TABANLI PARA AKIŞI (SMART MONEY)
+        # -----------------------------------------------------------
         
-        price_line = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
-            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
-        )
+        # A. CLV (Close Location Value) - Fiyatın mum içindeki konumu
+        # 1 = En tepede kapattı (Tam Alıcılı)
+        # -1 = En dipte kapattı (Tam Satıcılı)
+        # 0 = Ortada kapattı
+        range_len = high - low
+        range_len = range_len.replace(0, 0.01) # Hata önleyici
         
-        # Sol grafik farklı birimleri gösterdiği için independent scale kullanıyoruz
-        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=300, title="Para Akış İvmesi")
-        st.altair_chart(chart_left, use_container_width=True)
+        clv = ((2 * close) - high - low) / range_len
+        
+        # B. Smart Money Volume (Günlük Para Akış Gücü)
+        # CLV'yi Hacimle çarpıyoruz. 
+        # Hacim yüksek ve kapanış tepedeyse DEVASA bir yeşil bar olur.
+        money_flow_vol = clv * volume
+        
+        # C. Yumuşatma (Flow Smooth)
+        # Çok dikenli olmaması için 3 günlük EMA alıyoruz (İvme mantığı)
+        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
 
-    with c2:
-        # SAĞ GRAFİK: STP vs Fiyat (TEK EKSEN - SHARED SCALE)
-        # Artık ikisi de "Fiyat" olduğu için aynı eksene çiziyoruz.
-        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
-        
-        # Sarı Çizgi (STP - Sentetik Fiyat)
-        line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat Seviyesi', titleColor='#64748B')),
-            tooltip=[alt.Tooltip('Date', title='Tarih'), alt.Tooltip('STP', format='.2f'), alt.Tooltip('Price', format='.2f')]
-        )
-        
-        # Fiyat Çizgisi (Mavi)
-        # Aynı Y eksenini (STP:Q) paylaştıkları için scale otomatik uyum sağlar.
-        price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
-            y='Price:Q'
-        )
-        
-        # Layer yapıyoruz ama resolve_scale KULLANMIYORUZ (veya shared diyoruz).
-        chart_right = alt.layer(line_stp, price_line_right).properties(height=300, title="Fiyat Dengesi (STP)")
-        st.altair_chart(chart_right, use_container_width=True)
+        # D. Renklendirme Mantığı (Bar Rengi)
+        status = []
+        for val in mf_smooth:
+            if val >= 0: status.append("Giriş") 
+            else: status.append("Çıkış")
 
+        # -----------------------------------------------------------
+        # 3. HESAPLAMA: STP (DENGE FİYATI)
+        # -----------------------------------------------------------
+        typical_price = (high + low + close) / 3
+        stp = typical_price.ewm(span=6, adjust=False).mean()
+        
+        # 4. DATAFRAME HAZIRLIĞI (SON 40 GÜN - Sıkışık ve net görüntü)
+        df = df.reset_index()
+        if 'Date' not in df.columns: df['Date'] = df.index
+        else: df['Date'] = pd.to_datetime(df['Date'])
+        
+        # Dataframe'i kesiyoruz
+        plot_df = pd.DataFrame({
+            'Date': df['Date'],
+            'MF_Raw': money_flow_vol.values, # Ham veri
+            'MF_Smooth': mf_smooth.values,   # Çizilecek veri
+            'Status': status,
+            'STP': stp.values,
+            'Price': close.values
+        }).tail(40).reset_index(drop=True) 
+
+        # *** KRİTİK DOKUNUŞ: HAFTA SONU BOŞLUĞUNU YOK ETMEK ***
+        # Tarihi 'Zaman' nesnesi değil, 'String' (Metin) yapıyoruz.
+        # Altair bunu "Kategori" sanıp yan yana dizecek.
+        plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
+        
+        return plot_df
+
+    except Exception as e:
+        return None
 
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
@@ -1849,6 +1886,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
