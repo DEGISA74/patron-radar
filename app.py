@@ -523,7 +523,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
     
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT SCANNER - GELİŞMİŞ) ---
+# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT & PRICE ACTION SCANNER) ---
 @st.cache_data(ttl=3600)
 def agent3_breakout_scan(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -548,6 +548,7 @@ def agent3_breakout_scan(asset_list):
 
             close = df['Close']
             high = df['High']
+            low = df['Low']
             open_ = df['Open']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
 
@@ -578,21 +579,42 @@ def agent3_breakout_scan(asset_list):
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
 
-            # 2. KOŞULLAR (FİLTRELER)
-            cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
-            cond_vol = rvol > 1.2 # En azından ilgi var olmalı
-            cond_prox = curr_price > (high_60 * 0.90)
+            # 2. TEMEL KOŞULLAR (FİLTRELER)
+            cond_ema = ema5.iloc[-1] > ema20.iloc[-1] # Genel trend yukarı (veya yeni dönüyor)
+            cond_vol = rvol > 1.2 
+            cond_prox = curr_price > (high_60 * 0.90) # Zirveye yakın
             cond_rsi = rsi < 70
             sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
 
             if cond_ema and cond_vol and cond_prox and cond_rsi:
                 
+                # --- PRICE ACTION ANALİZİ (YÖN TAYİNİ) ---
+                is_short_signal = False
+                short_reason = ""
+
+                # 1. Üç Kara Karga (3 Consecutive Reds)
+                # Son 3 mumun kapanışı açılışından düşükse
+                if (close.iloc[-1] < open_.iloc[-1]) and \
+                   (close.iloc[-2] < open_.iloc[-2]) and \
+                   (close.iloc[-3] < open_.iloc[-3]):
+                    is_short_signal = True
+                    short_reason = "3 Kırmızı Mum (Düşüş)"
+
+                # 2. Bearish Engulfing (Yutan Ayı - Güçlü Versiyon)
+                # Son mum kırmızı + Gövdesi önceki iki mumun gövdesinden büyük
+                body_last = abs(close.iloc[-1] - open_.iloc[-1])
+                body_prev1 = abs(close.iloc[-2] - open_.iloc[-2])
+                body_prev2 = abs(close.iloc[-3] - open_.iloc[-3])
+                
+                if (close.iloc[-1] < open_.iloc[-1]) and (body_last > (body_prev1 + body_prev2)):
+                    is_short_signal = True
+                    short_reason = "Yutan Ayı Mum (Engulfing)"
+
                 # --- SIKIŞMA (SQUEEZE) KONTROLÜ ---
-                # Son 60 günün minimum bant genişliğinin %10 fazlası içindeyse sıkışma vardır
                 min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]
                 is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
                 
-                # Zirve Metni (Sıkışma Varsa Özel Mesaj)
+                # Zirve Metni
                 prox_pct = (curr_price / high_60) * 100
                 if is_squeeze:
                     prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır"
@@ -614,23 +636,30 @@ def agent3_breakout_scan(asset_list):
 
                 # --- RVOL METNİ ---
                 rvol_text = ""
-                if rvol > 2.0:
-                    rvol_text = "Olağanüstü para girişi 🐳"
-                elif rvol > 1.5: # 1.2 - 2.0 arası mantığı (1.5 üzeri artıyor diyelim)
-                    rvol_text = "İlgi artıyor 📈"
-                else:
-                    rvol_text = "İlgi var 👀"
+                if rvol > 2.0: rvol_text = "Olağanüstü para girişi 🐳"
+                elif rvol > 1.5: rvol_text = "İlgi artıyor 📈"
+                else: rvol_text = "İlgi var 👀"
 
-                trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
+                # --- SONUÇ FORMATLAMA ---
+                # Eğer Short Sinyali varsa sembolü ve trendi değiştir
+                display_symbol = symbol
+                trend_color = "#0f172a" # Siyah (Normal)
+                
+                if is_short_signal:
+                    display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.7rem;'>🔻 SHORT FIRSATI</span>"
+                    trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
+                else:
+                    trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
 
                 return {
-                    "Sembol": symbol,
+                    "Sembol_Raw": symbol, # İşlem için ham sembol
+                    "Sembol_Display": display_symbol, # Ekranda görünecek (Short etiketli)
                     "Fiyat": f"{curr_price:.2f}",
-                    "Zirveye Yakınlık": prox_str + wick_warning, # Wick uyarısını buraya ekledik
+                    "Zirveye Yakınlık": prox_str + wick_warning,
                     "Hacim Durumu": rvol_text,
                     "Trend Durumu": trend_display,
                     "RSI": f"{rsi:.0f}",
-                    "SortKey": rvol # Sıralama için
+                    "SortKey": rvol
                 }
             return None
 
@@ -1376,13 +1405,14 @@ with col_left:
             
             # Sonuçları Liste Halinde Göster (YENİ TASARIM - FOOTER BUTON)
             for i, row in st.session_state.agent3_data.iterrows():
-                sym = row["Sembol"]
+                sym_raw = row["Sembol_Raw"]
+                sym_display = row["Sembol_Display"]
                 
                 # Kart Tasarımı
                 st.markdown(f"""
                 <div class="info-card" style="margin-bottom: 2px;">
                     <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
-                        <span style="font-weight:700; color:#1e40af;">{sym}</span> 
+                        <span style="font-weight:700; color:#1e40af;">{sym_display}</span> 
                         <span style="color:#94a3b8; margin: 0 5px;">:</span> 
                         <span style="font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
                     </div>
@@ -1394,8 +1424,8 @@ with col_left:
                 """, unsafe_allow_html=True)
                 
                 # Footer Buton (Full Width)
-                if st.button(f"🔍 {sym} Grafiğini İncele", key=f"a3_sel_{sym}_{i}", use_container_width=True):
-                    on_scan_result_click(sym)
+                if st.button(f"🔍 {sym_raw} Grafiğini İncele", key=f"a3_sel_{sym_raw}_{i}", use_container_width=True):
+                    on_scan_result_click(sym_raw)
                     st.rerun()
                 
                 st.write("") # Küçük boşluk
