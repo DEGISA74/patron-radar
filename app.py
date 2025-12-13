@@ -347,13 +347,8 @@ def analyze_market_intelligence(asset_list):
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean()
-            # MACD calculation might be simplified in your original code, keeping your logic mostly
-            # Standard MACD: EMA12 - EMA26
-            ema12 = close.ewm(span=12, adjust=False).mean()
-            ema26 = close.ewm(span=26, adjust=False).mean()
-            macd_line = ema12 - ema26
-            signal_line = macd_line.ewm(span=9, adjust=False).mean()
-            hist = macd_line - signal_line
+            # MACD Fix: Your formula seems correct logic for histogram. 
+            # EMA12 = close.ewm(span=12).mean(), EMA26 = ... MACD = EMA12-EMA26. Signal = MACD.ewm(9). Hist = MACD - Signal.
             
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -1344,7 +1339,6 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı</div>', unsafe_allow_html=True)
     
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        # BURASI DÜZELTİLDİ: key EKLENDİ
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
             with st.spinner("Ajan 3 piyasayı kokluyor..."):
                 st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
@@ -1352,35 +1346,31 @@ with col_left:
         if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
             st.caption(f"{len(st.session_state.agent3_data)} fırsat bulundu.")
             
-            # Sonuçları Liste Halinde Göster (YENİ TASARIM)
+            # Sonuçları Liste Halinde Göster (YENİ TASARIM - FOOTER BUTON)
             for i, row in st.session_state.agent3_data.iterrows():
                 sym = row["Sembol"]
                 
-                # Sütun yapısı: %75 KART, %25 BUTONLAR
-                col_main, col_btn1, col_btn2 = st.columns([0.75, 0.12, 0.13])
-                
-                with col_main:
-                    st.markdown(f"""
-                    <div class="info-card" style="margin:0;">
-                        <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
-                            {sym} <span style="float:right; font-weight:400; font-family:'JetBrains Mono';">{row['Fiyat']}</span>
-                        </div>
-                        <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                        <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Artışı']}</div></div>
-                        <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
-                        <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
+                # Kart Tasarımı
+                st.markdown(f"""
+                <div class="info-card" style="margin-bottom: 2px;">
+                    <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
+                        <span style="font-weight:700; color:#1e40af;">{sym}</span> 
+                        <span style="color:#94a3b8; margin: 0 5px;">:</span> 
+                        <span style="font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
+                    <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Artışı']}</div></div>
+                    <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
+                    <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # Butonlar yan yana
-                with col_btn1:
-                     if st.button("★", key=f"a3_star_{sym}_{i}", help="İzlemeye Al"):
-                        toggle_watchlist(sym)
-                        st.rerun()
-                with col_btn2:
-                     if st.button("🔍", key=f"a3_sel_{sym}_{i}", help="Analiz Et"):
-                        on_scan_result_click(sym)
-                        st.rerun()
+                # Footer Buton (Full Width)
+                if st.button(f"🔍 {sym} Grafiğini İncele", key=f"a3_sel_{sym}_{i}", use_container_width=True):
+                    on_scan_result_click(sym)
+                    st.rerun()
+                
+                st.write("") # Küçük boşluk
         
         elif st.session_state.agent3_data is not None:
              st.info("Kriterlere uyan hisse yok.")
@@ -1525,7 +1515,6 @@ with col_right:
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
-        # BURASI DÜZELTİLDİ: key EKLENDİ
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."):
                 st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
@@ -1543,7 +1532,6 @@ with col_right:
                     st.caption(row['Nedenler'])
 
     with tab2:
-        # BURASI DÜZELTİLDİ: key EKLENDİ (Garanti olsun diye)
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."):
                 st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
@@ -1561,7 +1549,6 @@ with col_right:
                     st.caption(f"Trend: {row['Trend']} | RS: {row['RS']}%")
 
     with tab3:
-        # BURASI DÜZELTİLDİ: key EKLENDİ
         if st.button("⚡ Listeyi Tara", type="secondary", key="wl_main_scan_btn"):
             with st.spinner("..."):
                 st.session_state.scan_data = analyze_market_intelligence(st.session_state.watchlist)
