@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.7 (Sentetik Akış)",
+    page_title="Patronun Terminali v4.8 (Pro Vizyon)",
     layout="wide",
     page_icon="🐂"
 )
@@ -767,7 +767,8 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        # VERİ SEYRELTME: tail(30) kullanılarak son 30 gün alınır
+        df = yf.download(ticker, period="3mo", progress=False) # Biraz geniş alıp sonra keseceğiz
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
@@ -785,15 +786,16 @@ def calculate_synthetic_sentiment(ticker):
         
         # Veri Seti Hazırlama (Date sütunu eklendi)
         df = df.reset_index()
-        df['Date'] = pd.to_datetime(df['Date']) # Tarih formatını garantiye al
+        df['Date'] = pd.to_datetime(df['Date'])
         
+        # Son 28-30 gün (Görsel Ferahlık İçin)
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
             'STP': stp.values,
             'HSTP': hstp.values,
             'Price': df['Close'].values
-        }).tail(60).reset_index(drop=True)
+        }).tail(28).reset_index(drop=True)
         
         return plot_df
     except:
@@ -808,26 +810,27 @@ def render_synthetic_sentiment_panel(data):
     </div>
     """, unsafe_allow_html=True)
 
-    c1, c2 = st.columns([1, 1]) # Eşit genişlik
+    c1, c2 = st.columns([1, 1])
     
     with c1:
         # SOL GRAFİK: Momentum Barları + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
         # Barlar (Momentum) - Sol Eksen
-        bars = base.mark_bar(opacity=0.8, width=4).encode( # Genişlik ayarı
-            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#7c3aed')),
+        # İNCE BARLAR: size=6
+        bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
+            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#8b5cf6')),
             color=alt.condition(
                 alt.datum.Momentum > 0,
-                alt.value("#7c3aed"), 
-                alt.value("#ef4444")
+                alt.value("#8b5cf6"),  # Elektrik Moru
+                alt.value("#f87171")   # Pastel Kırmızı
             ),
             tooltip=['Date', 'Price', 'Momentum']
         )
         
         # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
-        price_line = base.mark_line(color='#22d3ee', strokeWidth=2, opacity=0.6).encode(
-            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#22d3ee'))
+        price_line = base.mark_line(color='#2dd4bf', strokeWidth=3).encode( # Turkuaz
+            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
         )
         
         # Katmanları Birleştir
@@ -839,14 +842,14 @@ def render_synthetic_sentiment_panel(data):
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
         # İştah Çizgileri - Sol Eksen
-        line_stp = base.mark_line(color='#eab308', strokeWidth=2).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(title='İştah (0-10)', titleColor='#eab308'))
+        line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode( # Amber Sarısı
+            y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(title='İştah (0-10)', titleColor='#fbbf24'))
         )
-        line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4]).encode(y='HSTP:Q')
+        line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4], strokeWidth=2).encode(y='HSTP:Q')
         
         # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
-        price_line_right = base.mark_line(color='#22d3ee', strokeWidth=2).encode(
-            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#22d3ee'))
+        price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode( # Turkuaz
+            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
         )
         
         # Katmanları Birleştir
