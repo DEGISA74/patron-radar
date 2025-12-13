@@ -763,48 +763,78 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- YENİ EKLENEN SENTETİK SENTIMENT (FİYAT TABANLI DUYGU) PANELİ ---
+# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (MFI + HACİM TABANLI) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # DÜZELTME 1: Veri geçmişi artırıldı (3mo -> 1y)
+        # 1. VERİ İNDİRME: MFI ve 50 günlük ortalama için yeterli geçmiş (1 Yıl)
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
+        # MultiIndex düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+
+        # Temel Veri Kontrolü
+        if 'Volume' not in df.columns: return None
+        df = df.dropna()
+
+        # 2. HESAPLAMALAR: MFI (Money Flow Index) Mantığı
+        # Tipik Fiyat = (High + Low + Close) / 3
+        high = df['High']
+        low = df['Low']
+        close = df['Close']
+        volume = df['Volume']
         
-        # 1. HESAPLAMALAR
-        # DÜZELTME 2: 0'a bölünme hatasını önlemek için güvenli open
+        tp = (high + low + close) / 3
+        raw_money_flow = tp * volume
+        
+        # Pozitif ve Negatif Akışı Ayır
+        # Shift yaparak bir önceki günle kıyaslıyoruz
+        prev_tp = tp.shift(1)
+        
+        # Vektörel işlemle hızlı hesaplama
+        pos_flow = pd.Series(0.0, index=df.index)
+        neg_flow = pd.Series(0.0, index=df.index)
+        
+        # Fiyat arttıysa akış pozitiftir
+        pos_flow[tp > prev_tp] = raw_money_flow[tp > prev_tp]
+        # Fiyat düştüyse akış negatiftir
+        neg_flow[tp < prev_tp] = raw_money_flow[tp < prev_tp]
+        
+        # 14 Periyotluk Oran (Money Flow Ratio)
+        period = 14
+        pos_mf_sum = pos_flow.rolling(window=period).sum()
+        neg_mf_sum = neg_flow.rolling(window=period).sum()
+        
+        # MFI Formülü: 100 - (100 / (1 + Oran))
+        # 0'a bölünmeyi önlemek için replace(0, 1)
+        mfi = 100 - (100 / (1 + (pos_mf_sum / neg_mf_sum.replace(0, 1))))
+        
+        # 3. YUMUŞATMA VE TREND (STP & HSTP)
+        # STP: MFI'nın gürültüsünü al (3 günlük ortalama) ve 0-10 skalasına çek
+        stp = mfi.rolling(3).mean() / 10
+        # HSTP: STP'nin uzun vadeli trendi (50 günlük ortalama)
+        hstp = stp.rolling(50).mean()
+        
+        # Momentum Bar (Eski mantık kalabilir, ivmeyi gösterir)
         open_safe = df['Open'].replace(0, np.nan)
-        impulse = ((df['Close'] - open_safe) / open_safe) * df['Volume']
+        impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(5).mean().fillna(0)
         
-        # DÜZELTME 3: RSI Hesaplaması (SMA yerine EMA/Wilder)
-        delta = df['Close'].diff()
-        up = delta.clip(lower=0)
-        down = -1 * delta.clip(upper=0)
-        ma_up = up.ewm(alpha=1/14, adjust=False).mean()
-        ma_down = down.ewm(alpha=1/14, adjust=False).mean()
-        rsi = 100 - (100 / (1 + ma_up / ma_down))
-        
-        stp = rsi.rolling(5).mean() / 10
-        hstp = rsi.rolling(50).mean() / 10
-        
-        # Veri Seti Hazırlama
+        # 4. GÖRSELLEŞTİRME VERİ SETİ
         df = df.reset_index()
-        # Date sütunu kontrolü (yfinance versiyonuna göre)
         if 'Date' not in df.columns:
             df['Date'] = df.index
         else:
             df['Date'] = pd.to_datetime(df['Date'])
-        
+            
         # Son 35 gün
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
             'STP': stp.values,
             'HSTP': hstp.values,
-            'Price': df['Close'].values
+            'Price': close.values
         }).tail(35).reset_index(drop=True)
         
         return plot_df
