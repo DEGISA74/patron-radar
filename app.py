@@ -1401,41 +1401,43 @@ with col_left:
                 st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
-            st.caption(f"{len(st.session_state.agent3_data)} fırsat bulundu.")
-            
-            # Sonuçları Liste Halinde Göster (YENİ TASARIM - FOOTER BUTON)
-            for i, row in st.session_state.agent3_data.iterrows():
-                # --- GÜVENLİ VERİ OKUMA (KeyError Önlemi) ---
-                # Eğer Sembol_Raw yoksa (eski cache vb.), alternatiflere bak
-                sym_raw = row.get("Sembol_Raw")
-                if not sym_raw:
-                    # Alternatif olarak 'Sembol' veya index'i dene
-                    sym_raw = row.get("Sembol", row.name if isinstance(row.name, str) else "Bilinmiyor")
+            # LİMİT: Sadece ilk 12 hisse
+            display_df = st.session_state.agent3_data.head(12)
+            st.caption(f"{len(display_df)} fırsat listeleniyor (Toplam Bulunan: {len(st.session_state.agent3_data)})")
+
+            # IZGARA MANTIĞI: Döngüyle 3'erli satırlar oluştur
+            for i, (index, row) in enumerate(display_df.iterrows()):
+                # Her 3 elemanda bir yeni satır (st.columns) aç
+                if i % 3 == 0:
+                    cols = st.columns(3)
                 
-                # Sembol_Display yoksa ham sembolü kullan
-                sym_display = row.get("Sembol_Display", sym_raw)
-                
-                # Kart Tasarımı
-                st.markdown(f"""
-                <div class="info-card" style="margin-bottom: 2px;">
-                    <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
-                        <span style="font-weight:700; color:#1e40af;">{sym_display}</span> 
-                        <span style="color:#94a3b8; margin: 0 5px;">:</span> 
-                        <span style="font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
+                # O anki sütunu seç (0, 1 veya 2)
+                with cols[i % 3]:
+                    # --- GÜVENLİ VERİ OKUMA ---
+                    sym_raw = row.get("Sembol_Raw")
+                    if not sym_raw:
+                        sym_raw = row.get("Sembol", row.name if isinstance(row.name, str) else "Bilinmiyor")
+                    
+                    sym_display = row.get("Sembol_Display", sym_raw)
+                    
+                    # Kart Tasarımı (Mevcut HTML yapısı korunarak)
+                    st.markdown(f"""
+                    <div class="info-card" style="margin-bottom: 10px; height: 100%;">
+                        <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
+                            <span style="font-weight:700; color:#1e40af;">{sym_display}</span> 
+                            <span style="float:right; font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
+                        </div>
+                        <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
+                        <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
+                        <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
+                        <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
                     </div>
-                    <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                    <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
-                    <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
-                    <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Footer Buton (Full Width)
-                if st.button(f"🔍 {sym_raw} Grafiğini İncele", key=f"a3_sel_{sym_raw}_{i}", use_container_width=True):
-                    on_scan_result_click(sym_raw)
-                    st.rerun()
-                
-                st.write("") # Küçük boşluk
+                    """, unsafe_allow_html=True)
+                    
+                    # Buton
+                    if st.button(f"🔍 İncele", key=f"a3_sel_{sym_raw}_{i}", use_container_width=True):
+                        on_scan_result_click(sym_raw)
+                        st.rerun()
         
         elif st.session_state.agent3_data is not None:
              st.info("Kriterlere uyan hisse yok.")
