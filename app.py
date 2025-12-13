@@ -763,12 +763,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (SLOW STOCHASTIC) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (STOKASTİK STP) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: "Warm-up" sorunu için 1 yıllık veri çekiyoruz.
-        # Hesaplama eskiye dayansın ki son 30 güne geldiğinde çizgi oturmuş olsun.
+        # 1. VERİ İNDİRME: Çizginin oturması için 1 yıllık veri
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
@@ -785,48 +784,50 @@ def calculate_synthetic_sentiment(ticker):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: SLOW STOCHASTIC (YAVAŞ STOKASTİK)
-        # Referans resimdeki o karakteristik dalga yapısı budur.
+        # 2. HESAPLAMA: "STP STOCHASTIC" (Sırrı Çözdük)
+        # Önce Fiyatı Yumuşat (STP Bul), Sonra Osilatöre Çevir.
         
-        # A. Tipik Fiyat (High+Low+Close)/3 yerine, Stokastik genelde High/Low/Close kullanır.
-        # 14 Günlük En Yüksek ve En Düşük değerler
-        period = 14
-        lowest_l = low.rolling(window=period).min()
-        highest_h = high.rolling(window=period).max()
+        # A. Tipik Fiyat (Typical Price)
+        tp = (high + low + close) / 3
 
-        # B. Fast Stochastic %K Hesapla
-        # Formül: (O anki Kapanış - En Düşük) / (En Yüksek - En Düşük)
-        # 0'a bölünme hatasını engellemek için replace kullanıyoruz
-        range_v = (highest_h - lowest_l).replace(0, 1)
-        stoch_k = 100 * ((close - lowest_l) / range_v)
+        # B. STP (Smoothed Typical Price) - Tooltip'te gördüğün "Fiyat" bu!
+        # Tipik fiyatın 3 günlük hareketli ortalaması. 
+        # Bu işlem fiyatın içindeki "gürültüyü" (noise) temizler.
+        stp_price = tp.rolling(window=3).mean()
+
+        # C. SARI ÇİZGİ (Risk İştahı Osilatörü)
+        # Şimdi soruyoruz: "Şu anki STP fiyatı, son 14 günün STP aralığında nerede?"
+        # Bu yöntem, grafiği hem çok yumuşak (smooth) yapar hem de 0 ve 10'a tam değdirir.
         
-        # C. SLOW STOCHASTIC (Düzeltme Burada)
-        # Referans resimdeki o "kıvrımlı ama tepkisel" çizgi için
-        # Fast Stochastic'in 3 günlük basit ortalamasını alıyoruz.
-        # 10 gün çok yavaştı, 1 gün çok dikenliydi. 3 gün (Slow %K) idealdir.
-        stp = stoch_k.rolling(window=3).mean()
+        period = 14
+        lowest_stp = stp_price.rolling(window=period).min()
+        highest_stp = stp_price.rolling(window=period).max()
         
-        # Ölçekleme (0-100 arasını 0-10 arasına çekiyoruz)
-        stp = stp / 10.0
+        # 0'a bölünme önlemi
+        range_stp = (highest_stp - lowest_stp).replace(0, 1)
+        
+        # Formül: (Mevcut STP - En Düşük STP) / (Aralık)
+        sentiment_score = 100 * ((stp_price - lowest_stp) / range_stp)
+        
+        # 0-10 Ölçeğine çek
+        final_line = sentiment_score / 10.0
         
         # 3. MOMENTUM BARLARI (Sol Grafik İçin)
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
         
-        # 4. GÖRSELLEŞTİRME VERİ SETİ (SON 30 GÜN)
+        # 4. GÖRSELLEŞTİRME (SON 30 GÜN)
         df = df.reset_index()
         if 'Date' not in df.columns:
             df['Date'] = df.index
         else:
             df['Date'] = pd.to_datetime(df['Date'])
             
-        # Son 30 iş gününü alıyoruz. 
-        # Ancak hesaplama 1 yıllık veriyle yapıldığı için başlangıç noktası artık doğru olacak.
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': stp.values,
+            'STP': final_line.values, # Ekrana çizilen Sarı Çizgi (0-10 Puanı)
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1851,5 +1852,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
