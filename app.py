@@ -879,7 +879,7 @@ def render_synthetic_sentiment_panel(data):
         )
         
         # Layer yapıyoruz ama resolve_scale KULLANMIYORUZ (veya shared diyoruz).
-        chart_right = alt.layer(line_stp, price_line_right).properties(height=200, title="Fiyat Dengesi (STP)")
+        chart_right = alt.layer(line_stp, price_line_right).properties(height=300, title="Fiyat Dengesi (STP)")
         st.altair_chart(chart_right, use_container_width=True)
 
 
@@ -1334,7 +1334,7 @@ def render_detail_card(ticker):
     </div>
     """, unsafe_allow_html=True)
 
-def render_tradingview_widget(ticker, height=650):
+def render_tradingview_widget(ticker, height=500):
     # Varsayılan sembol
     tv_symbol = ticker
 
@@ -1579,7 +1579,7 @@ with col_left:
         )
     
     st.write("")
-    render_tradingview_widget(st.session_state.ticker, height=650)
+    render_tradingview_widget(st.session_state.ticker, height=500)
     
     # --- YENİ EKLENEN PANEL BURADA (SOL SÜTUNA ALINDI) ---
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
@@ -1849,6 +1849,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
