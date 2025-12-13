@@ -763,7 +763,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (HIZLI & YUMUŞAK) ---
+# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (TİPİK FİYAT STOKASTİK + DOUBLE SMOOTHING) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -781,17 +781,15 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: TİPİK FİYAT ÜZERİNDEN HIZLI STOKASTİK
-        # Bu yöntem, fiyat yatay gitse bile "High-Low" aralığına göre 
-        # fiyatın nerede olduğunu ölçer. Tepeye yapışmaz, düşüşte hemen tepki verir.
+        # 2. HESAPLAMA: TİPİK FİYAT ÜZERİNDEN YAVAŞ STOKASTİK (MAKYYAJLI)
+        # Periyot 8 güne çekildi (Hassasiyet ayarı)
         
         # Tipik Fiyat
         tp = (df['High'] + df['Low'] + df['Close']) / 3
 
         # Stochastic Oscillator (%K) Formülü: (Current - Low) / (High - Low)
-        # Burada 5 günlük (Çok Kısa) en yüksek ve en düşük fiyatlar referans alınır.
-        # Bu sayede indikatör "sinirli" olur ve hemen tepki verir.
-        period = 5
+        # Burada 8 günlük en yüksek ve en düşük fiyatlar referans alınır.
+        period = 8
         lowest_l = df['Low'].rolling(window=period).min()
         highest_h = df['High'].rolling(window=period).max()
 
@@ -801,10 +799,13 @@ def calculate_synthetic_sentiment(ticker):
         # Ham Stokastik Değer (0-1 arası)
         stoch_raw = (tp - lowest_l) / range_v
 
-        # STP (Sarı Çizgi): Ham değeri 3 günlük BASİT ortalama ile yumuşatıyoruz.
-        # EWM kullanmıyoruz ki geçmiş veriye takılı kalmasın.
+        # STP (Sarı Çizgi): "DOUBLE SMOOTHING" (Çifte Yumuşatma)
+        # Önce 3 günlük ortalama (K), sonra tekrar 3 günlük ortalama (D - Bizim STP'miz)
+        k_percent = stoch_raw.rolling(window=3).mean()
+        d_percent = k_percent.rolling(window=3).mean() # İşte o "kremsi" çizgi bu!
+        
         # 0-10 skalasına çekiyoruz.
-        stp = stoch_raw.rolling(window=3).mean() * 10
+        stp = d_percent * 10
         
         # 3. MOMENTUM BARLARI (Sol Grafik)
         open_safe = df['Open'].replace(0, np.nan)
