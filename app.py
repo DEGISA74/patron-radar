@@ -251,6 +251,7 @@ if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEG
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
+if 'agent3_data' not in st.session_state: st.session_state.agent3_data = None # AJAN 3 EKLENDİ
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
 if 'ict_analysis' not in st.session_state: st.session_state.ict_analysis = None
 if 'tech_card_data' not in st.session_state: st.session_state.tech_card_data = None
@@ -264,6 +265,7 @@ def on_category_change():
         st.session_state.ticker = ASSET_GROUPS[new_cat][0]
         st.session_state.scan_data = None
         st.session_state.radar2_data = None
+        st.session_state.agent3_data = None # SIFIRLAMA
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
@@ -509,6 +511,104 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
     results = [r for r in results if r is not None]
     
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
+
+# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT SCANNER) ---
+@st.cache_data(ttl=3600)
+def agent3_breakout_scan(asset_list):
+    if not asset_list: return pd.DataFrame()
+    
+    try:
+        data = yf.download(asset_list, period="6mo", group_by="ticker", threads=True, progress=False)
+    except:
+        return pd.DataFrame()
+
+    def process_agent3(symbol):
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: return None
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: return None
+
+            if df.empty or 'Close' not in df.columns: return None
+            df = df.dropna(subset=['Close'])
+            if len(df) < 60: return None # En az 60 gün veri lazım
+
+            close = df['Close']
+            high = df['High']
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+
+            # 1. HESAPLAMALAR
+            ema5 = close.ewm(span=5, adjust=False).mean()
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            sma20 = close.rolling(20).mean()
+            sma50 = close.rolling(50).mean()
+            
+            high_60 = high.rolling(60).max().iloc[-1]
+            curr_price = close.iloc[-1]
+            
+            vol_3 = volume.rolling(3).mean().iloc[-1]
+            vol_20 = volume.rolling(20).mean().iloc[-1]
+            if vol_20 == 0: vol_20 = 1 # Sıfıra bölünme hatası önlemi
+
+            # RSI Hesapla
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+
+            # 2. KOŞULLAR (FİLTRELER)
+            
+            # A) Trend: EMA 5 > EMA 20 (ZORUNLU)
+            cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
+            
+            # B) Hacim: Son 3 gün ortalama hacim > 20 gün ortalamasının %20 fazlası
+            cond_vol = vol_3 > vol_20 * 1.20
+            
+            # C) Direnç/Breakout: Fiyat son 60 günün zirvesinin %90'ından büyük
+            cond_prox = curr_price > (high_60 * 0.90)
+            
+            # D) RSI Güvenlik: 70'ten küçük (Aşırı şişmemiş)
+            cond_rsi = rsi < 70
+
+            # E) SMA Bilgisi (Filtre Değil, Gösterge)
+            sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
+
+            # TÜM KOŞULLAR SAĞLANIYOR MU?
+            if cond_ema and cond_vol and cond_prox and cond_rsi:
+                
+                # Zirveye yakınlık yüzdesi
+                prox_pct = (curr_price / high_60) * 100
+                prox_str = f"%{prox_pct:.1f}"
+                if prox_pct >= 98: prox_str += " (Sınıra Dayandı)"
+                else: prox_str += " (Hazırlanıyor)"
+
+                # Hacim Artış Yüzdesi
+                vol_inc_pct = ((vol_3 - vol_20) / vol_20) * 100
+
+                # Trend Metni
+                trend_display = f"EMA: ✅ | SMA: {'✅' if sma_ok else '❌'}"
+
+                return {
+                    "Sembol": symbol,
+                    "Fiyat": f"{curr_price:.2f}",
+                    "Zirveye Yakınlık": prox_str,
+                    "Hacim Artışı": f"+%{vol_inc_pct:.0f}",
+                    "Trend Durumu": trend_display,
+                    "RSI": f"{rsi:.0f}"
+                }
+            return None
+
+        except:
+            return None
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(process_agent3, asset_list))
+    
+    results = [r for r in results if r is not None]
+    return pd.DataFrame(results).sort_values(by="Hacim Artışı", ascending=False) if results else pd.DataFrame()
 
 # --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
@@ -1229,6 +1329,44 @@ with col_left:
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
     
+    # --- YENİ EKLENEN AJAN 3 ALANI (GRAFİK ALTINDA) ---
+    st.markdown("### 🕵️ AJAN 3: Breakout & Hacim Tarayıcısı")
+    with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
+        if st.button(f"⚡ {st.session_state.category} için Ajan 3'ü Çalıştır", type="primary"):
+            with st.spinner("Ajan 3 piyasayı kokluyor... (Trend + Hacim + Zirve)"):
+                st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
+        
+        if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
+            st.success(f"{len(st.session_state.agent3_data)} adet potansiyel fırsat bulundu.")
+            
+            # Sonuçları Liste Halinde Göster
+            for i, row in st.session_state.agent3_data.iterrows():
+                sym = row["Sembol"]
+                
+                # Kart Tasarımı
+                st.markdown(f"""
+                <div style="background-color:{current_theme['box_bg']}; border:1px solid {current_theme['border']}; border-radius:6px; padding:8px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-weight:700; color:#1e40af; font-size:0.9rem;">{sym} <span style="font-weight:400; color:{current_theme['text']}; font-size:0.8rem;">({row['Fiyat']})</span></div>
+                        <div style="font-size:0.75rem; color:#64748B;">{row['Zirveye Yakınlık']} | <span style="color:#15803d; font-weight:600;">Hacim: {row['Hacim Artışı']}</span></div>
+                        <div style="font-size:0.7rem; color:#475569; margin-top:2px; font-family:'JetBrains Mono';">{row['Trend Durumu']} | RSI: {row['RSI']}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Aksiyon Butonları (Yan Yana)
+                c1, c2 = st.columns([0.15, 0.85])
+                if c1.button("★", key=f"a3_star_{sym}_{i}"):
+                    toggle_watchlist(sym)
+                    st.rerun()
+                if c2.button(f"🔍 {sym} İncele", key=f"a3_sel_{sym}_{i}"):
+                    on_scan_result_click(sym)
+                    st.rerun()
+        
+        elif st.session_state.agent3_data is not None:
+             st.info("Kriterlere uyan hisse bulunamadı. (Filtreler çok sıkı olabilir)")
+
+    
     st.markdown(
         f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>",
         unsafe_allow_html=True
@@ -1244,12 +1382,12 @@ with col_left:
     )
     lower_symbol = base_symbol.lower()
 
-    seekingalpha_url   = f"https://seekingalpha.com/symbol/{base_symbol}/news"
-    yahoo_url          = f"https://finance.yahoo.com/quote/{base_symbol}/news"
-    nasdaq_url         = f"https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines"
-    stockanalysis_url  = f"https://stockanalysis.com/stocks/{lower_symbol}/"
-    finviz_url         = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
-    unusual_url        = f"https://unusualwhales.com/stock/{base_symbol}/overview"
+    seekingalpha_url    = f"https://seekingalpha.com/symbol/{base_symbol}/news"
+    yahoo_url           = f"https://finance.yahoo.com/quote/{base_symbol}/news"
+    nasdaq_url          = f"https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines"
+    stockanalysis_url   = f"https://stockanalysis.com/stocks/{lower_symbol}/"
+    finviz_url          = f"https://finviz.com/quote.ashx?t={base_symbol}&p=d"
+    unusual_url         = f"https://unusualwhales.com/stock/{base_symbol}/overview"
 
     st.markdown(f"""
     <div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;">
