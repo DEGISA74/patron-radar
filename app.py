@@ -12,11 +12,11 @@ import os
 import textwrap
 import concurrent.futures
 import re
-import altair as alt  # Görselleştirme için eklendi
+import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v4.6 (Sentetik Sentiment)",
+    page_title="Patronun Terminali v4.7 (Sentetik Akış)",
     layout="wide",
     page_icon="🐂"
 )
@@ -772,28 +772,27 @@ def calculate_synthetic_sentiment(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
         # 1. HESAPLAMALAR
-        # Momentum (Sol Grafik): Para Akış İvmesi
-        # Formül: (Kapanış - Açılış) / Açılış * Hacim -> 5 Günlük Hareketli Ortalama
         impulse = ((df['Close'] - df['Open']) / df['Open']) * df['Volume']
         momentum_bar = impulse.rolling(5).mean().fillna(0)
         
-        # Market Appetite (Sağ Grafik): RSI Tabanlı İştah
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss)))
         
-        # Ölçeklendirme (0-10 Arası)
-        stp = rsi.rolling(5).mean() / 10 # Sarı Çizgi (Short Term Polarity)
-        hstp = rsi.rolling(50).mean() / 10 # Gri Çizgi (Historical Sentiment Trend)
+        stp = rsi.rolling(5).mean() / 10 
+        hstp = rsi.rolling(50).mean() / 10 
         
-        # Veri Seti Hazırlama (Son 60 gün)
+        # Veri Seti Hazırlama (Date sütunu eklendi)
+        df = df.reset_index()
+        df['Date'] = pd.to_datetime(df['Date']) # Tarih formatını garantiye al
+        
         plot_df = pd.DataFrame({
-            'Date': df.index,
-            'Momentum': momentum_bar,
-            'STP': stp,
-            'HSTP': hstp,
-            'Price': df['Close']
+            'Date': df['Date'],
+            'Momentum': momentum_bar.values,
+            'STP': stp.values,
+            'HSTP': hstp.values,
+            'Price': df['Close'].values
         }).tail(60).reset_index(drop=True)
         
         return plot_df
@@ -809,34 +808,50 @@ def render_synthetic_sentiment_panel(data):
     </div>
     """, unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns([1, 1]) # Eşit genişlik
     
     with c1:
-        # SOL GRAFİK: Momentum Barları
-        chart_mom = alt.Chart(data).mark_bar().encode(
-            x=alt.X('index:O', axis=None), # X ekseni gizli
-            y=alt.Y('Momentum:Q', title="Para Akış İvmesi"),
+        # SOL GRAFİK: Momentum Barları + Fiyat Çizgisi
+        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
+        
+        # Barlar (Momentum) - Sol Eksen
+        bars = base.mark_bar(opacity=0.8, width=4).encode( # Genişlik ayarı
+            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', titleColor='#7c3aed')),
             color=alt.condition(
                 alt.datum.Momentum > 0,
-                alt.value("#7c3aed"),  # Pozitif: Mor
-                alt.value("#ef4444")   # Negatif: Kırmızı
+                alt.value("#7c3aed"), 
+                alt.value("#ef4444")
             ),
-            tooltip=['Price', 'Momentum']
-        ).properties(height=150, title="Para Akış Momentum (İvme)")
-        st.altair_chart(chart_mom, use_container_width=True)
+            tooltip=['Date', 'Price', 'Momentum']
+        )
+        
+        # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
+        price_line = base.mark_line(color='#22d3ee', strokeWidth=2, opacity=0.6).encode(
+            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#22d3ee'))
+        )
+        
+        # Katmanları Birleştir
+        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=200, title="Para Akış İvmesi vs Fiyat")
+        st.altair_chart(chart_left, use_container_width=True)
 
     with c2:
-        # SAĞ GRAFİK: İştah Trendi (Çizgiler)
-        base = alt.Chart(data).encode(x=alt.X('index:O', axis=None))
+        # SAĞ GRAFİK: İştah Trendi + Fiyat Çizgisi
+        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        line_stp = base.mark_line(color='#eab308', strokeWidth=2).encode(y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), title="İştah (0-10)")) # Sarı
-        line_hstp = base.mark_line(color='#94a3b8', strokeDash=[5,5]).encode(y='HSTP:Q') # Gri Kesikli
+        # İştah Çizgileri - Sol Eksen
+        line_stp = base.mark_line(color='#eab308', strokeWidth=2).encode(
+            y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(title='İştah (0-10)', titleColor='#eab308'))
+        )
+        line_hstp = base.mark_line(color='#94a3b8', strokeDash=[4, 4]).encode(y='HSTP:Q')
         
-        # Fiyatı ayrı bir katman (layer) veya normalize ederek ekleyebiliriz.
-        # Basitlik için sadece İştah çizgilerini gösterelim, görsel kirlilik olmasın.
+        # Fiyat Çizgisi - Sağ Eksen (Bağımsız)
+        price_line_right = base.mark_line(color='#22d3ee', strokeWidth=2).encode(
+            y=alt.Y('Price:Q', axis=alt.Axis(title='Fiyat', titleColor='#22d3ee'))
+        )
         
-        chart_appetite = (line_stp + line_hstp).properties(height=150, title="Piyasa İştahı (Sarı) vs Ortalama (Gri)")
-        st.altair_chart(chart_appetite, use_container_width=True)
+        # Katmanları Birleştir
+        chart_right = alt.layer(line_stp, line_hstp, price_line_right).resolve_scale(y='independent').properties(height=200, title="İştah Trendi vs Fiyat")
+        st.altair_chart(chart_right, use_container_width=True)
 
 
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
@@ -1537,6 +1552,11 @@ with col_left:
     st.write("")
     render_tradingview_widget(st.session_state.ticker, height=650)
     
+    # --- YENİ EKLENEN PANEL BURADA (SOL SÜTUNA ALINDI) ---
+    synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
+    if synth_data is not None and not synth_data.empty:
+        render_synthetic_sentiment_panel(synth_data)
+
     # --- YENİ EKLENEN AJAN 3 ALANI (GÜNCELLENMİŞ TASARIM) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
     
@@ -1597,7 +1617,6 @@ with col_left:
                          st.rerun()
 
                     # Kart İçeriği (HTML - DİNAMİK RENKLENDİRME İLE)
-                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
                     card_html = f"""
 <div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};">
 <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
@@ -1676,10 +1695,6 @@ with col_left:
 with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
-    
-    # --- YENİ EKLENEN PANEL BURADA ---
-    synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
-    render_synthetic_sentiment_panel(synth_data)
     
     # ICT Panel BURADA (GÜNCELLENMİŞ)
     ict_data = calculate_ict_concepts(st.session_state.ticker)
