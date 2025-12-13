@@ -763,11 +763,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (RSI ON STP MODELİ) ---
+# --- DÜZELTİLMİŞ FİNAL: SENTETİK SENTIMENT (CCI - SAPMA MODELİ) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Warm-up için 1 yıllık veri (RSI'ın oturması için şart)
+        # 1. VERİ İNDİRME: Warm-up için 1 yıllık veri
         df = yf.download(ticker, period="1y", progress=False)
         if df.empty: return None
         
@@ -782,35 +782,48 @@ def calculate_synthetic_sentiment(ticker):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: RSI ON STP (SIRRI BURADA)
-        # Stokastik yerine RSI kullanıyoruz. Bu, "acayip" zıplamaları önler.
-        # Fiyat yerine STP (Yumuşak Fiyat) kullanıyoruz. Bu, "tırtıkları" önler.
+        # 2. HESAPLAMA: CCI ON STP (SIRRI ÇÖZEN FORMÜL)
+        # Stokastik fiyatın "yerine" bakar, CCI ise fiyatın "sapmasına" bakar.
+        # ROP grafiğindeki gibi fiyat yukarıdayken iştahın aşağı gelmesini (sapmanın azalmasını)
+        # ancak bu formül sağlar.
 
-        # A. Tipik Fiyat (High+Low+Close)/3
+        # A. Tipik Fiyat (TP)
         tp = (high + low + close) / 3
         
-        # B. STP (Smoothed Typical Price) - Tooltip'te görünen 445.46 vb. değer bu!
-        # Fiyatı 3 günle yumuşatıyoruz.
-        stp_price = tp.rolling(window=3).mean()
+        # B. STP (Smoothed Typical Price) - Tooltip'teki 445.46 değeri
+        # Tipik fiyatı 3 günle yumuşatıyoruz (Gürültü filtresi)
+        stp = tp.rolling(window=3).mean()
         
-        # C. RSI HESAPLA (STP Üzerinden)
-        # Fiyatın değil, STP'nin RSI'ını alıyoruz. 
-        # Bu işlem grafiğin ana karakterini oluşturur.
-        delta = stp_price.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi_raw = 100 - (100 / (1 + rs))
+        # C. CCI HESAPLAMASI (STP Üzerinden)
+        # Standart CCI formülü: (Fiyat - SMA) / (0.015 * MeanDeviation)
+        period = 14
+        sma_stp = stp.rolling(window=period).mean()
+        mad_stp = stp.rolling(window=period).apply(lambda x: pd.Series(x).mad())
         
-        # D. FİNAL YUMUŞATMA (SARI ÇİZGİ)
-        # Ham RSI hala biraz köşeli olabilir. Referans resimdeki o "yağ gibi akan"
-        # görüntü için RSI'ın 3 günlük ortalamasını alıyoruz.
-        final_sentiment = rsi_raw.rolling(window=3).mean()
+        # 0'a bölünme önlemi
+        mad_stp = mad_stp.replace(0, 1)
         
-        # Ölçekleme: RSI normalde 0-100 arasıdır, biz 0-10 istiyoruz.
-        final_line = final_sentiment / 10.0
+        # Ham CCI Değeri (Genelde -100 ile +100 arasında salınır)
+        cci = (stp - sma_stp) / (0.015 * mad_stp)
         
-        # 3. MOMENTUM BARLARI (Sol Grafik)
+        # D. NORMALİZASYON (0-10 SKALASI) & YUMUŞATMA
+        # CCI sonsuza gidebilir, o yüzden bunu 0-10 arasına mantıklı bir şekilde oturtmalıyız.
+        # Genelde CCI -200 ile +200 arasına sıkışır.
+        
+        # Adım 1: Normalize Et (0-10 arasına çek)
+        # +200'ü 10, -200'ü 0 yapacak şekilde kaydırıyoruz.
+        norm_cci = (cci + 200) / 40
+        
+        # Adım 2: Sınırla (Clip)
+        # Ekstrem durumlarda 0'ın altına veya 10'un üstüne taşmasın.
+        norm_cci = norm_cci.clip(0, 10)
+        
+        # Adım 3: Final Yumuşatma (Weighted Moving Average Benzeri)
+        # Referans resimdeki o "yağlı boya" gibi pürüzsüz akış için 
+        # 5 periyotluk ortalama alıyoruz.
+        final_line = norm_cci.rolling(window=5).mean()
+        
+        # 3. MOMENTUM BARLARI
         open_safe = df['Open'].replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
@@ -825,8 +838,8 @@ def calculate_synthetic_sentiment(ticker):
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': final_line.values, # Ekrana çizilen Sarı Çizgi (0-10 Puanı)
-            'STP_Price': stp_price.values, # Tooltip için STP Fiyatı (Opsiyonel, veri setinde dursun)
+            'STP': final_line.values, # Sarı Çizgi (CCI Bazlı Risk İştahı)
+            'STP_Price': stp.values,  # Merak ettiğin "STP" fiyatı
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
@@ -1851,6 +1864,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
