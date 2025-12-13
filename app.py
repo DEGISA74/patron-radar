@@ -1435,19 +1435,20 @@ with col_left:
                          st.rerun()
 
                     # Kart İçeriği (HTML)
-                    st.markdown(f"""
-                    <div class="info-card" style="margin-top: 0px; height: 100%;">
-                        <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                        <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
-                        <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
-                        <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
-                        
-                        <div style="margin-top:8px; padding-top:4px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.7rem;">
-                            <div style="color:#166534;"><strong>🎯 Hedef:</strong> {target_text}</div>
-                            <div style="color:#991b1b;"><strong>🛑 Stop:</strong> {stop_text}</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
+                    card_html = f"""
+<div class="info-card" style="margin-top: 0px; height: 100%;">
+<div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
+<div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
+<div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
+<div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
+<div style="margin-top:8px; padding-top:4px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.7rem;">
+<div style="color:#166534;"><strong>🎯</strong> {target_text}</div>
+<div style="color:#991b1b;"><strong>🛑 Stop:</strong> {stop_text}</div>
+</div>
+</div>
+"""
+                    st.markdown(card_html, unsafe_allow_html=True)
                 
         elif st.session_state.agent3_data is not None:
              st.info("Kriterlere uyan hisse yok.")
