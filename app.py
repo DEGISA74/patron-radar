@@ -797,7 +797,7 @@ def calculate_synthetic_sentiment(ticker):
         
         # Adım B: STP (Sarı Çizgi)
         # Fiyata çok yakın gitmesi ama gürültüyü atması için 3 barlık EMA kullanıyoruz.
-        stp = typical_price.ewm(span=8, adjust=False).mean()
+        stp = typical_price.ewm(span=6, adjust=False).mean()
         
         # -----------------------------------------------------------
         # 3. MOMENTUM BARLARI (SOL GRAFİK İÇİN - AYNEN KORUNDU)
@@ -1849,6 +1849,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
