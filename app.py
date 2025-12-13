@@ -763,7 +763,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (TİPİK FİYAT STOKASTİK) ---
+# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (TİPİK FİYAT STOKASTİK + EWM SMOOTHING) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -800,9 +800,9 @@ def calculate_synthetic_sentiment(ticker):
         # Ham Stokastik Değer
         stoch_raw = (tp - lowest_l) / range_v
 
-        # STP (Sarı Çizgi): Ham değeri 5 günlük hareketli ortalama ile yumuşatıyoruz.
-        # Orijinal grafikteki "ağır" salınımı yakalamak için 3 yerine 5 kullandık.
-        stp = stoch_raw.rolling(window=5).mean() * 10
+        # STP (Sarı Çizgi): EWM ile hafızalı yumuşatma
+        # span=5, orijinal grafikteki ağır salınımı yakalar ve başlangıçtaki "düz"lüğü engeller.
+        stp = stoch_raw.ewm(span=5, adjust=False).mean() * 10
         
         # 3. MOMENTUM BARLARI (Sol Grafik)
         open_safe = df['Open'].replace(0, np.nan)
