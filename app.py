@@ -16,7 +16,7 @@ import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.2 (Final UI)",
+    page_title="Patronun Terminali v5.3 (Final Sentiment)",
     layout="wide",
     page_icon="🐂"
 )
@@ -767,7 +767,7 @@ def get_deep_xray_data(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # VERİ SEYRELTME: tail(30) kullanılarak son 30 gün alınır
+        # VERİ SEYRELTME: tail(35) kullanılarak son 35 gün alınır
         df = yf.download(ticker, period="3mo", progress=False) # Biraz geniş alıp sonra keseceğiz
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
@@ -788,14 +788,14 @@ def calculate_synthetic_sentiment(ticker):
         df = df.reset_index()
         df['Date'] = pd.to_datetime(df['Date'])
         
-        # Son 28-30 gün (Görsel Ferahlık İçin)
+        # Son 35 gün (User Request)
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
             'STP': stp.values,
             'HSTP': hstp.values,
             'Price': df['Close'].values
-        }).tail(28).reset_index(drop=True)
+        }).tail(35).reset_index(drop=True)
         
         return plot_df
     except:
@@ -816,7 +816,8 @@ def render_synthetic_sentiment_panel(data):
         # SOL GRAFİK: Momentum Barları + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # Barlar (Momentum) - Sol Eksen (AXIS LABELS=FALSE)
+        # Barlar (Momentum) - Sol Eksen (AXIS LABELS=FALSE, TITLE KEPT)
+        # İNCE BARLAR: size=6 (User Request)
         bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
             y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', labels=False, titleColor='#4338ca')), 
             color=alt.condition(
@@ -840,7 +841,7 @@ def render_synthetic_sentiment_panel(data):
         # SAĞ GRAFİK: İştah Trendi + Fiyat Çizgisi
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # İştah Çizgileri - Sol Eksen (AXIS LABELS=FALSE)
+        # İştah Çizgileri - Sol Eksen (AXIS LABELS=FALSE, TITLE KEPT)
         line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
             y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='İştah (0-10)', labels=False, titleColor='#fbbf24')) 
         )
