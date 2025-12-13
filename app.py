@@ -1393,7 +1393,7 @@ with col_left:
     render_tradingview_widget(st.session_state.ticker, height=650)
     
     # --- YENİ EKLENEN AJAN 3 ALANI (GÜNCELLENMİŞ TASARIM) ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
     
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
@@ -1403,7 +1403,7 @@ with col_left:
         if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
             # LİMİT: Sadece ilk 12 hisse
             display_df = st.session_state.agent3_data.head(12)
-            st.caption(f"{len(display_df)} fırsat listeleniyor (Toplam Bulunan: {len(st.session_state.agent3_data)})")
+            st.caption(f"En sıcak {len(display_df)} fırsat listeleniyor (Toplam Bulunan: {len(st.session_state.agent3_data)})")
 
             # IZGARA MANTIĞI: Döngüyle 3'erli satırlar oluştur
             for i, (index, row) in enumerate(display_df.iterrows()):
@@ -1418,27 +1418,37 @@ with col_left:
                     if not sym_raw:
                         sym_raw = row.get("Sembol", row.name if isinstance(row.name, str) else "Bilinmiyor")
                     
-                    sym_display = row.get("Sembol_Display", sym_raw)
-                    
-                    # Kart Tasarımı (Mevcut HTML yapısı korunarak)
+                    # --- EKSTRA ANALİZ VERİLERİNİ ÇEK ---
+                    # Hız düşmemesi için sadece bu 12 hisse için anlık hesaplıyoruz
+                    ict_vals = calculate_ict_concepts(sym_raw) or {}
+                    tech_vals = get_tech_card_data(sym_raw) or {}
+
+                    target_text = ict_vals.get('liquidity', 'Belirsiz')
+                    stop_text = f"{tech_vals['stop_level']:.2f}" if tech_vals else "-"
+
+                    # Buton Etiketi (HTML desteklemez, düz metin)
+                    btn_label = f"{sym_raw} | {row['Fiyat']}"
+
+                    # Kart Başlığı (Buton Olarak)
+                    if st.button(f"📊 {btn_label}", key=f"a3_hdr_{sym_raw}_{i}", use_container_width=True):
+                         on_scan_result_click(sym_raw)
+                         st.rerun()
+
+                    # Kart İçeriği (HTML)
                     st.markdown(f"""
-                    <div class="info-card" style="margin-bottom: 10px; height: 100%;">
-                        <div class="info-header" style="font-size:0.8rem; border-bottom:1px solid #e2e8f0; margin-bottom:4px; padding-bottom:2px;">
-                            <span style="font-weight:700; color:#1e40af;">{sym_display}</span> 
-                            <span style="float:right; font-family:'JetBrains Mono'; color:#0f172a;">{row['Fiyat']}</span>
-                        </div>
+                    <div class="info-card" style="margin-top: 0px; height: 100%;">
                         <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
                         <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
                         <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
                         <div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div>
+                        
+                        <div style="margin-top:8px; padding-top:4px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.7rem;">
+                            <div style="color:#166534;"><strong>🎯 Hedef:</strong> {target_text}</div>
+                            <div style="color:#991b1b;"><strong>🛑 Stop:</strong> {stop_text}</div>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # Buton
-                    if st.button(f"🔍 İncele", key=f"a3_sel_{sym_raw}_{i}", use_container_width=True):
-                        on_scan_result_click(sym_raw)
-                        st.rerun()
-        
+                
         elif st.session_state.agent3_data is not None:
              st.info("Kriterlere uyan hisse yok.")
 
