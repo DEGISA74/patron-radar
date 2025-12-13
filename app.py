@@ -763,71 +763,69 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ KISIM: SENTETİK SENTIMENT (HIZLI & YUMUŞAK) ---
+# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: Hesaplamaların oturması için 6 ay, gösterim için son 30 gün
+        # 1. VERİ İNDİRME: "Isınma Payı" için 6 aylık veri çekiyoruz.
+        # Bu sayede grafiğin ilk günündeki veri, geçmişten gelen hafızayla hesaplanmış oluyor.
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
+        
         # MultiIndex düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # Temel Veri Kontrolü
         if 'Close' not in df.columns: return None
         df = df.dropna()
 
         close = df['Close']
+        high = df['High']
+        low = df['Low']
+        open_ = df['Open']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # 2. HESAPLAMA: TİPİK FİYAT ÜZERİNDEN HIZLI STOKASTİK
-        # Bu yöntem, fiyat yatay gitse bile "High-Low" aralığına göre 
-        # fiyatın nerede olduğunu ölçer. Tepeye yapışmaz, düşüşte hemen tepki verir.
+        # -----------------------------------------------------------
+        # 2. HESAPLAMA: STP (SMOOTHED TYPICAL PRICE)
+        # Hedef: Fiyatla aynı eksende hareket eden "Denge Fiyatı".
+        # Formül: (High + Low + Close) / 3 -> Tipik Fiyat
+        # İşlem: 3 Günlük EMA ile yumuşatma (Kıvrımlı yapı için)
+        # -----------------------------------------------------------
         
-        # Tipik Fiyat
-        tp = (df['High'] + df['Low'] + df['Close']) / 3
-
-        # Stochastic Oscillator (%K) Formülü: (Current - Low) / (High - Low)
-        # Burada 5 günlük (Çok Kısa) en yüksek ve en düşük fiyatlar referans alınır.
-        # Bu sayede indikatör "sinirli" olur ve hemen tepki verir.
-        period = 5
-        lowest_l = df['Low'].rolling(window=period).min()
-        highest_h = df['High'].rolling(window=period).max()
-
-        # 0'a bölünme önlemi
-        range_v = (highest_h - lowest_l).replace(0, 1)
+        # Adım A: Tipik Fiyat (O günün ağırlık merkezi)
+        typical_price = (high + low + close) / 3
         
-        # Ham Stokastik Değer (0-1 arası)
-        stoch_raw = (tp - lowest_l) / range_v
-
-        # STP (Sarı Çizgi): Ham değeri 3 günlük BASİT ortalama ile yumuşatıyoruz.
-        # EWM kullanmıyoruz ki geçmiş veriye takılı kalmasın.
-        # 0-10 skalasına çekiyoruz.
-        stp = stoch_raw.rolling(window=3).mean() * 10
+        # Adım B: STP (Sarı Çizgi)
+        # Fiyata çok yakın gitmesi ama gürültüyü atması için 3 barlık EMA kullanıyoruz.
+        stp = typical_price.ewm(span=3, adjust=False).mean()
         
-        # 3. MOMENTUM BARLARI (Sol Grafik)
-        open_safe = df['Open'].replace(0, np.nan)
+        # -----------------------------------------------------------
+        # 3. MOMENTUM BARLARI (SOL GRAFİK İÇİN - AYNEN KORUNDU)
+        # -----------------------------------------------------------
+        open_safe = open_.replace(0, np.nan)
         impulse = ((close - open_safe) / open_safe) * volume
         momentum_bar = impulse.rolling(3).mean().fillna(0)
         
-        # 4. GÖRSELLEŞTİRME VERİ SETİ (SON 30 GÜN KURALI)
+        # -----------------------------------------------------------
+        # 4. KESME İŞLEMİ (CROP)
+        # Hesaplama bitti, şimdi sadece son 30 günü alıyoruz.
+        # Böylece çizgi grafiğin en solunda "havadan inmiyor", akışın içinden geliyor.
+        # -----------------------------------------------------------
         df = df.reset_index()
         if 'Date' not in df.columns:
             df['Date'] = df.index
         else:
             df['Date'] = pd.to_datetime(df['Date'])
             
-        # Son 30 iş günü (Burada kesiyoruz, böylece hesaplama oturmuş oluyor)
         plot_df = pd.DataFrame({
             'Date': df['Date'],
             'Momentum': momentum_bar.values,
-            'STP': stp.values, # Sadece Sarı Çizgi
+            'STP': stp.values,   # Artık 440-450 bandında bir fiyat verisi
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
         
         return plot_df
-    except:
+    except Exception as e:
         return None
 
 def render_synthetic_sentiment_panel(data):
@@ -835,14 +833,14 @@ def render_synthetic_sentiment_panel(data):
 
     st.markdown(f"""
     <div class="info-card" style="margin-bottom:10px;">
-        <div class="info-header">🧠 Sentetik Sentiment (Piyasa İştahı)</div>
+        <div class="info-header">🧠 Sentetik Sentiment (Fiyat Dengesi)</div>
     </div>
     """, unsafe_allow_html=True)
 
     c1, c2 = st.columns([1, 1])
     
     with c1:
-        # SOL GRAFİK: Momentum Barları + Fiyat Çizgisi
+        # SOL GRAFİK: Momentum Barları + Fiyat (Burası çift eksen kalabilir, mantığı farklı)
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
         bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
@@ -859,25 +857,29 @@ def render_synthetic_sentiment_panel(data):
             y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
         )
         
-        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=200, title="Para Akış İvmesi vs Fiyat")
+        # Sol grafik farklı birimleri gösterdiği için independent scale kullanıyoruz
+        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=200, title="Para Akış İvmesi")
         st.altair_chart(chart_left, use_container_width=True)
 
     with c2:
-        # SAĞ GRAFİK: İştah Trendi + Fiyat Çizgisi
-        # Gri çizgi (HSTP) kaldırıldı, sadece Sarı Çizgi (STP) var.
+        # SAĞ GRAFİK: STP vs Fiyat (TEK EKSEN - SHARED SCALE)
+        # Artık ikisi de "Fiyat" olduğu için aynı eksene çiziyoruz.
         base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
         
-        # Sarı Çizgi (STP) - 0 ile 10 arasında sabit ölçek
+        # Sarı Çizgi (STP - Sentetik Fiyat)
         line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(domain=[0, 10]), axis=alt.Axis(title='İştah (0-10)', titleColor='#fbbf24')) 
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat Seviyesi', titleColor='#64748B')),
+            tooltip=[alt.Tooltip('Date', title='Tarih'), alt.Tooltip('STP', format='.2f'), alt.Tooltip('Price', format='.2f')]
         )
         
-        # Fiyat Çizgisi
+        # Fiyat Çizgisi (Mavi)
+        # Aynı Y eksenini (STP:Q) paylaştıkları için scale otomatik uyum sağlar.
         price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
-            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
+            y='Price:Q'
         )
         
-        chart_right = alt.layer(line_stp, price_line_right).resolve_scale(y='independent').properties(height=200, title="İştah Trendi vs Fiyat")
+        # Layer yapıyoruz ama resolve_scale KULLANMIYORUZ (veya shared diyoruz).
+        chart_right = alt.layer(line_stp, price_line_right).properties(height=200, title="Fiyat Dengesi (STP)")
         st.altair_chart(chart_right, use_container_width=True)
 
 
@@ -1847,3 +1849,4 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
