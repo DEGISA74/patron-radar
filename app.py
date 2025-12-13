@@ -776,6 +776,7 @@ def calculate_ict_concepts(ticker):
         close = df['Close']
         high = df['High']
         low = df['Low']
+        open_ = df['Open'] # Order Block İçin Eklendi
         
         if len(df) < 60: return {"summary": "Veri Yetersiz"}
 
@@ -935,7 +936,68 @@ def calculate_ict_concepts(ticker):
             dist_ssl = abs(curr_price - next_ssl) if next_ssl else 99999
             liq_target = f"Hedef: {next_bsl:.2f}" if dist_bsl < dist_ssl else f"Hedef: {next_ssl:.2f}"
 
-        # --- 6. GOLDEN SETUP KARARI ---
+        # --- 6. ORDER BLOCK (YENİ) ---
+        active_ob = "Yok / Uzak"
+        ob_color = "gray"
+        
+        # Sadece Trendin Yönüne Göre OB Tara (Verimlilik İçin)
+        # Sondan başa doğru (En yeni OB en değerlisidir)
+        search_range = range(len(df)-3, max(0, len(df)-60), -1)
+        
+        found_ob = False
+        
+        # Bullish Senaryo: Trend Yukarı veya Discount Bölgesindeyiz -> Bullish OB Ara
+        if bias_color == "green" or bias_color == "blue" or is_discount:
+            for i in search_range:
+                # Kırmızı Mum (Düşüş)
+                if close.iloc[i] < open_.iloc[i]:
+                    # Displacement Kontrolü: Sonraki mum güçlü yeşil mi?
+                    # Basit kural: Sonraki mumun kapanışı, bu mumun yükseğini geçti mi?
+                    if i+1 < len(df) and close.iloc[i+1] > high.iloc[i]:
+                        # İhlal Kontrolü: Fiyat şu an bu OB'nin altına inmiş mi?
+                        ob_low = low.iloc[i]
+                        ob_high = high.iloc[i]
+                        
+                        if curr_price > ob_high: # Fiyat hala üzerinde (Geçerli)
+                            # Mitigasyon (Test) Kontrolü
+                            is_tested = False
+                            for k in range(i+2, len(df)):
+                                if low.iloc[k] <= ob_high:
+                                    is_tested = True
+                                    break
+                            
+                            status = "Test Edildi" if is_tested else "Taze"
+                            active_ob = f"{ob_low:.2f} - {ob_high:.2f} (Bullish - {status})"
+                            ob_color = "green"
+                            found_ob = True
+                            break # En yakınını bulduk, çık
+        
+        # Bearish Senaryo: Trend Aşağı veya Premium Bölgesindeyiz -> Bearish OB Ara (Eğer Bullish bulunamadıysa)
+        if not found_ob and (bias_color == "red" or bias_color == "blue" or not is_discount):
+            for i in search_range:
+                # Yeşil Mum (Yükseliş)
+                if close.iloc[i] > open_.iloc[i]:
+                    # Displacement: Sonraki mum güçlü kırmızı mı?
+                    if i+1 < len(df) and close.iloc[i+1] < low.iloc[i]:
+                        # İhlal Kontrolü
+                        ob_low = low.iloc[i]
+                        ob_high = high.iloc[i]
+                        
+                        if curr_price < ob_low: # Fiyat hala altında (Geçerli)
+                            # Mitigasyon
+                            is_tested = False
+                            for k in range(i+2, len(df)):
+                                if high.iloc[k] >= ob_low:
+                                    is_tested = True
+                                    break
+                                    
+                            status = "Test Edildi" if is_tested else "Taze"
+                            active_ob = f"{ob_low:.2f} - {ob_high:.2f} (Bearish - {status})"
+                            ob_color = "red"
+                            found_ob = True
+                            break
+
+        # --- 7. GOLDEN SETUP KARARI ---
         golden_txt = "İzlemede (Setup Yok)"
         is_golden = False
         
@@ -957,6 +1019,8 @@ def calculate_ict_concepts(ticker):
             "pos_label": pos_label,
             "fvg": active_fvg,
             "fvg_color": fvg_color,
+            "ob": active_ob, # Order Block Verisi
+            "ob_color": ob_color,
             "liquidity": liq_target,
             "golden_text": golden_txt,
             "is_golden": is_golden,
@@ -1109,6 +1173,10 @@ def render_ict_panel(analysis):
 <div class="info-row">
 <div class="label-long">FVG Durumu:</div>
 <div class="info-val" style="color:{'#166534' if analysis['fvg_color']=='green' else '#991b1b' if analysis['fvg_color']=='red' else '#64748B'}; font-weight:600;">{analysis['fvg']}</div>
+</div>
+<div class="info-row">
+<div class="label-long">Aktif OB:</div>
+<div class="info-val" style="color:{'#166534' if analysis['ob_color']=='green' else '#991b1b' if analysis['ob_color']=='red' else '#64748B'}; font-weight:600;">{analysis['ob']}</div>
 </div>
 <div class="info-row">
 <div class="label-long">🧲 Fiyatı Çeken Seviye:</div>
@@ -1452,6 +1520,7 @@ with col_left:
                          st.rerun()
 
                     # Kart İçeriği (HTML - DİNAMİK RENKLENDİRME İLE)
+                    # GÜNCELLEME: Burada indentation (boşluklar) temizlendi.
                     card_html = f"""
 <div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};">
 <div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
