@@ -858,7 +858,7 @@ def render_synthetic_sentiment_panel(data):
         )
         
         # Sol grafik farklı birimleri gösterdiği için independent scale kullanıyoruz
-        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=200, title="Para Akış İvmesi")
+        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=300, title="Para Akış İvmesi")
         st.altair_chart(chart_left, use_container_width=True)
 
     with c2:
@@ -1849,6 +1849,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
