@@ -16,7 +16,7 @@ import altair as alt # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="PATRONUN TEKNİK BORSA TERMİNALİ",  # İSİM GÜNCELLENDİ
+    page_title="PATRONUN TEKNİK BORSA TERMİNALİ", 
     layout="wide",
     page_icon="💸"
 )
@@ -108,9 +108,9 @@ st.markdown(f"""
     }}
     .ict-bar-fill {{ height: 100%; transition: width 0.5s ease; }}
     
-    /* TEKNİK KART DETAYLARI İÇİN GRID */
-    .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-    .tech-item { display: flex; align-items: center; font-size: 0.7rem; }
+    /* TEKNİK KART DETAYLARI İÇİN GRID - DÜZELTİLDİ */
+    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+    .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; }}
     
 </style>
 """, unsafe_allow_html=True)
@@ -1389,160 +1389,6 @@ def calculate_ict_concepts(ticker):
     except Exception as e:
         return {"summary": "Hata", "err": str(e)}
 
-@st.cache_data(ttl=600)
-def get_tech_card_data(ticker):
-    try:
-        df = yf.download(ticker, period="2y", progress=False)
-        if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        close = df['Close']; high = df['High']; low = df['Low']
-        sma50 = close.rolling(50).mean().iloc[-1]
-        sma100 = close.rolling(100).mean().iloc[-1]
-        sma200 = close.rolling(200).mean().iloc[-1]
-        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
-        atr = (high-low).rolling(14).mean().iloc[-1]
-        return {
-            "sma50": sma50,
-            "sma100": sma100,
-            "sma200": sma200,
-            "ema144": ema144,
-            "stop_level": close.iloc[-1] - (2 * atr),
-            "risk_pct": (2 * atr) / close.iloc[-1] * 100,
-            "atr": atr
-        }
-    except:
-        return None
-
-# --- RENDER ---
-def render_sentiment_card(sent):
-    if not sent: return
-    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
-    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
-    
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
-        </div>
-        <div style="font-family:'Courier New'; font-size:0.7rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
-        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
-        <div class="info-row"><div class="label-long">2. Hacim:</div><div class="info-val">{sent['vol']}</div></div>
-        <div class="info-row"><div class="label-long">3. Trend:</div><div class="info-val">{sent['tr']}</div></div>
-        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{sent['vola']}</div></div>
-        <div class="info-row"><div class="label-long">5. Yapı:</div><div class="info-val">{sent['str']}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_deep_xray_card(xray):
-    if not xray: return
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🔍 Derin Teknik Röntgen</div>
-        <div class="info-row"><div class="label-long">Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
-        <div class="info-row"><div class="label-long">Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
-        <div class="info-row"><div class="label-long">Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
-        <div class="info-row"><div class="label-long">Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
-        <div class="info-row"><div class="label-long">Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_radar_params_card():
-    st.markdown(f"""
-    <div class="info-card">
-        <div class="info-header">🎛️ Radar Parametreleri</div>
-        <div style="margin-bottom:6px;">
-            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 1 (Sinyal):</div>
-            <div style="display:flex; flex-wrap:wrap; gap:3px;">
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">W%R</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MFI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">CCI</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Stoch</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">ADX</span>
-                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Mom</span>
-            </div>
-        </div>
-        <div>
-            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 2 (Setup):</div>
-            <div style="display:flex; flex-wrap:wrap; gap:3px;">
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">SMA Sıralı</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RS(S&P500)</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Hacim+</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">60G Zirve</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI Bölgesi</span>
-                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD Hist</span>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_ict_panel(analysis):
-    if not analysis or "summary" in analysis and analysis["summary"] == "Hata":
-        st.error("ICT Analizi yapılamadı (Veri yetersiz)")
-        return
-
-    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
-    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-
-    # Renk Kodları
-    s_color = "#166534" if analysis['bias_color'] == "green" else "#991b1b" if analysis['bias_color'] == "red" else "#854d0e"
-    pos_pct = analysis['range_pos_pct']
-    
-    # Bar Genişliği (0-100% arası)
-    bar_width = min(max(pos_pct, 5), 95) 
-    
-    # Golden Setup veya OTE Durumu
-    golden_badge = ""
-    if analysis['is_golden']:
-        golden_badge = f"<div style='margin-top:6px; background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; padding:6px; border-radius:6px; font-weight:700; text-align:center; font-size:0.75rem;'>✨ {analysis['golden_text']}</div>"
-    elif analysis['ote_level']:
-        golden_badge = f"<div style='margin-top:6px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>🎯 {analysis['golden_text']}</div>"
-    else:
-        golden_badge = f"<div style='margin-top:6px; background:#f8fafc; border:1px solid #e2e8f0; color:#94a3b8; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>{analysis['golden_text']}</div>"
-
-    # HTML Kodları, Markdown kod bloğu sanılmasın diye sola yaslanmıştır:
-    st.markdown(f"""
-<div class="info-card">
-<div class="info-header">🧠 ICT Smart Money Concepts: {display_ticker}</div>
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-<span style="font-size:0.65rem; color:#64748B; font-weight:600;">MARKET YAPISI</span>
-<span style="font-size:0.7rem; font-weight:700; color:{s_color};">{analysis['structure']}</span>
-</div>
-<div style="margin: 8px 0;">
-<div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
-<span>Discount</span>
-<span>EQ</span>
-<span>Premium</span>
-</div>
-<div class="ict-bar-container">
-<div class="ict-bar-fill" style="width:{bar_width}%; background: linear-gradient(90deg, #22c55e 0%, #cbd5e1 50%, #ef4444 100%);"></div>
-</div>
-<div style="text-align:center; font-size:0.7rem; font-weight:600; color:#0f172a; margin-top:2px;">
-{analysis['pos_label']} <span style="color:#64748B; font-size:0.6rem;">(%{pos_pct:.1f})</span>
-</div>
-</div>
-<div style="margin-top:8px;">
-<div class="info-row">
-<div class="label-long">FVG Durumu:</div>
-<div class="info-val" style="color:{'#166534' if analysis['fvg_color']=='green' else '#991b1b' if analysis['fvg_color']=='red' else '#64748B'}; font-weight:600;">{analysis['fvg']}</div>
-</div>
-<div class="info-row">
-<div class="label-long">Aktif OB:</div>
-<div class="info-val" style="color:{'#166534' if analysis['ob_color']=='green' else '#991b1b' if analysis['ob_color']=='red' else '#64748B'}; font-weight:600;">{analysis['ob']}</div>
-</div>
-<div class="info-row">
-<div class="label-long">🧲 Fiyatı Çeken Seviye:</div>
-<div class="info-val">{analysis['liquidity']}</div>
-</div>
-</div>
-{golden_badge}
-</div>
-""", unsafe_allow_html=True)
-
 # --- YENİ GELİŞMİŞ TEKNİK KART (TradingView Yerine Gelecek) ---
 def render_detail_card_advanced(ticker):
     # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
@@ -1964,8 +1810,6 @@ with col_right:
     # ICT Panel
     ict_data = calculate_ict_concepts(st.session_state.ticker)
     render_ict_panel(ict_data)
-
-    # --- BURADA ESKİ TEKNİK KART VARDI, KALDIRILDI ---
 
     # --- DEĞİŞİKLİK BURADA: ÖNCE RÖNTGEN, SONRA RADAR ---
     
