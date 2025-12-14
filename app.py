@@ -878,7 +878,7 @@ def render_synthetic_sentiment_panel(data):
             # Koyu Indigo, Açık Indigo, Koyu Kırmızı, Açık Kırmızı
         ), legend=None)
 
-        bars = base.mark_bar(size=6, opacity=0.9).encode(
+        bars = base.mark_bar(size=15, opacity=0.9).encode(
             y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')),
             color=color_scale,
             tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth']
@@ -1890,5 +1890,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
