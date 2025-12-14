@@ -840,7 +840,7 @@ def calculate_synthetic_sentiment(ticker):
             'Status': status,
             'STP': stp.values,
             'Price': close.values
-        }).tail(40).reset_index(drop=True) 
+        }).tail(30).reset_index(drop=True) 
 
         # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH ***
         # Altair bu sütunu görünce "Ordinal" (Sıralı) moduna geçecek.
@@ -1890,4 +1890,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
