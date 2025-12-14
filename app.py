@@ -129,8 +129,11 @@ def load_watchlist_db():
 def add_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    try: c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,)); conn.commit()
-    except sqlite3.IntegrityError: pass
+    try:
+        c.execute('INSERT INTO watchlist (symbol) VALUES (?)', (symbol,))
+        conn.commit()
+    except sqlite3.IntegrityError: 
+        pass
     conn.close()
 def remove_watchlist_db(symbol):
     conn = sqlite3.connect(DB_FILE)
@@ -764,15 +767,15 @@ def get_deep_xray_data(ticker):
     }
 
 # --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
+# YENİ CMF TABANLI VE ORDINAL DATE DÜZELTMELİ FONKSİYON
+# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE EKSEN VE CMF EKLENDİ ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME: "Isınma Payı" için 6 aylık veri çekiyoruz.
-        # Bu sayede grafiğin ilk günündeki veri, geçmişten gelen hafızayla hesaplanmış oluyor.
+        # 1. VERİ İNDİRME
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         
-        # MultiIndex düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
@@ -782,104 +785,142 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         high = df['High']
         low = df['Low']
-        open_ = df['Open']
-        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        # Hacim 0 ise 1 yap (Bölme hatası önlemi)
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # -----------------------------------------------------------
-        # 2. HESAPLAMA: STP (SMOOTHED TYPICAL PRICE)
-        # Hedef: Fiyatla aynı eksende hareket eden "Denge Fiyatı".
-        # Formül: (High + Low + Close) / 3 -> Tipik Fiyat
-        # İşlem: 3 Günlük EMA ile yumuşatma (Kıvrımlı yapı için)
+        # 2. HESAPLAMA: CMF TABANLI PARA AKIŞI (SOL GRAFİK İÇİN)
         # -----------------------------------------------------------
         
-        # Adım A: Tipik Fiyat (O günün ağırlık merkezi)
+        # A. CLV (Close Location Value)
+        # Formül: ((Close - Low) - (High - Close)) / (High - Low)
+        # Alternatif: (2*Close - High - Low) / (High - Low)
+        range_len = high - low
+        range_len = range_len.replace(0, 0.01) # Hata önleyici
+        
+        clv = ((2 * close) - high - low) / range_len
+        
+        # B. Smart Money Volume
+        money_flow_vol = clv * volume
+        
+        # C. Yumuşatma (Flow Smooth - 3 Günlük EMA)
+        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
+
+        # D. Smart Money Tespiti (RVOL Kontrolü)
+        vol_avg_20 = volume.rolling(20).mean()
+        is_smart_money = volume > vol_avg_20 # Hacim ortalamanın üstünde mi?
+
+        # E. Renk Durumu (Status)
+        status = []
+        for i in range(len(df)):
+            val = mf_smooth.iloc[i]
+            smart = is_smart_money.iloc[i]
+            
+            if val >= 0: # GİRİŞ
+                if smart: status.append("Güçlü Giriş") # Koyu Yeşil/Mavi
+                else: status.append("Zayıf Giriş")     # Açık Yeşil/Mavi
+            else: # ÇIKIŞ
+                if smart: status.append("Güçlü Çıkış") # Koyu Kırmızı
+                else: status.append("Zayıf Çıkış")     # Açık Kırmızı
+
+        # -----------------------------------------------------------
+        # 3. HESAPLAMA: STP (SAĞ GRAFİK İÇİN - AYNEN KORUNDU)
+        # -----------------------------------------------------------
         typical_price = (high + low + close) / 3
-        
-        # Adım B: STP (Sarı Çizgi)
-        # Fiyata çok yakın gitmesi ama gürültüyü atması için 3 barlık EMA kullanıyoruz.
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # -----------------------------------------------------------
-        # 3. MOMENTUM BARLARI (SOL GRAFİK İÇİN - AYNEN KORUNDU)
-        # -----------------------------------------------------------
-        open_safe = open_.replace(0, np.nan)
-        impulse = ((close - open_safe) / open_safe) * volume
-        momentum_bar = impulse.rolling(3).mean().fillna(0)
-        
-        # -----------------------------------------------------------
-        # 4. KESME İŞLEMİ (CROP)
-        # Hesaplama bitti, şimdi sadece son 30 günü alıyoruz.
-        # Böylece çizgi grafiğin en solunda "havadan inmiyor", akışın içinden geliyor.
-        # -----------------------------------------------------------
+        # 4. DATAFRAME HAZIRLIĞI (SON 40 GÜN)
         df = df.reset_index()
-        if 'Date' not in df.columns:
-            df['Date'] = df.index
-        else:
-            df['Date'] = pd.to_datetime(df['Date'])
-            
+        if 'Date' not in df.columns: df['Date'] = df.index
+        else: df['Date'] = pd.to_datetime(df['Date'])
+        
         plot_df = pd.DataFrame({
             'Date': df['Date'],
-            'Momentum': momentum_bar.values,
-            'STP': stp.values,   # Artık 440-450 bandında bir fiyat verisi
+            'MF_Smooth': mf_smooth.values,
+            'Status': status,
+            'STP': stp.values,
             'Price': close.values
-        }).tail(30).reset_index(drop=True) 
+        }).tail(40).reset_index(drop=True) 
+
+        # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH ***
+        # Altair bu sütunu görünce "Ordinal" (Sıralı) moduna geçecek.
+        plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
         return plot_df
+
     except Exception as e:
         return None
 
+# YENİ GÖRSELLEŞTİRME PANELİ (GAP-FREE)
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
 
     st.markdown(f"""
     <div class="info-card" style="margin-bottom:10px;">
-        <div class="info-header">🧠 Sentetik Sentiment (Fiyat Dengesi)</div>
+        <div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi</div>
     </div>
     """, unsafe_allow_html=True)
 
     c1, c2 = st.columns([1, 1])
     
+    # Ortak X Ekseni (Ordinal - Sıralı - Boşluksuz)
+    # sort=None: Verinin geliş sırasını korur (Kronolojik), alfabetik yapmaz.
+    x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
+
     with c1:
-        # SOL GRAFİK: Momentum Barları + Fiyat (Burası çift eksen kalabilir, mantığı farklı)
-        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
+        # SOL GRAFİK: Para Akış Barları (Smart Money Renkli)
+        base = alt.Chart(data).encode(x=x_axis)
         
-        bars = base.mark_bar(size=6, opacity=0.9, cornerRadiusTopLeft=2, cornerRadiusTopRight=2).encode(
-            y=alt.Y('Momentum:Q', axis=alt.Axis(title='Momentum', labels=False, titleColor='#4338ca')), 
-            color=alt.condition(
-                alt.datum.Momentum > 0,
-                alt.value("#4338ca"),  # İndigo
-                alt.value("#e11d48")   # Kırmızı
-            ),
-            tooltip=['Date', 'Price', 'Momentum']
+        # Renk Skalası (User Preference: Indigo/Red)
+        color_scale = alt.Color('Status:N', scale=alt.Scale(
+            domain=['Güçlü Giriş', 'Zayıf Giriş', 'Güçlü Çıkış', 'Zayıf Çıkış'],
+            range=['#312e81', '#a5b4fc', '#881337', '#fca5a5'] 
+            # Koyu Indigo, Açık Indigo, Koyu Kırmızı, Açık Kırmızı
+        ), legend=None)
+
+        bars = base.mark_bar(size=6, opacity=0.9).encode(
+            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')),
+            color=color_scale,
+            tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth']
         )
         
-        price_line = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
-            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#2dd4bf'))
+        # Fiyat Çizgisi (Referans)
+        price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(
+            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a'))
         )
         
-        # Sol grafik farklı birimleri gösterdiği için independent scale kullanıyoruz
-        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=300, title="Para Akış İvmesi")
+        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(
+            height=280, 
+            title=alt.TitleParams("Kurumsal Para Giriş/Çıkışı", fontSize=11, color="#1e40af")
+        )
         st.altair_chart(chart_left, use_container_width=True)
 
     with c2:
-        # SAĞ GRAFİK: STP vs Fiyat (TEK EKSEN - SHARED SCALE)
-        # Artık ikisi de "Fiyat" olduğu için aynı eksene çiziyoruz.
-        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
+        # SAĞ GRAFİK: Fiyat Dengesi (STP vs Price) - AYNEN KORUNDU
+        # Sadece X ekseni "Date_Str" oldu ki sol tarafla aynı boyda dursun.
+        base2 = alt.Chart(data).encode(x=x_axis)
         
-        # Sarı Çizgi (STP - Sentetik Fiyat)
-        line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat Seviyesi', titleColor='#64748B')),
-            tooltip=[alt.Tooltip('Date', title='Tarih'), alt.Tooltip('STP', format='.2f'), alt.Tooltip('Price', format='.2f')]
+        # Denge Hattı (Sarı)
+        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')),
+            tooltip=['Date_Str', 'STP', 'Price']
         )
         
-        # Fiyat Çizgisi (Mavi)
-        # Aynı Y eksenini (STP:Q) paylaştıkları için scale otomatik uyum sağlar.
-        price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
+        # Fiyat (Turkuaz)
+        line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(
             y='Price:Q'
         )
         
-        # Layer yapıyoruz ama resolve_scale KULLANMIYORUZ (veya shared diyoruz).
-        chart_right = alt.layer(line_stp, price_line_right).properties(height=300, title="Fiyat Dengesi (STP)")
+        # Aradaki Farkı Boya (Deviasyon Alanı)
+        area = base2.mark_area(opacity=0.15, color='gray').encode(
+            y='STP:Q',
+            y2='Price:Q'
+        )
+        
+        chart_right = alt.layer(area, line_stp, line_price).properties(
+            height=280, 
+            title=alt.TitleParams("Fiyat Dengesi (Sarı=Mıknatıs)", fontSize=11, color="#b45309")
+        )
         st.altair_chart(chart_right, use_container_width=True)
 
 
@@ -1849,10 +1890,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
-
-
-
-
-
-
