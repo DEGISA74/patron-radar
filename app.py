@@ -408,10 +408,12 @@ with st.sidebar:
             # TAB 1: YENİ KESİŞİMLER (AL SİNYALİ)
             st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
             if st.session_state.stp_crosses:
-                for item in st.session_state.stp_crosses:
-                    if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"):
-                        st.session_state.ticker = item['Sembol'] # Tıklayınca ana ekrana git
-                        st.rerun()
+                # GÜNCELLEME: Burada da scroll bar olması için container eklendi
+                with st.container(height=200):
+                    for item in st.session_state.stp_crosses:
+                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"):
+                            st.session_state.ticker = item['Sembol'] # Tıklayınca ana ekrana git
+                            st.rerun()
             else:
                 st.info("Yeni kesişim yok.")
 
