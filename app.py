@@ -766,9 +766,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
-# YENİ CMF TABANLI VE ORDINAL DATE DÜZELTMELİ FONKSİYON
-# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE EKSEN VE CMF EKLENDİ ---
+# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (ORİJİNAL CMF MANTIĞI + DALGA YUMUŞATMA) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -785,43 +783,50 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         high = df['High']
         low = df['Low']
-        # Hacim 0 ise 1 yap (Bölme hatası önlemi)
+        # Hacim 0 ise 1 yap (Hata önlemi)
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # -----------------------------------------------------------
-        # 2. HESAPLAMA: CMF TABANLI PARA AKIŞI (SOL GRAFİK İÇİN)
+        # 2. HESAPLAMA: GELİŞTİRİLMİŞ PARA AKIŞI (CHAIKIN MANTIĞI)
         # -----------------------------------------------------------
+        # Orijinal koddaki CLV (Close Location Value) mantığına dönüyoruz.
+        # Ama bu sefer zikzakları yok etmek için "Kümülatif Akışın Osilatörünü" alıyoruz.
         
-        # A. CLV (Close Location Value)
-        # Formül: ((Close - Low) - (High - Close)) / (High - Low)
-        # Alternatif: (2*Close - High - Low) / (High - Low)
+        # Adım A: Para Akış Çarpanı (Orijinal Kodun Temeli)
+        # Fiyat mumun neresinde kapattı? (1: Tepede, -1: Dipte)
         range_len = high - low
-        range_len = range_len.replace(0, 0.01) # Hata önleyici
-        
+        range_len = range_len.replace(0, 0.01) 
         clv = ((2 * close) - high - low) / range_len
         
-        # B. Smart Money Volume
+        # Adım B: Hacimli Para Akışı
         money_flow_vol = clv * volume
         
-        # C. Yumuşatma (Flow Smooth - 3 Günlük EMA)
-        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
+        # Adım C: A/D Hattı (Kümülatif Toplam)
+        adl = money_flow_vol.cumsum()
+        
+        # Adım D: CHAIKIN DALGASI (YUMUŞATMA İŞLEMİ BURADA)
+        # Orijinal veriyi 3 günlük ve 10 günlük iki "fırça" ile yumuşatıp farkını alıyoruz.
+        # Bu işlem o sivri dikenleri yok edip "Dalga" görünümü verir.
+        ema3 = adl.ewm(span=3, adjust=False).mean()
+        ema10 = adl.ewm(span=10, adjust=False).mean()
+        
+        # Barın boyunu belirleyen ana değer
+        mf_smooth = ema3 - ema10
 
-        # D. Smart Money Tespiti (RVOL Kontrolü)
-        vol_avg_20 = volume.rolling(20).mean()
-        is_smart_money = volume > vol_avg_20 # Hacim ortalamanın üstünde mi?
-
-        # E. Renk Durumu (Status)
+        # Renk Durumu (Status) - Görseldeki gibi tonlamalı geçiş
         status = []
         for i in range(len(df)):
             val = mf_smooth.iloc[i]
-            smart = is_smart_money.iloc[i]
+            prev_val = mf_smooth.iloc[i-1] if i > 0 else 0
             
-            if val >= 0: # GİRİŞ
-                if smart: status.append("Güçlü Giriş") # Koyu Yeşil/Mavi
-                else: status.append("Zayıf Giriş")     # Açık Yeşil/Mavi
-            else: # ÇIKIŞ
-                if smart: status.append("Güçlü Çıkış") # Koyu Kırmızı
-                else: status.append("Zayıf Çıkış")     # Açık Kırmızı
+            if val >= 0:
+                # POZİTİF (MAVİ) BÖLGE
+                if val > prev_val: status.append("Güçlü Giriş") # Yükseliyor (Koyu Mavi)
+                else: status.append("Zayıf Giriş")      # Güç Kaybediyor (Açık Mavi)
+            else:
+                # NEGATİF (KIRMIZI) BÖLGE
+                if val < prev_val: status.append("Güçlü Çıkış") # Derinleşiyor (Koyu Kırmızı)
+                else: status.append("Zayıf Çıkış")      # Toparlıyor (Açık Kırmızı)
 
         # -----------------------------------------------------------
         # 3. HESAPLAMA: STP (SAĞ GRAFİK İÇİN - AYNEN KORUNDU)
@@ -829,7 +834,7 @@ def calculate_synthetic_sentiment(ticker):
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # 4. DATAFRAME HAZIRLIĞI (SON 40 GÜN)
+        # 4. DATAFRAME (SON 30 GÜN)
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
@@ -842,14 +847,80 @@ def calculate_synthetic_sentiment(ticker):
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
 
-        # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH ***
-        # Altair bu sütunu görünce "Ordinal" (Sıralı) moduna geçecek.
+        # Tarih String Formatı
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
         return plot_df
 
     except Exception as e:
         return None
+
+# YENİ GÖRSELLEŞTİRME PANELİ (BOŞLUKSUZ & ESTETİK)
+def render_synthetic_sentiment_panel(data):
+    if data is None or data.empty: return
+
+    st.markdown(f"""
+    <div class="info-card" style="margin-bottom:10px;">
+        <div class="info-header">🌊 Para Akış Osilatörü (Chaikin) & Fiyat Dengesi</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns([1, 1])
+    
+    # Ortak X Ekseni (Ordinal - Sıralı)
+    x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
+
+    with c1:
+        # SOL GRAFİK: Para Akış Barları
+        base = alt.Chart(data).encode(x=x_axis)
+        
+        # Renk Skalası (İstediğin Tonlamalar)
+        color_scale = alt.Color('Status:N', scale=alt.Scale(
+            domain=['Güçlü Giriş', 'Zayıf Giriş', 'Güçlü Çıkış', 'Zayıf Çıkış'],
+            range=['#312e81', '#a5b4fc', '#881337', '#fca5a5'] 
+        ), legend=None)
+
+        # BAR GENİŞLİĞİ: 20 (Boşluksuz görünüm için ideal)
+        bars = base.mark_bar(size=20, opacity=0.9).encode(
+            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')),
+            color=color_scale,
+            tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth']
+        )
+        
+        # Fiyat Çizgisi (Referans)
+        price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(
+            y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a'))
+        )
+        
+        chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(
+            height=280, 
+            title=alt.TitleParams("Sentiment Değişimi - Para Akışı", fontSize=11, color="#1e40af")
+        )
+        st.altair_chart(chart_left, use_container_width=True)
+
+    with c2:
+        # SAĞ GRAFİK: Fiyat Dengesi (STP vs Price) - AYNI KALDI
+        base2 = alt.Chart(data).encode(x=x_axis)
+        
+        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')),
+            tooltip=['Date_Str', 'STP', 'Price']
+        )
+        
+        line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(
+            y='Price:Q'
+        )
+        
+        area = base2.mark_area(opacity=0.15, color='gray').encode(
+            y='STP:Q',
+            y2='Price:Q'
+        )
+        
+        chart_right = alt.layer(area, line_stp, line_price).properties(
+            height=280, 
+            title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")
+        )
+        st.altair_chart(chart_right, use_container_width=True)
 
 # YENİ GÖRSELLEŞTİRME PANELİ (GAP-FREE)
 def render_synthetic_sentiment_panel(data):
@@ -1890,5 +1961,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
