@@ -12,13 +12,13 @@ import os
 import textwrap
 import concurrent.futures
 import re
-import altair as alt # Görselleştirme için
+import altair as alt  # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="PATRONUN BORSA PANELİ", # BURASI DEĞİŞTİRİLDİ
+    page_title="PATRONUN BORSA PANELİ", # BURASI DEĞİŞTİRİLDİ (Önceki İsteğe Göre)
     layout="wide",
-    page_icon="💸" # Boğa emojisi kaldırıldı, yerine nötr bir ikon kondu
+    page_icon="💸"
 )
 
 # --- TEMA VE CSS ---
@@ -34,7 +34,7 @@ current_theme = THEMES[st.session_state.theme]
 
 st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
@@ -290,7 +290,7 @@ def toggle_watchlist(symbol):
         add_watchlist_db(symbol)
         wl.append(symbol)
     st.session_state.watchlist = wl
-
+    
 # --- SIDEBAR (YENİ BAŞLIK BURAYA EKLENDİ) ---
 with st.sidebar:
     # YENİ BAŞLIK (İstenen yerde)
@@ -318,6 +318,31 @@ with st.sidebar:
         st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
              st.session_state.generate_prompt = True
+
+    st.divider()
+
+    # --- YENİ TARAMA BUTONLARI BÖLÜMÜ (İstenen makyaj değişikliği) ---
+    st.markdown("### 📡 Tarayıcı Kontrolü")
+    
+    # 1. AJAN 3 TARAMA BUTONU (Önceden sol ana içerikteydi)
+    if st.button(f"⚡ Ajan 3: {st.session_state.category} Tara", type="secondary", key="a3_sidebar_scan_btn", use_container_width=True):
+        with st.spinner("Ajan 3 piyasayı kokluyor..."):
+            # Aynı fonksiyon çağrılıyor, sonuç session state'e yazılıyor
+            st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
+            
+    # 2. RADAR 1 TARAMA BUTONU (Önceden sağ sütun Tab 1'deydi)
+    if st.button(f"🧠 RADAR 1: {st.session_state.category} Tara", type="secondary", key="r1_sidebar_scan_btn", use_container_width=True):
+        with st.spinner("Taranıyor..."):
+             # Aynı fonksiyon çağrılıyor, sonuç session state'e yazılıyor
+            st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+
+    # 3. RADAR 2 TARAMA BUTONU (Önceden sağ sütun Tab 2'deydi)
+    if st.button(f"🚀 RADAR 2: {st.session_state.category} Tara", type="secondary", key="r2_sidebar_scan_btn", use_container_width=True):
+        with st.spinner("Taranıyor..."):
+             # Aynı fonksiyon çağrılıyor, sonuç session state'e yazılıyor
+            st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+    
+    st.divider()
 
 # --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
 @st.cache_data(ttl=3600)
@@ -1471,18 +1496,7 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-# Boğa ikonu kaldırıldı, üst başlık kaldırıldı.
-
-# st.markdown(f"""
-# <div class="header-container" style="display:flex; align-items:center;">
-#     <img src="{BULL_ICON_B64}" class="header-logo">
-#     <div>
-#         <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
-#         <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
-#     </div>
-# </div>
-# <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
-# """, unsafe_allow_html=True) # BU KISIM KALDIRILDI
+# Üst başlık kısmı (Patronun Terminali v4.5) önceki adımda kaldırıldığı için burada görünmez.
 
 # FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
@@ -1639,10 +1653,9 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
     
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
-            with st.spinner("Ajan 3 piyasayı kokluyor..."):
-                st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        
+        # BURASI DEĞİŞTİRİLDİ: Buton kaldırıldı, sadece sonuç gösterme kaldı.
+        # if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"): 
+        #    ...
         if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
             # LİMİT: Sadece ilk 12 hisse
             display_df = st.session_state.agent3_data.head(12)
@@ -1853,9 +1866,9 @@ with col_right:
     tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "📜 İzleme"])
     
     with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
-            with st.spinner("Taranıyor..."):
-                st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+        # BURASI DEĞİŞTİRİLDİ: Buton kaldırıldı.
+        # if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
+        #    ...
         if st.session_state.scan_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.scan_data.iterrows():
@@ -1870,9 +1883,9 @@ with col_right:
                     st.caption(row['Nedenler'])
 
     with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
-            with st.spinner("Taranıyor..."):
-                st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+        # BURASI DEĞİŞTİRİLDİ: Buton kaldırıldı.
+        # if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
+        #    ...
         if st.session_state.radar2_data is not None:
             with st.container(height=500):
                 for i, row in st.session_state.radar2_data.iterrows():
