@@ -827,8 +827,6 @@ def render_ict_panel(analysis):
     </div>{golden_badge}</div>""", unsafe_allow_html=True)
 
 def render_detail_card_advanced(ticker):
-    import textwrap # Garanti olsun diye buraya ekledim
-
     # --- 1. AÇIKLAMA TANIMLARI ---
     ACIKLAMALAR = {
         # RADAR 1
@@ -858,7 +856,11 @@ def render_detail_card_advanced(ticker):
     dt = get_tech_card_data(ticker)
     info = fetch_stock_info(ticker)
     
-    price_val = f"{info['price']:.2f}" if (info and info.get('price')) else (f"{dt['close_last']:.2f}" if (dt and 'close_last' in dt) else "Veri Yok")
+    price_val = "Veri Yok"
+    if info and info.get('price'):
+        price_val = f"{info['price']:.2f}"
+    elif dt and 'close_last' in dt:
+        price_val = f"{dt['close_last']:.2f}"
         
     ma_vals = "Veri Yok"
     stop_vals = "Veri Yok"
@@ -905,26 +907,21 @@ def render_detail_card_advanced(ticker):
         text = ACIKLAMALAR.get(k, k)
         r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    # DÜZELTME: textwrap.dedent kullanarak soldaki boşlukları siliyoruz.
-    # Böylece Streamlit bunu kod bloğu sanmıyor.
+    # HTML stringini oluşturuyoruz
     full_html = f"""
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
-        
         <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
             <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
             <div style="font-size:0.7rem; color:#64748B;">{ma_vals}</div>
         </div>
-        
         <div style="font-size:0.7rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
-        
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
             <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
             <div class="tech-grid" style="font-size:0.65rem;">
                 {r1_html}
             </div>
         </div>
-        
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
             <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
             <div class="tech-grid" style="font-size:0.65rem;">
@@ -934,8 +931,9 @@ def render_detail_card_advanced(ticker):
     </div>
     """
     
-    # Kilit Nokta: Dedent ve Strip kullanımı
-    st.markdown(textwrap.dedent(full_html).strip(), unsafe_allow_html=True)
+    # ÇÖZÜM: Tüm yeni satırları (\n) siliyoruz ki Streamlit bunu kod bloğu sanmasın.
+    clean_html = full_html.replace("\n", " ")
+    st.markdown(clean_html, unsafe_allow_html=True)
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
@@ -1122,6 +1120,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
