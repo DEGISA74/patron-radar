@@ -827,9 +827,10 @@ def render_ict_panel(analysis):
     </div>{golden_badge}</div>""", unsafe_allow_html=True)
 
 def render_detail_card_advanced(ticker):
-    # --- 1. AÇIKLAMA TANIMLARI (Makyaj Kısmı) ---
+    # --- 1. AÇIKLAMA TANIMLARI (Sözlük) ---
+    # Kodun hesapladığı kısa isimleri, ekranda görünecek uzun açıklamalarla eşleştiriyoruz.
     ACIKLAMALAR = {
-        # RADAR 1 (Momentum & Osilatörler)
+        # RADAR 1
         "Squeeze": "🚀 Squeeze: Bant genişliği 60G dibinde (Patlama Hazır)",
         "NR4": "🔇 NR4: Son 4 günün en dar fiyat aralığı",
         "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliş)",
@@ -839,104 +840,116 @@ def render_detail_card_advanced(ticker):
         "Breakout": "🔨 Breakout: 20G zirvesine %98 veya daha yakın",
         "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arası ve artışta",
         
-        # RADAR 2 (Trend & Setup)
+        # RADAR 2
         "Hacim Patlaması": "💥 Hacim Patlaması: 20G ortalamanın %30 üzeri",
         "RS (S&P500)": "💪 RS Gücü: Endeksten (S&P 500) daha güçlü",
         "Boğa Trendi": "🐂 Boğa Trendi: Fiyat > SMA50 > SMA100 > SMA200",
         "60G Zirve": "⛰️ Zirve: 60 günün tepesine %97 yakınlıkta",
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
-        "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti"
+        "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
+        
+        # Olası Eksik Tanımlar İçin Yedekler (Hata almamak için)
+        "RS": "💪 Relatif Güç (RS)",
+        "Setup": "🛠️ Setup Durumu"
     }
 
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
     dt = get_tech_card_data(ticker)
     info = fetch_stock_info(ticker)
     
-    ma_vals = "Veri Yok"; stop_vals = "Veri Yok"; price_val = "Veri Yok"
-    
+    # Veri kontrolleri
+    price_val = "Veri Yok"
     if info and info.get('price'):
         price_val = f"{info['price']:.2f}"
     elif dt and 'close_last' in dt:
         price_val = f"{dt['close_last']:.2f}"
         
+    ma_vals = "Veri Yok"
+    stop_vals = "Veri Yok"
     if dt:
         ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f}"
         stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
 
-    # --- Radar 1 Verilerini Çek ---
-    r1_res = None; r1_score = 0
+    # --- RADAR 1 VERİSİ HAZIRLIK ---
+    r1_res = {}
+    r1_score = 0
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
         if not row.empty:
-            if "Detaylar" in row.columns: r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
-    if r1_res is None:
+            if "Detaylar" in row.columns: 
+                r1_res = row.iloc[0]["Detaylar"]
+                r1_score = row.iloc[0]["Skor"]
+    
+    # Eğer tarama yapılmadıysa anlık hesapla
+    if not r1_res:
         temp_df = analyze_market_intelligence([ticker])
-        if not temp_df.empty and "Detaylar" in temp_df.columns: r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
-        else: r1_res = {}; r1_score = 0
+        if not temp_df.empty and "Detaylar" in temp_df.columns: 
+            r1_res = temp_df.iloc[0]["Detaylar"]
+            r1_score = temp_df.iloc[0]["Skor"]
 
-    # --- Radar 2 Verilerini Çek ---
-    r2_res = None; r2_score = 0
+    # --- RADAR 2 VERİSİ HAZIRLIK ---
+    r2_res = {}
+    r2_score = 0
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty:
-            if "Detaylar" in row.columns: r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
-    if r2_res is None:
+            if "Detaylar" in row.columns: 
+                r2_res = row.iloc[0]["Detaylar"]
+                r2_score = row.iloc[0]["Skor"]
+    
+    # Eğer tarama yapılmadıysa anlık hesapla
+    if not r2_res:
         temp_df2 = radar2_scan([ticker])
-        if not temp_df2.empty and "Detaylar" in temp_df2.columns: r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
-        else: r2_res = {}; r2_score = 0
+        if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
+            r2_res = temp_df2.iloc[0]["Detaylar"]
+            r2_score = temp_df2.iloc[0]["Skor"]
 
     def get_icon(val): return "✅" if val else "❌"
 
-    # --- HTML OLUŞTURMA (MODİFİYE EDİLDİ) ---
-    # Kısa key yerine ACIKLAMALAR sözlüğünden uzun metni alıyoruz.
+    # --- HTML OLUŞTURMA (Güvenli Yöntem) ---
     
-    r1_html = ""; items1 = list(r1_res.items())
-    for i in range(0, len(items1), 2):
-        k1, v1 = items1[i]; 
-        # Burada lookup yapıyoruz, yoksa orijinalini (k1) kullan
-        text1 = ACIKLAMALAR.get(k1, k1) 
-        row_html = f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v1)} <span style='margin-left:4px;'>{text1}</span></div>"
-        
-        if i+1 < len(items1): 
-            k2, v2 = items1[i+1]; 
-            text2 = ACIKLAMALAR.get(k2, k2)
-            row_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v2)} <span style='margin-left:4px;'>{text2}</span></div>"
-        
-        r1_html += row_html
+    # Radar 1 HTML Döngüsü
+    r1_html = ""
+    for k, v in r1_res.items():
+        # Sözlükten uzun açıklamayı al, yoksa orijinal kısa ismi kullan
+        text = ACIKLAMALAR.get(k, k)
+        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    r2_html = ""; items2 = list(r2_res.items())
-    for i in range(0, len(items2), 2):
-        k1, v1 = items2[i]; 
-        text1 = ACIKLAMALAR.get(k1, k1)
-        row_html = f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v1)} <span style='margin-left:4px;'>{text1}</span></div>"
-        
-        if i+1 < len(items2): 
-            k2, v2 = items2[i+1]; 
-            text2 = ACIKLAMALAR.get(k2, k2)
-            row_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v2)} <span style='margin-left:4px;'>{text2}</span></div>"
-        
-        r2_html += row_html
+    # Radar 2 HTML Döngüsü
+    r2_html = ""
+    for k, v in r2_res.items():
+        text = ACIKLAMALAR.get(k, k)
+        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    st.markdown(f"""
+    # Ana HTML Bloğunu Birleştirme
+    full_html = f"""
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
+        
         <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
             <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
             <div style="font-size:0.7rem; color:#64748B;">{ma_vals}</div>
         </div>
+        
         <div style="font-size:0.7rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
             <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
-            <div class="tech-grid" style="font-size:0.65rem;">{r1_html}</div>
+            <div class="tech-grid" style="font-size:0.65rem;">
+                {r1_html}
+            </div>
         </div>
         
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
             <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
-            <div class="tech-grid" style="font-size:0.65rem;">{r2_html}</div>
+            <div class="tech-grid" style="font-size:0.65rem;">
+                {r2_html}
+            </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+
+    st.markdown(full_html, unsafe_allow_html=True)
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
@@ -1123,5 +1136,6 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
