@@ -16,9 +16,9 @@ import altair as alt # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="PATRONUN BORSA PANELİ", # BURASI DEĞİŞTİRİLDİ
+    page_title="PATRONUN BORSA PANELİ", 
     layout="wide",
-    page_icon="💸" # Boğa emojisi kaldırıldı, yerine nötr bir ikon kondu
+    page_icon="💸"
 )
 
 # --- TEMA VE CSS ---
@@ -255,7 +255,7 @@ if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEG
 if 'ticker' not in st.session_state: st.session_state.ticker = "AAPL"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
-if 'agent3_data' not in st.session_state: st.session_state.agent3_data = None # AJAN 3 EKLENDİ
+if 'agent3_data' not in st.session_state: st.session_state.agent3_data = None
 if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchlist_db()
 if 'ict_analysis' not in st.session_state: st.session_state.ict_analysis = None
 if 'tech_card_data' not in st.session_state: st.session_state.tech_card_data = None
@@ -291,7 +291,75 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- SIDEBAR (YENİ BAŞLIK BURAYA EKLENDİ) ---
+# --- YENİ FONKSİYON: STP SENTIMENT AJANI TARAMA MOTORU (NameError Çözümü için Buraya Alındı) ---
+@st.cache_data(ttl=900)
+def scan_stp_signals(asset_list):
+    if not asset_list: return None, None
+    
+    cross_signals = []      # Yukarı Kesenler
+    trend_signals = []      # Üzerinde Olanlar
+    
+    try:
+        # Hızlı olması için son 1 aylık veriyi çekiyoruz
+        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
+    except:
+        return [], []
+
+    for symbol in asset_list:
+        try:
+            # Veri ayıklama
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: continue
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: continue
+
+            if df.empty or 'Close' not in df.columns: continue
+            df = df.dropna()
+            if len(df) < 10: continue
+
+            # --- STP HESAPLAMASI (MEVCUT KODUNLA AYNI) ---
+            close = df['Close']
+            high = df['High']
+            low = df['Low']
+            
+            typical_price = (high + low + close) / 3
+            stp = typical_price.ewm(span=6, adjust=False).mean()
+            
+            # Son 2 günün verileri
+            c_last = float(close.iloc[-1])
+            c_prev = float(close.iloc[-2])
+            
+            s_last = float(stp.iloc[-1])
+            s_prev = float(stp.iloc[-2])
+            
+            # 1. TARAMA: FİYAT STP'Yİ YUKARI KESEN (CROSSOVER)
+            # Önceki gün fiyat STP'nin altında veya eşit, bugün üzerinde
+            if c_prev <= s_prev and c_last > s_last:
+                cross_signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": c_last,
+                    "STP": s_last,
+                    "Fark": ((c_last/s_last)-1)*100
+                })
+            
+            # 2. TARAMA: 2 GÜNDÜR STP ÜSTÜNDE (TREND)
+            # Hem dün hem bugün fiyat STP'nin üzerinde
+            elif c_prev > s_prev and c_last > s_last:
+                trend_signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": c_last,
+                    "STP": s_last,
+                    "Fark": ((c_last/s_last)-1)*100
+                })
+                
+        except:
+            continue
+            
+    return cross_signals, trend_signals
+
+# --- SIDEBAR (YENİ BAŞLIK VE SENTIMENT AJANI BURAYA EKLENDİ) ---
 with st.sidebar:
     # YENİ BAŞLIK (İstenen yerde)
     st.markdown(f"""
@@ -318,8 +386,8 @@ with st.sidebar:
         st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
-
-# --- BURASI YENİ EKLENEN SENTIMENT AJANI ---
+    
+    # --- BURASI YENİ EKLENEN SENTIMENT AJANI (UI KISMI) ---
     st.divider()
     with st.expander("🕵️ Sentiment Ajanı (STP)", expanded=True):
         st.caption("Fiyat Dengesi (STP) Taraması")
@@ -330,7 +398,7 @@ with st.sidebar:
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
                 crosses, trends = scan_stp_signals(current_assets)
                 
-                # --- SONUÇLARI SESSION STATE'E KAYDET (Sayfa yenilenince gitmesin) ---
+                # --- SONUÇLARI SESSION STATE'E KAYDET ---
                 st.session_state.stp_crosses = crosses
                 st.session_state.stp_trends = trends
                 st.session_state.stp_scanned = True
@@ -361,7 +429,7 @@ with st.sidebar:
                             st.rerun()
             else:
                 st.info("Trend takibi yok.")
-                
+
 # --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
@@ -974,74 +1042,7 @@ def render_synthetic_sentiment_panel(data):
         )
         st.altair_chart(chart_right, use_container_width=True)
 
-# --- YENİ EKLENTİ: STP SENTIMENT AJANI TARAMA MOTORU ---
-@st.cache_data(ttl=900)
-def scan_stp_signals(asset_list):
-    if not asset_list: return None, None
-    
-    cross_signals = []      # Yukarı Kesenler
-    trend_signals = []      # Üzerinde Olanlar
-    
-    try:
-        # Hızlı olması için son 1 aylık veriyi çekiyoruz (EMA hesaplaması için yeterli)
-        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
-    except:
-        return [], []
 
-    for symbol in asset_list:
-        try:
-            # Veri ayıklama
-            if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
-            else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna()
-            if len(df) < 10: continue
-
-            # --- STP HESAPLAMASI (MEVCUT KODUNLA AYNI) ---
-            close = df['Close']
-            high = df['High']
-            low = df['Low']
-            
-            typical_price = (high + low + close) / 3
-            stp = typical_price.ewm(span=6, adjust=False).mean()
-            
-            # Son 2 günün verileri
-            c_last = float(close.iloc[-1])
-            c_prev = float(close.iloc[-2])
-            
-            s_last = float(stp.iloc[-1])
-            s_prev = float(stp.iloc[-2])
-            
-            # 1. TARAMA: FİYAT STP'Yİ YUKARI KESEN (CROSSOVER)
-            # Önceki gün fiyat STP'nin altında veya eşit, bugün üzerinde
-            if c_prev <= s_prev and c_last > s_last:
-                cross_signals.append({
-                    "Sembol": symbol,
-                    "Fiyat": c_last,
-                    "STP": s_last,
-                    "Fark": ((c_last/s_last)-1)*100
-                })
-            
-            # 2. TARAMA: 2 GÜNDÜR STP ÜSTÜNDE (TREND)
-            # Hem dün hem bugün fiyat STP'nin üzerinde
-            elif c_prev > s_prev and c_last > s_last:
-                trend_signals.append({
-                    "Sembol": symbol,
-                    "Fiyat": c_last,
-                    "STP": s_last,
-                    "Fark": ((c_last/s_last)-1)*100
-                })
-                
-        except:
-            continue
-            
-    return cross_signals, trend_signals
-    
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
@@ -1581,18 +1582,6 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-# Boğa ikonu kaldırıldı, üst başlık kaldırıldı.
-
-# st.markdown(f"""
-# <div class="header-container" style="display:flex; align-items:center;">
-#      <img src="{BULL_ICON_B64}" class="header-logo">
-#      <div>
-#          <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
-#          <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
-#      </div>
-# </div>
-# <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
-# """, unsafe_allow_html=True) # BU KISIM KALDIRILDI
 
 # FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
@@ -1836,8 +1825,8 @@ with col_left:
 
     base_symbol = (
         symbol_raw.replace(".IS", "")
-                 .replace("=F", "")
-                 .replace("-USD", "")
+                  .replace("=F", "")
+                  .replace("-USD", "")
     )
     lower_symbol = base_symbol.lower()
 
@@ -2010,8 +1999,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
-
-
-
-
