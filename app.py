@@ -976,11 +976,16 @@ def calculate_synthetic_sentiment(ticker):
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
 
+    # --- DEĞİŞİKLİK BAŞLANGICI ---
+    # Ticker adını alıp temizliyoruz (Örn: .IS veya =F uzantılarını atar)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+
     st.markdown(f"""
     <div class="info-card" style="margin-bottom:10px;">
-        <div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi</div>
+        <div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div>
     </div>
     """, unsafe_allow_html=True)
+    # --- DEĞİŞİKLİK BİTİŞİ ---
 
     c1, c2 = st.columns([1, 1])
     
@@ -1043,7 +1048,6 @@ def render_synthetic_sentiment_panel(data):
             title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")
         )
         st.altair_chart(chart_right, use_container_width=True)
-
 
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
@@ -2001,5 +2005,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
