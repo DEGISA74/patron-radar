@@ -12,10 +12,10 @@ import os
 import textwrap
 import concurrent.futures
 import re
-import altair as alt
+import altair as alt # Görselleştirme için
 
 # ==============================================================================
-# 1. AYARLAR VE STİL
+# 1. AYARLAR VE STİL (EN BAŞTA)
 # ==============================================================================
 st.set_page_config(
     page_title="PATRONUN TEKNİK BORSA TERMİNALİ", 
@@ -33,7 +33,7 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-# NOT: CSS içinde f-string kullanıldığı için { } parantezleri {{ }} olarak çiftlenmiştir.
+# CSS içinde f-string kullanırken süslü parantezleri çift {{ }} yapıyoruz ki hata vermesin
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
@@ -107,8 +107,8 @@ st.markdown(f"""
     .ict-bar-fill {{ height: 100%; transition: width 0.5s ease; }}
     
     /* Gelişmiş Teknik Kart Izgarası */
-    .tech-grid {{ display: block; }}
-    .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; margin-bottom: 3px; }}
+    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+    .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; }}
     
 </style>
 """, unsafe_allow_html=True)
@@ -725,7 +725,7 @@ def fetch_google_news(ticker):
     except: return []
 
 # ==============================================================================
-# 4. GÖRSELLEŞTİRME FONKSİYONLARI (Gelişmiş Kart Dahil)
+# 4. GÖRSELLEŞTİRME FONKSİYONLARI
 # ==============================================================================
 
 def render_sentiment_card(sent):
@@ -846,7 +846,8 @@ def render_detail_card_advanced(ticker):
     r1_res = None; r1_score = 0
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty and "Detaylar" in row.columns: r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
+        if not row.empty:
+            if "Detaylar" in row.columns: r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
     if r1_res is None:
         temp_df = analyze_market_intelligence([ticker])
         if not temp_df.empty and "Detaylar" in temp_df.columns: r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
@@ -855,45 +856,24 @@ def render_detail_card_advanced(ticker):
     r2_res = None; r2_score = 0
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty and "Detaylar" in row.columns: r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
+        if not row.empty:
+            if "Detaylar" in row.columns: r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
     if r2_res is None:
         temp_df2 = radar2_scan([ticker])
         if not temp_df2.empty and "Detaylar" in temp_df2.columns: r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
         else: r2_res = {}; r2_score = 0
 
-    # --- AÇIKLAMA SÖZLÜKLERİ (İSTEĞİN ÜZERİNE EKLENDİ) ---
-    r1_desc_map = {
-        "Squeeze": "<b>Squeeze (Sıkışma):</b> Bollinger Bant genişliği, son 60 günün en düşük seviyesinin %10 fazlasından küçükse (Fiyat patlamaya hazır).",
-        "NR4": "<b>NR4 (Daralma):</b> Günlük fiyat aralığı (High - Low), son 4 günün en dar aralığıysa.",
-        "Trend": "<b>Trend (EMA Kesişimi):</b> 5 günlük EMA, 20 günlük EMA'nın üzerindeyse (veya yeni kesti ise).",
-        "MACD": "<b>MACD:</b> MACD Histogramı bir önceki günden daha yüksekse (Momentum artışı).",
-        "W%R": "<b>W%R (Williams %R):</b> Değer -50'nin üzerindeyse (Aşırı satımdan çıkış veya güçlenme).",
-        "Hacim": "<b>Hacim:</b> Anlık hacim, son 5 günlük ortalama hacmin %20 üzerindeyse.",
-        "Breakout": "<b>Breakout (Kırılım):</b> Fiyat, son 20 günün en yüksek seviyesinin %98'ine veya daha üzerine geldiyse.",
-        "RSI Güçlü": "<b>RSI Güçlü:</b> RSI değeri 30 ile 65 arasındaysa ve bir önceki günden yüksekse (Sağlıklı yükseliş bölgesi)."
-    }
-
-    r2_desc_map = {
-        "Boğa Trendi": "<b>Trend Tanımı (Boğa):</b> Fiyat > SMA50 > SMA100 > SMA200 sıralaması varsa.",
-        "RS (S&P500)": "<b>RS (Relative Strength):</b> Hisse performansı S&P 500 endeksi ile kıyaslanır. Endeksten daha güçlü duruyorsa puan alır.",
-        "Hacim Patlaması": "<b>Hacim Patlaması:</b> Hacim, 20 günlük ortalamanın %30 üzerindeyse.",
-        "60G Zirve": "<b>Breakout (Zirve):</b> Boğa trendinde ve fiyat son 60 günün zirvesine %97 yakınlıktaysa.",
-        "RSI Bölgesi": "<b>Pullback (Düzeltme):</b> Boğa trendinde, fiyat SMA20 ile SMA50 arasına geri çekildiyse ve RSI 40-55 arasındaysa.",
-        "MACD Hist": "<b>Dip Dönüşü:</b> Trend belirsiz olsa bile, RSI 30'u yukarı kesti ve MACD histogramı artıyorsa."
-    }
-
     def get_icon(val): return "✅" if val else "❌"
-    
-    # HTML Oluşturma (Tek Sütun, Liste Halinde)
-    r1_html = ""
-    for k, v in r1_res.items():
-        desc = r1_desc_map.get(k, f"<b>{k}</b>")
-        r1_html += f"<div style='margin-bottom:2px; font-size:0.7rem;'>{get_icon(v)} {desc}</div>"
-
-    r2_html = ""
-    for k, v in r2_res.items():
-        desc = r2_desc_map.get(k, f"<b>{k}</b>")
-        r2_html += f"<div style='margin-bottom:2px; font-size:0.7rem;'>{get_icon(v)} {desc}</div>"
+    r1_html = ""; items1 = list(r1_res.items())
+    for i in range(0, len(items1), 2):
+        k1, v1 = items1[i]; row_html = f"<div class='tech-item'>{get_icon(v1)} <b>{k1}</b></div>"
+        if i+1 < len(items1): k2, v2 = items1[i+1]; row_html += f"<div class='tech-item'>{get_icon(v2)} <b>{k2}</b></div>"
+        r1_html += row_html
+    r2_html = ""; items2 = list(r2_res.items())
+    for i in range(0, len(items2), 2):
+        k1, v1 = items2[i]; row_html = f"<div class='tech-item'>{get_icon(v1)} <b>{k1}</b></div>"
+        if i+1 < len(items2): k2, v2 = items2[i+1]; row_html += f"<div class='tech-item'>{get_icon(v2)} <b>{k2}</b></div>"
+        r2_html += row_html
 
     st.markdown(f"""
     <div class="info-card">
@@ -904,15 +884,35 @@ def render_detail_card_advanced(ticker):
         </div>
         <div style="font-size:0.7rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
-            {r1_html}
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:2px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
+            <div class="tech-grid">{r1_html}</div>
         </div>
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
-            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
-            {r2_html}
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:2px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
+            <div class="tech-grid">{r2_html}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+def render_synthetic_sentiment_panel(data):
+    if data is None or data.empty: return
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
+    with c1:
+        base = alt.Chart(data).encode(x=x_axis)
+        color_scale = alt.Color('Status:N', scale=alt.Scale(domain=['Güçlü Giriş', 'Zayıf Giriş', 'Güçlü Çıkış', 'Zayıf Çıkış'], range=['#312e81', '#a5b4fc', '#881337', '#fca5a5']), legend=None)
+        bars = base.mark_bar(size=15, opacity=0.9).encode(y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')), color=color_scale, tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth'])
+        price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi - Momentum", fontSize=11, color="#1e40af")), use_container_width=True)
+    with c2:
+        base2 = alt.Chart(data).encode(x=x_axis)
+        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
+        line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(y='Price:Q')
+        area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")), use_container_width=True)
+
+def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -1079,3 +1079,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
