@@ -827,8 +827,9 @@ def render_ict_panel(analysis):
     </div>{golden_badge}</div>""", unsafe_allow_html=True)
 
 def render_detail_card_advanced(ticker):
-    # --- 1. AÇIKLAMA TANIMLARI (Sözlük) ---
-    # Kodun hesapladığı kısa isimleri, ekranda görünecek uzun açıklamalarla eşleştiriyoruz.
+    import textwrap # Garanti olsun diye buraya ekledim
+
+    # --- 1. AÇIKLAMA TANIMLARI ---
     ACIKLAMALAR = {
         # RADAR 1
         "Squeeze": "🚀 Squeeze: Bant genişliği 60G dibinde (Patlama Hazır)",
@@ -848,7 +849,7 @@ def render_detail_card_advanced(ticker):
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
         "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
         
-        # Olası Eksik Tanımlar İçin Yedekler (Hata almamak için)
+        # Yedekler
         "RS": "💪 Relatif Güç (RS)",
         "Setup": "🛠️ Setup Durumu"
     }
@@ -857,12 +858,7 @@ def render_detail_card_advanced(ticker):
     dt = get_tech_card_data(ticker)
     info = fetch_stock_info(ticker)
     
-    # Veri kontrolleri
-    price_val = "Veri Yok"
-    if info and info.get('price'):
-        price_val = f"{info['price']:.2f}"
-    elif dt and 'close_last' in dt:
-        price_val = f"{dt['close_last']:.2f}"
+    price_val = f"{info['price']:.2f}" if (info and info.get('price')) else (f"{dt['close_last']:.2f}" if (dt and 'close_last' in dt) else "Veri Yok")
         
     ma_vals = "Veri Yok"
     stop_vals = "Veri Yok"
@@ -870,58 +866,47 @@ def render_detail_card_advanced(ticker):
         ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f}"
         stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
 
-    # --- RADAR 1 VERİSİ HAZIRLIK ---
+    # --- RADAR 1 VERİSİ ---
     r1_res = {}
     r1_score = 0
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty:
-            if "Detaylar" in row.columns: 
-                r1_res = row.iloc[0]["Detaylar"]
-                r1_score = row.iloc[0]["Skor"]
+        if not row.empty and "Detaylar" in row.columns: 
+            r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
     
-    # Eğer tarama yapılmadıysa anlık hesapla
     if not r1_res:
         temp_df = analyze_market_intelligence([ticker])
         if not temp_df.empty and "Detaylar" in temp_df.columns: 
-            r1_res = temp_df.iloc[0]["Detaylar"]
-            r1_score = temp_df.iloc[0]["Skor"]
+            r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
 
-    # --- RADAR 2 VERİSİ HAZIRLIK ---
+    # --- RADAR 2 VERİSİ ---
     r2_res = {}
     r2_score = 0
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty:
-            if "Detaylar" in row.columns: 
-                r2_res = row.iloc[0]["Detaylar"]
-                r2_score = row.iloc[0]["Skor"]
+        if not row.empty and "Detaylar" in row.columns: 
+            r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
     
-    # Eğer tarama yapılmadıysa anlık hesapla
     if not r2_res:
         temp_df2 = radar2_scan([ticker])
         if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
-            r2_res = temp_df2.iloc[0]["Detaylar"]
-            r2_score = temp_df2.iloc[0]["Skor"]
+            r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
 
     def get_icon(val): return "✅" if val else "❌"
 
-    # --- HTML OLUŞTURMA (Güvenli Yöntem) ---
-    
-    # Radar 1 HTML Döngüsü
+    # --- HTML OLUŞTURMA ---
     r1_html = ""
     for k, v in r1_res.items():
-        # Sözlükten uzun açıklamayı al, yoksa orijinal kısa ismi kullan
         text = ACIKLAMALAR.get(k, k)
         r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    # Radar 2 HTML Döngüsü
     r2_html = ""
     for k, v in r2_res.items():
         text = ACIKLAMALAR.get(k, k)
         r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    # Ana HTML Bloğunu Birleştirme
+    # DÜZELTME: textwrap.dedent kullanarak soldaki boşlukları siliyoruz.
+    # Böylece Streamlit bunu kod bloğu sanmıyor.
     full_html = f"""
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
@@ -948,8 +933,9 @@ def render_detail_card_advanced(ticker):
         </div>
     </div>
     """
-
-    st.markdown(full_html, unsafe_allow_html=True)
+    
+    # Kilit Nokta: Dedent ve Strip kullanımı
+    st.markdown(textwrap.dedent(full_html).strip(), unsafe_allow_html=True)
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
@@ -1136,6 +1122,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
