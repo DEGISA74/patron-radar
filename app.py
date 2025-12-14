@@ -16,7 +16,7 @@ import altair as alt # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="PATRONUN BORSA PANELİ", 
+    page_title="PATRONUN TEKNİK BORSA TERMİNALİ",  # İSİM GÜNCELLENDİ
     layout="wide",
     page_icon="💸"
 )
@@ -107,6 +107,10 @@ st.markdown(f"""
         width: 100%; height: 6px; background-color: #e2e8f0; border-radius: 3px; overflow: hidden; margin: 4px 0; display:flex;
     }}
     .ict-bar-fill {{ height: 100%; transition: width 0.5s ease; }}
+    
+    /* TEKNİK KART DETAYLARI İÇİN GRID */
+    .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .tech-item { display: flex; align-items: center; font-size: 0.7rem; }
     
 </style>
 """, unsafe_allow_html=True)
@@ -488,33 +492,69 @@ def analyze_market_intelligence(asset_list):
             daily_range = high - low
             
             score = 0; reasons = []
+            # Detaylı Kontrol Listesi (YENİ EKLENDİ)
+            details = {}
+
             curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
             avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
             
+            # --- RADAR 1 MADDELERİ ---
+            # 1. Squeeze
             if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1:
                 score += 1; reasons.append("🚀 Squeeze")
+                details['Squeeze'] = True
+            else: details['Squeeze'] = False
+            
+            # 2. NR4
             if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0:
                 score += 1; reasons.append("🔇 NR4")
+                details['NR4'] = True
+            else: details['NR4'] = False
+            
+            # 3. Trend
             if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])):
                 score += 1; reasons.append("⚡ Trend")
+                details['Trend'] = True
+            else: details['Trend'] = False
+            
+            # 4. MACD
             if hist.iloc[-1] > hist.iloc[-2]:
                 score += 1; reasons.append("🟢 MACD")
+                details['MACD'] = True
+            else: details['MACD'] = False
+            
+            # 5. W%R
             if williams_r.iloc[-1] > -50:
                 score += 1; reasons.append("🔫 W%R")
+                details['W%R'] = True
+            else: details['W%R'] = False
+            
+            # 6. Hacim
             if curr_vol > avg_vol * 1.2:
                 score += 1; reasons.append("🔊 Hacim")
+                details['Hacim'] = True
+            else: details['Hacim'] = False
+            
+            # 7. Breakout
             if curr_c >= high.tail(20).max() * 0.98:
                 score += 1; reasons.append("🔨 Breakout")
+                details['Breakout'] = True
+            else: details['Breakout'] = False
+            
+            # 8. RSI
             rsi_c = rsi.iloc[-1]
             if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]:
                 score += 1; reasons.append("⚓ RSI Güçlü")
+                details['RSI Güçlü'] = True
+            else: details['RSI Güçlü'] = False
             
             if score > 0:
                 return {
                     "Sembol": symbol,
                     "Fiyat": f"{curr_c:.2f}",
                     "Skor": score,
-                    "Nedenler": " | ".join(reasons)
+                    "Nedenler": " | ".join(reasons),
+                    "Detaylar": details # YENİ
                 }
             return None
         except:
@@ -605,25 +645,52 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
                     rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
             
             setup = "-"; tags = []; score = 0
+            # Detayları Kaydet (YENİ)
+            details = {}
+            
             avg_vol_20 = max(avg_vol_20, 1)
             vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
             
+            # 1. Zirve (Breakout)
             if trend == "Boğa" and breakout_ratio >= 0.97:
                 setup = "Breakout"; score += 2; tags.append("Zirve")
+            
+            # 2. Hacim Patlaması
             if vol_spike:
                 score += 1; tags.append("Hacim+")
+                details['Hacim Patlaması'] = True
+            else: details['Hacim Patlaması'] = False
+
+            # 3. Pullback
             if trend == "Boğa" and setup == "-":
                 if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55:
                     setup = "Pullback"; score += 2; tags.append("Düzeltme")
                 if volume.iloc[-1] < avg_vol_20 * 0.9:
                     score += 1; tags.append("Sığ Satış")
+            
+            # 4. Dip Dönüşü
             if setup == "-":
                 if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]:
                     setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
             
-            if rs_score > 0: score += 1; tags.append("RS+")
-            if trend == "Boğa": score += 1
-            elif trend == "Ayı": score -= 1
+            # 5. RS
+            if rs_score > 0: 
+                score += 1; tags.append("RS+")
+                details['RS (S&P500)'] = True
+            else: details['RS (S&P500)'] = False
+
+            # 6. Trend
+            if trend == "Boğa": 
+                score += 1
+                details['Boğa Trendi'] = True
+            else:
+                if trend == "Ayı": score -= 1
+                details['Boğa Trendi'] = False
+                
+            # Diğer Detaylar (Görsel İçin)
+            details['60G Zirve'] = breakout_ratio >= 0.90
+            details['RSI Bölgesi'] = (40 <= rsi_c <= 60)
+            details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
             
             if score > 0:
                 return {
@@ -633,7 +700,8 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
                     "Setup": setup,
                     "Skor": score,
                     "RS": round(rs_score * 100, 1),
-                    "Etiketler": " | ".join(tags)
+                    "Etiketler": " | ".join(tags),
+                    "Detaylar": details # YENİ
                 }
             return None
         except:
@@ -1048,6 +1116,7 @@ def render_synthetic_sentiment_panel(data):
             title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")
         )
         st.altair_chart(chart_right, use_container_width=True)
+
 
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
@@ -1474,118 +1543,127 @@ def render_ict_panel(analysis):
 </div>
 """, unsafe_allow_html=True)
 
-def render_detail_card(ticker):
+# --- YENİ GELİŞMİŞ TEKNİK KART (TradingView Yerine Gelecek) ---
+def render_detail_card_advanced(ticker):
     # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
     
-    r1_t = "Veri yok"; r2_t = "Veri yok"
+    # 1. TEMEL VERİLERİ ÇEK
+    dt = get_tech_card_data(ticker)
+    info = fetch_stock_info(ticker)
+    
+    ma_vals = "Veri Yok"
+    stop_vals = "Veri Yok"
+    price_val = "Veri Yok"
+    
+    if dt and info:
+        price_val = f"{info['price']:.2f}"
+        ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f}"
+        stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
+
+    # 2. RADAR SONUÇLARINI BUL (Listeden çekip detaylarını alacağız)
+    # Burada tekrar hesaplama yapmamak için session_state'deki cached result'a bakabiliriz
+    # Veya tekil hisse için hızlıca hesaplatabiliriz (Daha güvenli)
+    
+    # Radar 1 Sonucu
+    r1_res = None
+    # scan_data içinde var mı diye bak
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
         if not row.empty:
-            r1_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
+            # Detaylar sütunu varsa oradan al, yoksa tekrar hesapla
+            if "Detaylar" in row.columns:
+                r1_res = row.iloc[0]["Detaylar"]
+                r1_score = row.iloc[0]["Skor"]
+    
+    # Eğer session'da yoksa anlık hesapla (Sadece tek hisse için çok hızlıdır)
+    if r1_res is None:
+        # analyze_market_intelligence fonksiyonu dataframe dönüyor, biz içindeki process_symbol mantığını manuel çalıştıralım
+        # Ama o fonksiyon iç içe, o yüzden direk listeyi verip çağıralım
+        temp_df = analyze_market_intelligence([ticker])
+        if not temp_df.empty and "Detaylar" in temp_df.columns:
+            r1_res = temp_df.iloc[0]["Detaylar"]
+            r1_score = temp_df.iloc[0]["Skor"]
+        else:
+            r1_res = {} # Boşsa
+            r1_score = 0
+
+    # Radar 2 Sonucu
+    r2_res = None
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty:
-            r2_t = f"<b>Skor {row.iloc[0]['Skor']}/8</b>"
-    dt = get_tech_card_data(ticker)
-    ma_t = "-"
-    if dt:
-        ma_t = f"SMA50: {dt['sma50']:.1f} | EMA144: {dt['ema144']:.1f}"
+            if "Detaylar" in row.columns:
+                r2_res = row.iloc[0]["Detaylar"]
+                r2_score = row.iloc[0]["Skor"]
+                
+    if r2_res is None:
+        temp_df2 = radar2_scan([ticker])
+        if not temp_df2.empty and "Detaylar" in temp_df2.columns:
+            r2_res = temp_df2.iloc[0]["Detaylar"]
+            r2_score = temp_df2.iloc[0]["Skor"]
+        else:
+            r2_res = {}
+            r2_score = 0
+
+    # 3. HTML OLUŞTURMA
+    def get_icon(val): return "✅" if val else "❌"
+    
+    # Radar 1 HTML
+    r1_html = ""
+    if r1_res:
+        items = list(r1_res.items())
+        # İki sütunlu yapı
+        for i in range(0, len(items), 2):
+            k1, v1 = items[i]
+            row_html = f"<div class='tech-item'>{get_icon(v1)} <b>{k1}</b></div>"
+            if i+1 < len(items):
+                k2, v2 = items[i+1]
+                row_html += f"<div class='tech-item'>{get_icon(v2)} <b>{k2}</b></div>"
+            r1_html += row_html
+
+    # Radar 2 HTML
+    r2_html = ""
+    if r2_res:
+        items = list(r2_res.items())
+        for i in range(0, len(items), 2):
+            k1, v1 = items[i]
+            row_html = f"<div class='tech-item'>{get_icon(v1)} <b>{k1}</b></div>"
+            if i+1 < len(items):
+                k2, v2 = items[i+1]
+                row_html += f"<div class='tech-item'>{get_icon(v2)} <b>{k2}</b></div>"
+            r2_html += row_html
+
+    # Kartın Kendisi
     st.markdown(f"""
     <div class="info-card">
-        <div class="info-header">📋 Teknik Kart: {display_ticker}</div>
-        <div class="info-row"><div class="label-short">Radar 1:</div><div class="info-val">{r1_t}</div></div>
-        <div class="info-row"><div class="label-short">Radar 2:</div><div class="info-val">{r2_t}</div></div>
-        <div class="info-row"><div class="label-short">Ortalama:</div><div class="info-val">{ma_t}</div></div>
+        <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
+        
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
+            <div style="font-size:0.7rem; color:#64748B;">{ma_vals}</div>
+        </div>
+        <div style="font-size:0.7rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
+
+        <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:2px;">
+                🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8
+            </div>
+            <div class="tech-grid">
+                {r1_html}
+            </div>
+        </div>
+
+        <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:2px;">
+                🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6
+            </div>
+            <div class="tech-grid">
+                {r2_html}
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
-
-def render_tradingview_widget(ticker, height=400):
-    # Varsayılan sembol
-    tv_symbol = ticker
-
-    # --- ÖZEL ÇEVİRİLER (MAPPING) ---
-    # Yahoo Kodları -> TradingView Kodları
-    mapping = {
-        "GC=F": "TVC:GOLD",       # Altın
-        "SI=F": "TVC:SILVER",     # Gümüş
-        "BTC-USD": "BINANCE:BTCUSDT", # Bitcoin
-        "ETH-USD": "BINANCE:ETHUSDT", # Ethereum
-        "SOL-USD": "BINANCE:SOLUSDT",
-        "XRP-USD": "BINANCE:XRPUSDT",
-        "AVAX-USD": "BINANCE:AVAXUSDT",
-        "DOGE-USD": "BINANCE:DOGEUSDT"
-    }
-
-    # Eğer özel listede varsa oradan al, yoksa standart kuralları uygula
-    if ticker in mapping:
-        tv_symbol = mapping[ticker]
-    else:
-        # Standart BIST ve Forex Kuralları
-        if ".IS" in ticker:
-            # DÜZELTME: BIST: öneki kaldırıldı ve .strip() ile boşluklar temizlendi.
-            tv_symbol = ticker.replace('.IS', '').strip()
-        elif "=X" in ticker: # USDTRY=X gibi
-            tv_symbol = f"FX_IDC:{ticker.replace('=X', '')}"
-        elif "-USD" in ticker: # Diğer Kriptolar (Genel)
-            tv_symbol = f"COINBASE:{ticker.replace('-USD', 'USD')}"
-
-    # Widget HTML
-    html = f"""
-    <div class="tradingview-widget-container">
-        <div id="tradingview_chart"></div>
-        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-        <script type="text/javascript">
-        new TradingView.widget({{
-            "width": "100%", "height": {height}, "symbol": "{tv_symbol}", "interval": "D",
-            "timezone": "Etc/UTC", "theme": "light", "style": "1", "locale": "tr",
-            "toolbar_bg": "#f1f3f6", "enable_publishing": false, "allow_symbol_change": true,
-            "container_id": "tradingview_chart"
-        }});
-        </script>
-    </div>
-    """
-    components.html(html, height=height)
-
-@st.cache_data(ttl=300)
-def fetch_stock_info(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return {
-            'price': info.get('currentPrice') or info.get('regularMarketPrice'),
-            'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0,
-            'volume': info.get('volume', 0),
-            'sector': info.get('sector', '-'),
-            'target': info.get('targetMeanPrice', '-')
-        }
-    except:
-        return None
-
-@st.cache_data(ttl=1200)
-def fetch_google_news(ticker):
-    try:
-        clean = ticker.replace(".IS", "").replace("=F", "")
-        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(f'{clean} stock news site:investing.com OR site:seekingalpha.com')}&hl=tr&gl=TR&ceid=TR:tr"
-        feed = feedparser.parse(rss_url)
-        news = []
-        for entry in feed.entries[:6]:
-            try:
-                dt = datetime(*entry.published_parsed[:6])
-            except:
-                dt = datetime.now()
-            if dt < datetime.now() - timedelta(days=10): continue
-            pol = TextBlob(entry.title).sentiment.polarity
-            color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
-            news.append({
-                'title': entry.title,
-                'link': entry.link,
-                'date': dt.strftime('%d %b'),
-                'source': entry.source.title,
-                'color': color
-            })
-        return news
-    except:
-        return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
 
@@ -1740,8 +1818,8 @@ with col_left:
     if synth_data is not None and not synth_data.empty:
         render_synthetic_sentiment_panel(synth_data)
 
-    # --- MAKYYAJ DEĞİŞİKLİĞİ: TRADINGVIEW GRAFİĞİ AŞAĞI İNDİRİLDİ ---
-    render_tradingview_widget(st.session_state.ticker, height=400)
+    # --- BURASI YENİ ALAN: TradingView Gitti, Yerine Gelişmiş Kart Geldi ---
+    render_detail_card_advanced(st.session_state.ticker)
     
     # --- YENİ EKLENEN AJAN 3 ALANI (GÜNCELLENMİŞ TASARIM) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
@@ -1887,7 +1965,7 @@ with col_right:
     ict_data = calculate_ict_concepts(st.session_state.ticker)
     render_ict_panel(ict_data)
 
-    render_detail_card(st.session_state.ticker)
+    # --- BURADA ESKİ TEKNİK KART VARDI, KALDIRILDI ---
 
     # --- DEĞİŞİKLİK BURADA: ÖNCE RÖNTGEN, SONRA RADAR ---
     
@@ -2014,8 +2092,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
-
-
-
-
