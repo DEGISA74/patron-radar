@@ -12,13 +12,13 @@ import os
 import textwrap
 import concurrent.futures
 import re
-import altair as alt  # Görselleştirme için
+import altair as alt # Görselleştirme için
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="Patronun Terminali v5.3 (Final Sentiment)",
+    page_title="PATRONUN BORSA PANELİ", # BURASI DEĞİŞTİRİLDİ
     layout="wide",
-    page_icon="🐂"
+    page_icon="💸" # Boğa emojisi kaldırıldı, yerine nötr bir ikon kondu
 )
 
 # --- TEMA VE CSS ---
@@ -34,7 +34,7 @@ current_theme = THEMES[st.session_state.theme]
 
 st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
@@ -291,8 +291,16 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- SIDEBAR ---
+# --- SIDEBAR (YENİ BAŞLIK BURAYA EKLENDİ) ---
 with st.sidebar:
+    # YENİ BAŞLIK (İstenen yerde)
+    st.markdown(f"""
+    <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">
+        PATRONUN BORSA PANELİ
+    </div>
+    <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
+    """, unsafe_allow_html=True)
+
     st.markdown("### ⚙️ Ayarlar")
     selected_theme_name = st.selectbox(
         "",
@@ -1093,7 +1101,7 @@ def calculate_ict_concepts(ticker):
         elif structure.startswith("BOS (Bearish") and next_ssl:
             liq_target = f"SSL (Sell Side): {next_ssl:.2f}"
         else:
-             # Fiyata en yakın olan
+              # Fiyata en yakın olan
             dist_bsl = abs(next_bsl - curr_price) if next_bsl else 99999
             dist_ssl = abs(curr_price - next_ssl) if next_ssl else 99999
             liq_target = f"Hedef: {next_bsl:.2f}" if dist_bsl < dist_ssl else f"Hedef: {next_ssl:.2f}"
@@ -1382,8 +1390,8 @@ def render_tradingview_widget(ticker, height=500):
     # --- ÖZEL ÇEVİRİLER (MAPPING) ---
     # Yahoo Kodları -> TradingView Kodları
     mapping = {
-        "GC=F": "TVC:GOLD",       # Altın
-        "SI=F": "TVC:SILVER",     # Gümüş
+        "GC=F": "TVC:GOLD",      # Altın
+        "SI=F": "TVC:SILVER",    # Gümüş
         "BTC-USD": "BINANCE:BTCUSDT", # Bitcoin
         "ETH-USD": "BINANCE:ETHUSDT", # Ethereum
         "SOL-USD": "BINANCE:SOLUSDT",
@@ -1463,18 +1471,18 @@ def fetch_google_news(ticker):
         return []
 
 # --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
-BULL_ICON_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAOAAAADhCAMAAADmr0l2AAAAb1BMVEX///8AAAD8/PzNzc3y8vL39/f09PTw8PDs7Ozp6eny8vLz8/Pr6+vm5ubt7e3j4+Ph4eHf39/c3NzV1dXS0tLKyso/Pz9ERERNTU1iYmJSUlJxcXF9fX1lZWV6enp2dnZsbGxra2uDg4N0dHR/g07fAAAE70lEQVR4nO2d27qrIAyF131wRPT+z3p2tX28dE5sC4i9x3+tC0L4SAgJ3Y2Hw+FwOBwOh8PhcDgcDofD4XA4HA6Hw+H8B/DDT05v9eU/AAAAAElFTkSuQmCC"
+# Boğa ikonu kaldırıldı, üst başlık kaldırıldı.
 
-st.markdown(f"""
-<div class="header-container" style="display:flex; align-items:center;">
-    <img src="{BULL_ICON_B64}" class="header-logo">
-    <div>
-        <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
-        <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
-    </div>
-</div>
-<hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
-""", unsafe_allow_html=True)
+# st.markdown(f"""
+# <div class="header-container" style="display:flex; align-items:center;">
+#     <img src="{BULL_ICON_B64}" class="header-logo">
+#     <div>
+#         <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a;">Patronun Terminali v4.5</div>
+#         <div style="font-size:0.8rem; color:#64748B;">Market Maker Edition (Hybrid)</div>
+#     </div>
+# </div>
+# <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
+# """, unsafe_allow_html=True) # BU KISIM KALDIRILDI
 
 # FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
@@ -1716,8 +1724,8 @@ with col_left:
 
     base_symbol = (
         symbol_raw.replace(".IS", "")
-                  .replace("=F", "")
-                  .replace("-USD", "")
+                 .replace("=F", "")
+                 .replace("-USD", "")
     )
     lower_symbol = base_symbol.lower()
 
@@ -1890,5 +1898,3 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
-
-
