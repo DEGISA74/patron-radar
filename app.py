@@ -319,6 +319,49 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"):
             st.session_state.generate_prompt = True
 
+# --- BURASI YENİ EKLENEN SENTIMENT AJANI ---
+    st.divider()
+    with st.expander("🕵️ Sentiment Ajanı (STP)", expanded=True):
+        st.caption("Fiyat Dengesi (STP) Taraması")
+        
+        if st.button("Kesişimleri Tara", type="secondary"):
+            with st.spinner("Ajan STP izini sürüyor..."):
+                # Aktif kategorideki hisseleri çek
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                crosses, trends = scan_stp_signals(current_assets)
+                
+                # --- SONUÇLARI SESSION STATE'E KAYDET (Sayfa yenilenince gitmesin) ---
+                st.session_state.stp_crosses = crosses
+                st.session_state.stp_trends = trends
+                st.session_state.stp_scanned = True
+
+        # Sonuçları Göster
+        if st.session_state.get('stp_scanned'):
+            # TAB 1: YENİ KESİŞİMLER (AL SİNYALİ)
+            st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
+            if st.session_state.stp_crosses:
+                for item in st.session_state.stp_crosses:
+                    if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"):
+                        st.session_state.ticker = item['Sembol'] # Tıklayınca ana ekrana git
+                        st.rerun()
+            else:
+                st.info("Yeni kesişim yok.")
+
+            st.markdown("---")
+
+            # TAB 2: GÜÇLÜ DURANLAR (2 GÜNDÜR ÜSTÜNDE)
+            st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
+            if st.session_state.stp_trends:
+                # Çok fazla sonuç çıkarsa yer kaplamasın diye scroll koyuyoruz
+                with st.container(height=200):
+                    for item in st.session_state.stp_trends:
+                        # Yeşil tonlu buton
+                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"):
+                            st.session_state.ticker = item['Sembol']
+                            st.rerun()
+            else:
+                st.info("Trend takibi yok.")
+                
 # --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
@@ -931,7 +974,74 @@ def render_synthetic_sentiment_panel(data):
         )
         st.altair_chart(chart_right, use_container_width=True)
 
+# --- YENİ EKLENTİ: STP SENTIMENT AJANI TARAMA MOTORU ---
+@st.cache_data(ttl=900)
+def scan_stp_signals(asset_list):
+    if not asset_list: return None, None
+    
+    cross_signals = []      # Yukarı Kesenler
+    trend_signals = []      # Üzerinde Olanlar
+    
+    try:
+        # Hızlı olması için son 1 aylık veriyi çekiyoruz (EMA hesaplaması için yeterli)
+        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
+    except:
+        return [], []
 
+    for symbol in asset_list:
+        try:
+            # Veri ayıklama
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: continue
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: continue
+
+            if df.empty or 'Close' not in df.columns: continue
+            df = df.dropna()
+            if len(df) < 10: continue
+
+            # --- STP HESAPLAMASI (MEVCUT KODUNLA AYNI) ---
+            close = df['Close']
+            high = df['High']
+            low = df['Low']
+            
+            typical_price = (high + low + close) / 3
+            stp = typical_price.ewm(span=6, adjust=False).mean()
+            
+            # Son 2 günün verileri
+            c_last = float(close.iloc[-1])
+            c_prev = float(close.iloc[-2])
+            
+            s_last = float(stp.iloc[-1])
+            s_prev = float(stp.iloc[-2])
+            
+            # 1. TARAMA: FİYAT STP'Yİ YUKARI KESEN (CROSSOVER)
+            # Önceki gün fiyat STP'nin altında veya eşit, bugün üzerinde
+            if c_prev <= s_prev and c_last > s_last:
+                cross_signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": c_last,
+                    "STP": s_last,
+                    "Fark": ((c_last/s_last)-1)*100
+                })
+            
+            # 2. TARAMA: 2 GÜNDÜR STP ÜSTÜNDE (TREND)
+            # Hem dün hem bugün fiyat STP'nin üzerinde
+            elif c_prev > s_prev and c_last > s_last:
+                trend_signals.append({
+                    "Sembol": symbol,
+                    "Fiyat": c_last,
+                    "STP": s_last,
+                    "Fark": ((c_last/s_last)-1)*100
+                })
+                
+        except:
+            continue
+            
+    return cross_signals, trend_signals
+    
 # --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
@@ -1900,6 +2010,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
