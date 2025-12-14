@@ -1883,21 +1883,29 @@ with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
     
-    # ICT Panel BURADA (GÜNCELLENMİŞ)
+    # ICT Panel
     ict_data = calculate_ict_concepts(st.session_state.ticker)
     render_ict_panel(ict_data)
 
     render_detail_card(st.session_state.ticker)
-    render_radar_params_card() 
+
+    # --- DEĞİŞİKLİK BURADA: ÖNCE RÖNTGEN, SONRA RADAR ---
     
+    # 1. Önce Derin Teknik Röntgen (Yukarı alındı)
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
+
+    # 2. Sonra Radar Parametreleri (Aşağı alındı)
+    render_radar_params_card() 
+    
+    # --- DEĞİŞİKLİK SONU ---
 
     st.markdown(
         f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>",
         unsafe_allow_html=True
     )
     with st.container(height=250):
+        # ... (Geri kalan kodlar aynı) ...
         df1 = st.session_state.scan_data
         df2 = st.session_state.radar2_data
         
@@ -2006,6 +2014,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
