@@ -891,7 +891,7 @@ def render_synthetic_sentiment_panel(data):
         
         chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(
             height=280, 
-            title=alt.TitleParams("Kurumsal Para Giriş/Çıkışı", fontSize=11, color="#1e40af")
+            title=alt.TitleParams("Sentiment Değişimi - Momentum", fontSize=11, color="#1e40af")
         )
         st.altair_chart(chart_left, use_container_width=True)
 
