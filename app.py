@@ -108,7 +108,7 @@ st.markdown(f"""
     }}
     .ict-bar-fill {{ height: 100%; transition: width 0.5s ease; }}
     
-    /* TEKNİK KART DETAYLARI İÇİN GRID - DÜZELTİLDİ */
+    /* TEKNİK KART DETAYLARI İÇİN GRID */
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; }}
     
@@ -295,7 +295,10 @@ def toggle_watchlist(symbol):
         wl.append(symbol)
     st.session_state.watchlist = wl
 
-# --- YENİ FONKSİYON: STP SENTIMENT AJANI TARAMA MOTORU (NameError Çözümü için Buraya Alındı) ---
+# ==============================================================================
+# --- TÜM FONKSİYONLAR (EN TEPEYE ALINDI - NAME ERROR ÇÖZÜMÜ) ---
+# ==============================================================================
+
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
     if not asset_list: return None, None
@@ -363,80 +366,6 @@ def scan_stp_signals(asset_list):
             
     return cross_signals, trend_signals
 
-# --- SIDEBAR (YENİ BAŞLIK VE SENTIMENT AJANI BURAYA EKLENDİ) ---
-with st.sidebar:
-    # YENİ BAŞLIK (İstenen yerde)
-    st.markdown(f"""
-    <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">
-        PATRONUN BORSA PANELİ
-    </div>
-    <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
-    """, unsafe_allow_html=True)
-
-    st.markdown("### ⚙️ Ayarlar")
-    selected_theme_name = st.selectbox(
-        "",
-        ["Beyaz", "Kirli Beyaz", "Buz Mavisi"],
-        index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
-        label_visibility="collapsed"
-    )
-    if selected_theme_name != st.session_state.theme:
-        st.session_state.theme = selected_theme_name
-        st.rerun()
-    st.divider()
-    
-    # GÜNCELLENEN BUTON (SADECE PROMPT OLUŞTURUR)
-    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
-        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
-        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
-            st.session_state.generate_prompt = True
-    
-    # --- BURASI YENİ EKLENEN SENTIMENT AJANI (UI KISMI) ---
-    st.divider()
-    with st.expander("🕵️ Sentiment Ajanı (STP)", expanded=True):
-        st.caption("Fiyat Dengesi (STP) Taraması")
-        
-        if st.button("Kesişimleri Tara", type="secondary"):
-            with st.spinner("Ajan STP izini sürüyor..."):
-                # Aktif kategorideki hisseleri çek
-                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-                crosses, trends = scan_stp_signals(current_assets)
-                
-                # --- SONUÇLARI SESSION STATE'E KAYDET ---
-                st.session_state.stp_crosses = crosses
-                st.session_state.stp_trends = trends
-                st.session_state.stp_scanned = True
-
-        # Sonuçları Göster
-        if st.session_state.get('stp_scanned'):
-            # TAB 1: YENİ KESİŞİMLER (AL SİNYALİ)
-            st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
-            if st.session_state.stp_crosses:
-                # GÜNCELLEME: Burada da scroll bar olması için container eklendi
-                with st.container(height=200):
-                    for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"):
-                            st.session_state.ticker = item['Sembol'] # Tıklayınca ana ekrana git
-                            st.rerun()
-            else:
-                st.info("Yeni kesişim yok.")
-
-            st.markdown("---")
-
-            # TAB 2: GÜÇLÜ DURANLAR (2 GÜNDÜR ÜSTÜNDE)
-            st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
-            if st.session_state.stp_trends:
-                # Çok fazla sonuç çıkarsa yer kaplamasın diye scroll koyuyoruz
-                with st.container(height=200):
-                    for item in st.session_state.stp_trends:
-                        # Yeşil tonlu buton
-                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"):
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-            else:
-                st.info("Trend takibi yok.")
-
-# --- ANALİZ MOTORLARI (MULTI-THREADED & CACHED) ---
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -554,7 +483,7 @@ def analyze_market_intelligence(asset_list):
                     "Fiyat": f"{curr_c:.2f}",
                     "Skor": score,
                     "Nedenler": " | ".join(reasons),
-                    "Detaylar": details # YENİ
+                    "Detaylar": details 
                 }
             return None
         except:
@@ -645,7 +574,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
                     rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
             
             setup = "-"; tags = []; score = 0
-            # Detayları Kaydet (YENİ)
+            # Detayları Kaydet
             details = {}
             
             avg_vol_20 = max(avg_vol_20, 1)
@@ -701,7 +630,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
                     "Skor": score,
                     "RS": round(rs_score * 100, 1),
                     "Etiketler": " | ".join(tags),
-                    "Detaylar": details # YENİ
+                    "Detaylar": details 
                 }
             return None
         except:
@@ -716,7 +645,6 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5): # F
     
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
-# --- YENİ EKLENEN KISIM: AJAN 3 (BREAKOUT & PRICE ACTION SCANNER) ---
 @st.cache_data(ttl=3600)
 def agent3_breakout_scan(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -866,7 +794,6 @@ def agent3_breakout_scan(asset_list):
     results = [r for r in results if r is not None]
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
-# --- SENTIMENT & DERİN RÖNTGEN ---
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -955,9 +882,6 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
-# YENİ CMF TABANLI VE ORDINAL DATE DÜZELTMELİ FONKSİYON
-# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE EKSEN VE CMF EKLENDİ ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -1040,11 +964,9 @@ def calculate_synthetic_sentiment(ticker):
     except Exception as e:
         return None
 
-# YENİ GÖRSELLEŞTİRME PANELİ (GAP-FREE)
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
 
-    # --- DEĞİŞİKLİK BAŞLANGICI ---
     # Ticker adını alıp temizliyoruz (Örn: .IS veya =F uzantılarını atar)
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
 
@@ -1053,7 +975,6 @@ def render_synthetic_sentiment_panel(data):
         <div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div>
     </div>
     """, unsafe_allow_html=True)
-    # --- DEĞİŞİKLİK BİTİŞİ ---
 
     c1, c2 = st.columns([1, 1])
     
@@ -1117,8 +1038,6 @@ def render_synthetic_sentiment_panel(data):
         )
         st.altair_chart(chart_right, use_container_width=True)
 
-
-# --- ICT GELISTIRILMIS (HYBRID TERMINOLOGY + MAKYYAJ) ---
 @st.cache_data(ttl=600)
 def calculate_ict_concepts(ticker):
     try:
@@ -1389,6 +1308,159 @@ def calculate_ict_concepts(ticker):
     except Exception as e:
         return {"summary": "Hata", "err": str(e)}
 
+@st.cache_data(ttl=600)
+def get_tech_card_data(ticker):
+    try:
+        df = yf.download(ticker, period="2y", progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        close = df['Close']; high = df['High']; low = df['Low']
+        sma50 = close.rolling(50).mean().iloc[-1]
+        sma100 = close.rolling(100).mean().iloc[-1]
+        sma200 = close.rolling(200).mean().iloc[-1]
+        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
+        atr = (high-low).rolling(14).mean().iloc[-1]
+        return {
+            "sma50": sma50,
+            "sma100": sma100,
+            "sma200": sma200,
+            "ema144": ema144,
+            "stop_level": close.iloc[-1] - (2 * atr),
+            "risk_pct": (2 * atr) / close.iloc[-1] * 100,
+            "atr": atr
+        }
+    except:
+        return None
+
+def render_sentiment_card(sent):
+    if not sent: return
+    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
+    
+    st.markdown(f"""
+    <div class="info-card">
+        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
+        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
+        </div>
+        <div style="font-family:'Courier New'; font-size:0.7rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
+        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
+        <div class="info-row"><div class="label-long">2. Hacim:</div><div class="info-val">{sent['vol']}</div></div>
+        <div class="info-row"><div class="label-long">3. Trend:</div><div class="info-val">{sent['tr']}</div></div>
+        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{sent['vola']}</div></div>
+        <div class="info-row"><div class="label-long">5. Yapı:</div><div class="info-val">{sent['str']}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_deep_xray_card(xray):
+    if not xray: return
+    st.markdown(f"""
+    <div class="info-card">
+        <div class="info-header">🔍 Derin Teknik Röntgen</div>
+        <div class="info-row"><div class="label-long">Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
+        <div class="info-row"><div class="label-long">Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
+        <div class="info-row"><div class="label-long">Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
+        <div class="info-row"><div class="label-long">Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
+        <div class="info-row"><div class="label-long">Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_radar_params_card():
+    st.markdown(f"""
+    <div class="info-card">
+        <div class="info-header">🎛️ Radar Parametreleri</div>
+        <div style="margin-bottom:6px;">
+            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 1 (Sinyal):</div>
+            <div style="display:flex; flex-wrap:wrap; gap:3px;">
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">W%R</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MFI</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">CCI</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Stoch</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">ADX</span>
+                <span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Mom</span>
+            </div>
+        </div>
+        <div>
+            <div class="label-short" style="width:100%; margin-bottom:2px; color:#1e40af;">RADAR 2 (Setup):</div>
+            <div style="display:flex; flex-wrap:wrap; gap:3px;">
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">SMA Sıralı</span>
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RS(S&P500)</span>
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">Hacim+</span>
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">60G Zirve</span>
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">RSI Bölgesi</span>
+                <span style="background:#f0fdf4; color:#15803d; padding:2px 6px; border-radius:4px; font-size:0.7rem;">MACD Hist</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_ict_panel(analysis):
+    if not analysis or "summary" in analysis and analysis["summary"] == "Hata":
+        st.error("ICT Analizi yapılamadı (Veri yetersiz)")
+        return
+
+    # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+
+    # Renk Kodları
+    s_color = "#166534" if analysis['bias_color'] == "green" else "#991b1b" if analysis['bias_color'] == "red" else "#854d0e"
+    pos_pct = analysis['range_pos_pct']
+    
+    # Bar Genişliği (0-100% arası)
+    bar_width = min(max(pos_pct, 5), 95) 
+    
+    # Golden Setup veya OTE Durumu
+    golden_badge = ""
+    if analysis['is_golden']:
+        golden_badge = f"<div style='margin-top:6px; background:#f0fdf4; border:1px solid #bbf7d0; color:#15803d; padding:6px; border-radius:6px; font-weight:700; text-align:center; font-size:0.75rem;'>✨ {analysis['golden_text']}</div>"
+    elif analysis['ote_level']:
+        golden_badge = f"<div style='margin-top:6px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>🎯 {analysis['golden_text']}</div>"
+    else:
+        golden_badge = f"<div style='margin-top:6px; background:#f8fafc; border:1px solid #e2e8f0; color:#94a3b8; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem;'>{analysis['golden_text']}</div>"
+
+    # HTML Kodları, Markdown kod bloğu sanılmasın diye sola yaslanmıştır:
+    st.markdown(f"""
+<div class="info-card">
+<div class="info-header">🧠 ICT Smart Money Concepts: {display_ticker}</div>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+<span style="font-size:0.65rem; color:#64748B; font-weight:600;">MARKET YAPISI</span>
+<span style="font-size:0.7rem; font-weight:700; color:{s_color};">{analysis['structure']}</span>
+</div>
+<div style="margin: 8px 0;">
+<div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
+<span>Discount</span>
+<span>EQ</span>
+<span>Premium</span>
+</div>
+<div class="ict-bar-container">
+<div class="ict-bar-fill" style="width:{bar_width}%; background: linear-gradient(90deg, #22c55e 0%, #cbd5e1 50%, #ef4444 100%);"></div>
+</div>
+<div style="text-align:center; font-size:0.7rem; font-weight:600; color:#0f172a; margin-top:2px;">
+{analysis['pos_label']} <span style="color:#64748B; font-size:0.6rem;">(%{pos_pct:.1f})</span>
+</div>
+</div>
+<div style="margin-top:8px;">
+<div class="info-row">
+<div class="label-long">FVG Durumu:</div>
+<div class="info-val" style="color:{'#166534' if analysis['fvg_color']=='green' else '#991b1b' if analysis['fvg_color']=='red' else '#64748B'}; font-weight:600;">{analysis['fvg']}</div>
+</div>
+<div class="info-row">
+<div class="label-long">Aktif OB:</div>
+<div class="info-val" style="color:{'#166534' if analysis['ob_color']=='green' else '#991b1b' if analysis['ob_color']=='red' else '#64748B'}; font-weight:600;">{analysis['ob']}</div>
+</div>
+<div class="info-row">
+<div class="label-long">🧲 Fiyatı Çeken Seviye:</div>
+<div class="info-val">{analysis['liquidity']}</div>
+</div>
+</div>
+{golden_badge}
+</div>
+""", unsafe_allow_html=True)
+
 # --- YENİ GELİŞMİŞ TEKNİK KART (TradingView Yerine Gelecek) ---
 def render_detail_card_advanced(ticker):
     # Ticker adını alıp başlığa ekliyoruz (GÖRSEL DÜZENLEME)
@@ -1413,6 +1485,7 @@ def render_detail_card_advanced(ticker):
     
     # Radar 1 Sonucu
     r1_res = None
+    r1_score = 0
     # scan_data içinde var mı diye bak
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
@@ -1436,6 +1509,7 @@ def render_detail_card_advanced(ticker):
 
     # Radar 2 Sonucu
     r2_res = None
+    r2_score = 0
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty:
@@ -1511,7 +1585,124 @@ def render_detail_card_advanced(ticker):
     </div>
     """, unsafe_allow_html=True)
 
-# --- ARAYÜZ (FİLTRELER YERİNDE SABİT) ---
+@st.cache_data(ttl=300)
+def fetch_stock_info(ticker):
+    try:
+        info = yf.Ticker(ticker).info
+        return {
+            'price': info.get('currentPrice') or info.get('regularMarketPrice'),
+            'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0,
+            'volume': info.get('volume', 0),
+            'sector': info.get('sector', '-'),
+            'target': info.get('targetMeanPrice', '-')
+        }
+    except:
+        return None
+
+@st.cache_data(ttl=1200)
+def fetch_google_news(ticker):
+    try:
+        clean = ticker.replace(".IS", "").replace("=F", "")
+        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote_plus(f'{clean} stock news site:investing.com OR site:seekingalpha.com')}&hl=tr&gl=TR&ceid=TR:tr"
+        feed = feedparser.parse(rss_url)
+        news = []
+        for entry in feed.entries[:6]:
+            try:
+                dt = datetime(*entry.published_parsed[:6])
+            except:
+                dt = datetime.now()
+            if dt < datetime.now() - timedelta(days=10): continue
+            pol = TextBlob(entry.title).sentiment.polarity
+            color = "#16A34A" if pol > 0.1 else "#DC2626" if pol < -0.1 else "#64748B"
+            news.append({
+                'title': entry.title,
+                'link': entry.link,
+                'date': dt.strftime('%d %b'),
+                'source': entry.source.title,
+                'color': color
+            })
+        return news
+    except:
+        return []
+
+# ==============================================================================
+# --- SIDEBAR UI (FONKSİYONLAR TANIMLANDIKTAN SONRA) ---
+# ==============================================================================
+with st.sidebar:
+    # YENİ BAŞLIK (İstenen yerde)
+    st.markdown(f"""
+    <div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">
+        PATRONUN BORSA PANELİ
+    </div>
+    <hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">
+    """, unsafe_allow_html=True)
+
+    st.markdown("### ⚙️ Ayarlar")
+    selected_theme_name = st.selectbox(
+        "",
+        ["Beyaz", "Kirli Beyaz", "Buz Mavisi"],
+        index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme),
+        label_visibility="collapsed"
+    )
+    if selected_theme_name != st.session_state.theme:
+        st.session_state.theme = selected_theme_name
+        st.rerun()
+    st.divider()
+    
+    # GÜNCELLENEN BUTON (SADECE PROMPT OLUŞTURUR)
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"):
+            st.session_state.generate_prompt = True
+    
+    # --- BURASI YENİ EKLENEN SENTIMENT AJANI (UI KISMI) ---
+    st.divider()
+    with st.expander("🕵️ Sentiment Ajanı (STP)", expanded=True):
+        st.caption("Fiyat Dengesi (STP) Taraması")
+        
+        if st.button("Kesişimleri Tara", type="secondary"):
+            with st.spinner("Ajan STP izini sürüyor..."):
+                # Aktif kategorideki hisseleri çek
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                crosses, trends = scan_stp_signals(current_assets)
+                
+                # --- SONUÇLARI SESSION STATE'E KAYDET ---
+                st.session_state.stp_crosses = crosses
+                st.session_state.stp_trends = trends
+                st.session_state.stp_scanned = True
+
+        # Sonuçları Göster
+        if st.session_state.get('stp_scanned'):
+            # TAB 1: YENİ KESİŞİMLER (AL SİNYALİ)
+            st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
+            if st.session_state.stp_crosses:
+                # GÜNCELLEME: Burada da scroll bar olması için container eklendi
+                with st.container(height=200):
+                    for item in st.session_state.stp_crosses:
+                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"):
+                            st.session_state.ticker = item['Sembol'] # Tıklayınca ana ekrana git
+                            st.rerun()
+            else:
+                st.info("Yeni kesişim yok.")
+
+            st.markdown("---")
+
+            # TAB 2: GÜÇLÜ DURANLAR (2 GÜNDÜR ÜSTÜNDE)
+            st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
+            if st.session_state.stp_trends:
+                # Çok fazla sonuç çıkarsa yer kaplamasın diye scroll koyuyoruz
+                with st.container(height=200):
+                    for item in st.session_state.stp_trends:
+                        # Yeşil tonlu buton
+                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"):
+                            st.session_state.ticker = item['Sembol']
+                            st.rerun()
+            else:
+                st.info("Trend takibi yok.")
+
+# ==============================================================================
+# --- ANA SAYFA UI (MAIN UI) ---
+# ==============================================================================
 
 # FILTRELER
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
@@ -1810,6 +2001,8 @@ with col_right:
     # ICT Panel
     ict_data = calculate_ict_concepts(st.session_state.ticker)
     render_ict_panel(ict_data)
+
+    # --- BURADA ESKİ TEKNİK KART VARDI, KALDIRILDI ---
 
     # --- DEĞİŞİKLİK BURADA: ÖNCE RÖNTGEN, SONRA RADAR ---
     
