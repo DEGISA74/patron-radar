@@ -766,13 +766,11 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
-# YENİ CMF TABANLI VE ORDINAL DATE DÜZELTMELİ FONKSİYON
-# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE EKSEN VE CMF EKLENDİ ---
+# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (AWESOME OSCILLATOR - DENGELİ DALGA) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. VERİ İNDİRME
+        # 1. VERİ İNDİRME (Yeterli geçmiş veri için 6 ay çekiyoruz)
         df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
         
@@ -785,65 +783,58 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']
         high = df['High']
         low = df['Low']
-        # Hacim 0 ise 1 yap (Bölme hatası önlemi)
-        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # -----------------------------------------------------------
-        # 2. HESAPLAMA: CMF TABANLI PARA AKIŞI (SOL GRAFİK İÇİN)
+        # 2. HESAPLAMA: AWESOME OSCILLATOR (AO)
         # -----------------------------------------------------------
+        # Bu yöntem, fiyatın orta noktasının (Median Price) 
+        # kısa (5) ve uzun (34) dönem ortalamaları arasındaki farktır.
+        # SIFIR ÇİZGİSİ etrafında dönmeyi garanti eder (Kırmızı/Mavi dengesi).
         
-        # A. CLV (Close Location Value)
-        # Formül: ((Close - Low) - (High - Close)) / (High - Low)
-        # Alternatif: (2*Close - High - Low) / (High - Low)
-        range_len = high - low
-        range_len = range_len.replace(0, 0.01) # Hata önleyici
+        median_price = (high + low) / 2
         
-        clv = ((2 * close) - high - low) / range_len
+        sma5 = median_price.rolling(5).mean()
+        sma34 = median_price.rolling(34).mean()
         
-        # B. Smart Money Volume
-        money_flow_vol = clv * volume
-        
-        # C. Yumuşatma (Flow Smooth - 3 Günlük EMA)
-        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
+        # AO Değeri (Barın boyunu belirler)
+        ao = sma5 - sma34
 
-        # D. Smart Money Tespiti (RVOL Kontrolü)
-        vol_avg_20 = volume.rolling(20).mean()
-        is_smart_money = volume > vol_avg_20 # Hacim ortalamanın üstünde mi?
-
-        # E. Renk Durumu (Status)
+        # Renk Durumu (Status) - AO Kurallarına Göre
         status = []
         for i in range(len(df)):
-            val = mf_smooth.iloc[i]
-            smart = is_smart_money.iloc[i]
+            val = ao.iloc[i]
+            # Önceki değeri kontrol et (Yoksa 0 kabul et)
+            prev_val = ao.iloc[i-1] if i > 0 else 0
             
-            if val >= 0: # GİRİŞ
-                if smart: status.append("Güçlü Giriş") # Koyu Yeşil/Mavi
-                else: status.append("Zayıf Giriş")     # Açık Yeşil/Mavi
-            else: # ÇIKIŞ
-                if smart: status.append("Güçlü Çıkış") # Koyu Kırmızı
-                else: status.append("Zayıf Çıkış")     # Açık Kırmızı
+            if val >= 0:
+                # POZİTİF BÖLGE (MAVİLER)
+                if val > prev_val: status.append("Güçlü Giriş") # Yükselen Mavi (Koyu)
+                else: status.append("Zayıf Giriş")      # Alçalan Mavi (Açık)
+            else:
+                # NEGATİF BÖLGE (KIRMIZILAR)
+                if val < prev_val: status.append("Güçlü Çıkış") # Derinleşen Kırmızı (Koyu)
+                else: status.append("Zayıf Çıkış")      # Toparlayan Kırmızı (Açık)
 
         # -----------------------------------------------------------
-        # 3. HESAPLAMA: STP (SAĞ GRAFİK İÇİN - AYNEN KORUNDU)
+        # 3. HESAPLAMA: STP (SAĞ GRAFİK İÇİN - AYNI KALDI)
         # -----------------------------------------------------------
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # 4. DATAFRAME HAZIRLIĞI (SON 40 GÜN)
+        # 4. DATAFRAME HAZIRLIĞI (SENİN AYARIN: SON 30 GÜN)
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
         plot_df = pd.DataFrame({
             'Date': df['Date'],
-            'MF_Smooth': mf_smooth.values,
+            'MF_Smooth': ao.values,  # Artık AO değerlerini kullanıyoruz
             'Status': status,
             'STP': stp.values,
             'Price': close.values
         }).tail(30).reset_index(drop=True) 
 
-        # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH ***
-        # Altair bu sütunu görünce "Ordinal" (Sıralı) moduna geçecek.
+        # Tarih formatı
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
         return plot_df
@@ -1890,5 +1881,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
