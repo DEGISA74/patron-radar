@@ -766,9 +766,9 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT (STP = SENTETİK FİYAT MANTIĞI) ---
+# --- DÜZELTİLMİŞ: SENTETİK SENTIMENT ---
 # YENİ CMF TABANLI VE ORDINAL DATE DÜZELTMELİ FONKSİYON
-# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE EKSEN VE CMF EKLENDİ ---
+# --- GÜNCELLEME: STP MANTIĞI KORUNDU, SADECE SOL GRAFİK İÇİN EKSEN VE CMF EKLENDİ ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -842,7 +842,7 @@ def calculate_synthetic_sentiment(ticker):
             'Price': close.values
         }).tail(40).reset_index(drop=True) 
 
-        # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH ***
+        # *** KRİTİK: HAFTA SONU BOŞLUĞUNU YOK ETMEK İÇİN STRING TARİH (SADECE SOL İÇİN) ***
         # Altair bu sütunu görünce "Ordinal" (Sıralı) moduna geçecek.
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
@@ -851,7 +851,7 @@ def calculate_synthetic_sentiment(ticker):
     except Exception as e:
         return None
 
-# YENİ GÖRSELLEŞTİRME PANELİ (GAP-FREE)
+# YENİ GÖRSELLEŞTİRME PANELİ (SOL GAP-FREE, SAĞ ORİJİNAL)
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
 
@@ -863,13 +863,10 @@ def render_synthetic_sentiment_panel(data):
 
     c1, c2 = st.columns([1, 1])
     
-    # Ortak X Ekseni (Ordinal - Sıralı - Boşluksuz)
-    # sort=None: Verinin geliş sırasını korur (Kronolojik), alfabetik yapmaz.
-    x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
-
     with c1:
         # SOL GRAFİK: Para Akış Barları (Smart Money Renkli)
-        base = alt.Chart(data).encode(x=x_axis)
+        # KULLANILAN EKSEN: Date_Str:O (Ordinal/Sıralı) -> Boşluksuz
+        base = alt.Chart(data).encode(x=alt.X('Date_Str:O', axis=alt.Axis(title=None, labelAngle=-45)))
         
         # Renk Skalası (User Preference: Indigo/Red)
         color_scale = alt.Color('Status:N', scale=alt.Scale(
@@ -884,43 +881,35 @@ def render_synthetic_sentiment_panel(data):
             tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth']
         )
         
-        # Fiyat Çizgisi (Referans)
+        # Fiyat Çizgisi (Üstüne bindirilmiş)
         price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(
             y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a'))
         )
         
         chart_left = alt.layer(bars, price_line).resolve_scale(y='independent').properties(
-            height=280, 
+            height=300, 
             title=alt.TitleParams("Kurumsal Para Giriş/Çıkışı", fontSize=11, color="#1e40af")
         )
         st.altair_chart(chart_left, use_container_width=True)
 
     with c2:
-        # SAĞ GRAFİK: Fiyat Dengesi (STP vs Price) - AYNEN KORUNDU
-        # Sadece X ekseni "Date_Str" oldu ki sol tarafla aynı boyda dursun.
-        base2 = alt.Chart(data).encode(x=x_axis)
+        # SAĞ GRAFİK: Fiyat Dengesi (STP vs Price) - TAMAMEN ESKİ HALİYLE KORUNDU
+        # KULLANILAN EKSEN: Date:T (Temporal/Zaman) -> Orijinal, boşluklu yapı
         
-        # Denge Hattı (Sarı)
-        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(
-            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')),
-            tooltip=['Date_Str', 'STP', 'Price']
+        base = alt.Chart(data).encode(x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')))
+        
+        # Sarı Çizgi (STP - Sentetik Fiyat)
+        line_stp = base.mark_line(color='#fbbf24', strokeWidth=3).encode(
+            y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat Seviyesi', titleColor='#64748B')),
+            tooltip=[alt.Tooltip('Date', title='Tarih'), alt.Tooltip('STP', format='.2f'), alt.Tooltip('Price', format='.2f')]
         )
         
-        # Fiyat (Turkuaz)
-        line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(
+        # Fiyat Çizgisi (Mavi)
+        price_line_right = base.mark_line(color='#2dd4bf', strokeWidth=3).encode(
             y='Price:Q'
         )
         
-        # Aradaki Farkı Boya (Deviasyon Alanı)
-        area = base2.mark_area(opacity=0.15, color='gray').encode(
-            y='STP:Q',
-            y2='Price:Q'
-        )
-        
-        chart_right = alt.layer(area, line_stp, line_price).properties(
-            height=280, 
-            title=alt.TitleParams("Fiyat Dengesi (Sarı=Mıknatıs)", fontSize=11, color="#b45309")
-        )
+        chart_right = alt.layer(line_stp, price_line_right).properties(height=300, title="Fiyat Dengesi (STP)")
         st.altair_chart(chart_right, use_container_width=True)
 
 
