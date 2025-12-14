@@ -919,7 +919,7 @@ def render_synthetic_sentiment_panel(data):
         
         chart_right = alt.layer(area, line_stp, line_price).properties(
             height=280, 
-            title=alt.TitleParams("Fiyat Dengesi (Sarı=Mıknatıs)", fontSize=11, color="#b45309")
+            title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")
         )
         st.altair_chart(chart_right, use_container_width=True)
 
