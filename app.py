@@ -49,7 +49,7 @@ st.markdown(f"""
         box-shadow: 0 1px 1px rgba(0,0,0,0.03);
     }}
     .stat-label-small {{ font-size: 0.2rem; color: #64748B; text-transform: uppercase; margin: 0; }}
-    .stat-value-small {{ font-size: 0.4rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
+    .stat-value-small {{ font-size: 0.4rem; font-weight: 400; color: {current_theme['text']}; margin: 0; }}
     
     hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
     .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
@@ -1900,5 +1900,6 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
