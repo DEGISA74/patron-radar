@@ -1496,7 +1496,7 @@ def render_detail_card(ticker):
     </div>
     """, unsafe_allow_html=True)
 
-def render_tradingview_widget(ticker, height=500):
+def render_tradingview_widget(ticker, height=400):
     # Varsayılan sembol
     tv_symbol = ticker
 
@@ -1736,7 +1736,7 @@ with col_left:
         render_synthetic_sentiment_panel(synth_data)
 
     # --- MAKYYAJ DEĞİŞİKLİĞİ: TRADINGVIEW GRAFİĞİ AŞAĞI İNDİRİLDİ ---
-    render_tradingview_widget(st.session_state.ticker, height=500)
+    render_tradingview_widget(st.session_state.ticker, height=400)
     
     # --- YENİ EKLENEN AJAN 3 ALANI (GÜNCELLENMİŞ TASARIM) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
@@ -2001,4 +2001,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
