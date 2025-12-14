@@ -2001,3 +2001,4 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
