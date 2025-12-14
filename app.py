@@ -39,17 +39,17 @@ st.markdown(f"""
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
     
-    section.main > div.block-container {{ padding-top: 2rem; padding-bottom: 2rem; }}
+    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
     
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
     .stat-box-small {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; padding: 2px 6px; text-align: center; margin-bottom: 2px;
+        border-radius: 4px; padding: 2px 6px; text-align: center; margin-bottom: 2px;
         box-shadow: 0 1px 1px rgba(0,0,0,0.03);
     }}
-    .stat-label-small {{ font-size: 0.4rem; color: #64748B; text-transform: uppercase; margin: 0; }}
-    .stat-value-small {{ font-size: 0.6rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
+    .stat-label-small {{ font-size: 0.2rem; color: #64748B; text-transform: uppercase; margin: 0; }}
+    .stat-value-small {{ font-size: 0.4rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
     
     hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
     .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
@@ -1900,4 +1900,5 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
