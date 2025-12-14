@@ -1684,10 +1684,11 @@ Aşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları y
 - GOLDEN SETUP SİNYALİ: {ict_data.get('golden_text', 'Yok')}
 
 *** GÖREVİN ***
-Bu verilerdeki çelişkileri (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.
-Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, analist gibi konuş.
+Bu verileri analiz et. Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.
+Kısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
 
 ÇIKTI:
+💡 ANALİZ: Yarım paragraflık Temel Analiz, P/E, PEG, 12 aylık analist beklentileri. 
 🎯 YÖN: [LONG/SHORT/BEKLE]
 💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
 ⚠️ RİSK: (Gördüğün en büyük tehlike)
@@ -2005,6 +2006,7 @@ with col_right:
             if c2.button(sym, key=f"wl_g_{sym}"):
                 on_scan_result_click(sym)
                 st.rerun()
+
 
 
 
