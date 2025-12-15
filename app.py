@@ -17,7 +17,7 @@ import altair as alt
 # 1. AYARLAR VE STİL
 # ==============================================================================
 st.set_page_config(
-    page_title="PATRONUN TEKNİK BORSA TERMİNALİ", 
+    page_title="PATRONUN BORSA TERMİNALİ", 
     layout="wide",
     page_icon="💸"
 )
@@ -1288,4 +1288,5 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
