@@ -552,7 +552,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTME BURADA: (Tarih Aralığı tail(30) yapıldı) ---
+# --- DÜZELTME BURADA: (Elder's Force Index Mantığı) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -562,18 +562,21 @@ def calculate_synthetic_sentiment(ticker):
         if 'Close' not in df.columns: return None
         df = df.dropna()
         close = df['Close']; high = df['High']; low = df['Low']
+        
         # Hacmi al, yoksa 1 kabul et
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # --- MONEY FLOW HESAPLAMASI ---
-        # Multiplier = [(Close - Low) - (High - Close)] / (High - Low)
-        mf_multiplier = ((close - low) - (high - close)) / (high - low).replace(0, 0.0001)
+        # --- ELDER'S FORCE INDEX HESAPLAMASI ---
+        # Formül: (Bugünkü Kapanış - Dünkü Kapanış) * Hacim
+        # Eğer Fiyat arttıysa -> Pozitif (Mavi)
+        # Eğer Fiyat düştüyse -> Negatif (Kırmızı)
         
-        # Money Flow Volume = Multiplier * Volume
-        mf_volume = mf_multiplier * volume
+        delta = close.diff()
+        force_index = delta * volume
         
-        # Hafif yumuşatma
-        mf_smooth = mf_volume.ewm(span=3, adjust=False).mean()
+        # Görseli yumuşatmak için hafif bir EMA (3 günlük)
+        # Orijinal resimdeki gibi bloklu ama trendi takip eden yapı için kısa bir span
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
@@ -584,10 +587,10 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': mf_smooth.values, # Artık bu gerçek Money Flow
+            'MF_Smooth': mf_smooth.values, 
             'STP': stp.values, 
             'Price': close.values
-        }).tail(30).reset_index(drop=True) # DÜZELTME: tail(30) yapıldı (yaklaşık 1.5 ay)
+        }).tail(30).reset_index(drop=True)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
@@ -987,7 +990,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP: Turkuaz (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=11, color="#b45309")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")), use_container_width=True)
 
 def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
@@ -1176,5 +1179,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
-
