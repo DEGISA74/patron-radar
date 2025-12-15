@@ -830,19 +830,19 @@ def render_detail_card_advanced(ticker):
     # --- 1. AÇIKLAMA TANIMLARI ---
     ACIKLAMALAR = {
         # RADAR 1
-        "Squeeze": "🚀 Squeeze: Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
-        "NR4": "🔇 NR4: Fiyat son 4 günün en dar fiyat aralığında",
-        "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliş)",
-        "MACD": "🟢 MACD: Histogram bir önceki günden yüksek (MOmentum Artışı)",
-        "W%R": "🔫 W%R: -50 üzerinde (Aşırı satımdan çıkmış)",
-        "Hacim": "🔊 Hacim: Son 5 günlük ortalama hacmin %20 üzerinde",
+        "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
+        "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
+        "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliyor)",
+        "MACD": "🟢 MACD: Histogram bir önceki günden yüksek (Momentum Artışı Var)",
+        "W%R": "🔫 W%R: -50 üzerinde (Aşırı satım seviyesinden kurtulmuş)",
+        "Hacim": "🔊 Hacim: Son 5 günlük hacim ortalama hacmin %20 üzerinde",
         "Breakout": "🔨 Breakout: Fiyat son 20 gün zirvesinin %98 veya üzerinde",
-        "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arası ve artışta",
+        "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arasında ve artışta",
         
         # RADAR 2
-        "Hacim Patlaması": "💥 Hacim son 20 gün ortalamanın %30 üzerinde",
-        "RS (S&P500)": "💪 Hisse, endeksten (S&P 500) daha güçlü",
-        "Boğa Trendi": "🐂 Boğa Trendi: Fiyat > SMA50 > SMA100 > SMA200 üzerinde",
+        "Hacim Patlaması": "💥 Hacim son 20 gün ortalamanın %30 üzerinde seyrediyor",
+        "RS (S&P500)": "💪 Hisse, S&P 500 endeksinden daha güçlü",
+        "Boğa Trendi": "🐂 Boğa Trendi: Fiyat Üç Ortalamanın da (SMA50 > SMA100 > SMA200) üzerinde",
         "60G Zirve": "⛰️ Zirve: Fiyat son 60 günün tepesine %97 yakınlıkta",
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
         "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
@@ -1120,6 +1120,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
