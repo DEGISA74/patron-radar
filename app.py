@@ -1181,7 +1181,7 @@ with col_left:
             c_stp1, c_stp2 = st.columns(2)
             with c_stp1:
                 st.markdown("###### ⚡ FİYATI STP YUKARI KESENLER")
-                with st.container(height=300, border=True):
+                with st.container(height=200, border=True):
                     if st.session_state.stp_crosses:
                         for item in st.session_state.stp_crosses:
                             if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
@@ -1190,7 +1190,7 @@ with col_left:
                     else: st.info("Yeni kesişim yok.")
             with c_stp2:
                 st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
-                with st.container(height=300, border=True):
+                with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                          for item in st.session_state.stp_trends:
                             if st.button(f"📈 {item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
@@ -1288,3 +1288,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
