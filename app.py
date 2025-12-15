@@ -552,7 +552,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTME BURADA: (MACD Histogram Mantığı) ---
+# --- DÜZELTME BURADA: (Tarih Aralığı tail(30) yapıldı) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -562,37 +562,32 @@ def calculate_synthetic_sentiment(ticker):
         if 'Close' not in df.columns: return None
         df = df.dropna()
         close = df['Close']; high = df['High']; low = df['Low']
+        # Hacmi al, yoksa 1 kabul et
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # --- MACD HESAPLAMASI (MOMENTUM) ---
-        # 1. Hızlı ve Yavaş Ortalamalar (EMA)
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
+        # --- MONEY FLOW HESAPLAMASI ---
+        # Multiplier = [(Close - Low) - (High - Close)] / (High - Low)
+        mf_multiplier = ((close - low) - (high - close)) / (high - low).replace(0, 0.0001)
         
-        # 2. MACD Hattı
-        macd_line = ema12 - ema26
+        # Money Flow Volume = Multiplier * Volume
+        mf_volume = mf_multiplier * volume
         
-        # 3. Sinyal Hattı
-        signal_line = macd_line.ewm(span=9, adjust=False).mean()
-        
-        # 4. Histogram (Bizim Barlarımız) = MACD - Sinyal
-        # Bu değer sıfır etrafında salınır, tepeler ve dipler oluşturur.
-        momentum_hist = macd_line - signal_line
+        # Hafif yumuşatma
+        mf_smooth = mf_volume.ewm(span=3, adjust=False).mean()
 
-        # STP (Fiyat Dengesi) Hesaplaması (Aynen koruyoruz)
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # DataFrame Hazırlığı
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': momentum_hist.values, # Barlar artık MACD Histogramı
+            'MF_Smooth': mf_smooth.values, # Artık bu gerçek Money Flow
             'STP': stp.values, 
             'Price': close.values
-        }).tail(45).reset_index(drop=True)
+        }).tail(30).reset_index(drop=True) # DÜZELTME: tail(30) yapıldı (yaklaşık 1.5 ay)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
@@ -1181,3 +1176,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
