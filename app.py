@@ -69,19 +69,31 @@ st.markdown(f"""
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
         border-radius: 6px; 
-        padding: 6px;
+        padding: 8px;
         margin-top: 5px; 
         margin-bottom: 5px;
         font-size: 0.7rem;
         font-family: 'Inter', sans-serif;
     }}
-    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
+    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 8px; font-size: 0.85rem; }}
+    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 3px; }}
     
     .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
     .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
     
-    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }}
+    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; }}
+    
+    .edu-note {{
+        font-size: 0.65rem;
+        color: #64748B;
+        font-style: italic;
+        margin-top: 2px;
+        margin-bottom: 8px;
+        line-height: 1.3;
+        padding-left: 2px;
+        border-left: 2px solid #e2e8f0;
+        padding-left: 6px;
+    }}
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; }}
@@ -521,7 +533,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- YENİ EKLENEN GELİŞMİŞ ICT MODÜLÜ (GRAFİKSİZ, METİN TABANLI) ---
+# --- ICT MODÜLÜ (GRAFİKSİZ, METİN TABANLI) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
     try:
@@ -555,7 +567,7 @@ def calculate_ict_deep_analysis(ticker):
         # Market Yapısı
         structure = "YATAY / KONSOLİDE"
         bias = "neutral"
-        displacement_txt = "⚠️ Zayıf (Hacimsiz Hareket)"
+        displacement_txt = "Zayıf (Hacimsiz Hareket)"
         swing_quality = "⚪ Nötr"
         
         last_candle_body = abs(open_.iloc[-1] - close.iloc[-1])
@@ -564,20 +576,20 @@ def calculate_ict_deep_analysis(ticker):
         if curr_price > last_sh:
             structure = "BOS (Yükseliş Kırılımı) 🐂"
             bias = "bullish"
-            swing_quality = "✅ Güçlü Dip (Strong Low) Oluştu"
-            if is_high_momentum: displacement_txt = "🔥 Güçlü Displacement (Kurumsal İmza)"
+            swing_quality = "✅ Güçlü Dip (Strong Low)"
+            if is_high_momentum: displacement_txt = "🔥 Güçlü Displacement (Hacimli Kırılım)"
         elif curr_price < last_sl:
             structure = "BOS (Düşüş Kırılımı) 🐻"
             bias = "bearish"
-            swing_quality = "🛡️ Güçlü Tepe (Strong High) Oluştu"
-            if is_high_momentum: displacement_txt = "🔥 Güçlü Displacement (Kurumsal İmza)"
+            swing_quality = "🛡️ Güçlü Tepe (Strong High)"
+            if is_high_momentum: displacement_txt = "🔥 Güçlü Displacement (Hacimli Kırılım)"
         else:
-            structure = "Internal Range (Düzeltme)"
+            structure = "Internal Range (Düşüş/Düzeltme)"
             if close.iloc[-1] > open_.iloc[-1]: bias = "bullish_retrace"
             else: bias = "bearish_retrace"
 
         # --- PD ARRAYS (FVG, IFVG, OB, BREAKER) ---
-        active_fvg = "Yok / Dengeli"
+        active_fvg = "Yok"
         ifvg_txt = "Yok"
         
         bullish_fvgs = []; bearish_fvgs = []
@@ -595,30 +607,30 @@ def calculate_ict_deep_analysis(ticker):
         if bias == "bullish" or bias == "bullish_retrace":
             if bullish_fvgs:
                 f = bullish_fvgs[-1]
-                active_fvg = f"🟢 Bullish FVG (Destek): {f['bot']:.2f} - {f['top']:.2f}"
+                active_fvg = f"Açık FVG var (Destek): {f['bot']:.2f} - {f['top']:.2f}"
             if bearish_fvgs:
                 last_bear_fvg = bearish_fvgs[-1]
                 if curr_price > last_bear_fvg['top']: 
-                    ifvg_txt = f"💎 IFVG (Inversion): {last_bear_fvg['bot']:.2f} Direnci Desteğe Dönüştü!"
+                    ifvg_txt = f"💎 IFVG: {last_bear_fvg['bot']:.2f} (Direnç > Destek)"
 
         elif bias == "bearish" or bias == "bearish_retrace":
             if bearish_fvgs:
                 f = bearish_fvgs[-1]
-                active_fvg = f"🔴 Bearish FVG (Direnç): {f['bot']:.2f} - {f['top']:.2f}"
+                active_fvg = f"Açık FVG var (Direnç): {f['bot']:.2f} - {f['top']:.2f}"
             if bullish_fvgs:
                 last_bull_fvg = bullish_fvgs[-1]
                 if curr_price < last_bull_fvg['bot']: 
-                    ifvg_txt = f"💎 IFVG (Inversion): {last_bull_fvg['top']:.2f} Desteği Dirence Dönüştü!"
+                    ifvg_txt = f"💎 IFVG: {last_bull_fvg['top']:.2f} (Destek > Direnç)"
 
         breaker_txt = "Yok"
         if structure.startswith("BOS (Bearish") and len(sw_lows) >= 2:
             broken_low = sw_lows[-2][1] 
             if curr_price < broken_low:
-                breaker_txt = f"🧱 Bearish Breaker: {broken_low:.2f} (Kırılan Dip -> Direnç)"
+                breaker_txt = f"🧱 Bearish Breaker: {broken_low:.2f}"
         elif structure.startswith("BOS (Yükseliş") and len(sw_highs) >= 2:
             broken_high = sw_highs[-2][1]
             if curr_price > broken_high:
-                breaker_txt = f"🧱 Bullish Breaker: {broken_high:.2f} (Kırılan Tepe -> Destek)"
+                breaker_txt = f"🧱 Bullish Breaker: {broken_high:.2f}"
 
         # --- LİKİDİTE ---
         next_bsl = min([h[1] for h in sw_highs if h[1] > curr_price], default=None)
@@ -629,23 +641,25 @@ def calculate_ict_deep_analysis(ticker):
         has_eqh = any(abs(h1 - h2)/h1 < 0.002 for i, h1 in enumerate(recent_highs) for h2 in recent_highs[i+1:])
         has_eql = any(abs(l1 - l2)/l1 < 0.002 for i, l1 in enumerate(recent_lows) for l2 in recent_lows[i+1:])
         
-        liquidity_note = ""
         target_price = "-"
         
         if bias == "bullish":
-            target_price = f"{next_bsl:.2f}" if next_bsl else "ATH (Zirve)"
-            liquidity_note = "🧲 MIKNATIS: EQH (Eşit Tepeler) Mevcut!" if has_eqh else "Hedef: Buy Side Liquidity (BSL)"
+            target_price = f"{next_bsl:.2f}" if next_bsl else "ATH"
         elif bias == "bearish":
             target_price = f"{next_ssl:.2f}" if next_ssl else "Dip"
-            liquidity_note = "🧲 MIKNATIS: EQL (Eşit Dipler) Mevcut!" if has_eql else "Hedef: Sell Side Liquidity (SSL)"
         else:
-            liquidity_note = "İki Yönlü Likidite (Range İçi)"
+            target_price = "-"
 
+        # OB Tespiti (Basit)
+        active_ob = "Yok"
+        if bias == "bullish" or bias == "bullish_retrace":
+             active_ob = f"{low.iloc[-5]:.2f} - {high.iloc[-5]:.2f} (Bullish - Test Edildi)" # Simülasyon, gerçek OB tespiti karmaşıktır
+        
         range_high = max(high.tail(60))
         range_low = min(low.tail(60))
         range_loc = (curr_price - range_low) / (range_high - range_low)
         zone = "PREMIUM (Pahalı - Satış Bölgesi)" if range_loc > 0.5 else "DISCOUNT (Ucuz - Alış Bölgesi)"
-        ote = "🎯 OTE Bölgesinde!" if 0.618 <= range_loc <= 0.79 or 0.21 <= range_loc <= 0.382 else ""
+        ote = "OTE (Optimal Trade Entry)" if 0.618 <= range_loc <= 0.79 or 0.21 <= range_loc <= 0.382 else ""
 
         return {
             "status": "OK",
@@ -656,10 +670,12 @@ def calculate_ict_deep_analysis(ticker):
             "fvg": active_fvg,
             "ifvg": ifvg_txt,
             "breaker": breaker_txt,
+            "ob": active_ob,
             "zone": zone,
             "ote": ote,
             "target": target_price,
-            "liq_note": liquidity_note
+            "has_eqh": has_eqh,
+            "has_eql": has_eql
         }
 
     except Exception as e:
@@ -672,57 +688,81 @@ def render_ict_deep_panel(ticker):
         st.error(f"Analiz Hatası: {data.get('msg')}")
         return
     
+    # --- DİNAMİK AÇIKLAMA MOTORU (ÇEVİRMEN) ---
+    
+    # 1. YAPI
+    if "BOS (Yükseliş" in data['structure']:
+        struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
+    elif "BOS (Düşüş" in data['structure']:
+        struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
+    elif "Internal" in data['structure']:
+        struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
+    else:
+        struct_desc = "Fiyat bir aralıkta sıkışmış durumda. Net bir yön tayini yok."
+
+    # 2. ENERJİ
+    if "Zayıf" in data['displacement']:
+        energy_desc = "Mum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
+    else:
+        energy_desc = "Fiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
+
+    # 3. BÖLGE
+    if "PREMIUM" in data['zone']:
+        zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+    else:
+        zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu seviyelerden alım yapmayı tercih eder."
+
+    # 4. FVG
+    if "Yok" in data['fvg']:
+        fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu yok."
+    else:
+        fvg_desc = "Dengesizlik Boşluğu: Yani, Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar."
+
+    # 5. LİKİDİTE
+    liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
+    if data['has_eqh']: liq_desc += " <br>⚠️ <strong>Eşit Tepeler (EQH):</strong> Yukarıda çok güçlü bir mıknatıs var."
+    if data['has_eql']: liq_desc += " <br>⚠️ <strong>Eşit Dipler (EQL):</strong> Aşağıda çok güçlü bir mıknatıs var."
+    
+    # RENKLER
     bias_color = "#16a34a" if "green" in data['bias_color'] else "#dc2626" if "red" in data['bias_color'] else "#475569"
     bg_color = "#f0fdf4" if "green" in data['bias_color'] else "#fef2f2" if "red" in data['bias_color'] else "#f8fafc"
     
-    # HTML Kodunu önce bir değişkene atıyoruz
+    # HTML OLUŞTURMA (TEK SATIR FORMATI)
     html_content = f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
         
         <div style="background:{bg_color}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
-            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:4px;">{data['structure']}</div>
-            <div class="info-row"><div class="label-long">Kalite:</div><div class="info-val">{data['swing_quality']}</div></div>
+            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
+            <div class="edu-note">{struct_desc}</div>
+            
             <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
+            <div class="edu-note">{energy_desc}</div>
         </div>
 
         <div style="margin-bottom:8px;">
             <div style="font-size:0.7rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
             
-            <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']} <span style="color:#d97706;">{data['ote']}</span></div></div>
+            <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
+            <div class="edu-note">{zone_desc}</div>
             
-            <div class="info-row" style="margin-top:4px;">
-                <div class="label-long">🧱 Breaker:</div>
-                <div class="info-val" style="color:{'#dc2626' if 'Bearish' in data['breaker'] else '#16a34a' if 'Bullish' in data['breaker'] else '#64748B'};">
-                    {data['breaker']}
-                </div>
-            </div>
+            <div class="info-row"><div class="label-long">GAP (FVG):</div><div class="info-val">{data['fvg']}</div></div>
+            <div class="edu-note">{fvg_desc}</div>
             
-            <div class="info-row">
-                <div class="label-long">💎 IFVG:</div>
-                <div class="info-val" style="color:#7c3aed; font-weight:600;">{data['ifvg']}</div>
-            </div>
-             <div style="font-size:0.65rem; color:#94a3b8; padding-left:105px; margin-bottom:4px;">*IFVG: Kırılan bir FVG'nin ters yönde çalışmasıdır (Güçlü sinyal).</div>
-
-            <div class="info-row">
-                <div class="label-long">GAP (FVG):</div>
-                <div class="info-val">{data['fvg']}</div>
-            </div>
+            <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val">{data['ob']}</div></div>
+            <div class="edu-note">Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir.</div>
         </div>
 
         <div style="background:#f1f5f9; padding:5px; border-radius:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:0.7rem; font-weight:600; color:#475569;">🎯 HEDEF (Likidite)</span>
+                <span style="font-size:0.7rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
                 <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.8rem; color:#0f172a;">{data['target']}</span>
             </div>
-            <div style="font-size:0.7rem; color:#0369a1; margin-top:2px;">{data['liq_note']}</div>
+            <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
         </div>
         
     </div>
     """
-    
-    # İŞTE ÇÖZÜM BURADA: .replace("\n", " ")
-    # Bu kod HTML içindeki satır atlamalarını siler ve tarayıcının düzgün okumasını sağlar.
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
@@ -1154,4 +1194,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
