@@ -142,22 +142,96 @@ def remove_watchlist_db(symbol):
 
 if not os.path.exists(DB_FILE): init_db()
 
-# --- VARLIK LİSTELERİ ---
-priority_sp = ["NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "AMD", "META", "GOOGL"]
-final_sp500_list = sorted(list(set(priority_sp)))
+# --- VARLIK LİSTELERİ (TAM LİSTE) ---
+priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD"]
+raw_sp500_rest = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
+    "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
+    "ADBE", "IBM", "ACN", "NOW", "PANW", "SNPS", "CDNS", "KLAC", "NXPI", "APH",
+    "MCHP", "ON", "ANET", "IT", "GLW", "HPE", "HPQ", "NTAP", "STX", "WDC", "TEL", 
+    "PLTR", "FTNT", "CRWD", "SMCI", "MSI", "TRMB", "TER", "PTC", "TYL", "FFIV",
+    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "AXP", "V", "MA", "PYPL", "SQ",
+    "SPGI", "MCO", "CB", "MMC", "PGR", "USB", "PNC", "TFC", "COF", "BK", "SCHW", 
+    "ICE", "CME", "AON", "AJG", "TRV", "ALL", "AIG", "MET", "PRU", "AFL", "HIG", 
+    "FITB", "MTB", "HBAN", "RF", "CFG", "KEY", "SYF", "DFS", "AMP", "PFG", "CINF",
+    "LLY", "UNH", "JNJ", "MRK", "ABBV", "TMO", "DHR", "ABT", "BMY", "AMGN", "ISRG", 
+    "SYK", "ELV", "CVS", "CI", "GILD", "REGN", "VRTX", "ZTS", "BSX", "BDX", "HCA", 
+    "MCK", "COR", "CAH", "CNC", "HUM", "MOH", "DXCM", "EW", "RMD", "ALGN", "ZBH", 
+    "BAX", "STE", "COO", "WAT", "MTD", "IQV", "A", "HOLX", "IDXX", "BIO", "WMT", 
+    "HD", "PG", "COST", "KO", "PEP", "MCD", "SBUX", "NKE", "DIS", "TMUS", "CMCSA", 
+    "NFLX", "TGT", "LOW", "TJX", "PM", "EL", "CL", "K", "GIS", "MNST", "TSCO", 
+    "ROST", "FAST", "DLTR", "DG", "ORLY", "AZO", "ULTA", "BBY", "KHC", "HSY", "MKC", 
+    "CLX", "KMB", "SYY", "KR", "ADM", "STZ", "TAP", "CAG", "SJM", "XOM", "CVX", 
+    "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HES", "KMI", "GE", "CAT", 
+    "DE", "HON", "MMM", "ETN", "ITW", "EMR", "PH", "CMI", "PCAR", "BA", "LMT", 
+    "RTX", "GD", "NOC", "LHX", "TDG", "TXT", "HII", "UPS", "FDX", "UNP", "CSX", 
+    "NSC", "DAL", "UAL", "AAL", "LUV", "FCX", "NEM", "NUE", "DOW", "CTVA", "LIN", 
+    "SHW", "PPG", "ECL", "APD", "VMC", "MLM", "ROP", "TT", "CARR", "OTIS", "ROK", 
+    "AME", "DOV", "XYL", "WAB", "NEE", "DUK", "SO", "AEP", "SRE", "D", "PEG", 
+    "ED", "XEL", "PCG", "WEC", "ES", "AMT", "PLD", "CCI", "EQIX", "PSA", "O", 
+    "DLR", "SPG", "VICI", "CBRE", "CSGP", "WELL", "AVB", "EQR", "EXR", "MAA", 
+    "HST", "KIM", "REG", "SBAC", "WY", "PHM", "LEN", "DHI", "LVS", "MGM", "T", 
+    "VZ", "BKNG", "MAR", "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", 
+    "CF", "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
+]
+# Kesişimi temizle ve birleştir
+raw_sp500_rest = list(set(raw_sp500_rest) - set(priority_sp))
+raw_sp500_rest.sort()
+final_sp500_list = priority_sp + raw_sp500_rest
 
-priority_crypto = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "AVAX-USD", "DOGE-USD"]
-final_crypto_list = sorted(list(set(priority_crypto)))
+priority_crypto = ["GC=F", "SI=F", "BTC-USD", "ETH-USD"]
+other_crypto = [
+    "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "TRX-USD", 
+    "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "BCH-USD", "UNI-USD", "ATOM-USD", 
+    "XLM-USD", "ETC-USD", "FIL-USD", "HBAR-USD", "APT-USD", "NEAR-USD", "VET-USD", 
+    "QNT-USD", "AAVE-USD", "ALGO-USD"
+]
+other_crypto.sort()
+final_crypto_list = priority_crypto + other_crypto
 
-priority_bist = ["THYAO.IS", "ASELS.IS", "KCHOL.IS", "SISE.IS", "AKBNK.IS", "EREGL.IS", "BIMAS.IS"]
-final_bist100_list = sorted(list(set(priority_bist)))
+raw_nasdaq = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "AVGO", "META", "TSLA", "GOOGL", "GOOG", "COST", 
+    "NFLX", "AMD", "PEP", "LIN", "TMUS", "CSCO", "QCOM", "INTU", "AMAT", "TXN", 
+    "HON", "AMGN", "BKNG", "ISRG", "CMCSA", "SBUX", "MDLZ", "GILD", "ADP", "ADI", 
+    "REGN", "VRTX", "LRCX", "PANW", "MU", "KLAC", "SNPS", "CDNS", "MELI", "MAR", 
+    "ORLY", "CTAS", "NXPI", "CRWD", "CSX", "PCAR", "MNST", "WDAY", "ROP", "AEP", 
+    "ROKU", "ZS", "OKTA", "TEAM", "DDOG", "MDB", "SHOP", "EA", "TTD", "DOCU", 
+    "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR", "MRVL", 
+    "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT", "WBA", 
+    "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK", "ANSS", "SWKS", 
+    "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
+]
+raw_nasdaq = sorted(list(set(raw_nasdaq)))
+
+priority_bist = ["AKBNK.IS", "BIMAS.IS", "DOHOL.IS", "FENER.IS", "KCHOL.IS", "SISE.IS", "TCELL.IS", "THYAO.IS", "TTKOM.IS", "VAKBNK.IS"]
+raw_bist100_rest = [
+    "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", 
+    "AKSEN.IS", "ALARK.IS", "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ASELS.IS", 
+    "ASTOR.IS", "BERA.IS", "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", 
+    "CANTE.IS", "CCOLA.IS", "CEMTS.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS", "ECILC.IS", 
+    "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUREN.IS", 
+    "EUPWR.IS", "FROTO.IS", "GARAN.IS", "GENIL.IS", "GESAN.IS", "GLYHO.IS", "GOKNR.IS", 
+    "GUBRF.IS", "GWIND.IS", "HALKB.IS", "HEKTS.IS", "IPEKE.IS", "ISCTR.IS", "ISDMR.IS", 
+    "ISGYO.IS", "ISMEN.IS", "IZENR.IS", "KCAER.IS", "KLSER.IS", "KONTR.IS", "KONYA.IS", 
+    "KORDS.IS", "KOZAA.IS", "KOZAL.IS", "KRDMD.IS", "KZBGY.IS", "MAVI.IS", "MGROS.IS", 
+    "MIATK.IS", "ODAS.IS", "OTKAR.IS", "OYAKC.IS", "PENTA.IS", "PETKM.IS", "PGSUS.IS", 
+    "PSGYO.IS", "QUAGR.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS", "SKBNK.IS", 
+    "SMRTG.IS", "SOKM.IS", "TABGD.IS", "TAVHL.IS", "TKFEN.IS", "TOASO.IS", "TSKB.IS", 
+    "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "TURSG.IS", "ULUUN.IS", "VESBE.IS", "VESTL.IS", 
+    "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
+]
+# Kesişimi temizle ve birleştir
+raw_bist100_rest = list(set(raw_bist100_rest) - set(priority_bist))
+raw_bist100_rest.sort()
+final_bist100_list = priority_bist + raw_bist100_rest
 
 ASSET_GROUPS = {
-    "S&P 500": final_sp500_list,
+    "S&P 500 (TOP 300)": final_sp500_list,
+    "NASDAQ (TOP 100)": raw_nasdaq,
     "BIST 100": final_bist100_list,
-    "KRİPTO": final_crypto_list
+    "EMTİA & KRİPTO": final_crypto_list
 }
-INITIAL_CATEGORY = "S&P 500"
+INITIAL_CATEGORY = "S&P 500 (TOP 300)"
 
 # --- STATE YÖNETİMİ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
@@ -1216,6 +1290,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
