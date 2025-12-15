@@ -960,13 +960,13 @@ def render_synthetic_sentiment_panel(data):
         color_scale = alt.Color('Status:N', scale=alt.Scale(domain=['Güçlü Giriş', 'Zayıf Giriş', 'Güçlü Çıkış', 'Zayıf Çıkış'], range=['#312e81', '#a5b4fc', '#881337', '#fca5a5']), legend=None)
         bars = base.mark_bar(size=15, opacity=0.9).encode(y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')), color=color_scale, tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth'])
         price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
-        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi - Momentum", fontSize=11, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi - Momentum", fontSize=13, color="#1e40af")), use_container_width=True)
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=13, color="#b45309")), use_container_width=True)
 
 def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
@@ -1155,3 +1155,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
