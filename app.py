@@ -552,6 +552,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
+# --- DÜZELTME BURADA: (Resim 2 gibi olması için Money Flow'a çevrildi) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -561,24 +562,35 @@ def calculate_synthetic_sentiment(ticker):
         if 'Close' not in df.columns: return None
         df = df.dropna()
         close = df['Close']; high = df['High']; low = df['Low']
+        # Hacmi al, yoksa 1 kabul et
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
-        range_len = high - low; range_len = range_len.replace(0, 0.01)
-        clv = ((2 * close) - high - low) / range_len
-        money_flow_vol = clv * volume
-        mf_smooth = money_flow_vol.ewm(span=3, adjust=False).mean()
-        vol_avg_20 = volume.rolling(20).mean()
-        is_smart_money = volume > vol_avg_20
-        status = []
-        for i in range(len(df)):
-            val = mf_smooth.iloc[i]; smart = is_smart_money.iloc[i]
-            if val >= 0: status.append("Güçlü Giriş" if smart else "Zayıf Giriş")
-            else: status.append("Güçlü Çıkış" if smart else "Zayıf Çıkış")
+        
+        # --- MONEY FLOW HESAPLAMASI (YENİ) ---
+        # Multiplier = [(Close - Low) - (High - Close)] / (High - Low)
+        # Bu formül, kapanışın mumun neresinde olduğunu (-1 ile +1 arası) bulur.
+        mf_multiplier = ((close - low) - (high - close)) / (high - low).replace(0, 0.0001)
+        
+        # Money Flow Volume = Multiplier * Volume
+        # Bu bize "Hacimli Para Girişi/Çıkışı"nı verir.
+        mf_volume = mf_multiplier * volume
+        
+        # Hafif yumuşatma (fazla zikzak olmasın diye, ama Resim 1 gibi küt de olmasın)
+        mf_smooth = mf_volume.ewm(span=3, adjust=False).mean()
+
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
+        
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
-        plot_df = pd.DataFrame({'Date': df['Date'], 'MF_Smooth': mf_smooth.values, 'Status': status, 'STP': stp.values, 'Price': close.values}).tail(30).reset_index(drop=True)
+        
+        plot_df = pd.DataFrame({
+            'Date': df['Date'], 
+            'MF_Smooth': mf_smooth.values, # Artık bu gerçek Money Flow
+            'STP': stp.values, 
+            'Price': close.values
+        }).tail(45).reset_index(drop=True) # Son 45 günü göster ki barlar net olsun
+        
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
     except Exception as e: return None
@@ -784,9 +796,9 @@ def render_ict_panel(analysis):
 
     zone_desc = "Fiyat denge noktasında, yön tayini bekleniyor."
     if "Discount" in analysis['pos_label']:
-        zone_desc = "Fiyat 'Ucuzluk' bölgesinde. Kurumsal yatırımcılar bu bölgede alım yapmayı sever."
+        zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu bölgede alım yapmayı sever."
     elif "Premium" in analysis['pos_label']:
-        zone_desc = "Fiyat 'Pahalılık' bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+        zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
     
     if analysis['ote_level']:
         zone_desc += " <br><strong>🎯 OTE (Optimal Trade Entry):</strong> Fibonacci düzeltmesinin en ideal dönüş seviyesindeyiz."
@@ -811,7 +823,7 @@ def render_ict_panel(analysis):
         <div style="font-size:0.75rem; color:#475569; margin-bottom:8px; font-style:italic; line-height:1.4;">{struct_desc}</div>
         <div style="margin: 8px 0; background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #f1f5f9;">
             <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
-                <span>Discount (UCUZ)</span><span>EQ</span><span>Premium (PAHALI)</span>
+                <span>Discount (ALIM)</span><span>EQ</span><span>Premium (SATIM)</span>
             </div>
             <div class="ict-bar-container">
                 <div class="ict-bar-fill" style="width:{bar_width}%; background: linear-gradient(90deg, #22c55e 0%, #cbd5e1 50%, #ef4444 100%);"></div>
@@ -950,23 +962,34 @@ def render_detail_card_advanced(ticker):
     clean_html = full_html.replace("\n", " ")
     st.markdown(clean_html, unsafe_allow_html=True)
 
+# --- DÜZELTME BURADA: (Resim 2 gibi olması için Money Flow'a çevrildi ve RENK SKALASI DÜZELTİLDİ) ---
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-    st.markdown(f"""<div class="info-card" style="margin-bottom:12px;"><div class="info-header">🌊 Momentum & STP: {display_ticker}</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
     with c1:
         base = alt.Chart(data).encode(x=x_axis)
-        color_scale = alt.Color('Status:N', scale=alt.Scale(domain=['Güçlü Giriş', 'Zayıf Giriş', 'Güçlü Çıkış', 'Zayıf Çıkış'], range=['#312e81', '#a5b4fc', '#881337', '#fca5a5']), legend=None)
-        bars = base.mark_bar(size=15, opacity=0.9).encode(y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Akış Gücü', labels=False, titleColor='#4338ca')), color=color_scale, tooltip=['Date_Str', 'Price', 'Status', 'MF_Smooth'])
+        # RENK KOŞULU: Değer > 0 ise Mavi, < 0 ise Kırmızı
+        color_condition = alt.condition(
+            alt.datum.MF_Smooth > 0,
+            alt.value("#2563EB"),  # Mavi (Pozitif)
+            alt.value("#DC2626")   # Kırmızı (Negatif)
+        )
+        # Y EKSENİ: Artık Status değil, direkt değer
+        bars = base.mark_bar(size=15, opacity=0.9).encode(
+            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
+            color=color_condition, 
+            tooltip=['Date_Str', 'Price', 'MF_Smooth']
+        )
         price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
-        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi - Momentum", fontSize=13, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Hacimli Para Akışı (Kırmızı=Çıkış, Mavi=Giriş)", fontSize=11, color="#1e40af")), use_container_width=True)
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=13, color="#b45309")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Fiyat Dengesi (STP) Turkuaz Sarıyı Yukarı Keserse AL", fontSize=11, color="#b45309")), use_container_width=True)
 
 def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
@@ -1155,7 +1178,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
-
-
-
