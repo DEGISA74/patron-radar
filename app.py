@@ -552,7 +552,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- DÜZELTME BURADA: (Resim 2 gibi olması için Money Flow'a çevrildi) ---
+# --- DÜZELTME BURADA: (Tarih Aralığı tail(30) yapıldı) ---
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
@@ -565,16 +565,14 @@ def calculate_synthetic_sentiment(ticker):
         # Hacmi al, yoksa 1 kabul et
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # --- MONEY FLOW HESAPLAMASI (YENİ) ---
+        # --- MONEY FLOW HESAPLAMASI ---
         # Multiplier = [(Close - Low) - (High - Close)] / (High - Low)
-        # Bu formül, kapanışın mumun neresinde olduğunu (-1 ile +1 arası) bulur.
         mf_multiplier = ((close - low) - (high - close)) / (high - low).replace(0, 0.0001)
         
         # Money Flow Volume = Multiplier * Volume
-        # Bu bize "Hacimli Para Girişi/Çıkışı"nı verir.
         mf_volume = mf_multiplier * volume
         
-        # Hafif yumuşatma (fazla zikzak olmasın diye, ama Resim 1 gibi küt de olmasın)
+        # Hafif yumuşatma
         mf_smooth = mf_volume.ewm(span=3, adjust=False).mean()
 
         typical_price = (high + low + close) / 3
@@ -589,7 +587,7 @@ def calculate_synthetic_sentiment(ticker):
             'MF_Smooth': mf_smooth.values, # Artık bu gerçek Money Flow
             'STP': stp.values, 
             'Price': close.values
-        }).tail(45).reset_index(drop=True) # Son 45 günü göster ki barlar net olsun
+        }).tail(30).reset_index(drop=True) # DÜZELTME: tail(30) yapıldı (yaklaşık 1.5 ay)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
@@ -973,8 +971,8 @@ def render_synthetic_sentiment_panel(data):
         # RENK KOŞULU: Değer > 0 ise Mavi, < 0 ise Kırmızı
         color_condition = alt.condition(
             alt.datum.MF_Smooth > 0,
-            alt.value("#2563EB"),  # Mavi (Pozitif)
-            alt.value("#DC2626")   # Kırmızı (Negatif)
+            alt.value("#3b82f6"),  # DÜZELTME: Parlak Mavi (Resim 12 gibi)
+            alt.value("#ef4444")   # DÜZELTME: Parlak Kırmızı (Resim 12 gibi)
         )
         # Y EKSENİ: Artık Status değil, direkt değer
         bars = base.mark_bar(size=15, opacity=0.9).encode(
