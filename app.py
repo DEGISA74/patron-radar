@@ -995,7 +995,7 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-    # --- YENİ YERLEŞİM: SENTIMENT AJANI (STP) ---
+    # --- YENİ YERLEŞİM: SENTIMENT AJANI (STP) + SCROLLBAR EKLENDİ ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (STP) Taraması</div>', unsafe_allow_html=True)
     with st.expander("STP Taramasını Başlat", expanded=True):
         if st.button(f"🔎 {st.session_state.category} İçin STP Tara", type="secondary"):
@@ -1007,21 +1007,23 @@ with col_left:
         if st.session_state.get('stp_scanned'):
             c_stp1, c_stp2 = st.columns(2)
             with c_stp1:
-                st.caption("⚡ FİYATI STP YUKARI KESENLER")
-                if st.session_state.stp_crosses:
-                    for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-                else: st.info("Yeni kesişim yok.")
+                st.markdown("###### ⚡ FİYATI STP YUKARI KESENLER")
+                with st.container(height=300, border=True): # <--- SCROLLBAR EKLENDİ
+                    if st.session_state.stp_crosses:
+                        for item in st.session_state.stp_crosses:
+                            if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
+                                st.session_state.ticker = item['Sembol']
+                                st.rerun()
+                    else: st.info("Yeni kesişim yok.")
             with c_stp2:
-                st.caption("✅ 2 GÜNDÜR STP ÜSTÜNDE OLANLAR")
-                if st.session_state.stp_trends:
-                     for item in st.session_state.stp_trends:
-                        if st.button(f"📈 {item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-                else: st.info("Trend takibi yok.")
+                st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
+                with st.container(height=300, border=True): # <--- SCROLLBAR EKLENDİ
+                    if st.session_state.stp_trends:
+                         for item in st.session_state.stp_trends:
+                            if st.button(f"📈 {item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
+                                st.session_state.ticker = item['Sembol']
+                                st.rerun()
+                    else: st.info("Trend takibi yok.")
 
     # --- AJAN 3 (Buradan Devam Ediyor) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
