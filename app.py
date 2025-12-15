@@ -83,7 +83,7 @@ st.markdown(f"""
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
     
-    /* Yeni Eğitim Notu Stili */
+    /* Eğitim Notu Stili */
     .edu-note {{
         font-size: 0.75rem;
         color: #64748B;
@@ -610,7 +610,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT MODÜLÜ (GÜNCELLENDİ: RISK/REWARD, ENTRY/STOP EKLENDİ) ---
+# --- ICT MODÜLÜ (GÜNCELLENDİ: Hem Analiz Hem R/R Hesaplar) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
     try:
@@ -622,9 +622,10 @@ def calculate_ict_deep_analysis(ticker):
         
         high = df['High']; low = df['Low']; close = df['Close']; open_ = df['Open']
         
-        # ATR Hesapla (Volatilite için)
+        # ATR ve Beden Boyutu
         tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
         atr = tr.rolling(14).mean().iloc[-1]
+        avg_body_size = abs(open_ - close).rolling(20).mean()
 
         # --- SWING NOKTALARI (Fractals) ---
         sw_highs = []; sw_lows = []
@@ -643,6 +644,11 @@ def calculate_ict_deep_analysis(ticker):
         # Market Yapısı (MSS / BOS)
         structure = "YATAY / KONSOLİDE"
         bias = "neutral"
+        displacement_txt = "Zayıf (Hacimsiz Hareket)"
+        
+        last_candle_body = abs(open_.iloc[-1] - close.iloc[-1])
+        if last_candle_body > avg_body_size.iloc[-1] * 1.2:
+             displacement_txt = "🔥 Güçlü Displacement (Hacimli Kırılım)"
         
         if curr_price > last_sh:
             structure = "BOS (Yükseliş Kırılımı) 🐂"
@@ -651,62 +657,76 @@ def calculate_ict_deep_analysis(ticker):
             structure = "BOS (Düşüş Kırılımı) 🐻"
             bias = "bearish"
         else:
-            structure = "Internal Range (Sıkışma)"
-            # İç yapıda yön tayini
+            structure = "Internal Range (Düşüş/Düzeltme)"
             if close.iloc[-1] > open_.iloc[-1]: bias = "bullish_retrace" 
             else: bias = "bearish_retrace"
 
         # --- LİKİDİTE HEDEFLERİ (BSL / SSL) ---
-        # Fiyatın üstündeki en yakın swing high (BSL) ve altındaki en yakın swing low (SSL)
         next_bsl = min([h[1] for h in sw_highs if h[1] > curr_price], default=None)
         next_ssl = max([l[1] for l in sw_lows if l[1] < curr_price], default=None)
+        if next_bsl is None: next_bsl = high.max()
+        if next_ssl is None: next_ssl = low.min()
 
-        if next_bsl is None: next_bsl = high.max() # ATH
-        if next_ssl is None: next_ssl = low.min()  # Dip
-
-        # --- PD ARRAYS (FVG & ORDER BLOCKS) ---
-        # Sadece son 30 mumu tara
+        # --- PD ARRAYS (FVG) ---
         bullish_fvgs = []; bearish_fvgs = []
+        active_fvg_txt = "Yok"
         
         for i in range(len(df)-30, len(df)-1):
             if i < 2: continue
-            # Bullish FVG
             if low.iloc[i] > high.iloc[i-2]:
                 gap_size = low.iloc[i] - high.iloc[i-2]
-                if gap_size > atr * 0.05: # Çok küçük gapleri ele
+                if gap_size > atr * 0.05:
                     bullish_fvgs.append({'top': low.iloc[i], 'bot': high.iloc[i-2], 'idx': i})
-            # Bearish FVG
             elif high.iloc[i] < low.iloc[i-2]:
                 gap_size = low.iloc[i-2] - high.iloc[i]
                 if gap_size > atr * 0.05:
                     bearish_fvgs.append({'top': low.iloc[i-2], 'bot': high.iloc[i], 'idx': i})
 
+        # --- OB LOGIC (Klasik ICT) ---
+        active_ob_txt = "Yok"
+        lookback = 20
+        start_idx = max(0, len(df) - lookback)
+        
+        if bias == "bullish" or bias == "bullish_retrace":
+            if bullish_fvgs:
+                f = bullish_fvgs[-1]
+                active_fvg_txt = f"Açık FVG var (Destek): {f['bot']:.2f} - {f['top']:.2f}"
+            
+            # Bullish OB (Son düşüş mumu)
+            lowest_idx = df['Low'].iloc[start_idx:].idxmin()
+            if isinstance(lowest_idx, pd.Timestamp): lowest_idx = df.index.get_loc(lowest_idx)
+            for i in range(lowest_idx, max(0, lowest_idx-5), -1):
+                if df['Close'].iloc[i] < df['Open'].iloc[i]: # Kırmızı
+                    active_ob_txt = f"{df['Low'].iloc[i]:.2f} - {df['High'].iloc[i]:.2f} (Talep Bölgesi)"
+                    break
+                    
+        elif bias == "bearish" or bias == "bearish_retrace":
+            if bearish_fvgs:
+                f = bearish_fvgs[-1]
+                active_fvg_txt = f"Açık FVG var (Direnç): {f['bot']:.2f} - {f['top']:.2f}"
+            
+            # Bearish OB (Son yükseliş mumu)
+            highest_idx = df['High'].iloc[start_idx:].idxmax()
+            if isinstance(highest_idx, pd.Timestamp): highest_idx = df.index.get_loc(highest_idx)
+            for i in range(highest_idx, max(0, highest_idx-5), -1):
+                if df['Close'].iloc[i] > df['Open'].iloc[i]: # Yeşil
+                    active_ob_txt = f"{df['Low'].iloc[i]:.2f} - {df['High'].iloc[i]:.2f} (Arz Bölgesi)"
+                    break
+
         # --- SETUP KURULUMU (RİSK / GETİRİ HESABI) ---
         setup_type = "BEKLE"
-        entry_price = 0.0
-        stop_loss = 0.0
-        take_profit = 0.0
-        rr_ratio = 0.0
+        entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
         setup_desc = "Net bir kurulum oluşmadı."
         
-        # LONG SENARYOSU (Bullish Bias + Discount Bölgesi veya Bullish FVG)
+        # LONG SENARYOSU
         if bias in ["bullish", "bullish_retrace"]:
-            # En yakın, fiyatın altındaki Bullish FVG'yi bul (Entry)
-            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02] # Fiyata yakın veya hemen altı
-            
+            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02]
             if valid_fvgs:
-                best_fvg = valid_fvgs[-1] # En güncel olan
-                entry_price = best_fvg['top'] # FVG'nin üst bandından giriş (Aggressive)
-                
-                # Stop: Son Swing Low veya FVG altı (Hangisi daha mantıklıysa)
+                best_fvg = valid_fvgs[-1]
+                entry_price = best_fvg['top']
                 stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
-                
                 take_profit = next_bsl
-                
-                # R/R Hesapla
-                risk = entry_price - stop_loss
-                reward = take_profit - entry_price
-                
+                risk = entry_price - stop_loss; reward = take_profit - entry_price
                 if risk > 0:
                     rr_ratio = reward / risk
                     setup_type = "LONG"
@@ -715,69 +735,74 @@ def calculate_ict_deep_analysis(ticker):
         # SHORT SENARYOSU
         elif bias in ["bearish", "bearish_retrace"]:
             valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price * 0.98]
-            
             if valid_fvgs:
                 best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['bot'] # FVG alt bandından giriş
-                
+                entry_price = best_fvg['bot']
                 stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
                 take_profit = next_ssl
-                
-                risk = stop_loss - entry_price
-                reward = entry_price - take_profit
-                
+                risk = stop_loss - entry_price; reward = entry_price - take_profit
                 if risk > 0:
                     rr_ratio = reward / risk
                     setup_type = "SHORT"
                     setup_desc = "Fiyat Bearish yapıda. Direnç bloğundan ret bekleniyor."
 
-        # Bölge Analizi (Discount/Premium)
+        # Bölge Analizi
         range_high = max(high.tail(60)); range_low = min(low.tail(60))
         range_loc = (curr_price - range_low) / (range_high - range_low)
-        zone = "PREMIUM (Pahalı - Satış Bölgesi)" if range_loc > 0.5 else "DISCOUNT (Ucuz - Alım Bölgesi)"
+        zone = "PREMIUM (Pahalı)" if range_loc > 0.5 else "DISCOUNT (Ucuz)"
 
         return {
-            "status": "OK",
-            "structure": structure,
-            "bias": bias,
-            "zone": zone,
-            "setup_type": setup_type,
-            "entry": entry_price,
-            "stop": stop_loss,
-            "target": take_profit,
-            "rr": rr_ratio,
-            "desc": setup_desc,
-            "last_sl": last_sl,
-            "last_sh": last_sh,
-            "fvg_count_bull": len(bullish_fvgs),
-            "fvg_count_bear": len(bearish_fvgs)
+            "status": "OK", "structure": structure, "bias": bias, "zone": zone,
+            "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, "target": take_profit,
+            "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
+            "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt
         }
-
     except Exception as e:
         return {"status": "Error", "msg": str(e)}
 
 def render_ict_deep_panel(ticker):
     data = calculate_ict_deep_analysis(ticker)
-    
     if data.get("status") == "Error":
         st.error(f"ICT Analiz Hatası: {data.get('msg')}")
         return
     
-    # Renk Kodları
+    # --- 1. ESKİ PANEL (EĞİTİM & HİKAYE) ---
+    struct_desc = "Piyasa kararsız."
+    if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Geri çekilmeler alım fırsatı."
+    elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Yükselişler satış fırsatı."
+    elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi veya sıkışma."
+
+    bias_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#475569"
+    bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
+
+    html_old_panel = f"""
+    <div class="info-card" style="margin-bottom:8px;">
+        <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
+        <div style="background:{bg_color_old}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
+            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
+            <div class="edu-note">{struct_desc}</div>
+            <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
+        </div>
+        <div style="margin-bottom:8px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
+            <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
+            <div class="info-row"><div class="label-long">GAP (FVG):</div><div class="info-val">{data['fvg_txt']}</div></div>
+            <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val">{data['ob_txt']}</div></div>
+        </div>
+    </div>
+    """
+    
+    # --- 2. YENİ PANEL (R/R & SETUP) ---
     if data['setup_type'] == "LONG":
-        header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"
-        icon = "🚀"; bias_text = "BOĞA (BULLISH)"
+        header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
     elif data['setup_type'] == "SHORT":
-        header_color = "#991b1b"; bg_color = "#fef2f2"; border_color = "#ef4444"
-        icon = "🔻"; bias_text = "AYI (BEARISH)"
+        header_color = "#991b1b"; bg_color = "#fef2f2"; border_color = "#ef4444"; icon = "🔻"
     else:
-        header_color = "#475569"; bg_color = "#f8fafc"; border_color = "#cbd5e1"
-        icon = "⏳"; bias_text = "NÖTR / BEKLE"
+        header_color = "#475569"; bg_color = "#f8fafc"; border_color = "#cbd5e1"; icon = "⏳"
 
     rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
     
-    # HTML İçeriği (Hata riskini azaltmak için birleşik yazıldı)
-    html_content = f"""
+    html_new_panel = f"""
     <div class="info-card" style="border: 2px solid {border_color};">
         <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
             <span>{icon} ICT TİCARET KURULUMU</span>
@@ -803,17 +828,13 @@ def render_ict_deep_panel(ticker):
                     <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a;">{rr_display}</div>
                 </div>
             </div>
-            <div style="border-top:1px dashed {border_color}; padding-top:8px; font-size:0.75rem;">
-                <div class="info-row"><div class="label-long">Market Yapısı:</div><div class="info-val">{data['structure']}</div></div>
-                <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{data['zone']}</div></div>
-                <div class="info-row"><div class="label-long">Likidite (BSL):</div><div class="info-val">{data['target']:.2f}</div></div>
-                <div class="info-row"><div class="label-long">Invalidation:</div><div class="info-val">{data['last_sl'] if data['bias']=='bullish' else data['last_sh']:.2f}</div></div>
-            </div>
         </div>
     </div>
     """
-    # HTML Render komutu (En kritik yer burası)
-    st.markdown(html_content, unsafe_allow_html=True)
+    
+    # --- RENDER İŞLEMİ (Sıralı basım) ---
+    st.markdown(html_old_panel, unsafe_allow_html=True)
+    st.markdown(html_new_panel, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
@@ -1185,7 +1206,7 @@ with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
     
-    # --- YENİ ICT PANELİ BURADA ---
+    # --- YENİ ICT PANELİ BURADA (HEM ESKİ HEM YENİ GÖRÜNÜM) ---
     render_ict_deep_panel(st.session_state.ticker)
     
     xray_data = get_deep_xray_data(st.session_state.ticker)
@@ -1243,4 +1264,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
