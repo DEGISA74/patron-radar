@@ -205,7 +205,10 @@ def on_manual_button_click():
     if st.session_state.manual_input_key:
         st.session_state.ticker = st.session_state.manual_input_key.upper()
 
-def on_scan_result_click(symbol): st.session_state.ticker = symbol
+def on_scan_result_click(symbol): 
+    st.session_state.ticker = symbol
+    if "selected_asset_key" in st.session_state:
+        st.session_state.selected_asset_key = symbol
 
 def toggle_watchlist(symbol):
     wl = st.session_state.watchlist
@@ -1112,6 +1115,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
