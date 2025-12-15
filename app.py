@@ -965,18 +965,40 @@ with st.sidebar:
 # 6. ANA SAYFA (MAIN UI)
 # ==============================================================================
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
+
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError: cat_index = 0
-with col_cat: st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+
+with col_cat: 
+    st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+
 with col_ass:
-    opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    try: asset_idx = opts.index(st.session_state.ticker)
+    # Seçili kategorinin listesini al
+    raw_opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
+    
+    # KOPYA OLUŞTURUYORUZ (Orijinal listeyi bozmamak için)
+    current_opts = raw_opts.copy()
+    
+    # DÜZELTME BURADA:
+    # Eğer şu anki hisse (st.session_state.ticker) listede yoksa, listenin başına ekle.
+    # Bu sayede Dropdown şaşırmaz ve 'MO' gibi varsayılan bir değere dönmez.
+    if st.session_state.ticker not in current_opts:
+        current_opts.insert(0, st.session_state.ticker)
+    
+    try: asset_idx = current_opts.index(st.session_state.ticker)
     except ValueError: asset_idx = 0
-    st.selectbox("Varlık Listesi", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
-with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
-with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
+    
+    st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
+
+with col_search_in: 
+    st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
+
+with col_search_btn: 
+    st.button("Ara", on_click=on_manual_button_click)
+
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
+# Prompt oluşturma mantığı (Aynı kalıyor)
 if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
@@ -1030,7 +1052,6 @@ with col_left:
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
-
 with col_right:
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
@@ -1091,6 +1112,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
