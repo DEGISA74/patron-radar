@@ -207,7 +207,6 @@ def on_manual_button_click():
 
 def on_scan_result_click(symbol): 
     st.session_state.ticker = symbol
-    # DÜZELTME: selected_asset_key'i zorla değiştiren kod kaldırıldı.
 
 def toggle_watchlist(symbol):
     wl = st.session_state.watchlist
@@ -929,7 +928,7 @@ def render_synthetic_sentiment_panel(data):
 def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
 # ==============================================================================
-# 5. SIDEBAR UI (DÜZELTME: Butonlardaki hatalı kod temizlendi)
+# 5. SIDEBAR UI (STP BURADAN KALDIRILDI)
 # ==============================================================================
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">PATRONUN TEKNİK BORSA TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
@@ -940,37 +939,9 @@ with st.sidebar:
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
         if st.button("📋 Analiz Metnini Hazırla", type="primary"): st.session_state.generate_prompt = True
-    st.divider()
-    with st.expander("🕵️ Sentiment Ajanı (STP)", expanded=True):
-        st.caption("Fiyat Dengesi (STP) Taraması")
-        if st.button("Kesişimleri Tara", type="secondary"):
-            with st.spinner("Ajan STP izini sürüyor..."):
-                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-                crosses, trends = scan_stp_signals(current_assets)
-                st.session_state.stp_crosses = crosses; st.session_state.stp_trends = trends; st.session_state.stp_scanned = True
-        
-        # --- DÜZELTME: Hatalı selected_asset_key satırları silindi ---
-        if st.session_state.get('stp_scanned'):
-            st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
-            if st.session_state.stp_crosses:
-                with st.container(height=200):
-                    for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-            else: st.info("Yeni kesişim yok.")
-            st.markdown("---")
-            st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
-            if st.session_state.stp_trends:
-                with st.container(height=200):
-                    for item in st.session_state.stp_trends:
-                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-            else: st.info("Trend takibi yok.")
 
 # ==============================================================================
-# 6. ANA SAYFA (MAIN UI) - (LİSTE GÜVENLİK YAMASI KORUNDU)
+# 6. ANA SAYFA (MAIN UI)
 # ==============================================================================
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
@@ -1023,6 +994,36 @@ with col_left:
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
+
+    # --- YENİ YERLEŞİM: SENTIMENT AJANI (STP) ---
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (STP) Taraması</div>', unsafe_allow_html=True)
+    with st.expander("STP Taramasını Başlat", expanded=True):
+        if st.button(f"🔎 {st.session_state.category} İçin STP Tara", type="secondary"):
+             with st.spinner("Ajan STP izini sürüyor..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                crosses, trends = scan_stp_signals(current_assets)
+                st.session_state.stp_crosses = crosses; st.session_state.stp_trends = trends; st.session_state.stp_scanned = True
+        
+        if st.session_state.get('stp_scanned'):
+            c_stp1, c_stp2 = st.columns(2)
+            with c_stp1:
+                st.caption("⚡ FİYATI STP YUKARI KESENLER")
+                if st.session_state.stp_crosses:
+                    for item in st.session_state.stp_crosses:
+                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
+                            st.session_state.ticker = item['Sembol']
+                            st.rerun()
+                else: st.info("Yeni kesişim yok.")
+            with c_stp2:
+                st.caption("✅ 2 GÜNDÜR STP ÜSTÜNDE OLANLAR")
+                if st.session_state.stp_trends:
+                     for item in st.session_state.stp_trends:
+                        if st.button(f"📈 {item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
+                            st.session_state.ticker = item['Sembol']
+                            st.rerun()
+                else: st.info("Trend takibi yok.")
+
+    # --- AJAN 3 (Buradan Devam Ediyor) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Ajan 3: Breakout Tarayıcısı (Top 12)</div>', unsafe_allow_html=True)
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
