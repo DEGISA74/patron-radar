@@ -675,7 +675,8 @@ def render_ict_deep_panel(ticker):
     bias_color = "#16a34a" if "green" in data['bias_color'] else "#dc2626" if "red" in data['bias_color'] else "#475569"
     bg_color = "#f0fdf4" if "green" in data['bias_color'] else "#fef2f2" if "red" in data['bias_color'] else "#f8fafc"
     
-    st.markdown(f"""
+    # HTML Kodunu önce bir değişkene atıyoruz
+    html_content = f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
         
@@ -718,7 +719,11 @@ def render_ict_deep_panel(ticker):
         </div>
         
     </div>
-    """, unsafe_allow_html=True)
+    """
+    
+    # İŞTE ÇÖZÜM BURADA: .replace("\n", " ")
+    # Bu kod HTML içindeki satır atlamalarını siler ve tarayıcının düzgün okumasını sağlar.
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
@@ -1149,3 +1154,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
