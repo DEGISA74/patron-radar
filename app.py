@@ -1008,7 +1008,7 @@ with col_left:
             c_stp1, c_stp2 = st.columns(2)
             with c_stp1:
                 st.markdown("###### ⚡ FİYATI STP YUKARI KESENLER")
-                with st.container(height=300, border=True): # <--- SCROLLBAR EKLENDİ
+                with st.container(height=200, border=True): # <--- SCROLLBAR EKLENDİ
                     if st.session_state.stp_crosses:
                         for item in st.session_state.stp_crosses:
                             if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
@@ -1017,7 +1017,7 @@ with col_left:
                     else: st.info("Yeni kesişim yok.")
             with c_stp2:
                 st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
-                with st.container(height=300, border=True): # <--- SCROLLBAR EKLENDİ
+                with st.container(height=200, border=True): # <--- SCROLLBAR EKLENDİ
                     if st.session_state.stp_trends:
                          for item in st.session_state.stp_trends:
                             if st.button(f"📈 {item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
@@ -1089,7 +1089,7 @@ with col_right:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.scan_data is not None:
-            with st.container(height=100):
+            with st.container(height=200):
                 for i, row in st.session_state.scan_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
@@ -1099,7 +1099,7 @@ with col_right:
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         if st.session_state.radar2_data is not None:
-            with st.container(height=100):
+            with st.container(height=200):
                 for i, row in st.session_state.radar2_data.iterrows():
                     sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
                     if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
@@ -1112,5 +1112,6 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
