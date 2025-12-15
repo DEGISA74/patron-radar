@@ -83,7 +83,7 @@ st.markdown(f"""
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
     
-    /* Eğitim Notu Stili */
+    /* Zengin Eğitim Notu Stili */
     .edu-note {{
         font-size: 0.75rem;
         color: #64748B;
@@ -91,11 +91,7 @@ st.markdown(f"""
         margin-top: 2px;
         margin-bottom: 6px;
         line-height: 1.3;
-        padding-left: 6px;
-        border-left: 2px solid #cbd5e1;
-        background-color: #f8fafc;
-        padding: 4px;
-        border-radius: 0 3px 3px 0;
+        padding-left: 0px;
     }}
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
@@ -346,7 +342,7 @@ def analyze_market_intelligence(asset_list):
             ema20 = close.ewm(span=20, adjust=False).mean()
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
-            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 + 0.0001)
+            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
             hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean()
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -610,7 +606,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT MODÜLÜ (GÜNCELLENDİ: Hem Analiz Hem R/R Hesaplar) ---
+# --- ICT MODÜLÜ (GÜNCELLENDİ: Hem Zengin Analiz Hem R/R Hesaplar) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
     try:
@@ -766,33 +762,65 @@ def render_ict_deep_panel(ticker):
         st.error(f"ICT Analiz Hatası: {data.get('msg')}")
         return
     
-    # --- 1. ESKİ PANEL (EĞİTİM & HİKAYE) ---
+    # --- DİNAMİK AÇIKLAMALAR (TRANSLATOR) ---
     struct_desc = "Piyasa kararsız."
-    if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Geri çekilmeler alım fırsatı."
-    elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Yükselişler satış fırsatı."
-    elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi veya sıkışma."
+    if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
+    elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
+    elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
+
+    energy_desc = "Mum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
+    if "Güçlü" in data['displacement']: energy_desc = "Fiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
+
+    zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu seviyelerden alım yapmayı tercih eder."
+    if "PREMIUM" in data['zone']: zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+
+    fvg_desc = "Dengesizlik Boşluğu: Yani, Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar."
+    if "Yok" in data['fvg_txt']: fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu tespit edilemedi."
+
+    ob_desc = "Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir."
+    
+    liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
 
     bias_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#475569"
     bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
 
+    # --- 1. ESKİ ZENGİN PANEL (RESİMDEKİ GİBİ) ---
     html_old_panel = f"""
     <div class="info-card" style="margin-bottom:8px;">
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
+        
         <div style="background:{bg_color_old}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
             <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
             <div class="edu-note">{struct_desc}</div>
+            
             <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
+            <div class="edu-note">{energy_desc}</div>
         </div>
+
         <div style="margin-bottom:8px;">
             <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
+            
             <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
+            <div class="edu-note">{zone_desc}</div>
+            
             <div class="info-row"><div class="label-long">GAP (FVG):</div><div class="info-val">{data['fvg_txt']}</div></div>
+            <div class="edu-note">{fvg_desc}</div>
+            
             <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val">{data['ob_txt']}</div></div>
+            <div class="edu-note">{ob_desc}</div>
+        </div>
+
+        <div style="background:#f1f5f9; padding:5px; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.8rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.8rem; color:#0f172a;">{data['target']:.2f}</span>
+            </div>
+            <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
         </div>
     </div>
     """
     
-    # --- 2. YENİ PANEL (R/R & SETUP) ---
+    # --- 2. YENİ R/R PANELİ ---
     if data['setup_type'] == "LONG":
         header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
     elif data['setup_type'] == "SHORT":
@@ -803,7 +831,7 @@ def render_ict_deep_panel(ticker):
     rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
     
     html_new_panel = f"""
-    <div class="info-card" style="border: 2px solid {border_color};">
+    <div class="info-card" style="border: 2px solid {border_color}; margin-top:5px;">
         <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
             <span>{icon} ICT TİCARET KURULUMU</span>
             <span style="font-family:'JetBrains Mono'; background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px;">{data['setup_type']}</span>
@@ -832,7 +860,6 @@ def render_ict_deep_panel(ticker):
     </div>
     """
     
-    # --- RENDER İŞLEMİ (Sıralı basım) ---
     st.markdown(html_old_panel, unsafe_allow_html=True)
     st.markdown(html_new_panel, unsafe_allow_html=True)
 
