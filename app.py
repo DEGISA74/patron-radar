@@ -953,7 +953,7 @@ def render_detail_card_advanced(ticker):
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="info-card" style="margin-bottom:12px;"><div class="info-header">🌊 Momentum & STP: {display_ticker}</div></div>""", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
     with c1:
         base = alt.Chart(data).encode(x=x_axis)
@@ -1155,4 +1155,5 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
