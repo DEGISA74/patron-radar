@@ -785,7 +785,17 @@ def render_ict_deep_panel(ticker):
     bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
 
     # --- 1. ESKİ ZENGİN PANEL (RESİMDEKİ GİBİ) ---
-    html_old_panel = f"""
+    # --- 2. YENİ R/R PANELİ ---
+    if data['setup_type'] == "LONG":
+        header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
+    elif data['setup_type'] == "SHORT":
+        header_color = "#991b1b"; bg_color = "#fef2f2"; border_color = "#ef4444"; icon = "🔻"
+    else:
+        header_color = "#475569"; bg_color = "#f8fafc"; border_color = "#cbd5e1"; icon = "⏳"
+
+    rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
+    
+    html_content = f"""
     <div class="info-card" style="margin-bottom:8px;">
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
         
@@ -818,19 +828,7 @@ def render_ict_deep_panel(ticker):
             <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
         </div>
     </div>
-    """
-    
-    # --- 2. YENİ R/R PANELİ ---
-    if data['setup_type'] == "LONG":
-        header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
-    elif data['setup_type'] == "SHORT":
-        header_color = "#991b1b"; bg_color = "#fef2f2"; border_color = "#ef4444"; icon = "🔻"
-    else:
-        header_color = "#475569"; bg_color = "#f8fafc"; border_color = "#cbd5e1"; icon = "⏳"
 
-    rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
-    
-    html_new_panel = f"""
     <div class="info-card" style="border: 2px solid {border_color}; margin-top:5px;">
         <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
             <span>{icon} ICT TİCARET KURULUMU</span>
@@ -860,8 +858,7 @@ def render_ict_deep_panel(ticker):
     </div>
     """
     
-    st.markdown(html_old_panel, unsafe_allow_html=True)
-    st.markdown(html_new_panel, unsafe_allow_html=True)
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
