@@ -824,7 +824,7 @@ def render_ict_panel(analysis):
         <div style="font-size:0.75rem; color:#475569; margin-bottom:8px; font-style:italic; line-height:1.4;">{struct_desc}</div>
         <div style="margin: 8px 0; background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #f1f5f9;">
             <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
-                <span>Discount (ALIM)</span><span>EQ</span><span>Premium (SATIM)</span>
+                <span>Discount (UCUZ)</span><span>EQ</span><span>Premium (PAHALI)</span>
             </div>
             <div class="ict-bar-container">
                 <div class="ict-bar-fill" style="width:{bar_width}%; background: linear-gradient(90deg, #22c55e 0%, #cbd5e1 50%, #ef4444 100%);"></div>
@@ -1179,3 +1179,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
