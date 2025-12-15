@@ -773,8 +773,7 @@ def render_ict_panel(analysis):
     pos_pct = analysis['range_pos_pct']
     bar_width = min(max(pos_pct, 5), 95)
     
-    # --- GELİŞMİŞ AÇIKLAMALAR (YENİ EKLENEN KISIM) ---
-    # 1. Market Yapısı Açıklaması
+    # --- AÇIKLAMA METİNLERİ ---
     struct_desc = "Piyasa kararsız veya yatay bantta hareket ediyor."
     if analysis['bias_color'] == "green":
         struct_desc = "Market Yapısı (MS) yukarı kırıldı. Kurumsal alıcılar kontrolü elinde tutuyor, geri çekilmeler alım fırsatı olabilir."
@@ -783,7 +782,6 @@ def render_ict_panel(analysis):
     elif analysis['bias_color'] == "blue":
         struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir."
 
-    # 2. Bölge (PD Array) Açıklaması
     zone_desc = "Fiyat denge noktasında, yön tayini bekleniyor."
     if "Discount" in analysis['pos_label']:
         zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu bölgede alım yapmayı sever."
@@ -793,43 +791,24 @@ def render_ict_panel(analysis):
     if analysis['ote_level']:
         zone_desc += " <br><strong>🎯 OTE (Optimal Trade Entry):</strong> Fibonacci düzeltmesinin en ideal dönüş seviyesindeyiz."
 
-    # 3. Golden Badge (Sinyal Kartı)
+    # --- BADGE HTML OLUŞTURMA (Tek Satır Haline Getirildi) ---
     golden_badge = ""
     if analysis['is_golden']: 
-        golden_badge = f"""
-        <div style='margin-top:8px; background:#f0fdf4; border:1px solid #bbf7d0; padding:8px; border-radius:6px;'>
-            <div style="color:#15803d; font-weight:700; font-size:0.8rem; text-align:center;">✨ {analysis['golden_text']}</div>
-            <div style="color:#14532d; font-size:0.65rem; margin-top:4px; line-height:1.2;">
-                Mükemmel kurulum: Fiyat trend yönünde, ucuzluk bölgesine geri çekildi ve bir dengesizlik (FVG) ile destekleniyor.
-            </div>
-        </div>"""
+        golden_badge = f"""<div style='margin-top:8px; background:#f0fdf4; border:1px solid #bbf7d0; padding:8px; border-radius:6px;'><div style="color:#15803d; font-weight:700; font-size:0.8rem; text-align:center;">✨ {analysis['golden_text']}</div><div style="color:#14532d; font-size:0.65rem; margin-top:4px; line-height:1.2;">Mükemmel kurulum: Fiyat trend yönünde, ucuzluk bölgesine geri çekildi ve bir dengesizlik (FVG) ile destekleniyor.</div></div>"""
     elif analysis['ote_level']: 
-        golden_badge = f"""
-        <div style='margin-top:8px; background:#eff6ff; border:1px solid #bfdbfe; padding:8px; border-radius:6px;'>
-            <div style="color:#1e40af; font-weight:700; font-size:0.8rem; text-align:center;">🎯 {analysis['golden_text']}</div>
-            <div style="color:#1e3a8a; font-size:0.65rem; margin-top:4px; line-height:1.2;">
-                Karar Anı: Fiyat, geri dönüşler için matematiksel olarak en uygun seviyede (Fib 0.62 - 0.79). Dönüş formasyonu ara.
-            </div>
-        </div>"""
+        golden_badge = f"""<div style='margin-top:8px; background:#eff6ff; border:1px solid #bfdbfe; padding:8px; border-radius:6px;'><div style="color:#1e40af; font-weight:700; font-size:0.8rem; text-align:center;">🎯 {analysis['golden_text']}</div><div style="color:#1e3a8a; font-size:0.65rem; margin-top:4px; line-height:1.2;">Karar Anı: Fiyat, geri dönüşler için matematiksel olarak en uygun seviyede (Fib 0.62 - 0.79). Dönüş formasyonu ara.</div></div>"""
     else: 
-        golden_badge = f"""
-        <div style='margin-top:8px; background:#f8fafc; border:1px solid #e2e8f0; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem; color:#64748B;'>
-            {analysis['golden_text']}
-        </div>"""
+        golden_badge = f"""<div style='margin-top:8px; background:#f8fafc; border:1px solid #e2e8f0; padding:6px; border-radius:6px; text-align:center; font-size:0.75rem; color:#64748B;'>{analysis['golden_text']}</div>"""
 
-    # --- HTML RENDER ---
-    st.markdown(f"""
+    # --- ANA HTML (Girintisiz ve Temiz) ---
+    html_content = f"""
     <div class="info-card">
         <div class="info-header">🧠 ICT Smart Money Concepts: {display_ticker}</div>
-        
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
             <span style="font-size:0.65rem; color:#64748B; font-weight:600;">MARKET YAPISI</span>
             <span style="font-size:0.7rem; font-weight:700; color:{s_color};">{analysis['structure']}</span>
         </div>
-        <div style="font-size:0.6rem; color:#475569; margin-bottom:8px; font-style:italic; line-height:1.1;">
-            {struct_desc}
-        </div>
-
+        <div style="font-size:0.6rem; color:#475569; margin-bottom:8px; font-style:italic; line-height:1.1;">{struct_desc}</div>
         <div style="margin: 8px 0; background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #f1f5f9;">
             <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#64748B; margin-bottom:2px;">
                 <span>Discount (ALIM)</span><span>EQ</span><span>Premium (SATIM)</span>
@@ -840,36 +819,27 @@ def render_ict_panel(analysis):
             <div style="text-align:center; font-size:0.7rem; font-weight:600; color:#0f172a; margin-top:2px;">
                 {analysis['pos_label']} <span style="color:#64748B; font-size:0.6rem;">(%{pos_pct:.1f})</span>
             </div>
-            <div style="font-size:0.6rem; color:#475569; margin-top:2px; text-align:center; line-height:1.1;">
-                {zone_desc}
-            </div>
+            <div style="font-size:0.6rem; color:#475569; margin-top:2px; text-align:center; line-height:1.1;">{zone_desc}</div>
         </div>
-
         <div style="margin-top:8px;">
             <div style="margin-bottom:4px;">
                 <div class="info-row"><div class="label-long">FVG Durumu:</div><div class="info-val" style="color:{'#166534' if analysis['fvg_color']=='green' else '#991b1b' if analysis['fvg_color']=='red' else '#64748B'}; font-weight:600;">{analysis['fvg']}</div></div>
-                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">
-                    Dengesizlik Boşluğu: Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar.
-                </div>
+                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">Dengesizlik Boşluğu: Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar.</div>
             </div>
-            
             <div style="margin-bottom:4px;">
                 <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val" style="color:{'#166534' if analysis['ob_color']=='green' else '#991b1b' if analysis['ob_color']=='red' else '#64748B'}; font-weight:600;">{analysis['ob']}</div></div>
-                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">
-                    Order Block: Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir.
-                </div>
+                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">Order Block: Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir.</div>
             </div>
-
             <div>
                 <div class="info-row"><div class="label-long">🧲 Hedef Likidite:</div><div class="info-val">{analysis['liquidity']}</div></div>
-                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">
-                    Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye.
-                </div>
+                <div style="font-size:0.6rem; color:#64748B; padding-left:105px; line-height:1;">Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye.</div>
             </div>
         </div>
-        
         {golden_badge}
-    </div>""", unsafe_allow_html=True)
+    </div>
+    """
+    # HTML stringini temizle
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_detail_card_advanced(ticker):
     # --- 1. AÇIKLAMA TANIMLARI ---
@@ -1185,3 +1155,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
