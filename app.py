@@ -205,7 +205,10 @@ def on_manual_button_click():
     if st.session_state.manual_input_key:
         st.session_state.ticker = st.session_state.manual_input_key.upper()
 
-def on_scan_result_click(symbol): st.session_state.ticker = symbol
+def on_scan_result_click(symbol): 
+    st.session_state.ticker = symbol
+    # DÜZELTME: Kutu beynini de eşitliyoruz
+    st.session_state.selected_asset_key = symbol
 
 def toggle_watchlist(symbol):
     wl = st.session_state.watchlist
@@ -927,7 +930,7 @@ def render_synthetic_sentiment_panel(data):
 def render_tradingview_widget(ticker, height=400): return None # Kaldırıldı
 
 # ==============================================================================
-# 5. SIDEBAR UI
+# 5. SIDEBAR UI (DÜZELTİLEN KISIM BURADA BAŞLIYOR)
 # ==============================================================================
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">PATRONUN TEKNİK BORSA TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
@@ -946,33 +949,54 @@ with st.sidebar:
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
                 crosses, trends = scan_stp_signals(current_assets)
                 st.session_state.stp_crosses = crosses; st.session_state.stp_trends = trends; st.session_state.stp_scanned = True
+        
+        # --- DÜZELTME BURADA YAPILDI (İKİ BEYİN EŞİTLEMESİ) ---
         if st.session_state.get('stp_scanned'):
             st.markdown("###### ⚡ FİYATI STP YUKARI KESEN")
             if st.session_state.stp_crosses:
                 with st.container(height=200):
                     for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): st.session_state.ticker = item['Sembol']; st.rerun()
+                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}"): 
+                            st.session_state.ticker = item['Sembol']
+                            # DÜZELTME: Kutu beynini de eşitliyoruz
+                            st.session_state.selected_asset_key = item['Sembol']
+                            st.rerun()
             else: st.info("Yeni kesişim yok.")
             st.markdown("---")
             st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
             if st.session_state.stp_trends:
                 with st.container(height=200):
                     for item in st.session_state.stp_trends:
-                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): st.session_state.ticker = item['Sembol']; st.rerun()
+                        if st.button(f"{item['Sembol']} | %{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}"): 
+                            st.session_state.ticker = item['Sembol']
+                            # DÜZELTME: Kutu beynini de eşitliyoruz
+                            st.session_state.selected_asset_key = item['Sembol']
+                            st.rerun()
             else: st.info("Trend takibi yok.")
 
 # ==============================================================================
-# 6. ANA SAYFA (MAIN UI)
+# 6. ANA SAYFA (MAIN UI) - (LİSTE GÜVENLİK YAMASI EKLENDİ)
 # ==============================================================================
 col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError: cat_index = 0
 with col_cat: st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+
 with col_ass:
-    opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY])
-    try: asset_idx = opts.index(st.session_state.ticker)
-    except ValueError: asset_idx = 0
-    st.selectbox("Varlık Listesi", opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
+    # --- DÜZELTME: Kutu senkronizasyonu için Güvenlik Yaması ---
+    # Eğer gelen hisse listede yoksa, geçici olarak ekliyoruz ki hata vermesin
+    current_opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY]).copy()
+    active_ticker = st.session_state.ticker
+    
+    if active_ticker not in current_opts:
+        current_opts.insert(0, active_ticker)
+        asset_idx = 0
+    else:
+        try: asset_idx = current_opts.index(active_ticker)
+        except ValueError: asset_idx = 0
+    
+    st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
+
 with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
 with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
@@ -1038,7 +1062,7 @@ with col_right:
     render_ict_panel(ict_data)
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
-   
+    
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     with st.container(height=250):
         df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
@@ -1091,4 +1115,3 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
-
