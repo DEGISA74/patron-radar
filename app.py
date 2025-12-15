@@ -85,7 +85,7 @@ st.markdown(f"""
     
     /* Yeni Eğitim Notu Stili (Küçük ama okunaklı) */
     .edu-note {{
-        font-size: 0.65rem;
+        font-size: 0.75rem;
         color: #64748B;
         font-style: italic;
         margin-top: 2px;
@@ -513,7 +513,7 @@ def calculate_sentiment_score(ticker):
         if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
         total = score_mom + score_vol + score_tr + score_vola + score_str
         bars = int(total / 5); bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
-        def fmt(lst): return f"<span style='font-size:0.65rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
+        def fmt(lst): return f"<span style='font-size:0.75rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
         return {
             "total": total, "bar": bar_str, "mom": f"{score_mom}/30 {fmt(reasons_mom)}",
             "vol": f"{score_vol}/25 {fmt(reasons_vol)}", "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
@@ -989,13 +989,13 @@ def render_detail_card_advanced(ticker):
         <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
             <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
-            <div class="tech-grid" style="font-size:0.65rem;">
+            <div class="tech-grid" style="font-size:0.75rem;">
                 {r1_html}
             </div>
         </div>
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
             <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
-            <div class="tech-grid" style="font-size:0.65rem;">
+            <div class="tech-grid" style="font-size:0.75rem;">
                 {r2_html}
             </div>
         </div>
@@ -1216,4 +1216,5 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
