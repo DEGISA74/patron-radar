@@ -776,18 +776,15 @@ def render_ict_deep_panel(ticker):
 
     rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
     
+    # HTML İçeriği (Hata riskini azaltmak için birleşik yazıldı)
     html_content = f"""
     <div class="info-card" style="border: 2px solid {border_color};">
         <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
             <span>{icon} ICT TİCARET KURULUMU</span>
             <span style="font-family:'JetBrains Mono'; background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px;">{data['setup_type']}</span>
         </div>
-        
         <div style="padding:10px; background-color:{bg_color};">
-            <div style="font-size:0.85rem; margin-bottom:10px; font-style:italic; color:#374151;">
-                "{data['desc']}"
-            </div>
-            
+            <div style="font-size:0.85rem; margin-bottom:10px; font-style:italic; color:#374151;">"{data['desc']}"</div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
                 <div style="background:white; padding:5px; border:1px solid #e5e7eb; border-radius:4px; text-align:center;">
                     <div style="font-size:0.7rem; color:#6b7280; font-weight:600;">GİRİŞ (ENTRY)</div>
@@ -806,7 +803,6 @@ def render_ict_deep_panel(ticker):
                     <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a;">{rr_display}</div>
                 </div>
             </div>
-
             <div style="border-top:1px dashed {border_color}; padding-top:8px; font-size:0.75rem;">
                 <div class="info-row"><div class="label-long">Market Yapısı:</div><div class="info-val">{data['structure']}</div></div>
                 <div class="info-row"><div class="label-long">Konum:</div><div class="info-val">{data['zone']}</div></div>
@@ -816,6 +812,7 @@ def render_ict_deep_panel(ticker):
         </div>
     </div>
     """
+    # HTML Render komutu (En kritik yer burası)
     st.markdown(html_content, unsafe_allow_html=True)
 
 @st.cache_data(ttl=600)
@@ -1246,3 +1243,4 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
