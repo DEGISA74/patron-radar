@@ -784,9 +784,9 @@ def render_ict_panel(analysis):
 
     zone_desc = "Fiyat denge noktasında, yön tayini bekleniyor."
     if "Discount" in analysis['pos_label']:
-        zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu bölgede alım yapmayı sever."
+        zone_desc = "Fiyat 'Ucuzluk' bölgesinde. Kurumsal yatırımcılar bu bölgede alım yapmayı sever."
     elif "Premium" in analysis['pos_label']:
-        zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+        zone_desc = "Fiyat 'Pahalılık' bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
     
     if analysis['ote_level']:
         zone_desc += " <br><strong>🎯 OTE (Optimal Trade Entry):</strong> Fibonacci düzeltmesinin en ideal dönüş seviyesindeyiz."
@@ -1155,6 +1155,7 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
 
 
