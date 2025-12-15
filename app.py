@@ -14,7 +14,7 @@ import re
 import altair as alt 
 
 # ==============================================================================
-# 1. AYARLAR VE STİL (GÜNCELLENDİ: DAHA BÜYÜK FONTLAR)
+# 1. AYARLAR VE STİL (ESKİ KOMPAKT BOYUTLARA DÖNÜLDÜ)
 # ==============================================================================
 st.set_page_config(
     page_title="PATRONUN TEKNİK BORSA TERMİNALİ", 
@@ -43,78 +43,63 @@ st.markdown(f"""
     
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
-    /* İSTATİSTİK KUTULARI */
     .stat-box-small {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; padding: 6px 8px; text-align: center; margin-bottom: 2px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        border-radius: 4px; padding: 2px 6px; text-align: center; margin-bottom: 1px;
+        box-shadow: 0 1px 1px rgba(0,0,0,0.03);
     }}
-    .stat-label-small {{ font-size: 0.65rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 600; }}
-    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 0; }}
-    .stat-delta-small {{ font-size: 0.8rem; margin-left: 5px; }}
+    .stat-label-small {{ font-size: 0.5rem; color: #64748B; text-transform: uppercase; margin: 0; }}
+    .stat-value-small {{ font-size: 0.9rem; font-weight: 600; color: {current_theme['text']}; margin: 0; }}
+    .stat-delta-small {{ font-size: 0.7rem; margin-left: 5px; }}
     
-    hr {{ margin-top: 0.4rem; margin-bottom: 0.8rem; }}
+    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
     .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
     
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
-    
-    /* HABER KARTLARI */
-    .news-card {{ background: {current_theme['news_bg']}; border-left: 4px solid {current_theme['border']}; padding: 8px; margin-bottom: 8px; font-size: 0.85rem; }}
+    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
     button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
     
     .stButton button {{ 
         width: 100%; border-radius: 4px;
-        font-size: 0.8rem; /* Buton yazıları büyüdü */
-        padding: 0.3rem 0.5rem;
+        font-size: 0.75rem;
+        padding: 0.1rem 0.4rem;
     }}
     
-    /* ICT PANELİ STİLLERİ (GÜNCELLENDİ) */
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 8px; 
-        padding: 12px; /* İç boşluk arttı */
-        margin-top: 8px; 
-        margin-bottom: 8px;
+        border-radius: 6px; 
+        padding: 6px;
+        margin-top: 5px; 
+        margin-bottom: 5px;
+        font-size: 0.7rem;
         font-family: 'Inter', sans-serif;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.03);
     }}
-    .info-header {{ 
-        font-weight: 800; 
-        color: #1e3a8a; 
-        border-bottom: 2px solid {current_theme['border']}; 
-        padding-bottom: 6px; 
-        margin-bottom: 10px; 
-        font-size: 1.1rem; /* Başlık büyüdü */
-    }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 5px; }}
+    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
     
-    .label-short {{ font-weight: 600; color: #64748B; width: 90px; flex-shrink: 0; font-size: 0.85rem; }}
-    .label-long {{ font-weight: 700; color: #475569; width: 110px; flex-shrink: 0; font-size: 0.9rem; }} 
+    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
     
-    .info-val {{ 
-        color: {current_theme['text']}; 
-        font-family: 'JetBrains Mono', monospace; 
-        font-size: 0.95rem; /* Değerler büyüdü */
-        font-weight: 500;
-    }}
+    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }}
     
+    /* Yeni Eğitim Notu Stili (Küçük ama okunaklı) */
     .edu-note {{
-        font-size: 0.8rem; /* Açıklama notları büyüdü (0.65 -> 0.8) */
+        font-size: 0.65rem;
         color: #64748B;
         font-style: italic;
-        margin-top: 3px;
-        margin-bottom: 10px;
-        line-height: 1.4;
-        padding-left: 8px;
-        border-left: 3px solid #cbd5e1;
-        background-color: #f8fafc; /* Hafif zemin eklendi */
-        padding: 6px;
-        border-radius: 0 4px 4px 0;
+        margin-top: 2px;
+        margin-bottom: 6px;
+        line-height: 1.3;
+        padding-left: 6px;
+        border-left: 2px solid #cbd5e1;
+        background-color: #f8fafc;
+        padding: 4px;
+        border-radius: 0 3px 3px 0;
     }}
 
-    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
-    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+    .tech-item {{ display: flex; align-items: center; font-size: 0.7rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -667,33 +652,25 @@ def calculate_ict_deep_analysis(ticker):
 
         # --- GÜNCELLENMİŞ OB MANTIĞI (TEST EDİLENLERİ DE GÖSTER) ---
         active_ob = "Yok"
-        # Basit bir yaklaşımla son 20 mum içindeki en belirgin zıt mumu bulalım
         lookback = 20
         start_idx = max(0, len(df) - lookback)
         
         if bias == "bullish" or bias == "bullish_retrace":
-            # Bullish OB arıyoruz (Yükseliş öncesi son kırmızı mum)
-            # Basit heuristik: Son swing low civarındaki kırmızı mum
             lowest_idx = df['Low'].iloc[start_idx:].idxmin()
-            if isinstance(lowest_idx, pd.Timestamp): # Index datetime ise integer'a çevir
-                lowest_idx = df.index.get_loc(lowest_idx)
+            if isinstance(lowest_idx, pd.Timestamp): lowest_idx = df.index.get_loc(lowest_idx)
             
-            # O dip noktasından veya öncesinden bir kırmızı mum (Close < Open)
             found_ob = False
             for i in range(lowest_idx, max(0, lowest_idx-5), -1):
                 if df['Close'].iloc[i] < df['Open'].iloc[i]: # Kırmızı Mum
                     ob_high = df['High'].iloc[i]; ob_low = df['Low'].iloc[i]
-                    # Test durumu kontrolü
                     is_tested = any(df['Low'].iloc[i+1:] <= ob_high)
-                    status = "Test Edildi (Mitigated)" if is_tested else "Taze (Fresh)"
+                    status = "Test Edildi" if is_tested else "Taze"
                     active_ob = f"{ob_low:.2f} - {ob_high:.2f} ({status})"
                     found_ob = True
                     break
-            if not found_ob: # Bulamazsa son swing low'u referans al
-                 active_ob = f"{low.iloc[lowest_idx]:.2f} (Swing Low Destek)"
+            if not found_ob: active_ob = f"{low.iloc[lowest_idx]:.2f} (Swing Low)"
 
         elif bias == "bearish" or bias == "bearish_retrace":
-            # Bearish OB arıyoruz (Düşüş öncesi son yeşil mum)
             highest_idx = df['High'].iloc[start_idx:].idxmax()
             if isinstance(highest_idx, pd.Timestamp): highest_idx = df.index.get_loc(highest_idx)
             
@@ -701,19 +678,17 @@ def calculate_ict_deep_analysis(ticker):
             for i in range(highest_idx, max(0, highest_idx-5), -1):
                 if df['Close'].iloc[i] > df['Open'].iloc[i]: # Yeşil Mum
                     ob_high = df['High'].iloc[i]; ob_low = df['Low'].iloc[i]
-                    # Test durumu kontrolü
                     is_tested = any(df['High'].iloc[i+1:] >= ob_low)
-                    status = "Test Edildi (Mitigated)" if is_tested else "Taze (Fresh)"
+                    status = "Test Edildi" if is_tested else "Taze"
                     active_ob = f"{ob_low:.2f} - {ob_high:.2f} ({status})"
                     found_ob = True
                     break
-            if not found_ob:
-                active_ob = f"{high.iloc[highest_idx]:.2f} (Swing High Direnç)"
+            if not found_ob: active_ob = f"{high.iloc[highest_idx]:.2f} (Swing High)"
         
         range_high = max(high.tail(60))
         range_low = min(low.tail(60))
         range_loc = (curr_price - range_low) / (range_high - range_low)
-        zone = "PREMIUM (Pahalı - Satış Bölgesi)" if range_loc > 0.5 else "DISCOUNT (Ucuz - Alış Bölgesi)"
+        zone = "PREMIUM (Pahalı)" if range_loc > 0.5 else "DISCOUNT (Ucuz)"
         ote = "OTE (Optimal Trade Entry)" if 0.618 <= range_loc <= 0.79 or 0.21 <= range_loc <= 0.382 else ""
 
         return {
@@ -780,7 +755,7 @@ def render_ict_deep_panel(ticker):
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
         
         <div style="background:{bg_color}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
-            <div style="font-weight:700; color:{bias_color}; font-size:1.0rem; margin-bottom:2px;">{data['structure']}</div>
+            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
             <div class="edu-note">{struct_desc}</div>
             
             <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
@@ -788,7 +763,7 @@ def render_ict_deep_panel(ticker):
         </div>
 
         <div style="margin-bottom:8px;">
-            <div style="font-size:0.85rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
+            <div style="font-size:0.7rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
             
             <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
             <div class="edu-note">{zone_desc}</div>
@@ -802,8 +777,8 @@ def render_ict_deep_panel(ticker):
 
         <div style="background:#f1f5f9; padding:5px; border-radius:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:0.85rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
-                <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:1.0rem; color:#0f172a;">{data['target']}</span>
+                <span style="font-size:0.7rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.8rem; color:#0f172a;">{data['target']}</span>
             </div>
             <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
         </div>
@@ -908,7 +883,7 @@ def render_sentiment_card(sent):
     <div class="info-card">
         <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:1.0rem;">SKOR: {sent['total']}/100 {color}</div>
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
         </div>
         <div style="font-family:'Courier New'; font-size:0.7rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
         <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
@@ -1008,19 +983,19 @@ def render_detail_card_advanced(ticker):
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
-            <div style="font-size:0.95rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
-            <div style="font-size:0.8rem; color:#64748B;">{ma_vals}</div>
+            <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
+            <div style="font-size:0.7rem; color:#64748B;">{ma_vals}</div>
         </div>
-        <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
+        <div style="font-size:0.7rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.85rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
-            <div class="tech-grid" style="font-size:0.8rem;">
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
+            <div class="tech-grid" style="font-size:0.65rem;">
                 {r1_html}
             </div>
         </div>
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
-            <div style="font-weight:700; color:#15803d; font-size:0.85rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
-            <div class="tech-grid" style="font-size:0.8rem;">
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
+            <div class="tech-grid" style="font-size:0.65rem;">
                 {r2_html}
             </div>
         </div>
