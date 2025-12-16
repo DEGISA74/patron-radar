@@ -198,8 +198,12 @@ raw_nasdaq = [
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
-# --- BIST 100 LİSTESİ (TEK PARÇA VE ALFABETİK) ---
-final_bist100_list = [
+# --- BIST 100 LİSTESİ (ENDEKSLER + HİSSELER) ---
+# 1. Önce Endeksler (Priority)
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XHOLD.IS", "XBANK.IS"]
+
+# 2. Sonra Hisseler (Alfabetik)
+raw_bist_stocks = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", 
     "AKSEN.IS", "ALARK.IS", "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ASELS.IS", 
     "ASTOR.IS", "BERA.IS", "BIMAS.IS", "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", 
@@ -215,7 +219,10 @@ final_bist100_list = [
     "TSKB.IS", "TTKOM.IS", "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "TURSG.IS", "ULUUN.IS", "VAKBNK.IS", 
     "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
 ]
-final_bist100_list.sort() # Garanti olsun diye tekrar sıralıyoruz
+raw_bist_stocks.sort()
+
+# 3. Birleştir
+final_bist100_list = priority_bist_indices + raw_bist_stocks
 
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": final_sp500_list,
@@ -1097,7 +1104,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#b45309")), use_container_width=True)
 
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -1306,4 +1313,3 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
