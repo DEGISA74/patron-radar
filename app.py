@@ -874,40 +874,41 @@ def calculate_synthetic_sentiment(ticker):
         df = df.dropna()
         
         close = df['Close']
-        open_price = df['Open'] # Açılış fiyatını ekledik
+        open_price = df['Open']
         high = df['High']
         low = df['Low']
         
+        # Hacim verisi yoksa yapay 1 üret
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # ---------------------------------------------------------
-        # YENİ FORMÜL: Mum Gövde Gücü (Candle Body Strength)
+        # HİBRİT FORMÜL: Trend + Mum İçi Güç
         # ---------------------------------------------------------
         
-        # Mantık: 
-        # Eğer (Close > Open) ise alıcılar baskındır -> Pozitif
-        # Eğer (Close < Open) ise satıcılar baskındır -> Negatif
-        # Mumun gövdesi (Body) ne kadar büyükse, sinyal o kadar güçlüdür.
+        # 1. Trend Bileşeni (Düne göre ne kadar arttı/azaldı?)
+        # Bu, "Gap"leri yakalar. Fiyat 38'den 40'a atladıysa burası çok pozitiftir.
+        trend_component = close - close.shift(1)
         
-        # 1. Mumun Toplam Boyu (High - Low)
-        range_len = high - low
+        # 2. Gün İçi Bileşen (Açılışa göre ne yaptı?)
+        # Bu, "Satış Baskısını" yakalar. 40'tan açıp 39'a düştüyse burası negatiftir.
+        intraday_component = close - open_price
         
-        # 2. Mumun Gövde Değişimi (Close - Open)
-        body_change = close - open_price
+        # 3. İkisinin Toplamı (Bileşik Güç)
+        # Örnek: Gap ile fırladı (+5 puan) ama kırmızı mum kapattı (-1 puan) -> Sonuç +4 (Hala Mavi)
+        # Örnek: Az arttı (+0.5 puan) ama tepeden çakıldı (-1.5 puan) -> Sonuç -1 (Kırmızı - 15 Aralık Vakası)
+        combined_force = trend_component + intraday_component
         
-        # 3. Güç Oranı: Gövde / Toplam Boy
-        # Örnek: Tamamen dolu bir yeşil mum +1, Doji 0, Tam dolu kırmızı -1 verir.
-        # Sıfıra bölme hatasını engellemek için np.where kullanıyoruz
-        strength = np.where(range_len == 0, 0, body_change / range_len)
+        # 4. Hacimle Ağırlıklandır
+        raw_sentiment = combined_force * volume
         
-        # 4. Hacimle Çarp (Hacimli yeşil mum en büyük puanı alır)
-        raw_sentiment = strength * volume
-        
-        # 5. Yumuşatma (Smoothing)
-        # Orijinal grafik çok oynak değil, bu yüzden 3 veya 5 günlük EMA ile yumuşatıyoruz.
-        mf_smooth = pd.Series(raw_sentiment).ewm(span=3, adjust=False).mean()
+        # 5. NaN değerleri temizle (İlk gün verisi olmadığı için)
+        raw_sentiment = raw_sentiment.fillna(0)
 
-        # Fiyat çizgisi
+        # 6. Yumuşatma (Smoothing)
+        # Orijinal grafik biraz daha "tok" duruyor, 5 günlük üssel ortalama (EMA) ile gürültüyü alıyoruz.
+        mf_smooth = raw_sentiment.ewm(span=5, adjust=False).mean()
+
+        # Fiyat çizgisi (Typical Price)
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
@@ -926,7 +927,7 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
 
     except Exception as e:
-        print(f"Hata: {e}")
+        st.error(f"Hesaplama hatası: {e}")
         return None
 
 @st.cache_data(ttl=600)
@@ -1344,6 +1345,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
