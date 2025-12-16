@@ -866,68 +866,37 @@ def render_ict_deep_panel(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # 1. Veri Çekme
-        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
-        
-        # 2. Veri Temizliği
+        df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): 
-            df.columns = df.columns.get_level_values(0)
-            
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if 'Close' not in df.columns: return None
-        
-        # Hacim 0 ise 1 yap
-        if 'Volume' not in df.columns: df['Volume'] = 1
-        else: df['Volume'] = df['Volume'].replace(0, 1)
-
         df = df.dropna()
+        close = df['Close']; high = df['High']; low = df['Low']
+        
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        
+        delta = close.diff()
+        force_index = delta * volume
+        
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
-        # 3. YENİ HESAPLAMA: VOLUME-WEIGHTED MACD MOMENTUM
-        # Referans görseldeki "Dalgalı" yapıyı taklit etmek için Oscillator kullanıyoruz.
-        
-        # A. Klasik MACD Hesaplaması (Trend Momentumunu yakalar)
-        close = df['Close']
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-        macd_line = ema12 - ema26
-        signal_line = macd_line.ewm(span=9, adjust=False).mean()
-        
-        # B. Histogram (Momentum Gücü)
-        # Bu veri pozitifse Trend Güçlü, negatifse Trend Zayıf demektir.
-        macd_hist = macd_line - signal_line
-        
-        # C. Hacim Ağırlıklandırma (ICT Dokunuşu)
-        # Histogramı, o günkü hacmin ortalamaya oranıyla çarpıyoruz.
-        # Böylece "Hacimsiz Trend" cılız kalıyor, "Hacimli Trend" parlıyor.
-        vol_ma = df['Volume'].rolling(window=20).mean()
-        rvol = df['Volume'] / vol_ma
-        
-        # D. Nihai Sentiment Skoru
-        # Histogram * RVOL
-        # Sonuç: Zikzak değil, dalga şeklinde ilerleyen barlar.
-        sentiment_score = macd_hist * rvol
-
-        # 4. STP Hesabı (Sarı Çizgi)
-        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+        typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # 5. Grafik Verisi
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': sentiment_score.values,  # YENİ DALGALI SKOR
-            'STP': stp.values,
-            'Price': df['Close'].values
-        }).tail(45).reset_index(drop=True)
+            'MF_Smooth': mf_smooth.values, 
+            'STP': stp.values, 
+            'Price': close.values
+        }).tail(30).reset_index(drop=True)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
-
-    except Exception as e: 
-        return None
+    except Exception as e: return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1344,9 +1313,6 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
-
 
 
 
