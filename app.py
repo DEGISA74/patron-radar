@@ -870,32 +870,79 @@ def calculate_synthetic_sentiment(ticker):
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if 'Close' not in df.columns: return None
+        
+        # Veri temizliği
         df = df.dropna()
-        close = df['Close']; high = df['High']; low = df['Low']
+        close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
-        
+        # --- 1. VEKTÖREL SKORLAMA (Tüm geçmiş için puan hesabı) ---
+        # A) Momentum (RSI & MACD) - Max 30 Puan
         delta = close.diff()
-        force_index = delta * volume
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss)))
         
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+        macd = close.ewm(span=12).mean() - close.ewm(span=26).mean()
+        hist = macd - macd.ewm(span=9).mean()
+        
+        score_mom = np.where((rsi > 50) & (rsi > rsi.shift(1)), 10, 0) + \
+                    np.where((hist > 0) & (hist > hist.shift(1)), 10, 0) + \
+                    np.where((rsi > 30) & (rsi < 70), 10, 0) # Stabil bölge bonusu
 
+        # B) Hacim (Volume & OBV) - Max 25 Puan
+        vol_ma = volume.rolling(20).mean()
+        obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+        obv_ma = obv.rolling(5).mean()
+        
+        score_vol = np.where(volume > vol_ma, 15, 0) + \
+                    np.where(obv > obv_ma, 10, 0)
+
+        # C) Trend (SMA & Cross) - Max 20 Puan
+        sma50 = close.rolling(50).mean()
+        sma200 = close.rolling(200).mean()
+        
+        score_tr = np.where(sma50 > sma200, 10, 0) + \
+                   np.where(close > sma50, 10, 0)
+
+        # D) Volatilite (BB & ATR) - Max 15 Puan
+        std = close.rolling(20).std()
+        upper = close.rolling(20).mean() + (2 * std)
+        atr = (high-low).rolling(14).mean()
+        
+        score_vola = np.where(close > upper, 10, 0) + \
+                     np.where(atr < atr.shift(5), 5, 0) # Düşük volatilite iyidir (konsolidasyon)
+
+        # E) Yapı (BOS - Break of Structure) - Max 10 Puan
+        high_roll = high.rolling(20).max().shift(1)
+        score_str = np.where(close > high_roll, 10, 0)
+
+        # TOPLAM SKOR (0 - 100 Arası)
+        total_score = score_mom + score_vol + score_tr + score_vola + score_str
+        
+        # --- 2. DEĞİŞİM HESABI (Bugün - Dün) ---
+        # İşte orijinal grafikteki o -8, +2 değerlerini veren yer burası:
+        sentiment_change = pd.Series(total_score).diff().fillna(0)
+        
+        # STP Hesabı (Grafikteki Sarı Çizgi için)
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
+        # DataFrame Hazırlığı
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': mf_smooth.values, 
+            'MF_Smooth': sentiment_change.values, # Artık bu Para Akışı değil, Puan Değişimi
             'STP': stp.values, 
             'Price': close.values
         }).tail(30).reset_index(drop=True)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
+        
         return plot_df
+        
     except Exception as e: return None
 
 @st.cache_data(ttl=600)
@@ -1313,5 +1360,6 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
