@@ -866,85 +866,37 @@ def render_ict_deep_panel(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # Veri boşluğu oluşmaması için 2 yıllık geniş veri çekiyoruz
-        df = yf.download(ticker, period="2y", progress=False)
-        
+        df = yf.download(ticker, period="6mo", progress=False)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
-        volume = volume.replace(0, 1)
-
-        # --- 1. RSI (14) - HIZ GÖSTERGESİ ---
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if 'Close' not in df.columns: return None
+        df = df.dropna()
+        close = df['Close']; high = df['High']; low = df['Low']
+        
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
+        force_index = delta * volume
+        
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
-        # --- 2. MFI (14) - AKILLI PARA (HACİM) ---
         typical_price = (high + low + close) / 3
-        raw_money_flow = typical_price * volume
-        
-        positive_flow = pd.Series(0.0, index=df.index)
-        negative_flow = pd.Series(0.0, index=df.index)
-        
-        tp_diff = typical_price.diff()
-        positive_flow[tp_diff > 0] = raw_money_flow[tp_diff > 0]
-        negative_flow[tp_diff < 0] = raw_money_flow[tp_diff < 0]
-        
-        mfi_ratio = positive_flow.rolling(window=14).sum() / negative_flow.rolling(window=14).sum()
-        mfi = 100 - (100 / (1 + mfi_ratio))
-
-        # --- 3. CCI (14) - DÖNGÜ AVCISI ---
-        # CCI, fiyatın ortalamadan sapmasını ölçer ve dönüşleri RSI'dan önce yakalar.
-        tp_sma = typical_price.rolling(window=14).mean()
-        mad = (typical_price - tp_sma).abs().rolling(window=14).mean()
-        cci = (typical_price - tp_sma) / (0.015 * mad)
-        
-        # CCI normalde -100/+100 arasıdır, bunu 0-100 skalasına (RSI/MFI ile uyumlu olsun diye) çekiyoruz
-        cci_norm = ((cci + 200) / 400) * 100
-        # Uç değerleri törpüle
-        cci_norm = cci_norm.clip(0, 100)
-
-        # --- 4. SENTIMENT SKORU (HİBRİT) ---
-        # Ağırlıklar: MFI (Para) en önemli, sonra RSI ve CCI eşit.
-        # Bu formül orijinal grafikteki o hassas hareketleri taklit eder.
-        sentiment_score = (mfi * 0.4) + (rsi * 0.3) + (cci_norm * 0.3)
-        
-        # --- 5. DEĞİŞİM (MOMENTUM FARKI) ---
-        # Bugünün puanı - Dünün puanı
-        sentiment_change = sentiment_score.diff()
-
-        # STP Hesabı
         stp = typical_price.ewm(span=6, adjust=False).mean()
-
-        # DataFrame Hazırlığı
-        df['Sentiment_Change'] = sentiment_change
-        df['STP'] = stp
         
-        # NaN temizliği sonrası son 30 günü al
-        final_df = df.dropna().tail(30).reset_index()
+        df = df.reset_index()
+        if 'Date' not in df.columns: df['Date'] = df.index
+        else: df['Date'] = pd.to_datetime(df['Date'])
         
-        if 'Date' not in final_df.columns: final_df['Date'] = final_df.index
-        else: final_df['Date'] = pd.to_datetime(final_df['Date'])
-            
         plot_df = pd.DataFrame({
-            'Date': final_df['Date'],
-            'MF_Smooth': final_df['Sentiment_Change'], 
-            'STP': final_df['STP'],
-            'Price': final_df['Close']
-        })
+            'Date': df['Date'], 
+            'MF_Smooth': mf_smooth.values, 
+            'STP': stp.values, 
+            'Price': close.values
+        }).tail(30).reset_index(drop=True)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
-        
-        if plot_df.empty or plot_df['MF_Smooth'].isnull().all(): return None
-
         return plot_df
-
-    except Exception as e:
-        return None
+    except Exception as e: return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1361,9 +1313,6 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
-
 
 
 
