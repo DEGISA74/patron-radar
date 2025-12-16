@@ -866,37 +866,64 @@ def render_ict_deep_panel(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        # 1. Veri Çekme
+        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        
+        # 2. Veri Temizliği (MultiIndex Düzeltmesi)
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex): 
+            df.columns = df.columns.get_level_values(0)
+            
         if 'Close' not in df.columns: return None
-        df = df.dropna()
-        close = df['Close']; high = df['High']; low = df['Low']
         
-        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
-        
-        delta = close.diff()
-        force_index = delta * volume
-        
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+        # Hacim verisi yoksa hata vermemesi için 1 ile doldur
+        if 'Volume' not in df.columns: 
+            df['Volume'] = 1
+        else:
+            df['Volume'] = df['Volume'].replace(0, 1)
 
-        typical_price = (high + low + close) / 3
+        df = df.dropna()
+
+        # 3. YENİ HESAPLAMA: Price Action x Volume Momentum (Senin İstediğin Model)
+        # Mantık: Fiyat % değişimi * (Mevcut Hacim / Ortalama Hacim)
+        # Hacimli yükselişler -> Büyük Pozitif Bar (Smart Money Girişi)
+        # Hacimli düşüşler -> Büyük Negatif Bar (Panik Satışı)
+        
+        # A. Fiyat Değişimi (%)
+        change_pct = df['Close'].pct_change() * 100
+        
+        # B. Hacim Faktörü (RVOL - Relative Volume)
+        # Son 20 günün ortalamasına göre hacim gücü
+        vol_ma = df['Volume'].rolling(window=20).mean().replace(0, 1)
+        vol_factor = df['Volume'] / vol_ma
+        
+        # C. SENTIMENT SKORU (Momentum)
+        sentiment_score = change_pct * vol_factor
+
+        # 4. STP Hesabı (Sarı Çizgi - Trend Takibi)
+        # Typical Price üzerinden hesaplanan yumuşatılmış hareketli ortalama
+        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
+        # 5. Grafik İçin Veri Hazırlığı
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
+        # DataFrame oluştur (Grafik fonksiyonun 'MF_Smooth' ismini bekliyor, 
+        # o yüzden yeni skorumuzu o isme atıyoruz)
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': mf_smooth.values, 
-            'STP': stp.values, 
-            'Price': close.values
-        }).tail(30).reset_index(drop=True)
+            'MF_Smooth': sentiment_score.values,  # YENİ HESAPLAMA BURADA
+            'STP': stp.values,                    # SARI ÇİZGİ
+            'Price': df['Close'].values           # FİYAT
+        }).tail(40).reset_index(drop=True)        # Son 40 günü göster
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
-    except Exception as e: return None
+
+    except Exception as e: 
+        return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1313,6 +1340,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
