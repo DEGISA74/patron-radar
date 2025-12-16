@@ -871,38 +871,43 @@ def calculate_synthetic_sentiment(ticker):
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if 'Close' not in df.columns: return None
         
-        # Eksik verileri temizle
         df = df.dropna()
         
         close = df['Close']
+        open_price = df['Open'] # Açılış fiyatını ekledik
         high = df['High']
         low = df['Low']
         
-        # Hacim 0 ise 1 yap (hata önlemek için)
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # ---------------------------------------------------------
-        # KRİTİK DEĞİŞİKLİK BURADA (Price Action Odaklı Hesaplama)
+        # YENİ FORMÜL: Mum Gövde Gücü (Candle Body Strength)
         # ---------------------------------------------------------
         
-        # 1. Adım: Mumun gövdesinin, fitillere göre gücünü bul.
-        # Formül: [(Close - Low) - (High - Close)] / (High - Low)
-        # Mantık: Kapanış tavana yakınsa +1, tabana yakınsa -1, ortadaysa 0 üretir.
-        denominator = (high - low)
-        mf_multiplier = ((close - low) - (high - close)) / denominator
+        # Mantık: 
+        # Eğer (Close > Open) ise alıcılar baskındır -> Pozitif
+        # Eğer (Close < Open) ise satıcılar baskındır -> Negatif
+        # Mumun gövdesi (Body) ne kadar büyükse, sinyal o kadar güçlüdür.
         
-        # High == Low olduğu (hareketsiz) günlerde sonsuz hatasını engelle
-        mf_multiplier = mf_multiplier.fillna(0.0) 
+        # 1. Mumun Toplam Boyu (High - Low)
+        range_len = high - low
         
-        # 2. Adım: Hacimle gücü çarp
-        raw_money_flow = mf_multiplier * volume
+        # 2. Mumun Gövde Değişimi (Close - Open)
+        body_change = close - open_price
         
-        # 3. Adım: Yumuşatma (Smoothing)
-        # Orijinal grafikteki barlar çok zikzaklı değil, bir akış var.
-        # Bu yüzden veriyi biraz yumuşatıyoruz (EMA 5 uygun görünüyor).
-        mf_smooth = raw_money_flow.ewm(span=5, adjust=False).mean()
+        # 3. Güç Oranı: Gövde / Toplam Boy
+        # Örnek: Tamamen dolu bir yeşil mum +1, Doji 0, Tam dolu kırmızı -1 verir.
+        # Sıfıra bölme hatasını engellemek için np.where kullanıyoruz
+        strength = np.where(range_len == 0, 0, body_change / range_len)
+        
+        # 4. Hacimle Çarp (Hacimli yeşil mum en büyük puanı alır)
+        raw_sentiment = strength * volume
+        
+        # 5. Yumuşatma (Smoothing)
+        # Orijinal grafik çok oynak değil, bu yüzden 3 veya 5 günlük EMA ile yumuşatıyoruz.
+        mf_smooth = pd.Series(raw_sentiment).ewm(span=3, adjust=False).mean()
 
-        # Fiyat çizgisi (Typical Price)
+        # Fiyat çizgisi
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
@@ -921,7 +926,7 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
 
     except Exception as e:
-        print(f"Hata detayı: {e}") # Hata ayıklamak için print eklendi
+        print(f"Hata: {e}")
         return None
 
 @st.cache_data(ttl=600)
@@ -1339,6 +1344,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
