@@ -1090,14 +1090,14 @@ def render_synthetic_sentiment_panel(data):
             color=color_condition, 
             tooltip=['Date_Str', 'Price', 'MF_Smooth']
         )
-        price_line = base.mark_line(color='#2563EB', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
-        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi", fontSize=14, color="#1e40af")), use_container_width=True)
+        price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum (Kırmızı=Çıkış, Mavi=Giriş)", fontSize=14, color="#1e40af")), use_container_width=True)
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#b45309")), use_container_width=True)
 
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -1160,7 +1160,7 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-# --- SENTIMENT AJANI (STP) + SCROLLBAR ---
+    # --- SENTIMENT AJANI (STP) + SCROLLBAR ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (STP) Taraması</div>', unsafe_allow_html=True)
     with st.expander("STP Taramasını Başlat", expanded=True):
         if st.button(f"🔎 {st.session_state.category} İçin STP Tara", type="secondary"):
@@ -1171,28 +1171,23 @@ with col_left:
         
         if st.session_state.get('stp_scanned'):
             c_stp1, c_stp2 = st.columns(2)
-            
             # --- SOL KUTU (YUKARI KESENLER) ---
             with c_stp1:
                 st.markdown("###### ⚡ FİYATI STP YUKARI KESENLER")
                 with st.container(height=200, border=True):
                     if st.session_state.stp_crosses:
-                        # 3 Sütunlu Izgara Oluşturuyoruz
                         cols = st.columns(3)
                         for i, item in enumerate(st.session_state.stp_crosses):
-                            # (i % 3) işlemi sırasıyla 0, 1, 2 indeksli sütunları seçer
                             with cols[i % 3]:
                                 if st.button(f"🚀 {item['Sembol']}\n({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}", use_container_width=True): 
                                     st.session_state.ticker = item['Sembol']
                                     st.rerun()
                     else: st.info("Yeni kesişim yok.")
-            
             # --- SAĞ KUTU (TREND TAKİBİ) ---
             with c_stp2:
                 st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
-                         # 3 Sütunlu Izgara Oluşturuyoruz
                          cols = st.columns(3)
                          for i, item in enumerate(st.session_state.stp_trends):
                             with cols[i % 3]:
@@ -1244,36 +1239,69 @@ with col_right:
     
     xray_data = get_deep_xray_data(st.session_state.ticker)
     render_deep_xray_card(xray_data)
-
-# ... (Buraya kadar olan 'Ortak Fırsatlar' kodu aynen kalacak) ...
     
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
+    with st.container(height=250):
+        df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
+        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
+            commons = []; symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+            if symbols:
+                for sym in symbols:
+                    row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
+                    r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
+                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
+                sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                for i, item in enumerate(sorted_commons):
+                    sym = item["symbol"]
+                    if i == 0: rank = "🥇"
+                    elif i == 1: rank = "🥈"
+                    elif i == 2: rank = "🥉"
+                    else: rank = f"{i+1}."
+                    score_text_safe = f"{rank} {sym} ({int(item['combined'])}/{item['r1_max'] + item['r2_max']}) | R1:{int(item['r1_score'])}/{item['r1_max']} | R2:{int(item['r2_score'])}/{item['r2_max']}"
+                    c1, c2 = st.columns([0.2, 0.8]); is_watchlist = sym in st.session_state.watchlist; star_icon = "★" if is_watchlist else "☆"
+                    if c1.button(star_icon, key=f"c_star_{sym}", help="İzleme Listesine Ekle/Kaldır"): toggle_watchlist(sym); st.rerun()
+                    if c2.button(score_text_safe, key=f"c_select_{sym}", help="Detaylar için seç"): on_scan_result_click(sym); st.rerun()
+            else: st.info("Kesişim yok.")
+        else: st.caption("İki radar da çalıştırılmalı.")
     st.markdown("<hr>", unsafe_allow_html=True)
     
-    # "İzleme" sekmesini kaldırdık, sadece 2 tab kaldı
+    # İki Tablo Yapısı (İzleme sekmesi kaldırıldı)
     tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
     
+    # --- RADAR 1 ---
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.scan_data is not None:
-            # Yükseklik 500'den 250'ye düşürüldü (Ortak Fırsatlar ile eşitlendi)
+            # Yükseklik 250px (Ortak Fırsatlar ile eşit)
             with st.container(height=250):
-                for i, row in st.session_state.scan_data.iterrows():
-                    sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r1_{i}"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}"): on_scan_result_click(sym); st.rerun()
-                    # st.caption satırı silindi (Açıklama yok)
+                # 2 Sütunlu Izgara
+                cols = st.columns(2)
+                # enumerate kullanarak sıralı indeks (0,1,2..) alıyoruz ki sütunlara düzgün dağılsın
+                for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
+                    sym = row["Sembol"]
+                    # (i % 2) işlemi sırasıyla sol ve sağ sütunu seçer
+                    with cols[i % 2]:
+                        # Yıldız yok, sadece sonuç butonu var
+                        if st.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
 
+    # --- RADAR 2 ---
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.radar2_data is not None:
-            # Yükseklik 500'den 250'ye düşürüldü
+            # Yükseklik 250px
             with st.container(height=250):
-                for i, row in st.session_state.radar2_data.iterrows():
-                    sym = row["Sembol"]; c1, c2 = st.columns([0.2, 0.8])
-                    if c1.button("★", key=f"r2_{i}"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}"): on_scan_result_click(sym); st.rerun()
-                    # st.caption satırı silindi (Açıklama yok)
+                # 2 Sütunlu Izgara
+                cols = st.columns(2)
+                for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
+                    sym = row["Sembol"]
+                    with cols[i % 2]:
+                        # Yıldız yok, sadece sonuç butonu var
+                        if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
