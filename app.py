@@ -878,37 +878,37 @@ def calculate_synthetic_sentiment(ticker):
         high = df['High']
         low = df['Low']
         
-        # Hacim verisi yoksa yapay 1 üret
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
         # ---------------------------------------------------------
-        # HİBRİT FORMÜL: Trend + Mum İçi Güç
+        # AĞIRLIKLANDIRILMIŞ HİBRİT FORMÜL
+        # Sorun: Güçlü gapli açılışlarda kırmızı mum oluşursa bar kırmızı kalıyordu.
+        # Çözüm: Trend (Gap) etkisini artırarak, ana yönü koruyoruz.
         # ---------------------------------------------------------
         
-        # 1. Trend Bileşeni (Düne göre ne kadar arttı/azaldı?)
-        # Bu, "Gap"leri yakalar. Fiyat 38'den 40'a atladıysa burası çok pozitiftir.
-        trend_component = close - close.shift(1)
+        # 1. Trend Bileşeni (Düne göre değişim) -> AĞIRLIK: 2.0 (Daha Baskın)
+        # Bu sayede hisse dünkünden %2 yukarıdaysa, gün içi eksi kapatsa bile Mavi kalır.
+        trend_component = (close - close.shift(1)) * 2.0
         
-        # 2. Gün İçi Bileşen (Açılışa göre ne yaptı?)
-        # Bu, "Satış Baskısını" yakalar. 40'tan açıp 39'a düştüyse burası negatiftir.
-        intraday_component = close - open_price
+        # 2. Gün İçi Bileşen (Mum Rengi) -> AĞIRLIK: 1.0 (Standart)
+        # Bu, sadece trend çok zayıfsa (yatay piyasa) veya satış çok sertse rengi değiştirir.
+        intraday_component = (close - open_price) * 1.0
         
-        # 3. İkisinin Toplamı (Bileşik Güç)
-        # Örnek: Gap ile fırladı (+5 puan) ama kırmızı mum kapattı (-1 puan) -> Sonuç +4 (Hala Mavi)
-        # Örnek: Az arttı (+0.5 puan) ama tepeden çakıldı (-1.5 puan) -> Sonuç -1 (Kırmızı - 15 Aralık Vakası)
+        # 3. Toplam Güç
         combined_force = trend_component + intraday_component
         
-        # 4. Hacimle Ağırlıklandır
+        # 4. Hacimle Çarpım
         raw_sentiment = combined_force * volume
         
-        # 5. NaN değerleri temizle (İlk gün verisi olmadığı için)
+        # NaN temizliği
         raw_sentiment = raw_sentiment.fillna(0)
 
-        # 6. Yumuşatma (Smoothing)
-        # Orijinal grafik biraz daha "tok" duruyor, 5 günlük üssel ortalama (EMA) ile gürültüyü alıyoruz.
+        # 5. Yumuşatma (Smoothing)
+        # Son 8 gündeki "zikzakları" orijinal grafikteki gibi blok hale getirmek için
+        # EMA periyodunu 3'ten 5'e sabitledik, biraz daha "tok" bir grafik verir.
         mf_smooth = raw_sentiment.ewm(span=5, adjust=False).mean()
 
-        # Fiyat çizgisi (Typical Price)
+        # Fiyat Çizgisi
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
@@ -927,7 +927,7 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
 
     except Exception as e:
-        st.error(f"Hesaplama hatası: {e}")
+        st.error(f"Hata: {e}")
         return None
 
 @st.cache_data(ttl=600)
@@ -1345,6 +1345,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
