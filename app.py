@@ -1090,7 +1090,7 @@ def render_synthetic_sentiment_panel(data):
             color=color_condition, 
             tooltip=['Date_Str', 'Price', 'MF_Smooth']
         )
-        price_line = base.mark_line(color='#0f172a', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+        price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
         st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi", fontSize=14, color="#1e40af")), use_container_width=True)
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
@@ -1302,4 +1302,5 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
