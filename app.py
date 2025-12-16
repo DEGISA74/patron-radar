@@ -1097,7 +1097,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#b45309")), use_container_width=True)
 
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -1226,10 +1226,14 @@ with col_left:
 
 # --- SAĞ SÜTUN (Fiyat, Sentiment, ICT, Tarama) ---
 with col_right:
-    # FİYAT KUTUSU (BURAYA TAŞINDI)
+    # FİYAT KUTUSU (GÜNCELLENDİ: Hisse Adı Eklendi)
     if info and info['price']:
+        # Hisse adını temizle (örn: AKBNK.IS -> AKBNK)
+        display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+        
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-        st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
+        # Label kısmına {display_ticker} ekledim
+        st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
 
     sent_data = calculate_sentiment_score(st.session_state.ticker)
     render_sentiment_card(sent_data)
@@ -1302,5 +1306,3 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
