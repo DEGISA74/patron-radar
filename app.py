@@ -866,37 +866,96 @@ def render_ict_deep_panel(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        df = yf.download(ticker, period="6mo", progress=False)
+        # Daha uzun veri çekiyoruz ki başta oluşan hesaplama boşluklarını atabilelim
+        df = yf.download(ticker, period="1y", progress=False)
+        
         if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-        if 'Close' not in df.columns: return None
-        df = df.dropna()
-        close = df['Close']; high = df['High']; low = df['Low']
+        # MultiIndex sütun yapısını düzelt (Yahoo Finance güncellemesi için)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
+        # Temel veriler
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        volume = df['Volume']
         
-        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
-        
-        delta = close.diff()
-        force_index = delta * volume
-        
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+        # 0'a bölme hatasını önlemek için hacmi 0 olanları 1 yap
+        volume = volume.replace(0, 1)
 
+        # --- 1. RSI HESAPLAMA (14 Günlük) ---
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+
+        # --- 2. MFI (MONEY FLOW INDEX) HESAPLAMA (14 Günlük) ---
+        # MFI, Hacimle ağırlıklandırılmış RSI gibidir. "Akıllı Para"yı temsil eder.
         typical_price = (high + low + close) / 3
+        raw_money_flow = typical_price * volume
+        
+        # Pozitif ve Negatif Para Akışı
+        positive_flow = pd.Series(0.0, index=df.index)
+        negative_flow = pd.Series(0.0, index=df.index)
+        
+        tp_diff = typical_price.diff()
+        
+        positive_flow[tp_diff > 0] = raw_money_flow[tp_diff > 0]
+        negative_flow[tp_diff < 0] = raw_money_flow[tp_diff < 0]
+        
+        pos_mf_sum = positive_flow.rolling(window=14).sum()
+        neg_mf_sum = negative_flow.rolling(window=14).sum()
+        
+        mfi_ratio = pos_mf_sum / neg_mf_sum
+        mfi = 100 - (100 / (1 + mfi_ratio))
+
+        # --- 3. SENTIMENT SKORU VE DEĞİŞİMİ ---
+        # RSI ve MFI ortalamasını alarak "Genel Sentiment" (0-100) buluyoruz.
+        # Bu sayede hem fiyat ivmesini hem de hacmi hesaba katıyoruz.
+        sentiment_score = (rsi + mfi) / 2
+        
+        # Bize lazım olan "Değişim" (Bugün - Dün)
+        # İşte o grafikteki -8, +4 gibi değerler buradan çıkar.
+        sentiment_change = sentiment_score.diff()
+
+        # Yumuşatma (Gürültüyü azaltmak için 3 günlük ortalama)
+        sentiment_change_smooth = sentiment_change.ewm(span=3, adjust=False).mean()
+
+        # --- STP Hesabı (Grafik için) ---
         stp = typical_price.ewm(span=6, adjust=False).mean()
+
+        # DataFrame Hazırlığı
+        # Hesaplama başlangıcındaki boş (NaN) verileri temizle
+        df['Sentiment_Change'] = sentiment_change_smooth
+        df['STP'] = stp
         
-        df = df.reset_index()
-        if 'Date' not in df.columns: df['Date'] = df.index
-        else: df['Date'] = pd.to_datetime(df['Date'])
+        # Son 30 günü al (NaN'lar zaten gitmiş olacak çünkü 1y veri çektik)
+        final_df = df.tail(30).reset_index()
         
+        # Tarih formatlama
+        if 'Date' not in final_df.columns: 
+            final_df['Date'] = final_df.index
+        else:
+            final_df['Date'] = pd.to_datetime(final_df['Date'])
+            
         plot_df = pd.DataFrame({
-            'Date': df['Date'], 
-            'MF_Smooth': mf_smooth.values, 
-            'STP': stp.values, 
-            'Price': close.values
-        }).tail(30).reset_index(drop=True)
+            'Date': final_df['Date'],
+            'MF_Smooth': final_df['Sentiment_Change'], # Grafik bunu kullanacak
+            'STP': final_df['STP'],
+            'Price': final_df['Close']
+        })
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
+        
+        # Veri boşsa (örn yeni halka arz) koruma
+        if plot_df['MF_Smooth'].isnull().all():
+            return None
+
         return plot_df
-    except Exception as e: return None
+
+    except Exception as e:
+        return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1313,6 +1372,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
