@@ -170,7 +170,6 @@ raw_sp500_rest = [
     "VZ", "BKNG", "MAR", "F", "GM", "STT", "ZBRA", "GL", "EWBC", "OHI", "EXPE", 
     "CF", "HAL", "HP", "RCL", "NCLH", "CPRT", "FANG", "PXD", "OKE", "WMB", "TRGP"
 ]
-# Kesişimi temizle ve birleştir
 raw_sp500_rest = list(set(raw_sp500_rest) - set(priority_sp))
 raw_sp500_rest.sort()
 final_sp500_list = priority_sp + raw_sp500_rest
@@ -199,27 +198,24 @@ raw_nasdaq = [
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
-priority_bist = ["AKBNK.IS", "BIMAS.IS", "DOHOL.IS", "FENER.IS", "KCHOL.IS", "SISE.IS", "TCELL.IS", "THYAO.IS", "TTKOM.IS", "VAKBNK.IS"]
-raw_bist100_rest = [
-    "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", 
+# --- BIST 100 LİSTESİ (TEK PARÇA VE ALFABETİK) ---
+final_bist100_list = [
+    "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", 
     "AKSEN.IS", "ALARK.IS", "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ASELS.IS", 
-    "ASTOR.IS", "BERA.IS", "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", 
-    "CANTE.IS", "CCOLA.IS", "CEMTS.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS", "ECILC.IS", 
+    "ASTOR.IS", "BERA.IS", "BIMAS.IS", "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", 
+    "CANTE.IS", "CCOLA.IS", "CEMTS.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS", "DOHOL.IS", "ECILC.IS", 
     "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUREN.IS", 
-    "EUPWR.IS", "FROTO.IS", "GARAN.IS", "GENIL.IS", "GESAN.IS", "GLYHO.IS", "GOKNR.IS", 
+    "EUPWR.IS", "FENER.IS", "FROTO.IS", "GARAN.IS", "GENIL.IS", "GESAN.IS", "GLYHO.IS", "GOKNR.IS", 
     "GUBRF.IS", "GWIND.IS", "HALKB.IS", "HEKTS.IS", "IPEKE.IS", "ISCTR.IS", "ISDMR.IS", 
-    "ISGYO.IS", "ISMEN.IS", "IZENR.IS", "KCAER.IS", "KLSER.IS", "KONTR.IS", "KONYA.IS", 
+    "ISGYO.IS", "ISMEN.IS", "IZENR.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KONYA.IS", 
     "KORDS.IS", "KOZAA.IS", "KOZAL.IS", "KRDMD.IS", "KZBGY.IS", "MAVI.IS", "MGROS.IS", 
     "MIATK.IS", "ODAS.IS", "OTKAR.IS", "OYAKC.IS", "PENTA.IS", "PETKM.IS", "PGSUS.IS", 
-    "PSGYO.IS", "QUAGR.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS", "SKBNK.IS", 
-    "SMRTG.IS", "SOKM.IS", "TABGD.IS", "TAVHL.IS", "TKFEN.IS", "TOASO.IS", "TSKB.IS", 
-    "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "TURSG.IS", "ULUUN.IS", "VESBE.IS", "VESTL.IS", 
-    "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
+    "PSGYO.IS", "QUAGR.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS", "SISE.IS", "SKBNK.IS", 
+    "SMRTG.IS", "SOKM.IS", "TABGD.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TOASO.IS", 
+    "TSKB.IS", "TTKOM.IS", "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "TURSG.IS", "ULUUN.IS", "VAKBNK.IS", 
+    "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
 ]
-# Kesişimi temizle ve birleştir
-raw_bist100_rest = list(set(raw_bist100_rest) - set(priority_bist))
-raw_bist100_rest.sort()
-final_bist100_list = priority_bist + raw_bist100_rest
+final_bist100_list.sort() # Garanti olsun diye tekrar sıralıyoruz
 
 ASSET_GROUPS = {
     "S&P 500 (TOP 300)": final_sp500_list,
@@ -1160,9 +1156,6 @@ col_left, col_right = st.columns([3, 1])
 
 # --- SOL SÜTUN (Grafikler ve Analizler) ---
 with col_left:
-    # Burada eskiden olan 4'lü kutucukları (Hacim, Hedef vb.) kaldırdık.
-    # Doğrudan grafiklerle başlıyoruz.
-    
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
