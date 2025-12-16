@@ -870,16 +870,39 @@ def calculate_synthetic_sentiment(ticker):
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if 'Close' not in df.columns: return None
-        df = df.dropna()
-        close = df['Close']; high = df['High']; low = df['Low']
         
+        # Eksik verileri temizle
+        df = df.dropna()
+        
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        
+        # Hacim 0 ise 1 yap (hata önlemek için)
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        delta = close.diff()
-        force_index = delta * volume
+        # ---------------------------------------------------------
+        # KRİTİK DEĞİŞİKLİK BURADA (Price Action Odaklı Hesaplama)
+        # ---------------------------------------------------------
         
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+        # 1. Adım: Mumun gövdesinin, fitillere göre gücünü bul.
+        # Formül: [(Close - Low) - (High - Close)] / (High - Low)
+        # Mantık: Kapanış tavana yakınsa +1, tabana yakınsa -1, ortadaysa 0 üretir.
+        denominator = (high - low)
+        mf_multiplier = ((close - low) - (high - close)) / denominator
+        
+        # High == Low olduğu (hareketsiz) günlerde sonsuz hatasını engelle
+        mf_multiplier = mf_multiplier.fillna(0.0) 
+        
+        # 2. Adım: Hacimle gücü çarp
+        raw_money_flow = mf_multiplier * volume
+        
+        # 3. Adım: Yumuşatma (Smoothing)
+        # Orijinal grafikteki barlar çok zikzaklı değil, bir akış var.
+        # Bu yüzden veriyi biraz yumuşatıyoruz (EMA 5 uygun görünüyor).
+        mf_smooth = raw_money_flow.ewm(span=5, adjust=False).mean()
 
+        # Fiyat çizgisi (Typical Price)
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
@@ -896,7 +919,10 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
-    except Exception as e: return None
+
+    except Exception as e:
+        print(f"Hata detayı: {e}") # Hata ayıklamak için print eklendi
+        return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1313,6 +1339,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
