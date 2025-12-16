@@ -876,35 +876,36 @@ def calculate_synthetic_sentiment(ticker):
             
         if 'Close' not in df.columns: return None
         
-        if 'Volume' not in df.columns: 
-            df['Volume'] = 1
-        else:
-            df['Volume'] = df['Volume'].replace(0, 1)
+        # Hacim 0 ise 1 yap
+        if 'Volume' not in df.columns: df['Volume'] = 1
+        else: df['Volume'] = df['Volume'].replace(0, 1)
 
         df = df.dropna()
 
-        # 3. REVİZE EDİLMİŞ HESAPLAMA (Logaritmik Dengeleme)
-        # Sorun: Hacim patlamaları grafiği bozuyordu.
-        # Çözüm: np.log() kullanarak uç değerleri törpülüyoruz.
+        # 3. YENİ HESAPLAMA: VOLUME-WEIGHTED MACD MOMENTUM
+        # Referans görseldeki "Dalgalı" yapıyı taklit etmek için Oscillator kullanıyoruz.
         
-        # A. Fiyat Değişimi (%)
-        change_pct = df['Close'].pct_change() * 100
+        # A. Klasik MACD Hesaplaması (Trend Momentumunu yakalar)
+        close = df['Close']
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
         
-        # B. Hacim Faktörü (Logaritmik)
-        # Normal bölme yerine Logaritma kullanarak "Skyscraper" etkisini engelliyoruz.
-        vol_ma = df['Volume'].rolling(window=20).mean().replace(0, 1)
+        # B. Histogram (Momentum Gücü)
+        # Bu veri pozitifse Trend Güçlü, negatifse Trend Zayıf demektir.
+        macd_hist = macd_line - signal_line
         
-        # Önceki formül: vol_factor = df['Volume'] / vol_ma (Çok agresif)
-        # Yeni formül: Logaritmik yumuşatma
-        vol_factor = np.log1p(df['Volume'] / vol_ma)
+        # C. Hacim Ağırlıklandırma (ICT Dokunuşu)
+        # Histogramı, o günkü hacmin ortalamaya oranıyla çarpıyoruz.
+        # Böylece "Hacimsiz Trend" cılız kalıyor, "Hacimli Trend" parlıyor.
+        vol_ma = df['Volume'].rolling(window=20).mean()
+        rvol = df['Volume'] / vol_ma
         
-        # C. SENTIMENT SKORU
-        # Değişim ile yumuşatılmış hacmi çarpıyoruz
-        raw_score = change_pct * vol_factor
-        
-        # D. Ekstra Düzeltme: Hareketli Ortalama ile Gürültüyü Azaltma (Smoothing)
-        # İlk görseldeki gibi daha dolgun barlar için 3 günlük ortalama alıyoruz.
-        sentiment_final = raw_score.rolling(window=3).mean()
+        # D. Nihai Sentiment Skoru
+        # Histogram * RVOL
+        # Sonuç: Zikzak değil, dalga şeklinde ilerleyen barlar.
+        sentiment_score = macd_hist * rvol
 
         # 4. STP Hesabı (Sarı Çizgi)
         typical_price = (df['High'] + df['Low'] + df['Close']) / 3
@@ -917,10 +918,10 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': sentiment_final.values,  # DENGELENMİŞ SKOR
+            'MF_Smooth': sentiment_score.values,  # YENİ DALGALI SKOR
             'STP': stp.values,
             'Price': df['Close'].values
-        }).tail(45).reset_index(drop=True)  # Biraz daha geniş pencere (45 gün)
+        }).tail(45).reset_index(drop=True)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
@@ -1343,6 +1344,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
