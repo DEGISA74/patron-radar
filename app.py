@@ -870,45 +870,16 @@ def calculate_synthetic_sentiment(ticker):
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if 'Close' not in df.columns: return None
-        
         df = df.dropna()
-        
-        close = df['Close']
-        open_price = df['Open']
-        high = df['High']
-        low = df['Low']
+        close = df['Close']; high = df['High']; low = df['Low']
         
         volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # ---------------------------------------------------------
-        # AĞIRLIKLANDIRILMIŞ HİBRİT FORMÜL
-        # Sorun: Güçlü gapli açılışlarda kırmızı mum oluşursa bar kırmızı kalıyordu.
-        # Çözüm: Trend (Gap) etkisini artırarak, ana yönü koruyoruz.
-        # ---------------------------------------------------------
+        delta = close.diff()
+        force_index = delta * volume
         
-        # 1. Trend Bileşeni (Düne göre değişim) -> AĞIRLIK: 2.0 (Daha Baskın)
-        # Bu sayede hisse dünkünden %2 yukarıdaysa, gün içi eksi kapatsa bile Mavi kalır.
-        trend_component = (close - close.shift(1)) * 2.0
-        
-        # 2. Gün İçi Bileşen (Mum Rengi) -> AĞIRLIK: 1.0 (Standart)
-        # Bu, sadece trend çok zayıfsa (yatay piyasa) veya satış çok sertse rengi değiştirir.
-        intraday_component = (close - open_price) * 1.0
-        
-        # 3. Toplam Güç
-        combined_force = trend_component + intraday_component
-        
-        # 4. Hacimle Çarpım
-        raw_sentiment = combined_force * volume
-        
-        # NaN temizliği
-        raw_sentiment = raw_sentiment.fillna(0)
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
-        # 5. Yumuşatma (Smoothing)
-        # Son 8 gündeki "zikzakları" orijinal grafikteki gibi blok hale getirmek için
-        # EMA periyodunu 3'ten 5'e sabitledik, biraz daha "tok" bir grafik verir.
-        mf_smooth = raw_sentiment.ewm(span=5, adjust=False).mean()
-
-        # Fiyat Çizgisi
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
@@ -925,10 +896,7 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
-
-    except Exception as e:
-        st.error(f"Hata: {e}")
-        return None
+    except Exception as e: return None
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -1184,7 +1152,7 @@ if st.session_state.generate_prompt:
         if not r_row.empty: radar_val = f"{r_row.iloc[0]['Skor']}/8"; radar_setup = r_row.iloc[0]['Setup']
     def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
     mom_clean = clean_text(sent_data.get('mom', 'Veri Yok')); vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
-    prompt = f"""*** SİSTEM ROLLERİ ***\nSen Dünya çapında tanınan, portföy yönetimi uzmanı, uzman bir hisse analisti, uzman bir ekonomist, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.\nAşağıda {t} varlığı için HAM VERİLER var. Bunları yorumla.\n\n*** 1. TEKNİK VERİLER (Rakamlara Güven) ***\n- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}\n- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}\n- Radar 2 Skoru: {radar_val}\n- Radar Setup: {radar_setup}\n\n*** 2. DUYGU VE MOMENTUM ***\n- Sentiment Puanı: {sent_data.get('total', 0)}/100\n- Momentum Durumu: {mom_clean}\n- Hacim/Para Girişi: {vol_clean}\n\n*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***\n- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}\n- Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)\n- Hedef Likidite: {ict_data.get('target', 'Belirsiz')}\n\n*** GÖREVİN ***\nBu verileri analiz et. Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.\nKısa, net, maddeler halinde bir paragraf analiz yaz. Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.\n\nÇIKTI:\n💡 ANALİZ: Yarım paragraflık Temel Analiz, P/E, PEG, 12 aylık analist beklentileri. \n🎯 YÖN: [LONG/SHORT/BEKLE]\n💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)\n⚠️ RİSK: (Gördüğün en büyük tehlike)\n"""
+    prompt = f"""*** SİSTEM ROLLERİ ***\nSen Dünya çapında tanınan, risk yönetimi uzmanı, ICT (Inner Circle Trader) ve Price Action ustası bir Algoritmik Tradersın.\nAşağıda {t} varlığı için terminalimden gelen HAM VERİLER var. Bunları yorumla.\n\n*** 1. TEKNİK VERİLER (Rakamlara Güven) ***\n- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}\n- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}\n- Radar 2 Skoru: {radar_val}\n- Radar Setup: {radar_setup}\n\n*** 2. DUYGU VE MOMENTUM ***\n- Sentiment Puanı: {sent_data.get('total', 0)}/100\n- Momentum Durumu: {mom_clean}\n- Hacim/Para Girişi: {vol_clean}\n\n*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***\n- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}\n- Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)\n- Hedef Likidite: {ict_data.get('target', 'Belirsiz')}\n\n*** GÖREVİN ***\nBu verileri analiz et. Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et ve işlem planı ver.\nKısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.\n\nÇIKTI:\n💡 ANALİZ: Yarım paragraflık Temel Analiz, P/E, PEG, 12 aylık analist beklentileri. \n🎯 YÖN: [LONG/SHORT/BEKLE]\n💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)\n⚠️ RİSK: (Gördüğün en büyük tehlike)\n"""
     with st.sidebar: st.code(prompt, language="text"); st.success("Metin kopyalanmaya hazır! 📋")
     st.session_state.generate_prompt = False
 
@@ -1345,11 +1313,6 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
-
-
-
 
 
 
