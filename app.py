@@ -200,7 +200,7 @@ raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
 # --- BIST 100 LİSTESİ (ENDEKSLER + HİSSELER) ---
 # 1. Önce Endeksler (Priority)
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XHOLD.IS", "XBANK.IS"]
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS"]
 
 # 2. Sonra Hisseler (Alfabetik)
 raw_bist_stocks = [
@@ -1313,3 +1313,4 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
