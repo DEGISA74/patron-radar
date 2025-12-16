@@ -866,8 +866,8 @@ def render_ict_deep_panel(ticker):
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
     try:
-        # Veri çekme (Yeterli geçmiş veri lazım)
-        df = yf.download(ticker, period="1y", progress=False)
+        # Veri boşluğu oluşmaması için 2 yıllık geniş veri çekiyoruz
+        df = yf.download(ticker, period="2y", progress=False)
         
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -876,40 +876,45 @@ def calculate_synthetic_sentiment(ticker):
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         volume = volume.replace(0, 1)
 
-        # --- 1. RSI (14) - HIZ ---
+        # --- 1. RSI (14) - HIZ GÖSTERGESİ ---
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
 
-        # --- 2. MFI (14) - PARA AKIŞI ---
+        # --- 2. MFI (14) - AKILLI PARA (HACİM) ---
         typical_price = (high + low + close) / 3
         raw_money_flow = typical_price * volume
+        
         positive_flow = pd.Series(0.0, index=df.index)
         negative_flow = pd.Series(0.0, index=df.index)
+        
         tp_diff = typical_price.diff()
         positive_flow[tp_diff > 0] = raw_money_flow[tp_diff > 0]
         negative_flow[tp_diff < 0] = raw_money_flow[tp_diff < 0]
-        pos_mf_sum = positive_flow.rolling(window=14).sum()
-        neg_mf_sum = negative_flow.rolling(window=14).sum()
-        mfi_ratio = pos_mf_sum / neg_mf_sum
+        
+        mfi_ratio = positive_flow.rolling(window=14).sum() / negative_flow.rolling(window=14).sum()
         mfi = 100 - (100 / (1 + mfi_ratio))
 
-        # --- 3. STOCH RSI (HASSASİYET) ---
-        # Son günlerdeki o mavi/kırmızı farkını yakalamak için
-        rsi_min = rsi.rolling(window=14).min()
-        rsi_max = rsi.rolling(window=14).max()
-        stoch_rsi = 100 * (rsi - rsi_min) / (rsi_max - rsi_min)
-
-        # --- 4. SENTIMENT SKORU (RAW) ---
-        # Ağırlıklar: RSI (%40) + MFI (%40) + StochRSI (%20)
-        # StochRSI eklemek, dönüşleri daha hızlı yakalamamızı sağlar.
-        sentiment_score = (rsi * 0.4) + (mfi * 0.4) + (stoch_rsi.fillna(50) * 0.2)
+        # --- 3. CCI (14) - DÖNGÜ AVCISI ---
+        # CCI, fiyatın ortalamadan sapmasını ölçer ve dönüşleri RSI'dan önce yakalar.
+        tp_sma = typical_price.rolling(window=14).mean()
+        mad = (typical_price - tp_sma).abs().rolling(window=14).mean()
+        cci = (typical_price - tp_sma) / (0.015 * mad)
         
-        # --- 5. DEĞİŞİM (Bugün - Dün) ---
-        # BURASI ÇOK ÖNEMLİ: Smoothing (yumuşatma) kaldırıldı.
-        # Direkt ham farkı alıyoruz ki gecikme (lag) olmasın.
+        # CCI normalde -100/+100 arasıdır, bunu 0-100 skalasına (RSI/MFI ile uyumlu olsun diye) çekiyoruz
+        cci_norm = ((cci + 200) / 400) * 100
+        # Uç değerleri törpüle
+        cci_norm = cci_norm.clip(0, 100)
+
+        # --- 4. SENTIMENT SKORU (HİBRİT) ---
+        # Ağırlıklar: MFI (Para) en önemli, sonra RSI ve CCI eşit.
+        # Bu formül orijinal grafikteki o hassas hareketleri taklit eder.
+        sentiment_score = (mfi * 0.4) + (rsi * 0.3) + (cci_norm * 0.3)
+        
+        # --- 5. DEĞİŞİM (MOMENTUM FARKI) ---
+        # Bugünün puanı - Dünün puanı
         sentiment_change = sentiment_score.diff()
 
         # STP Hesabı
@@ -919,7 +924,8 @@ def calculate_synthetic_sentiment(ticker):
         df['Sentiment_Change'] = sentiment_change
         df['STP'] = stp
         
-        final_df = df.tail(30).reset_index()
+        # NaN temizliği sonrası son 30 günü al
+        final_df = df.dropna().tail(30).reset_index()
         
         if 'Date' not in final_df.columns: final_df['Date'] = final_df.index
         else: final_df['Date'] = pd.to_datetime(final_df['Date'])
@@ -933,7 +939,7 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         
-        if plot_df['MF_Smooth'].isnull().all(): return None
+        if plot_df.empty or plot_df['MF_Smooth'].isnull().all(): return None
 
         return plot_df
 
@@ -1355,6 +1361,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
