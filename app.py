@@ -1095,7 +1095,7 @@ def render_synthetic_sentiment_panel(data):
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
-        line_price = base2.mark_line(color='#2dd4bf', strokeWidth=2).encode(y='Price:Q')
+        line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
         st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Turkuaz (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#b45309")), use_container_width=True)
 
@@ -1286,4 +1286,5 @@ with col_right:
             c1, c2 = st.columns([0.2, 0.8])
             if c1.button("❌", key=f"wl_d_{sym}"): toggle_watchlist(sym); st.rerun()
             if c2.button(sym, key=f"wl_g_{sym}"): on_scan_result_click(sym); st.rerun()
+
 
