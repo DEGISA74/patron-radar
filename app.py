@@ -1251,16 +1251,21 @@ with col_right:
                     r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
                     commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                
+                # --- ORTAK FIRSATLAR GÜNCELLENDİ (2 SÜTUN, YILDIZ YOK) ---
+                cols = st.columns(2) 
                 for i, item in enumerate(sorted_commons):
                     sym = item["symbol"]
                     if i == 0: rank = "🥇"
                     elif i == 1: rank = "🥈"
                     elif i == 2: rank = "🥉"
                     else: rank = f"{i+1}."
-                    score_text_safe = f"{rank} {sym} ({int(item['combined'])}/{item['r1_max'] + item['r2_max']}) | R1:{int(item['r1_score'])}/{item['r1_max']} | R2:{int(item['r2_score'])}/{item['r2_max']}"
-                    c1, c2 = st.columns([0.2, 0.8]); is_watchlist = sym in st.session_state.watchlist; star_icon = "★" if is_watchlist else "☆"
-                    if c1.button(star_icon, key=f"c_star_{sym}", help="İzleme Listesine Ekle/Kaldır"): toggle_watchlist(sym); st.rerun()
-                    if c2.button(score_text_safe, key=f"c_select_{sym}", help="Detaylar için seç"): on_scan_result_click(sym); st.rerun()
+                    
+                    score_text_safe = f"{rank} {sym} ({int(item['combined'])})"
+                    
+                    with cols[i % 2]:
+                        if st.button(f"{score_text_safe} | R1:{int(item['r1_score'])} R2:{int(item['r2_score'])}", key=f"c_select_{sym}", help="Detaylar için seç", use_container_width=True): 
+                            on_scan_result_click(sym); st.rerun()
             else: st.info("Kesişim yok.")
         else: st.caption("İki radar da çalıştırılmalı.")
     st.markdown("<hr>", unsafe_allow_html=True)
@@ -1274,16 +1279,11 @@ with col_right:
             with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.scan_data is not None:
-            # Yükseklik 250px (Ortak Fırsatlar ile eşit)
             with st.container(height=250):
-                # 2 Sütunlu Izgara
                 cols = st.columns(2)
-                # enumerate kullanarak sıralı indeks (0,1,2..) alıyoruz ki sütunlara düzgün dağılsın
                 for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
                     sym = row["Sembol"]
-                    # (i % 2) işlemi sırasıyla sol ve sağ sütunu seçer
                     with cols[i % 2]:
-                        # Yıldız yok, sadece sonuç butonu var
                         if st.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -1294,14 +1294,11 @@ with col_right:
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
         
         if st.session_state.radar2_data is not None:
-            # Yükseklik 250px
             with st.container(height=250):
-                # 2 Sütunlu Izgara
                 cols = st.columns(2)
                 for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        # Yıldız yok, sadece sonuç butonu var
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
