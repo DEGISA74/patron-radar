@@ -869,14 +869,13 @@ def calculate_synthetic_sentiment(ticker):
         # 1. Veri Çekme
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         
-        # 2. Veri Temizliği (MultiIndex Düzeltmesi)
+        # 2. Veri Temizliği
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): 
             df.columns = df.columns.get_level_values(0)
             
         if 'Close' not in df.columns: return None
         
-        # Hacim verisi yoksa hata vermemesi için 1 ile doldur
         if 'Volume' not in df.columns: 
             df['Volume'] = 1
         else:
@@ -884,40 +883,44 @@ def calculate_synthetic_sentiment(ticker):
 
         df = df.dropna()
 
-        # 3. YENİ HESAPLAMA: Price Action x Volume Momentum (Senin İstediğin Model)
-        # Mantık: Fiyat % değişimi * (Mevcut Hacim / Ortalama Hacim)
-        # Hacimli yükselişler -> Büyük Pozitif Bar (Smart Money Girişi)
-        # Hacimli düşüşler -> Büyük Negatif Bar (Panik Satışı)
+        # 3. REVİZE EDİLMİŞ HESAPLAMA (Logaritmik Dengeleme)
+        # Sorun: Hacim patlamaları grafiği bozuyordu.
+        # Çözüm: np.log() kullanarak uç değerleri törpülüyoruz.
         
         # A. Fiyat Değişimi (%)
         change_pct = df['Close'].pct_change() * 100
         
-        # B. Hacim Faktörü (RVOL - Relative Volume)
-        # Son 20 günün ortalamasına göre hacim gücü
+        # B. Hacim Faktörü (Logaritmik)
+        # Normal bölme yerine Logaritma kullanarak "Skyscraper" etkisini engelliyoruz.
         vol_ma = df['Volume'].rolling(window=20).mean().replace(0, 1)
-        vol_factor = df['Volume'] / vol_ma
         
-        # C. SENTIMENT SKORU (Momentum)
-        sentiment_score = change_pct * vol_factor
+        # Önceki formül: vol_factor = df['Volume'] / vol_ma (Çok agresif)
+        # Yeni formül: Logaritmik yumuşatma
+        vol_factor = np.log1p(df['Volume'] / vol_ma)
+        
+        # C. SENTIMENT SKORU
+        # Değişim ile yumuşatılmış hacmi çarpıyoruz
+        raw_score = change_pct * vol_factor
+        
+        # D. Ekstra Düzeltme: Hareketli Ortalama ile Gürültüyü Azaltma (Smoothing)
+        # İlk görseldeki gibi daha dolgun barlar için 3 günlük ortalama alıyoruz.
+        sentiment_final = raw_score.rolling(window=3).mean()
 
-        # 4. STP Hesabı (Sarı Çizgi - Trend Takibi)
-        # Typical Price üzerinden hesaplanan yumuşatılmış hareketli ortalama
+        # 4. STP Hesabı (Sarı Çizgi)
         typical_price = (df['High'] + df['Low'] + df['Close']) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         
-        # 5. Grafik İçin Veri Hazırlığı
+        # 5. Grafik Verisi
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
         else: df['Date'] = pd.to_datetime(df['Date'])
         
-        # DataFrame oluştur (Grafik fonksiyonun 'MF_Smooth' ismini bekliyor, 
-        # o yüzden yeni skorumuzu o isme atıyoruz)
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
-            'MF_Smooth': sentiment_score.values,  # YENİ HESAPLAMA BURADA
-            'STP': stp.values,                    # SARI ÇİZGİ
-            'Price': df['Close'].values           # FİYAT
-        }).tail(40).reset_index(drop=True)        # Son 40 günü göster
+            'MF_Smooth': sentiment_final.values,  # DENGELENMİŞ SKOR
+            'STP': stp.values,
+            'Price': df['Close'].values
+        }).tail(45).reset_index(drop=True)  # Biraz daha geniş pencere (45 gün)
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
@@ -1340,6 +1343,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
