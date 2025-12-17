@@ -1255,7 +1255,7 @@ with col_left:
     with st.expander("Ajan Operasyonlarını Yönet", expanded=True):
         # Tek butonla tümünü tarama seçeneği
         if st.button(f"🕵️ TAM TARAMA BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
-            with st.spinner("Ajan piyasayı didik didik ediyor (STP + Gizli Toplama)..."):
+            with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
                 # 1. Mevcut Varlıkları Al
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
                 
@@ -1265,7 +1265,7 @@ with col_left:
                 st.session_state.stp_trends = trends
                 st.session_state.stp_scanned = True
                 
-                # 3. Gizli Toplama Taraması (Parallel)
+                # 3. Akıllı Para Topluyor Taraması (Parallel)
                 st.session_state.accum_data = scan_hidden_accumulation(current_assets)
 
         # --- SONUÇ EKRANI (3 SÜTUNLU) ---
@@ -1432,4 +1432,5 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
