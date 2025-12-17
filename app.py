@@ -1171,7 +1171,8 @@ def render_price_action_panel(ticker):
     sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
     sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
     
-    html = f"""
+    # HTML İçeriği
+    html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
         <div class="info-header" style="color:#4f46e5; display:flex; justify-content:space-between;">
             <span>🕯️ PRICE ACTION DEDEKTİFİ</span>
@@ -1201,10 +1202,12 @@ def render_price_action_panel(ticker):
             <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
             <div class="edu-note">{pa['sq']['desc']}</div>
         </div>
-        
     </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    
+    # DÜZELTME BURADA: Satır sonlarını boşlukla değiştirerek tek satıra indiriyoruz.
+    # Böylece Streamlit bunu 'kod bloğu' sanmıyor, HTML olarak işliyor.
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_ict_deep_panel(ticker):
     # 1. HESAPLAMA VERİSİNİ ÇEK
@@ -1581,4 +1584,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
