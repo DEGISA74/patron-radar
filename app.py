@@ -45,12 +45,12 @@ st.markdown(f"""
     
     .stat-box-small {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 4px; padding: 2px 6px; text-align: center; margin-bottom: 1px;
-        box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }}
-    .stat-label-small {{ font-size: 0.5rem; color: #64748B; text-transform: uppercase; margin: 0; }}
-    .stat-value-small {{ font-size: 0.9rem; font-weight: 600; color: {current_theme['text']}; margin: 0; }}
-    .stat-delta-small {{ font-size: 0.8rem; margin-left: 5px; }}
+    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
+    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
+    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
     
     hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
     .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
@@ -199,10 +199,7 @@ raw_nasdaq = [
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
 # --- BIST 100 LİSTESİ (ENDEKSLER + HİSSELER) ---
-# 1. Önce Endeksler (Priority)
 priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS"]
-
-# 2. Sonra Hisseler (Alfabetik)
 raw_bist_stocks = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", 
     "AKSEN.IS", "ALARK.IS", "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ASELS.IS", 
@@ -220,8 +217,6 @@ raw_bist_stocks = [
     "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YLALI.IS", "ZOREN.IS"
 ]
 raw_bist_stocks.sort()
-
-# 3. Birleştir
 final_bist100_list = priority_bist_indices + raw_bist_stocks
 
 ASSET_GROUPS = {
@@ -242,6 +237,7 @@ if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchl
 if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
 if 'stp_crosses' not in st.session_state: st.session_state.stp_crosses = []
 if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
+if 'accum_data' not in st.session_state: st.session_state.accum_data = None
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -253,7 +249,7 @@ def on_category_change():
         st.session_state.radar2_data = None
         st.session_state.agent3_data = None
         st.session_state.stp_scanned = False
-        st.session_state.accum_data = None # Reset new agent data
+        st.session_state.accum_data = None 
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
@@ -329,6 +325,41 @@ def fetch_google_news(ticker):
             news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
         return news
     except: return []
+
+@st.cache_data(ttl=600)
+def calculate_synthetic_sentiment(ticker):
+    try:
+        df = yf.download(ticker, period="6mo", progress=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        if 'Close' not in df.columns: return None
+        df = df.dropna()
+        close = df['Close']; high = df['High']; low = df['Low']
+        
+        volume = df['Volume'].replace(0, 1) if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        
+        delta = close.diff()
+        force_index = delta * volume
+        
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+
+        typical_price = (high + low + close) / 3
+        stp = typical_price.ewm(span=6, adjust=False).mean()
+        
+        df = df.reset_index()
+        if 'Date' not in df.columns: df['Date'] = df.index
+        else: df['Date'] = pd.to_datetime(df['Date'])
+        
+        plot_df = pd.DataFrame({
+            'Date': df['Date'], 
+            'MF_Smooth': mf_smooth.values, 
+            'STP': stp.values, 
+            'Price': close.values
+        }).tail(30).reset_index(drop=True)
+        
+        plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
+        return plot_df
+    except Exception as e: return None
 
 # --- ANA TARAMA VE ANALİZ FONKSİYONLARI ---
 
@@ -950,6 +981,165 @@ def calculate_price_action_dna(ticker):
     except Exception as e:
         return None
 
+# ==============================================================================
+# 4. GÖRSELLEŞTİRME FONKSİYONLARI
+# ==============================================================================
+
+def render_sentiment_card(sent):
+    if not sent: return
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
+    st.markdown(f"""
+    <div class="info-card">
+        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
+        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
+        </div>
+        <div style="font-family:'Courier New'; font-size:0.8rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
+        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
+        <div class="info-row"><div class="label-long">2. Hacim:</div><div class="info-val">{sent['vol']}</div></div>
+        <div class="info-row"><div class="label-long">3. Trend:</div><div class="info-val">{sent['tr']}</div></div>
+        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{sent['vola']}</div></div>
+        <div class="info-row"><div class="label-long">5. Yapı:</div><div class="info-val">{sent['str']}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_deep_xray_card(xray):
+    if not xray: return
+    st.markdown(f"""
+    <div class="info-card">
+        <div class="info-header">🔍 Derin Teknik Röntgen</div>
+        <div class="info-row"><div class="label-long">Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
+        <div class="info-row"><div class="label-long">Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
+        <div class="info-row"><div class="label-long">Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
+        <div class="info-row"><div class="label-long">Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
+        <div class="info-row"><div class="label-long">Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_detail_card_advanced(ticker):
+    ACIKLAMALAR = {
+        "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
+        "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
+        "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliyor)",
+        "MACD": "🟢 MACD: Histogram bir önceki günden yüksek (Momentum Artışı Var)",
+        "W%R": "🔫 W%R: -50 üzerinde (Aşırı satım seviyesinden kurtulmuş)",
+        "Hacim": "🔊 Hacim: Son 5 günlük hacim ortalama hacmin %20 üzerinde",
+        "Breakout": "🔨 Breakout: Fiyat son 20 gün zirvesinin %98 veya üzerinde",
+        "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arasında ve artışta",
+        "Hacim Patlaması": "💥 Hacim son 20 gün ortalamanın %30 üzerinde seyrediyor",
+        "RS (S&P500)": "💪 Hisse, S&P 500 endeksinden daha güçlü",
+        "Boğa Trendi": "🐂 Boğa Trendi: Fiyat Üç Ortalamanın da (SMA50 > SMA100 > SMA200) üzerinde",
+        "60G Zirve": "⛰️ Zirve: Fiyat son 60 günün tepesine %97 yakınlıkta",
+        "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
+        "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
+        "RS": "💪 Relatif Güç (RS)",
+        "Setup": "🛠️ Setup Durumu"
+    }
+
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+    dt = get_tech_card_data(ticker)
+    info = fetch_stock_info(ticker)
+    
+    price_val = "Veri Yok"
+    if info and info.get('price'):
+        price_val = f"{info['price']:.2f}"
+    elif dt and 'close_last' in dt:
+        price_val = f"{dt['close_last']:.2f}"
+        
+    ma_vals = "Veri Yok"
+    stop_vals = "Veri Yok"
+    if dt:
+        ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f}"
+        stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
+
+    r1_res = {}
+    r1_score = 0
+    if st.session_state.scan_data is not None:
+        row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
+        if not row.empty and "Detaylar" in row.columns: 
+            r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
+    
+    if not r1_res:
+        temp_df = analyze_market_intelligence([ticker])
+        if not temp_df.empty and "Detaylar" in temp_df.columns: 
+            r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
+
+    r2_res = {}
+    r2_score = 0
+    if st.session_state.radar2_data is not None:
+        row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
+        if not row.empty and "Detaylar" in row.columns: 
+            r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
+    
+    if not r2_res:
+        temp_df2 = radar2_scan([ticker])
+        if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
+            r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
+
+    def get_icon(val): return "✅" if val else "❌"
+
+    r1_html = ""
+    for k, v in r1_res.items():
+        text = ACIKLAMALAR.get(k, k)
+        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+
+    r2_html = ""
+    for k, v in r2_res.items():
+        text = ACIKLAMALAR.get(k, k)
+        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+
+    full_html = f"""
+    <div class="info-card">
+        <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
+            <div style="font-size:0.8rem; color:#64748B;">{ma_vals}</div>
+        </div>
+        <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
+        <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
+            <div class="tech-grid" style="font-size:0.75rem;">
+                {r1_html}
+            </div>
+        </div>
+        <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
+            <div class="tech-grid" style="font-size:0.75rem;">
+                {r2_html}
+            </div>
+        </div>
+    </div>
+    """
+    clean_html = full_html.replace("\n", " ")
+    st.markdown(clean_html, unsafe_allow_html=True)
+
+def render_synthetic_sentiment_panel(data):
+    if data is None or data.empty: return
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
+    with c1:
+        base = alt.Chart(data).encode(x=x_axis)
+        color_condition = alt.condition(
+            alt.datum.MF_Smooth > 0,
+            alt.value("#3b82f6"), 
+            alt.value("#ef4444")
+        )
+        bars = base.mark_bar(size=15, opacity=0.9).encode(
+            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
+            color=color_condition, 
+            tooltip=['Date_Str', 'Price', 'MF_Smooth']
+        )
+        price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi", fontSize=14, color="#1e40af")), use_container_width=True)
+    with c2:
+        base2 = alt.Chart(data).encode(x=x_axis)
+        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
+        line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
+        area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+
 def render_price_action_panel(ticker):
     pa = calculate_price_action_dna(ticker)
     if not pa: return
@@ -1288,19 +1478,13 @@ with col_left:
 # --- SAĞ SÜTUN (Fiyat, Sentiment, ICT, Tarama) ---
 with col_right:
     # 1. FİYAT KUTUSU (ZORUNLU VE EN BAŞTA)
-    # Eğer info yukarıda fetch edilmediyse bile burada tekrar deneyelim
-    if not info:
-        info = fetch_stock_info(st.session_state.ticker)
+    if not info: info = fetch_stock_info(st.session_state.ticker)
     
     if info and info.get('price'):
-        # Hisse adını temizle (örn: AKBNK.IS -> AKBNK)
         display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-        
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-        # Label kısmına {display_ticker} ekledim
         st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
-    else:
-        st.warning("Fiyat verisi alınamadı.")
+    else: st.warning("Fiyat verisi alınamadı.")
 
     # 2. YENİ PRICE ACTION PANELİ
     render_price_action_panel(st.session_state.ticker)
@@ -1323,13 +1507,10 @@ with col_right:
                     r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
                     commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
-                
-                # --- ORTAK FIRSATLAR GÜNCELLENDİ (2 SÜTUN, YILDIZ YOK) ---
                 cols = st.columns(2) 
                 for i, item in enumerate(sorted_commons):
                     sym = item["symbol"]
                     score_text_safe = f"{i+1}. {sym} ({int(item['combined'])})"
-                    
                     with cols[i % 2]:
                         if st.button(f"{score_text_safe} | R1:{int(item['r1_score'])} R2:{int(item['r2_score'])}", key=f"c_select_{sym}", help="Detaylar için seç", use_container_width=True): 
                             on_scan_result_click(sym); st.rerun()
@@ -1337,35 +1518,24 @@ with col_right:
         else: st.caption("İki radar da çalıştırılmalı.")
     st.markdown("<hr>", unsafe_allow_html=True)
     
-    # İki Tablo Yapısı (İzleme sekmesi kaldırıldı)
     tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
-    
-    # --- RADAR 1 ---
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
-        
         if st.session_state.scan_data is not None:
             with st.container(height=250):
                 cols = st.columns(2)
                 for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🔥 {row['Skor']}/8 | {sym}", key=f"r1_b_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
-
-    # --- RADAR 2 ---
+                        if st.button(f"🔥 {row['Skor']}/8 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        
         if st.session_state.radar2_data is not None:
             with st.container(height=250):
                 cols = st.columns(2)
                 for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
+                        if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
