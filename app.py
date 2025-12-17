@@ -855,6 +855,130 @@ def calculate_ict_deep_analysis(ticker):
     except Exception as e:
         return {"status": "Error", "msg": str(e)}
 
+# --- PRICE ACTION MODÜLÜ (YENİ EKLENDİ) ---
+@st.cache_data(ttl=600)
+def calculate_price_action_dna(ticker):
+    try:
+        # Veri Çekme
+        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+        if df.empty or len(df) < 20: return None
+        
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+        
+        # Temel Değişkenler
+        o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
+        
+        # Son Mum
+        curr_o = o.iloc[-1]; curr_h = h.iloc[-1]; curr_l = l.iloc[-1]; curr_c = c.iloc[-1]; curr_v = v.iloc[-1]
+        
+        # 1. BÖLÜM: SON MUM KARAKTERİ
+        body_size = abs(curr_c - curr_o)
+        upper_wick = curr_h - max(curr_o, curr_c)
+        lower_wick = min(curr_o, curr_c) - curr_l
+        total_len = curr_h - curr_l
+        
+        candle_char = "Nötr / Standart Mum"
+        if total_len > 0:
+            if upper_wick > body_size * 2: candle_char = "Pinbar (Üstten Red Yedi - Satış Baskısı)"
+            elif lower_wick > body_size * 2: candle_char = "Pinbar (Alttan Red Yedi - Alış İştahı)"
+            elif body_size > total_len * 0.8: candle_char = "Marubozu (Güçlü Gövde - Momentum)"
+            elif body_size < total_len * 0.1: candle_char = "Doji (Kararsızlık)"
+        
+        # 2. BÖLÜM: MUM FORMASYONLARI (Son 2-3 Mum)
+        pattern_txt = "Belirgin formasyon yok"
+        prev_o = o.iloc[-2]; prev_c = c.iloc[-2]; prev_body = abs(prev_c - prev_o)
+        
+        # Engulfing (Yutan Mum)
+        if (curr_c > prev_o) and (curr_o < prev_c) and (curr_c > curr_o) and (prev_c < prev_o): # Bullish
+            pattern_txt = "🐂 Bullish Engulfing (Yutan Boğa)"
+        elif (curr_c < prev_o) and (curr_o > prev_c) and (curr_c < curr_o) and (prev_c > prev_o): # Bearish
+            pattern_txt = "🐻 Bearish Engulfing (Yutan Ayı)"
+        
+        # Harami (Hamile Boğa/Ayı - İç Mum)
+        elif (curr_h < h.iloc[-2]) and (curr_l > l.iloc[-2]):
+            pattern_txt = "Inside Bar (Kararsızlık/Sıkışma)"
+            
+        # Morning/Evening Star (Basit Mantık)
+        if len(df) > 3:
+            p2_c = c.iloc[-3]; p2_o = o.iloc[-3] # 2 gün önce
+            if (p2_c < p2_o) and (abs(prev_c - prev_o) < prev_body * 0.3) and (curr_c > curr_o):
+                pattern_txt = "🌟 Olası Morning Star (Dönüş)"
+            elif (p2_c > p2_o) and (abs(prev_c - prev_o) < prev_body * 0.3) and (curr_c < curr_o):
+                pattern_txt = "🌑 Olası Evening Star (Dönüş)"
+
+        # 3. BÖLÜM: TUZAK (SFP - Swing Failure Pattern)
+        sfp_txt = "Tuzak Sinyali Yok"
+        # Son 20 mumdaki en yüksek/düşük swing noktaları bul
+        lookback = 20
+        recent_highs = h.iloc[-lookback:-1].max()
+        recent_lows = l.iloc[-lookback:-1].min()
+        
+        if (curr_h > recent_highs) and (curr_c < recent_highs):
+            sfp_txt = "⚠️ Bearish SFP (Tepede Tuzak): Fiyat tepeyi deldi ama tutunamadı."
+        elif (curr_l < recent_lows) and (curr_c > recent_lows):
+            sfp_txt = "💎 Bullish SFP (Dipte Tuzak): Fiyat dibi deldi ama stopları patlatıp döndü."
+
+        # 4. BÖLÜM: SEVİYE ETKİLEŞİMİ (PDH / PDL)
+        prev_h = h.iloc[-2]; prev_l = l.iloc[-2]
+        level_txt = "Ara Bölgede"
+        if curr_c > prev_h: level_txt = "📈 Dünün Tepesi (PDH) aşıldı (Güçlü)"
+        elif curr_c < prev_l: level_txt = "📉 Dünün Dibi (PDL) kırıldı (Zayıf)"
+        elif (curr_c > (prev_h + prev_l)/2): level_txt = "Dünün denge noktasının üzerinde"
+        
+        # 5. BÖLÜM: SIKIŞMA (BOBİN)
+        squeeze_txt = "Normal Dalgalanma"
+        last_5_range = h.tail(5).max() - l.tail(5).min()
+        atr = (h-l).rolling(14).mean().iloc[-1]
+        if last_5_range < (2 * atr): # Son 5 günün toplam range'i 2 ATR'den küçükse
+            squeeze_txt = "⏳ BOBİN (Sıkışma): Son 5 mum çok dar alanda. Sert patlama yakındır."
+            
+        # 6. BÖLÜM: HACİM ANALİZİ
+        vol_txt = "Normal Hacim"
+        avg_vol = v.rolling(20).mean().iloc[-1]
+        
+        if curr_v > avg_vol * 1.5:
+            if curr_c > curr_o: vol_txt = "🔋 Yüksek Hacimli Yükseliş (Destekleyici)"
+            else: vol_txt = "🔻 Yüksek Hacimli Düşüş (Satış Baskısı)"
+        elif curr_v < avg_vol * 0.6:
+            vol_txt = "💤 Hacimsiz (İlgi Düşük)"
+            
+        return {
+            "candle": candle_char,
+            "pattern": pattern_txt,
+            "sfp": sfp_txt,
+            "level": level_txt,
+            "squeeze": squeeze_txt,
+            "volume": vol_txt
+        }
+    except Exception as e:
+        return None
+
+def render_price_action_panel(ticker):
+    pa = calculate_price_action_dna(ticker)
+    if not pa: return
+
+    # Renk Kodlaması (Basit)
+    sfp_bg = "#fef2f2" if "Bearish" in pa['sfp'] else "#f0fdf4" if "Bullish" in pa['sfp'] else "#ffffff"
+    sfp_border = "#dc2626" if "Bearish" in pa['sfp'] else "#16a34a" if "Bullish" in pa['sfp'] else "#e5e7eb"
+    
+    html = f"""
+    <div class="info-card" style="border-top: 3px solid #6366f1;">
+        <div class="info-header" style="color:#4f46e5;">🕯️ PRICE ACTION PANELİ</div>
+        
+        <div class="info-row"><div class="label-long">1. Mum:</div><div class="info-val">{pa['candle']}</div></div>
+        <div class="info-row"><div class="label-long">2. Formasyon:</div><div class="info-val" style="font-weight:700;">{pa['pattern']}</div></div>
+        
+        <div style="background:{sfp_bg}; border:1px solid {sfp_border}; padding:4px; border-radius:4px; margin:4px 0;">
+            <div class="info-row" style="margin:0;"><div class="label-long">3. TUZAK:</div><div class="info-val" style="font-weight:700;">{pa['sfp']}</div></div>
+        </div>
+        
+        <div class="info-row"><div class="label-long">4. Konum:</div><div class="info-val">{pa['level']}</div></div>
+        <div class="info-row"><div class="label-long">5. Sıkışma:</div><div class="info-val" style="color:#d97706;">{pa['squeeze']}</div></div>
+        <div class="info-row"><div class="label-long">6. Hacim:</div><div class="info-val">{pa['volume']}</div></div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
 def render_ict_deep_panel(ticker):
     # 1. HESAPLAMA VERİSİNİ ÇEK
     data = calculate_ict_deep_analysis(ticker)
@@ -1421,9 +1545,11 @@ with col_right:
         st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
 
     sent_data = calculate_sentiment_score(st.session_state.ticker)
-    render_sentiment_card(sent_data)
     
-    # --- YENİ ICT PANELİ BURADA ---
+    # --- YENİ PRICE ACTION PANELİ ---
+    render_price_action_panel(st.session_state.ticker)
+    
+    # --- YENİ ICT PANELİ ---
     render_ict_deep_panel(st.session_state.ticker)
     
     xray_data = get_deep_xray_data(st.session_state.ticker)
