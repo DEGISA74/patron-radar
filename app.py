@@ -361,7 +361,7 @@ def scan_hidden_accumulation(asset_list):
 
             if not is_all_blue: return None
 
-            # Kriter 2: Fiyat Hareketi (Son 6 günde max %3 artış)
+            # Kriter 2: Fiyat Hareketi (Son 6 günde max %2.5 artış)
             price_6_days_ago = float(close.iloc[-6])
             price_now = float(close.iloc[-1])
             
@@ -371,13 +371,13 @@ def scan_hidden_accumulation(asset_list):
             price_change_pct = (price_now - price_6_days_ago) / price_6_days_ago
 
             # Fiyat %3'ten az artmış olmalı (Baskılanıyor)
-            if price_change_pct <= 0.03:
+            if price_change_pct <= 0.25:
                 return {
                     "Sembol": symbol,
                     "Fiyat": f"{price_now:.2f}",
                     "Değişim (6G)": f"%{price_change_pct*100:.2f}",
                     "MF Gücü": float(last_6_mf.mean()), # Sıralama için float tutuyoruz
-                    "Durum": "🤫 Gizli Toplama"
+                    "Durum": "🤫 Akıllı Para Topluyor?"
                 }
             return None
         except:
@@ -1432,3 +1432,4 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
