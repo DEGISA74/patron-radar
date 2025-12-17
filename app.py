@@ -967,10 +967,10 @@ def calculate_price_action_dna(ticker):
         loc_txt = "Bölge İçi"
         loc_desc = "Fiyat dünün en yükseği ve en düşüğü arasında (Denge Bölgesi) dalgalanıyor."
         if curr_c > prev_h:
-            loc_txt = "📈 PDH Üzeri (Güçlü)"
+            loc_txt = "📈 Dünün en yükseği (Güçlü)"
             loc_desc = "Fiyat dünün zirvesini aştı ve orada kalıcı olmaya çalışıyor. Alıcılar fiyatı yukarı taşımaya istekli."
         elif curr_c < prev_l:
-            loc_txt = "📉 PDL Altı (Zayıf)"
+            loc_txt = "📉 Dünün en düşüğü (Zayıf)"
             loc_desc = "Fiyat dünün dibini kırdı. Satıcılar kontrolü ele geçirmiş durumda, destekler çalışmıyor."
 
         # 5. SIKIŞMA (BOBİN)
@@ -1584,6 +1584,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
