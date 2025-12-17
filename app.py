@@ -771,7 +771,7 @@ def calculate_ict_deep_analysis(ticker):
                 if gap_size > atr * 0.05:
                     bearish_fvgs.append({'top': low.iloc[i-2], 'bot': high.iloc[i], 'idx': i})
 
-        # --- OB LOGIC & MEAN THRESHOLD ---
+        # --- OB LOGIC & MEAN THRESHOLD (YENİ EKLENEN KISIM) ---
         active_ob_txt = "Yok"
         mean_threshold = 0.0 # Yeni değişken
         lookback = 20
@@ -1491,6 +1491,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
