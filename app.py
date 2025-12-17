@@ -1167,41 +1167,82 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-    # --- SENTIMENT AJANI (STP) + SCROLLBAR ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (STP) Taraması</div>', unsafe_allow_html=True)
-    with st.expander("STP Taramasını Başlat", expanded=True):
-        if st.button(f"🔎 {st.session_state.category} İçin STP Tara", type="secondary"):
-             with st.spinner("Ajan STP izini sürüyor..."):
+# --- SENTIMENT & GİZLİ TOPLAMA AJANI (3 SÜTUNLU - SABİT YÜKSEKLİK) ---
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment & İstihbarat Ajanı</div>', unsafe_allow_html=True)
+    
+    # State tanımları
+    if 'accum_data' not in st.session_state: st.session_state.accum_data = None
+    if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
+
+    with st.expander("Ajan Operasyonlarını Yönet", expanded=True):
+        # Tek butonla tümünü tarama seçeneği
+        if st.button(f"🕵️ TAM TARAMA BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
+            with st.spinner("Ajan piyasayı didik didik ediyor (STP + Gizli Toplama)..."):
+                # 1. Mevcut Varlıkları Al
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                
+                # 2. STP Taraması (Parallel)
                 crosses, trends = scan_stp_signals(current_assets)
-                st.session_state.stp_crosses = crosses; st.session_state.stp_trends = trends; st.session_state.stp_scanned = True
-        
-        if st.session_state.get('stp_scanned'):
-            c_stp1, c_stp2 = st.columns(2)
-            # --- SOL KUTU (YUKARI KESENLER) ---
-            with c_stp1:
-                st.markdown("###### ⚡ FİYATI STP YUKARI KESENLER")
+                st.session_state.stp_crosses = crosses
+                st.session_state.stp_trends = trends
+                st.session_state.stp_scanned = True
+                
+                # 3. Gizli Toplama Taraması (Parallel)
+                st.session_state.accum_data = scan_hidden_accumulation(current_assets)
+
+        # --- SONUÇ EKRANI (3 SÜTUNLU) ---
+        if st.session_state.stp_scanned or (st.session_state.accum_data is not None):
+            st.markdown("---")
+            
+            # 3 Eşit Sütun
+            col_res1, col_res2, col_res3 = st.columns(3)
+
+            # --- SÜTUN 1: STP YUKARI KESENLER ---
+            with col_res1:
+                st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
+                # Yükseklik 200px (Eski ayarınla aynı)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_crosses:
-                        cols = st.columns(3)
-                        for i, item in enumerate(st.session_state.stp_crosses):
-                            with cols[i % 3]:
-                                if st.button(f"🚀 {item['Sembol']}\n({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}", use_container_width=True): 
-                                    st.session_state.ticker = item['Sembol']
-                                    st.rerun()
-                    else: st.info("Yeni kesişim yok.")
-            # --- SAĞ KUTU (TREND TAKİBİ) ---
-            with c_stp2:
-                st.markdown("###### ✅ 2 GÜNDÜR STP ÜSTÜNDE")
+                        for item in st.session_state.stp_crosses:
+                            if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}", use_container_width=True): 
+                                st.session_state.ticker = item['Sembol']
+                                st.rerun()
+                    else:
+                        st.caption("Kesişim yok.")
+
+            # --- SÜTUN 2: 2 GÜNDÜR STP ÜZERİNDE ---
+            with col_res2:
+                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>✅ STP TREND</div>", unsafe_allow_html=True)
+                # Yükseklik 200px
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
-                         cols = st.columns(3)
-                         for i, item in enumerate(st.session_state.stp_trends):
-                            with cols[i % 3]:
-                                if st.button(f"📈 {item['Sembol']}\n%{item['Fark']:.1f}", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
-                                    st.session_state.ticker = item['Sembol']
-                                    st.rerun()
-                    else: st.info("Trend takibi yok.")
+                        for item in st.session_state.stp_trends:
+                            if st.button(f"📈 {item['Sembol']} (+%{item['Fark']:.1f})", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
+                                st.session_state.ticker = item['Sembol']
+                                st.rerun()
+                    else:
+                        st.caption("Trend yok.")
+
+            # --- SÜTUN 3: GİZLİ TOPLAMA (YENİ) ---
+            with col_res3:
+                st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>🤫 GİZLİ TOPLAMA</div>", unsafe_allow_html=True)
+                # Yükseklik 200px
+                with st.container(height=200, border=True):
+                    if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
+                        for index, row in st.session_state.accum_data.iterrows():
+                            # Kart tasarımı
+                            card_html = f"""
+                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:4px; padding:4px; margin-bottom:4px; text-align:center;">
+                                <div style="font-weight:700; color:#4c1d95; font-size:0.8rem;">{row['Sembol']}</div>
+                                <div style="font-size:0.7rem; color:#5b21b6;">Değ: {row['Değişim (6G)']}</div>
+                            </div>
+                            """
+                            st.markdown(card_html, unsafe_allow_html=True)
+                            if st.button(f"🔍 Git: {row['Sembol']}", key=f"btn_acc_{row['Sembol']}", use_container_width=True):
+                                on_scan_result_click(row['Sembol'])
+                                st.rerun()
+                    else:
+                        st.caption("Tespit edilemedi.")
 
     # --- AJAN 3 ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı Taraması)</div>', unsafe_allow_html=True)
@@ -1313,6 +1354,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
