@@ -1189,7 +1189,7 @@ def render_price_action_panel(ticker):
         </div>
 
         <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. VSA & HACİM: {pa['vol']['title']}</div>
+            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. Mum Boyu & Hacim Analizi: {pa['vol']['title']}</div>
             <div class="edu-note">{pa['vol']['desc']}</div>
         </div>
 
@@ -1302,7 +1302,7 @@ def render_ict_deep_panel(ticker):
         {mt_html}
 
         <div style="margin-bottom:8px;">
-            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
+            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 Ucuz Pahalı Okları (Giriş/Çıkış Referansları)</div>
             
             <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
             <div class="edu-note">{zone_desc}</div>
@@ -1584,5 +1584,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
