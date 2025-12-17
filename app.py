@@ -699,7 +699,7 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT MODÜLÜ (GÜNCELLENDİ: Hem Zengin Analiz Hem R/R Hesaplar) ---
+# --- ICT MODÜLÜ (GÜNCELLENDİ: Hem Zengin Analiz Hem R/R Hesaplar + Mean Threshold) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
     try:
@@ -1491,9 +1491,3 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
-
-
-
-
