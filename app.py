@@ -353,6 +353,7 @@ def scan_hidden_accumulation(asset_list):
             # --- KRİTERLER ---
             # 1. Son 6 günün verisini al
             last_6_mf = mf_smooth.tail(6)
+            last_6_close = close.tail(6) # Fiyat kontrolü için son 6 kapanışı alıyoruz
             
             if len(last_6_mf) < 6: return None
 
@@ -361,23 +362,34 @@ def scan_hidden_accumulation(asset_list):
 
             if not is_all_blue: return None
 
-            # Kriter 2: Fiyat Hareketi (Son 6 günde max %2.5 artış)
-            price_6_days_ago = float(close.iloc[-6])
-            price_now = float(close.iloc[-1])
+            # Kriter 2: TUZAK KONTROLÜ (Maksimum Dalgalanma Kontrolü)
+            # Referans fiyat: 6 gün önceki kapanış
+            price_start = float(last_6_close.iloc[0]) 
             
-            # Sıfıra bölme hatasını önle
-            if price_6_days_ago == 0: return None
+            # Son 6 gün içinde görülen EN YÜKSEK kapanış fiyatı
+            price_max_in_period = float(last_6_close.max())
+            
+            price_now = float(last_6_close.iloc[-1])
+            
+            if price_start == 0: return None
 
-            price_change_pct = (price_now - price_6_days_ago) / price_6_days_ago
+            # Bu dönemdeki maksimum yükseliş oranı (Zirve - Başlangıç)
+            max_upward_move = (price_max_in_period - price_start) / price_start
 
-            # Fiyat %3'ten az artmış olmalı (Baskılanıyor)
-            if price_change_pct <= 0.25:
+            # Fiyat 6 gün boyunca HİÇBİR ZAMAN başlangıç fiyatının %2.5 üzerine çıkmamış olmalı.
+            # Böylece %6 yükselip geri düşenleri eleriz.
+            if max_upward_move <= 0.025:
+                
+                # Sadece bilgi amaçlı bugünkü değişim oranını da hesaplayalım
+                current_change = (price_now - price_start) / price_start
+                
                 return {
                     "Sembol": symbol,
                     "Fiyat": f"{price_now:.2f}",
-                    "Değişim (6G)": f"%{price_change_pct*100:.2f}",
-                    "MF Gücü": float(last_6_mf.mean()), # Sıralama için float tutuyoruz
-                    "Durum": "🤫 Akıllı Para Topluyor?"
+                    "Değişim (6G)": f"%{current_change*100:.2f}", # Kullanıcıya bugünkü net değişimi göster
+                    "Max Zirve": f"%{max_upward_move*100:.2f}",   # Meraklısı için dönem içi max zirve
+                    "MF Gücü": float(last_6_mf.mean()), 
+                    "Durum": "🤫 Gizli Toplama"
                 }
             return None
         except:
@@ -1432,6 +1444,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
