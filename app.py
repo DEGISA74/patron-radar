@@ -1303,7 +1303,7 @@ with col_left:
 
             # --- SÜTUN 3: GİZLİ TOPLAMA (YENİ) ---
             with col_res3:
-                st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>🤫 GİZLİ TOPLAMA</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>🤫 AKILLI PARA TOPLUYOR?</div>", unsafe_allow_html=True)
                 # Yükseklik 200px
                 with st.container(height=200, border=True):
                     if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
@@ -1432,5 +1432,6 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
