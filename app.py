@@ -720,15 +720,15 @@ def calculate_ict_deep_analysis(ticker):
         sw_highs = []; sw_lows = []
         for i in range(2, len(df)-2):
             if high.iloc[i] >= max(high.iloc[i-2:i]) and high.iloc[i] >= max(high.iloc[i+1:i+3]):
-                sw_highs.append((df.index[i], high.iloc[i])) # Tarih, Fiyat
+                sw_highs.append((df.index[i], high.iloc[i])) 
             if low.iloc[i] <= min(low.iloc[i-2:i]) and low.iloc[i] <= min(low.iloc[i+1:i+3]):
                 sw_lows.append((df.index[i], low.iloc[i]))
 
         if not sw_highs or not sw_lows: return {"error": "Swing Yapısı Oluşmadı"}
 
         curr_price = close.iloc[-1]
-        last_sh = sw_highs[-1][1] # Son Swing High
-        last_sl = sw_lows[-1][1]  # Son Swing Low
+        last_sh = sw_highs[-1][1] 
+        last_sl = sw_lows[-1][1]  
         
         # Market Yapısı (MSS / BOS)
         structure = "YATAY / KONSOLİDE"
@@ -771,8 +771,9 @@ def calculate_ict_deep_analysis(ticker):
                 if gap_size > atr * 0.05:
                     bearish_fvgs.append({'top': low.iloc[i-2], 'bot': high.iloc[i], 'idx': i})
 
-        # --- OB LOGIC (Klasik ICT) ---
+        # --- OB LOGIC & MEAN THRESHOLD ---
         active_ob_txt = "Yok"
+        mean_threshold = 0.0 # Yeni değişken
         lookback = 20
         start_idx = max(0, len(df) - lookback)
         
@@ -786,7 +787,10 @@ def calculate_ict_deep_analysis(ticker):
             if isinstance(lowest_idx, pd.Timestamp): lowest_idx = df.index.get_loc(lowest_idx)
             for i in range(lowest_idx, max(0, lowest_idx-5), -1):
                 if df['Close'].iloc[i] < df['Open'].iloc[i]: # Kırmızı
-                    active_ob_txt = f"{df['Low'].iloc[i]:.2f} - {df['High'].iloc[i]:.2f} (Talep Bölgesi)"
+                    ob_low = df['Low'].iloc[i]
+                    ob_high = df['High'].iloc[i]
+                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Talep Bölgesi)"
+                    mean_threshold = (ob_low + ob_high) / 2 # %50 Hesabı
                     break
                     
         elif bias == "bearish" or bias == "bearish_retrace":
@@ -799,7 +803,10 @@ def calculate_ict_deep_analysis(ticker):
             if isinstance(highest_idx, pd.Timestamp): highest_idx = df.index.get_loc(highest_idx)
             for i in range(highest_idx, max(0, highest_idx-5), -1):
                 if df['Close'].iloc[i] > df['Open'].iloc[i]: # Yeşil
-                    active_ob_txt = f"{df['Low'].iloc[i]:.2f} - {df['High'].iloc[i]:.2f} (Arz Bölgesi)"
+                    ob_low = df['Low'].iloc[i]
+                    ob_high = df['High'].iloc[i]
+                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Arz Bölgesi)"
+                    mean_threshold = (ob_low + ob_high) / 2 # %50 Hesabı
                     break
 
         # --- SETUP KURULUMU (RİSK / GETİRİ HESABI) ---
@@ -807,7 +814,6 @@ def calculate_ict_deep_analysis(ticker):
         entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
         setup_desc = "Net bir kurulum oluşmadı."
         
-        # LONG SENARYOSU
         if bias in ["bullish", "bullish_retrace"]:
             valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02]
             if valid_fvgs:
@@ -821,7 +827,6 @@ def calculate_ict_deep_analysis(ticker):
                     setup_type = "LONG"
                     setup_desc = "Fiyat Bullish yapıda. FVG bölgesinden tepki bekleniyor."
 
-        # SHORT SENARYOSU
         elif bias in ["bearish", "bearish_retrace"]:
             valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price * 0.98]
             if valid_fvgs:
@@ -844,18 +849,22 @@ def calculate_ict_deep_analysis(ticker):
             "status": "OK", "structure": structure, "bias": bias, "zone": zone,
             "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, "target": take_profit,
             "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
-            "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt
+            "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt,
+            "mean_threshold": mean_threshold, "curr_price": curr_price
         }
     except Exception as e:
         return {"status": "Error", "msg": str(e)}
 
 def render_ict_deep_panel(ticker):
+    # 1. HESAPLAMA VERİSİNİ ÇEK
     data = calculate_ict_deep_analysis(ticker)
+    
+    # Hata kontrolü (Eski yapıdan)
     if data.get("status") == "Error":
         st.error(f"ICT Analiz Hatası: {data.get('msg')}")
         return
     
-    # --- DİNAMİK AÇIKLAMALAR (TRANSLATOR) ---
+    # --- 2. DİNAMİK AÇIKLAMALAR (ESKİ PANELİN ZENGİN METİNLERİ) ---
     struct_desc = "Piyasa kararsız."
     if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
     elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
@@ -874,11 +883,46 @@ def render_ict_deep_panel(ticker):
     
     liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
 
+    # Renk Ayarları (Eski yapıdan)
     bias_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#475569"
     bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
 
-    # --- 1. ESKİ ZENGİN PANEL (RESİMDEKİ GİBİ) ---
-    # --- 2. YENİ R/R PANELİ ---
+    # --- 3. YENİ EKLENEN KISIM: KRİTİK DENGE (MEAN THRESHOLD) ---
+    mt_html = "" # Varsayılan boş
+    mt_val = data.get('mean_threshold', 0)
+    curr = data.get('curr_price', 0)
+    
+    # Eğer geçerli bir denge noktası hesaplanabildiyse HTML oluştur
+    if mt_val > 0 and curr > 0:
+        diff_pct = (curr - mt_val) / mt_val
+        
+        # Duruma göre metin ve renk belirle
+        if abs(diff_pct) < 0.003: # %0.3 hassasiyet (Bıçak Sırtı)
+            mt_status = "⚠️ KARAR ANI (BIÇAK SIRTI)"
+            mt_desc = "Fiyat, yapının tam %50 denge noktasını test ediyor. Kırılım yönü beklenmeli."
+            mt_color = "#d97706"; mt_bg = "#fffbeb" # Turuncu
+        elif diff_pct > 0:
+            mt_status = "🛡️ Alıcılar Korumada" if "bullish" in data['bias'] else "Fiyat Dengenin Üzerinde"
+            mt_desc = "Fiyat kritik orta noktanın üzerinde tutunuyor. Yapı korunuyor."
+            mt_color = "#15803d"; mt_bg = "#f0fdf4" # Yeşil
+        else:
+            mt_status = "🛡️ Satıcılar Baskın" if "bearish" in data['bias'] else "💀 Savunma Çöktü"
+            mt_desc = "Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir."
+            mt_color = "#b91c1c"; mt_bg = "#fef2f2" # Kırmızı
+            
+        # HTML Bloğu
+        mt_html = f"""
+        <div style="background:{mt_bg}; padding:6px; border-radius:5px; border-left:3px solid {mt_color}; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:700; color:{mt_color}; font-size:0.8rem;">⚖️ {mt_status}</span>
+                <span style="font-family:'JetBrains Mono'; font-size:0.8rem; font-weight:700;">{mt_val:.2f}</span>
+            </div>
+            <div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
+        </div>
+        """
+    # -----------------------------------------------------------
+
+    # Setup Kartı Renkleri (Eski yapıdan)
     if data['setup_type'] == "LONG":
         header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
     elif data['setup_type'] == "SHORT":
@@ -888,6 +932,7 @@ def render_ict_deep_panel(ticker):
 
     rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
     
+    # --- 4. HTML BİRLEŞTİRME (ESKİ + YENİ) ---
     html_content = f"""
     <div class="info-card" style="margin-bottom:8px;">
         <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
@@ -899,6 +944,8 @@ def render_ict_deep_panel(ticker):
             <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
             <div class="edu-note">{energy_desc}</div>
         </div>
+
+        {mt_html}
 
         <div style="margin-bottom:8px;">
             <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 PD ARRAYS (Giriş/Çıkış Referansları)</div>
@@ -1444,6 +1491,7 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
+
 
 
 
