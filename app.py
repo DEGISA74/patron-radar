@@ -253,6 +253,7 @@ def on_category_change():
         st.session_state.radar2_data = None
         st.session_state.agent3_data = None
         st.session_state.stp_scanned = False
+        st.session_state.accum_data = None # Reset new agent data
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
@@ -316,6 +317,83 @@ def scan_stp_signals(asset_list):
         except:
             continue
     return cross_signals, trend_signals
+
+@st.cache_data(ttl=900)
+def scan_hidden_accumulation(asset_list):
+    if not asset_list: return pd.DataFrame()
+    
+    # Hesaplama için en az 1 aylık veri çekelim
+    try:
+        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
+    except:
+        return pd.DataFrame()
+
+    def process_accumulation(symbol):
+        try:
+            # Veri setini ayıkla
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: return None
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: return None
+
+            if df.empty or 'Close' not in df.columns: return None
+            df = df.dropna(subset=['Close'])
+            if len(df) < 15: return None 
+
+            # Sentiment (MF_Smooth) Hesaplaması
+            close = df['Close']
+            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+            
+            delta = close.diff()
+            force_index = delta * volume
+            mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+
+            # --- KRİTERLER ---
+            # 1. Son 6 günün verisini al
+            last_6_mf = mf_smooth.tail(6)
+            
+            if len(last_6_mf) < 6: return None
+
+            # Kriter 1: Son 6 günün HEPSİ Mavi (Pozitif) olmalı
+            is_all_blue = (last_6_mf > 0).all()
+
+            if not is_all_blue: return None
+
+            # Kriter 2: Fiyat Hareketi (Son 6 günde max %3 artış)
+            price_6_days_ago = float(close.iloc[-6])
+            price_now = float(close.iloc[-1])
+            
+            # Sıfıra bölme hatasını önle
+            if price_6_days_ago == 0: return None
+
+            price_change_pct = (price_now - price_6_days_ago) / price_6_days_ago
+
+            # Fiyat %3'ten az artmış olmalı (Baskılanıyor)
+            if price_change_pct <= 0.03:
+                return {
+                    "Sembol": symbol,
+                    "Fiyat": f"{price_now:.2f}",
+                    "Değişim (6G)": f"%{price_change_pct*100:.2f}",
+                    "MF Gücü": float(last_6_mf.mean()), # Sıralama için float tutuyoruz
+                    "Durum": "🤫 Gizli Toplama"
+                }
+            return None
+        except:
+            return None
+
+    # Paralel işlem
+    results = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(process_accumulation, asset_list))
+    
+    results = [r for r in results if r is not None]
+    
+    # MF Gücüne göre sırala
+    if results:
+        return pd.DataFrame(results).sort_values(by="MF Gücü", ascending=False)
+    return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
@@ -1167,7 +1245,7 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-# --- SENTIMENT & GİZLİ TOPLAMA AJANI (3 SÜTUNLU - SABİT YÜKSEKLİK) ---
+    # --- SENTIMENT & GİZLİ TOPLAMA AJANI (3 SÜTUNLU - GÜNCELLENDİ) ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment & İstihbarat Ajanı</div>', unsafe_allow_html=True)
     
     # State tanımları
@@ -1244,8 +1322,8 @@ with col_left:
                     else:
                         st.caption("Tespit edilemedi.")
 
-    # --- AJAN 3 ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı Taraması)</div>', unsafe_allow_html=True)
+    # --- AJAN 3 (BREAKOUT) ---
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı Taraması</div>', unsafe_allow_html=True)
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
             with st.spinner("Ajan 3 piyasayı kokluyor..."): st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
@@ -1354,9 +1432,3 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {sym} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-
-
-
-
-
-
