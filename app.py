@@ -1013,7 +1013,7 @@ def render_deep_xray_card(xray):
             <div class="label-long">1. Momentum:</div>
             <div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div>
         </div>
-        <div class="edu-note">RSI 50 üstü ve MACD pozitif bölgedeyse ivme alıcıların kontrolündedir.</div>
+        <div class="edu-note">RSI 50 üstü ve MACD pozitif bölgedeyse ivme alıcıların kontrolündedir. RSI 50 üstünde? MACD 0'dan büyük?</div>
 
         <div class="info-row">
             <div class="label-long">2. Hacim Akışı:</div>
@@ -1031,7 +1031,7 @@ def render_deep_xray_card(xray):
             <div class="label-long">4. Volatilite:</div>
             <div class="info-val">{xray['vola_bb']}</div>
         </div>
-        <div class="edu-note">Bollinger Bantlarındaki daralma (Squeeze), yakında büyük bir patlama olabileceğini gösterir.</div>
+        <div class="edu-note">Bollinger Bantlarındaki daralma, yakında bir patlama olabileceğini gösterir. Fiyat üst bandı yukarı kırdı?</div>
 
         <div class="info-row">
             <div class="label-long">5. Piyasa Yapısı:</div>
@@ -1644,6 +1644,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
