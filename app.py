@@ -1387,9 +1387,6 @@ with st.sidebar:
     else:
         st.warning("Röntgen verisi şu an hazırlanamıyor.")
 
-    # =========================================================================
-    # 🎯 TAM OLARAK BURASI: SENTİMENT (DUYGU) PANELİ (MAVİ DİKDÖRTGEN ALANI)
-    # =========================================================================
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     if sentiment_verisi:
         render_sentiment_card(sentiment_verisi)
@@ -1674,6 +1671,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
