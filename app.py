@@ -1353,17 +1353,39 @@ def render_ict_deep_panel(ticker):
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 # ==============================================================================
-# 5. SIDEBAR UI
+# 5. SIDEBAR UI (GÜNCELLENMİŞ HALİ)
 # ==============================================================================
 with st.sidebar:
+    # Başlık ve Ayarlar
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">PATRONUN BORSA TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     st.markdown("### ⚙️ Ayarlar")
+    
     selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
-    if selected_theme_name != st.session_state.theme: st.session_state.theme = selected_theme_name; st.rerun()
+    
+    if selected_theme_name != st.session_state.theme: 
+        st.session_state.theme = selected_theme_name
+        st.rerun()
+    
     st.divider()
+
+    # AI Analist Bölümü
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
-        if st.button("📋 Analiz Metnini Hazırla", type="primary"): st.session_state.generate_prompt = True
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
+            st.session_state.generate_prompt = True
+
+    # --- YENİ: DERİN TEKNİK RÖNTGEN PANELİ ---
+    # AI Analist kutusunun hemen altına yerleştiriyoruz
+    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    
+    # Mevcut hisse senedi için verileri çekiyoruz
+    xray_verisi = get_deep_xray_data(st.session_state.ticker)
+    
+    if xray_verisi:
+        # Görsel kartı render ediyoruz
+        render_deep_xray_card(xray_verisi)
+    else:
+        st.warning("Röntgen verisi şu an hazırlanamıyor.")
 
 # ==============================================================================
 # 6. ANA SAYFA (MAIN UI)
@@ -1644,3 +1666,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
