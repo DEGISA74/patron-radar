@@ -962,19 +962,6 @@ def calculate_price_action_dna(ticker):
         if curr_c > prev_h: loc_txt, loc_desc = "📈 Dünün Zirvesi Kırıldı", "Alıcılar dünün en yüksek seviyesini aşmayı başardı."
         elif curr_c < prev_l: loc_txt, loc_desc = "📉 Dünün Dibi Kırıldı", "Satıcılar kontrolü ele geçirdi."
 
-        # YENİ EKLEME:
-        div_data = detect_rsi_divergence(df)
-        
-        return {
-            "candle": {"title": candle_title, "desc": candle_desc},
-            "sfp": {"title": sfp_txt, "desc": sfp_desc},
-            "vol": {"title": vol_txt, "desc": vol_desc},
-            "loc": {"title": loc_txt, "desc": loc_desc},
-            "sq": {"title": sq_txt, "desc": sq_desc},
-            "rsi_div": div_data  # <-- Yeni eklenen veri
-        }
-    except: return None
-        
         # --- 5. SIKIŞMA (BOBİN) ---
         atr = (h-l).rolling(14).mean().iloc[-1]
         range_5 = h.tail(5).max() - l.tail(5).min()
@@ -990,64 +977,6 @@ def calculate_price_action_dna(ticker):
         }
     except: return None
 
-def detect_rsi_divergence(df, rsi_period=14, lookback=40):
-    try:
-        # RSI Hesaplama
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        close = df['Close']
-        
-        # Son iki yerel dip ve tepeyi bulma (Basit Swing Points)
-        def get_pivots(data, window=3):
-            pivots = []
-            for i in range(window, len(data) - window):
-                # Tepe (High)
-                if data.iloc[i] > data.iloc[i-window:i].max() and data.iloc[i] > data.iloc[i+1:i+window+1].max():
-                    pivots.append((i, data.iloc[i], 'high'))
-                # Dip (Low)
-                if data.iloc[i] < data.iloc[i-window:i].min() and data.iloc[i] < data.iloc[i+1:i+window+1].min():
-                    pivots.append((i, data.iloc[i], 'low'))
-            return pivots
-
-        # Sadece son lookback kadar mumu tara
-        recent_df = df.tail(lookback)
-        recent_rsi = rsi.tail(lookback)
-        
-        pivots_price = get_pivots(recent_df['Close'])
-        pivots_rsi = get_pivots(recent_rsi)
-
-        # Sonuçları sakla
-        div_type = "Yok"
-        div_desc = "Belirgin bir momentum uyumsuzluğu saptanmadı."
-        
-        # --- NEGATİF UYUMSUZLUK (Ayı) ---
-        price_highs = [p for p in pivots_price if p[2] == 'high']
-        rsi_highs = [p for p in pivots_rsi if p[2] == 'high']
-        
-        if len(price_highs) >= 2 and len(rsi_highs) >= 2:
-            # Fiyat yükselen tepe yaparken RSI alçalan tepe yapıyorsa
-            if price_highs[-1][1] > price_highs[-2][1] and rsi_highs[-1][1] < rsi_highs[-2][1]:
-                div_type = "⚠️ Negatif Uyumsuzluk (Ayı)"
-                div_desc = "Fiyat yeni bir zirve yaptı ancak RSI (Güç) düştü. Dönüş yaklaşıyor olabilir."
-
-        # --- POZİTİF UYUMSUZLUK (Boğa) ---
-        price_lows = [p for p in pivots_price if p[2] == 'low']
-        rsi_lows = [p for p in pivots_rsi if p[2] == 'low']
-        
-        if len(price_lows) >= 2 and len(rsi_lows) >= 2:
-            # Fiyat alçalan dip yaparken RSI yükselen dip yapıyorsa
-            if price_lows[-1][1] < price_lows[-2][1] and rsi_lows[-1][1] > rsi_lows[-2][1]:
-                div_type = "💎 Pozitif Uyumsuzluk (Boğa)"
-                div_desc = "Fiyat yeni dip yaptı ancak RSI (Güç) yükseldi. Alıcılar gizlice birikiyor."
-
-        return {"title": div_type, "desc": div_desc}
-    except:
-        return {"title": "Veri Yetersiz", "desc": "Uyumsuzluk analizi için yeterli salınım noktası yok."}
-        
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI
 # ==============================================================================
@@ -1302,19 +1231,6 @@ def render_price_action_panel(ticker):
             <div class="edu-note">{pa['sq']['desc']}</div>
         </div>
     </div>
-   # Renk Belirleme
-    div_color = "#16a34a" if "Pozitif" in pa['rsi_div']['title'] else "#dc2626" if "Negatif" in pa['rsi_div']['title'] else "#475569"
-    
-    html_content = f"""
-    <div class="info-card" style="border-top: 3px solid #6366f1;">
-        <div class="info-header" style="color:#1e3a8a;">🕯️ PRICE ACTION DEDEKTİFİ</div>
-
-        <div style="margin-bottom:8px; border-top: 1px dashed #cbd5e1; padding-top:6px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{div_color};">⚡ RSI MOMENTUM UYUMSUZLUĞU: {pa['rsi_div']['title']}</div>
-            <div class="edu-note">{pa['rsi_div']['desc']}</div>
-        </div>
-        
-        </div>
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
     
