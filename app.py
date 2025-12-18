@@ -1383,7 +1383,7 @@ with st.sidebar:
     
     if xray_verisi:
         # Görsel kartı render ediyoruz
-        render_deep_xray_card(xray_verisi)
+        render_deep_xray_card(xray_verisi, st.session_state.ticker)
     else:
         st.warning("Röntgen verisi şu an hazırlanamıyor.")
 
@@ -1666,6 +1666,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
