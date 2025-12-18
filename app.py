@@ -985,20 +985,48 @@ def render_sentiment_card(sent):
     if not sent: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
-    st.markdown(f"""
+    
+    html_content = f"""
     <div class="info-card">
         <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
         <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
             <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
         </div>
         <div style="font-family:'Courier New'; font-size:0.8rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
-        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{sent['mom']}</div></div>
-        <div class="info-row"><div class="label-long">2. Hacim:</div><div class="info-val">{sent['vol']}</div></div>
-        <div class="info-row"><div class="label-long">3. Trend:</div><div class="info-val">{sent['tr']}</div></div>
-        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{sent['vola']}</div></div>
-        <div class="info-row"><div class="label-long">5. Yapı:</div><div class="info-val">{sent['str']}</div></div>
+        
+        <div class="info-row">
+            <div class="label-long">1. Momentum:</div>
+            <div class="info-val">{sent['mom']}</div>
+        </div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI ve yükselen MACD ivme kazandırır.</div>
+        
+        <div class="info-row">
+            <div class="label-long">2. Hacim:</div>
+            <div class="info-val">{sent['vol']}</div>
+        </div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve Para Akışını (OBV) denetler. Para girişi puanı artırır.</div>
+        
+        <div class="info-row">
+            <div class="label-long">3. Trend:</div>
+            <div class="info-val">{sent['tr']}</div>
+        </div>
+        <div class="edu-note">SMA50/200 konumuna bakar. Golden Cross ve fiyatın ortalamalar üstünde olması şarttır.</div>
+        
+        <div class="info-row">
+            <div class="label-long">4. Volatilite:</div>
+            <div class="info-val">{sent['vola']}</div>
+        </div>
+        <div class="edu-note">Bollinger Bant patlamalarını ve ATR durumunu inceler. Bant dışı taşmalar güç gösterisidir.</div>
+        
+        <div class="info-row">
+            <div class="label-long">5. Yapı:</div>
+            <div class="info-val">{sent['str']}</div>
+        </div>
+        <div class="edu-note">Market Yapısını (BOS) kontrol eder. Son 20 günün zirve kırılımı yükseliş onayıdır.</div>
     </div>
-    """, unsafe_allow_html=True)
+    """.replace("\n", "")
+    
+    st.markdown(html_content, unsafe_allow_html=True)
 
 def render_deep_xray_card(xray):
     if not xray: return
@@ -1671,6 +1699,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
