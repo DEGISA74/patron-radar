@@ -1000,7 +1000,7 @@ def render_sentiment_card(sent):
     </div>
     """, unsafe_allow_html=True)
 
-def render_deep_xray_card(xray):
+def render_deep_xray_card(xray, ticker):
     if not xray: return
     
     # Tüm HTML yapısını ve italik açıklamaları tek bir değişkende topluyoruz.
@@ -1666,4 +1666,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
