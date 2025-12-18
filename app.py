@@ -838,35 +838,60 @@ def calculate_ict_deep_analysis(ticker):
                     break
 
         # --- SETUP KURULUMU (RİSK / GETİRİ HESABI) ---
+        # --- SETUP KURULUMU (DÜZELTİLMİŞ MANTIK) ---
         setup_type = "BEKLE"
-        entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
-        setup_desc = "Net bir kurulum oluşmadı."
+        entry_price = 0.0
+        stop_loss = 0.0
+        take_profit = 0.0
+        rr_ratio = 0.0
+        setup_desc = "Kurumsal bölge uyumsuzluğu veya ters R/R nedeniyle işlem planı oluşturulmadı."
         
-        if bias in ["bullish", "bullish_retrace"]:
-            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02]
+        # 1. LONG KURGUSU: Sadece İndirim (Discount) bölgesindeysek ve yapı boğaysa
+        if bias in ["bullish", "bullish_retrace"] and zone == "DISCOUNT (Ucuz)":
+            # Fiyatın altındaki FVG'leri filtrele (Giriş için destek lazım)
+            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price]
+            
             if valid_fvgs:
                 best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['top']
-                stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
-                take_profit = next_bsl
-                risk = entry_price - stop_loss; reward = take_profit - entry_price
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "LONG"
-                    setup_desc = "Fiyat Bullish yapıda. FVG bölgesinden tepki bekleniyor."
+                temp_entry = best_fvg['top']
+                temp_tp = next_bsl
+                
+                # MATEMATİKSEL KONTROL: Hedef, Girişten yukarıda olmalı
+                if temp_tp > temp_entry:
+                    entry_price = temp_entry
+                    take_profit = temp_tp
+                    # Stop, ya son dibin altı ya da FVG'nin biraz altı
+                    stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
+                    
+                    risk = entry_price - stop_loss
+                    reward = take_profit - entry_price
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        setup_type = "LONG"
+                        setup_desc = "Fiyat indirim bölgesinde ve destek buldu. Likidite alımı için hedef yukarıda."
 
-        elif bias in ["bearish", "bearish_retrace"]:
-            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price * 0.98]
+        # 2. SHORT KURGUSU: Sadece Pahalılık (Premium) bölgesindeysek ve yapı ayıysa
+        elif bias in ["bearish", "bearish_retrace"] and zone == "PREMIUM (Pahalı)":
+            # Fiyatın üzerindeki FVG'leri filtrele (Giriş için direnç lazım)
+            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price]
+            
             if valid_fvgs:
                 best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['bot']
-                stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
-                take_profit = next_ssl
-                risk = stop_loss - entry_price; reward = entry_price - take_profit
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "SHORT"
-                    setup_desc = "Fiyat Bearish yapıda. Direnç bloğundan ret bekleniyor."
+                temp_entry = best_fvg['bot']
+                temp_tp = next_ssl
+                
+                # MATEMATİKSEL KONTROL: Hedef, Giriştin aşağıda olmalı
+                if temp_tp < temp_entry:
+                    entry_price = temp_entry
+                    take_profit = temp_tp
+                    stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
+                    
+                    risk = stop_loss - entry_price
+                    reward = entry_price - take_profit
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        setup_type = "SHORT"
+                        setup_desc = "Fiyat pahalılık bölgesinde dirençle karşılaştı. Hedef aşağıdaki likidite havuzu."
 
         # Bölge Analizi
         range_high = max(high.tail(60)); range_low = min(low.tail(60))
@@ -1600,6 +1625,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
