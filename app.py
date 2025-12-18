@@ -1000,15 +1000,14 @@ def render_sentiment_card(sent):
     </div>
     """, unsafe_allow_html=True)
 
-def render_deep_xray_card(xray, ticker):
+def render_deep_xray_card(xray):
     if not xray: return
     
-    # Sembolü temizleyelim (Örn: NVDA.IS -> NVDA)
-    display_ticker = ticker.replace(".IS", "").replace("=F", "").replace("-USD", "")
-    
+    # Tüm HTML yapısını ve italik açıklamaları tek bir değişkende topluyoruz.
+    # .replace("\n", "") komutu HTML'in bozulmadan okunmasını sağlar.
     html_icerik = f"""
     <div class="info-card">
-        <div class="info-header">🔍 Derin Teknik Röntgen: {display_ticker}</div>
+        <div class="info-header">🔍 Derin Teknik Röntgen</div>
         
         <div class="info-row">
             <div class="label-long">1. Momentum:</div>
@@ -1042,6 +1041,7 @@ def render_deep_xray_card(xray, ticker):
     </div>
     """.replace("\n", "")
     
+    # HTML kodlarını görsel karta dönüştüren kritik komut:
     st.markdown(html_icerik, unsafe_allow_html=True)
     
 def render_detail_card_advanced(ticker):
@@ -1383,7 +1383,7 @@ with st.sidebar:
     
     if xray_verisi:
         # Görsel kartı render ediyoruz
-        render_deep_xray_card(xray_verisi, st.session_state.ticker)
+        render_deep_xray_card(xray_verisi)
     else:
         st.warning("Röntgen verisi şu an hazırlanamıyor.")
 
@@ -1666,7 +1666,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
 
 
 
