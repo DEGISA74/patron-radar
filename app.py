@@ -887,122 +887,82 @@ def calculate_ict_deep_analysis(ticker):
 @st.cache_data(ttl=600)
 def calculate_price_action_dna(ticker):
     try:
-        # Veri Çekme
+        # Veri Çekme (3 aylık veri analiz için yeterli)
         df = yf.download(ticker, period="3mo", interval="1d", progress=False)
         if df.empty or len(df) < 20: return None
-        
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         
-        # Temel Değişkenler
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
-        # Son Mum Verileri
-        curr_o = float(o.iloc[-1]); curr_h = float(h.iloc[-1]); curr_l = float(l.iloc[-1]); curr_c = float(c.iloc[-1]); curr_v = float(v.iloc[-1])
-        prev_h = float(h.iloc[-2]); prev_l = float(l.iloc[-2]); prev_c = float(c.iloc[-2])
-        
-        # 1. MUM KARAKTERİ & FORMASYON
+        # Son 3 günün verileri
+        curr_o, curr_h, curr_l, curr_c, curr_v = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1]), float(v.iloc[-1])
+        prev_h, prev_l, prev_c, prev_o = float(h.iloc[-2]), float(l.iloc[-2]), float(c.iloc[-2]), float(o.iloc[-2])
+        p2_o, p2_h, p2_l, p2_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3])
+
+        # Yardımcı Değişkenler
         body_size = abs(curr_c - curr_o)
         total_len = curr_h - curr_l
-        upper_wick = curr_h - max(curr_o, curr_c)
-        lower_wick = min(curr_o, curr_c) - curr_l
+        u_wick = curr_h - max(curr_o, curr_c)
+        l_wick = min(curr_o, curr_c) - curr_l
+        is_green = curr_c > curr_o
+        is_red = curr_c < curr_o
+
+        # --- 1. GENİŞLETİLMİŞ MUM FORMASYONLARI (BAŞLIK 1) ---
+        bulls, bears, neutrals = [], [], []
         
-        candle_char = "Standart Mum"
-        candle_desc = "Fiyat olağan seyrinde, belirgin bir dönüş veya devam sinyali veren özel bir mum yapısı yok."
-        
-        # Pinbar Tespiti
+        # Tekli Formasyonlar
         if total_len > 0:
-            if upper_wick > body_size * 2.5:
-                candle_char = "🔫 Pinbar (Mezartaşı/Satış)"
-                candle_desc = "Yukarı istekle giden fiyat sertçe reddedildi. Satıcılar fiyatı açılış seviyesine kadar geri bastı."
-            elif lower_wick > body_size * 2.5:
-                candle_char = "🔨 Pinbar (Çekiç/Alış)"
-                candle_desc = "Aşağı istekle giden fiyat sertçe reddedildi. Alıcılar devreye girip düşüşü tamamen topladı."
-            elif body_size > total_len * 0.85:
-                candle_char = "🚀 Marubozu (Güçlü Gövde)"
-                candle_desc = "Neredeyse hiç fitil yok. Açıldığı yerden kapanışa kadar tek yönlü, çok kararlı bir hareket."
-            elif body_size < total_len * 0.1:
-                candle_char = "⚖️ Doji (Kararsızlık)"
-                candle_desc = "Alıcılar ve satıcılar yenişemedi. Piyasada denge ve bekle-gör hakim. Bir sonraki mum yönü belirler."
+            if l_wick > body_size * 2.5: bulls.append("Hammer 🔨")
+            if u_wick > body_size * 2.5: bears.append("Shooting Star 🔫")
+            if body_size > total_len * 0.9: (bulls if is_green else bears).append("Marubozu 🚀")
+            if body_size < total_len * 0.1: neutrals.append("Doji ⚖️")
 
-        # Engulfing (Yutan) Kontrolü
-        pattern_char = "-"
-        if (curr_c > prev_h) and (curr_o < prev_l) and (curr_c > curr_o):
-            pattern_char = "🐂 Bullish Engulfing (Yutan Boğa)"
-            candle_desc = "Bu mum, önceki günün tüm hareketini içine alıp yuttu. Çok güçlü bir trend dönüşü veya devam sinyali."
-        elif (curr_c < prev_l) and (curr_o > prev_h) and (curr_c < curr_o):
-            pattern_char = "🐻 Bearish Engulfing (Yutan Ayı)"
-            candle_desc = "Satıcılar o kadar güçlü geldi ki, önceki günün tüm kazanımlarını silip süpürdüler."
-
-        # 2. TUZAK (SFP)
-        sfp_txt = "Yok"
-        sfp_desc = "Önemli bir swing noktasında stop patlatma (tuzak) hareketi tespit edilmedi."
-        lookback = 20
-        recent_highs = h.iloc[-lookback:-1].max()
-        recent_lows = l.iloc[-lookback:-1].min()
+        # İkili Formasyonlar (Engulfing, Harami, Piercing)
+        if curr_c > prev_o and curr_o < prev_c and is_green and prev_c < prev_o: bulls.append("Bullish Engulfing 🐂")
+        if curr_c < prev_o and curr_o > prev_c and is_red and prev_c > prev_o: bears.append("Bearish Engulfing 🐻")
+        if curr_h < prev_h and curr_l > prev_l: (bulls if is_green else bears).append("Harami 🤰")
         
-        if (curr_h > recent_highs) and (curr_c < recent_highs):
-            sfp_txt = "⚠️ Bearish SFP (Boğa Tuzağı)"
-            sfp_desc = "Fiyat tepeyi deldi, stopları ve breakout alıcılarını içeri aldı ama tutunamayıp geri düştü. Düşüş habercisi olabilir."
-        elif (curr_l < recent_lows) and (curr_c > recent_lows):
-            sfp_txt = "💎 Bullish SFP (Ayı Tuzağı)"
-            sfp_desc = "Fiyat dibi deldi, stopları patlattı ve panik satışlarını topladıktan sonra tekrar yukarı attı. Yükseliş habercisi olabilir."
+        # Üçlü Formasyonlar (Star, Soldiers, Crows)
+        if prev_c < prev_o and abs(prev_c - prev_o) < abs(p2_c - p2_o) * 0.3 and is_green: bulls.append("Morning Star ⭐")
+        if is_green and o.iloc[-2] > o.iloc[-3] and is_green: bulls.append("3 White Soldiers ⚔️")
 
-        # 3. HACİM & VSA (YENİ MANTIK)
-        vol_txt = "Normal"
-        vol_desc = "İşlem hacmi ortalamalar düzeyinde, ne aşırı ilgi ne de ilgisizlik var."
-        avg_vol = v.rolling(20).mean().iloc[-1]
-        
-        if curr_v > avg_vol * 1.5:
-            if body_size < total_len * 0.3: # Yüksek hacim + Küçük gövde
-                vol_txt = "🛑 Stopping Volume (Frenleme)" if total_len > 0 else "Churning"
-                vol_desc = "Hacim çok yüksek ama fiyat ilerleyemiyor. Bir taraf (büyük oyuncular) pasif emirlerle hareketi emiyor olabilir."
-            else:
-                vol_txt = "🔋 Yüksek İlgi (Trend Destekli)"
-                vol_desc = "Yüksek hacimle geniş gövdeli hareket. Bu, hareketin arkasında 'Akıllı Para'nın olduğunu ve devamının gelebileceğini gösterir."
-        elif curr_v < avg_vol * 0.6:
-            vol_txt = "💤 Düşük Hacim"
-            vol_desc = "İlgi düşük. Fiyat hareket ediyor olsa bile arkasında güçlü bir yakıt yok, hareket cılız kalabilir."
+        candle_title = ", ".join(bulls + bears + neutrals) if (bulls + bears + neutrals) else "Standart Mum"
+        candle_desc = f"Tespit edilen sinyaller: {len(bulls)} Boğa, {len(bears)} Ayı, {len(neutrals)} Kararsız."
 
-        # 4. KONUM (BAĞLAM)
-        loc_txt = "Bölge İçi"
-        loc_desc = "Fiyat dünün en yükseği ve en düşüğü arasında (Denge Bölgesi) dalgalanıyor."
-        if curr_c > prev_h:
-            loc_txt = "📈 Dünün en yükseği (yukarı kırdı)"
-            loc_desc = "Fiyat dünün zirvesini aştı ve orada kalıcı olmaya çalışıyor. Alıcılar fiyatı yukarı taşımaya istekli."
-        elif curr_c < prev_l:
-            loc_txt = "📉 Dünün en düşüğü (aşağı kırdı)"
-            loc_desc = "Fiyat dünün dibini kırdı. Satıcılar kontrolü ele geçirmiş durumda, destekler çalışmıyor."
+        # --- 2. TUZAK DURUMU (SFP) ---
+        sfp_txt, sfp_desc = "Yok", "Önemli bir tuzak tespiti yok."
+        recent_highs, recent_lows = h.iloc[-20:-1].max(), l.iloc[-20:-1].min()
+        if curr_h > recent_highs and curr_c < recent_highs: 
+            sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Zirve delindi ama fiyat altında kapandı. Düşüş riski!"
+        elif curr_l < recent_lows and curr_c > recent_lows: 
+            sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip delindi ama alıcılar topladı. Yükseliş potansiyeli!"
 
-        # 5. SIKIŞMA (BOBİN)
-        sq_txt = "Normal Volatilite"
-        sq_desc = "Fiyat normal dalgalanma aralığında hareket ediyor."
-        last_5_range = h.tail(5).max() - l.tail(5).min()
+        # --- 3. HACİM & VSA ANALİZİ ---
+        avg_v = v.rolling(20).mean().iloc[-1]
+        vol_txt, vol_desc = "Normal", "Hacim ortalama seviyelerde."
+        if curr_v > avg_v * 1.5:
+            if body_size < total_len * 0.3: vol_txt, vol_desc = "🛑 Frenleme Hacmi", "Hacim yüksek ama fiyat ilerlemiyor; akıllı para emiyor olabilir."
+            else: vol_txt, vol_desc = "🔋 Trend Destekli", "Hacimli ve kararlı hareket. Trend güçlü."
+
+        # --- 4. BAĞLAM & KONUM ---
+        loc_txt, loc_desc = "Denge Bölgesi", "Fiyat dünkü aralığın içinde (Inside)."
+        if curr_c > prev_h: loc_txt, loc_desc = "📈 Dünün Zirvesi Kırıldı", "Alıcılar dünün en yüksek seviyesini aşmayı başardı."
+        elif curr_c < prev_l: loc_txt, loc_desc = "📉 Dünün Dibi Kırıldı", "Satıcılar kontrolü ele geçirdi."
+
+        # --- 5. SIKIŞMA (BOBİN) ---
         atr = (h-l).rolling(14).mean().iloc[-1]
-        
-        if last_5_range < (2 * atr):
-            sq_txt = "⏳ BOBİN (Enerji Sıkışması)"
-            sq_desc = "Son 5 gündür fiyat çok dar bir alana hapsoldu. Yay geriliyor, yakında bir yöne sert bir patlama (Breakout) yaşanabilir."
-
-        # Setup Önerisi
-        setup_txt = "İzleme Modu"
-        setup_val = 0.0
-        if "Bullish" in sfp_txt or "Çekiç" in candle_char:
-            setup_txt = "Alış Fırsatı?"
-            setup_val = curr_h # Giriş bu mumun tepesi
-        elif "Bearish" in sfp_txt or "Mezartaşı" in candle_char:
-            setup_txt = "Satış Fırsatı?"
-            setup_val = curr_l # Giriş bu mumun dibi
+        range_5 = h.tail(5).max() - l.tail(5).min()
+        sq_txt, sq_desc = "Normal", "Oynaklık olağan seyrediyor."
+        if range_5 < (2 * atr): sq_txt, sq_desc = "⏳ BOBİN (Sıkışma)", "Fiyat dar alanda patlamaya hazırlanıyor."
 
         return {
-            "candle": {"title": candle_char + (" / " + pattern_char if pattern_char != "-" else ""), "desc": candle_desc},
+            "candle": {"title": candle_title, "desc": candle_desc},
             "sfp": {"title": sfp_txt, "desc": sfp_desc},
             "vol": {"title": vol_txt, "desc": vol_desc},
             "loc": {"title": loc_txt, "desc": loc_desc},
-            "sq": {"title": sq_txt, "desc": sq_desc},
-            "setup": {"type": setup_txt, "trigger": setup_val}
+            "sq": {"title": sq_txt, "desc": sq_desc}
         }
-    except Exception as e:
-        return None
+    except: return None
 
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI
@@ -1167,19 +1127,15 @@ def render_price_action_panel(ticker):
     pa = calculate_price_action_dna(ticker)
     if not pa: return
 
-    # Renk Kodlamaları
     sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
     sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
     
-    # HTML İçeriği
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
-        <div class="info-header" style="color:#4f46e5; display:flex; justify-content:space-between;">
-            <span>🕯️ PRICE ACTION DEDEKTİFİ</span>
-        </div>
+        <div class="info-header" style="color:#4f46e5;">🕯️ PRICE ACTION DEDEKTİFİ</div>
 
         <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYON: {pa['candle']['title']}</div>
+            <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
             <div class="edu-note">{pa['candle']['desc']}</div>
         </div>
 
@@ -1189,7 +1145,7 @@ def render_price_action_panel(ticker):
         </div>
 
         <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. Mum Boyu & Hacim Analizi: {pa['vol']['title']}</div>
+            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
             <div class="edu-note">{pa['vol']['desc']}</div>
         </div>
 
@@ -1204,6 +1160,7 @@ def render_price_action_panel(ticker):
         </div>
     </div>
     """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
     
     # DÜZELTME BURADA: Satır sonlarını boşlukla değiştirerek tek satıra indiriyoruz.
     # Böylece Streamlit bunu 'kod bloğu' sanmıyor, HTML olarak işliyor.
@@ -1584,6 +1541,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
