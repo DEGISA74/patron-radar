@@ -1003,7 +1003,8 @@ def render_sentiment_card(sent):
 def render_deep_xray_card(xray):
     if not xray: return
     
-    # Tüm HTML yapısını tek bir değişken içinde topluyoruz
+    # Tüm HTML yapısını ve italik açıklamaları tek bir değişkende topluyoruz.
+    # .replace("\n", "") komutu HTML'in bozulmadan okunmasını sağlar.
     html_icerik = f"""
     <div class="info-card">
         <div class="info-header">🔍 Derin Teknik Röntgen</div>
@@ -1038,9 +1039,9 @@ def render_deep_xray_card(xray):
         </div>
         <div class="edu-note">Kritik direnç seviyelerinin kalıcı olarak aşılması (BOS) yükselişin devamı için şarttır.</div>
     </div>
-    """
+    """.replace("\n", "")
     
-    # İŞTE KRİTİK SATIR: Bu satır HTML'i düz yazı olmaktan kurtarıp görsele çevirir
+    # HTML kodlarını görsel karta dönüştüren kritik komut:
     st.markdown(html_icerik, unsafe_allow_html=True)
     
 def render_detail_card_advanced(ticker):
@@ -1643,6 +1644,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
