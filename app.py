@@ -17,7 +17,7 @@ import altair as alt
 # 1. AYARLAR VE STİL
 # ==============================================================================
 st.set_page_config(
-    page_title="PATRONUN BORSA TERMİNALİ", 
+    page_title="BORSA YATIRIM TERMİNALİ", 
     layout="wide",
     page_icon="💸"
 )
@@ -1357,7 +1357,7 @@ def render_ict_deep_panel(ticker):
 # ==============================================================================
 with st.sidebar:
     # Başlık ve Ayarlar
-    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">PATRONUN BORSA TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
+    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">BORSA YATIRIM TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     st.markdown("### ⚙️ Ayarlar")
     
     selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
@@ -1666,6 +1666,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
