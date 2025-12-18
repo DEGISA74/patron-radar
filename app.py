@@ -1019,13 +1019,13 @@ def render_deep_xray_card(xray):
             <div class="label-long">2. Hacim Akışı:</div>
             <div class="info-val">{xray['vol_obv']}</div>
         </div>
-        <div class="edu-note">Para girişinin (OBV) fiyat hareketini destekleyip desteklemediğini ölçer.</div>
+        <div class="edu-note">Para girişinin (OBV) fiyat hareketini destekleyip desteklemediğini ölçer. OBV, 5 günlük ortalamasının üzerinde?</div>
 
         <div class="info-row">
             <div class="label-long">3. Trend Sağlığı:</div>
             <div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div>
         </div>
-        <div class="edu-note">Fiyatın ana ortalamaların üzerindeki kalıcılığını ve trendin gücünü denetler.</div>
+        <div class="edu-note">Fiyatın ana ortalamaların üzerindeki kalıcılığını ve trendin gücünü denetler. EMA50 EMA200'ü yukarı kesmiş? </div>
 
         <div class="info-row">
             <div class="label-long">4. Volatilite:</div>
@@ -1037,7 +1037,7 @@ def render_deep_xray_card(xray):
             <div class="label-long">5. Piyasa Yapısı:</div>
             <div class="info-val">{xray['str_bos']}</div>
         </div>
-        <div class="edu-note">Kritik direnç seviyelerinin kalıcı olarak aşılması (BOS) yükselişin devamı için şarttır.</div>
+        <div class="edu-note">Kritik direnç seviyelerinin kalıcı olarak aşılması (BOS) yükselişin devamı için şarttır. Fiyat son 20 günün en yüksek seviyesini aştı?</div>
     </div>
     """.replace("\n", "")
     
@@ -1644,6 +1644,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
