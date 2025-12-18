@@ -1176,7 +1176,7 @@ def render_price_action_panel(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
-        <div class="info-header" style="color:#4f46e5;">🕯️ PRICE ACTION DEDEKTİFİ</div>
+        <div class="info-header" style="color:#1e3a8a;">🕯️ PRICE ACTION DEDEKTİFİ</div>
 
         <div style="margin-bottom:8px;">
             <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
@@ -1644,6 +1644,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
