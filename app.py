@@ -1162,9 +1162,6 @@ def render_price_action_panel(ticker):
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
     
-    # DÜZELTME BURADA: Satır sonlarını boşlukla değiştirerek tek satıra indiriyoruz.
-    # Böylece Streamlit bunu 'kod bloğu' sanmıyor, HTML olarak işliyor.
-    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_ict_deep_panel(ticker):
     # 1. HESAPLAMA VERİSİNİ ÇEK
@@ -1541,6 +1538,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
