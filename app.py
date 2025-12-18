@@ -1005,11 +1005,21 @@ def render_deep_xray_card(xray):
     st.markdown(f"""
     <div class="info-card">
         <div class="info-header">🔍 Derin Teknik Röntgen</div>
-        <div class="info-row"><div class="label-long">Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
-        <div class="info-row"><div class="label-long">Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
-        <div class="info-row"><div class="label-long">Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
-        <div class="info-row"><div class="label-long">Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
-        <div class="info-row"><div class="label-long">Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
+        
+        <div class="info-row"><div class="label-long">1. Momentum:</div><div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div></div>
+        <div class="edu-note">RSI 50 üstü ve MACD pozitif bölgedeyse ivme alıcıların kontrolündedir.</div>
+
+        <div class="info-row"><div class="label-long">2. Hacim Akışı:</div><div class="info-val">{xray['vol_obv']}</div></div>
+        <div class="edu-note">Para girişinin (OBV) fiyat hareketini destekleyip desteklemediğini ölçer.</div>
+
+        <div class="info-row"><div class="label-long">3. Trend Sağlığı:</div><div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div></div>
+        <div class="edu-note">Fiyatın ana ortalamaların üzerindeki kalıcılığını ve trendin gücünü denetler.</div>
+
+        <div class="info-row"><div class="label-long">4. Volatilite:</div><div class="info-val">{xray['vola_bb']}</div></div>
+        <div class="edu-note">Bollinger Bantlarındaki daralma (Squeeze), yakında büyük bir patlama olabileceğini gösterir.</div>
+
+        <div class="info-row"><div class="label-long">5. Piyasa Yapısı:</div><div class="info-val">{xray['str_bos']}</div></div>
+        <div class="edu-note">Kritik direnç seviyelerinin kalıcı olarak aşılması (BOS) yükselişin devamı için şarttır.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1613,6 +1623,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
