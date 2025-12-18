@@ -838,51 +838,49 @@ def calculate_ict_deep_analysis(ticker):
                     mean_threshold = (ob_low + ob_high) / 2 # %50 Hesabı
                     break
 
-        # --- SETUP KURULUMU (RİSK / GETİRİ HESABI) ---
-        setup_type = "BEKLE"
-        entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
-        setup_desc = "Net bir kurulum oluşmadı."
-        
-        if bias in ["bullish", "bullish_retrace"]:
-            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02]
-            if valid_fvgs:
-                best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['top']
-                stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
-                take_profit = next_bsl
-                risk = entry_price - stop_loss; reward = take_profit - entry_price
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "LONG"
-                    setup_desc = "Fiyat Bullish yapıda. FVG bölgesinden tepki bekleniyor."
-
-        elif bias in ["bearish", "bearish_retrace"]:
-            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price * 0.98]
-            if valid_fvgs:
-                best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['bot']
-                stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
-                take_profit = next_ssl
-                risk = stop_loss - entry_price; reward = entry_price - take_profit
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "SHORT"
-                    setup_desc = "Fiyat Bearish yapıda. Direnç bloğundan ret bekleniyor."
-
-        # Bölge Analizi
+# --- BÖLGE ANALİZİ (ÖNCE HESAPLANMALI) ---
         range_high = max(high.tail(60)); range_low = min(low.tail(60))
         range_loc = (curr_price - range_low) / (range_high - range_low)
         zone = "PREMIUM (Pahalı)" if range_loc > 0.5 else "DISCOUNT (Ucuz)"
 
-        return {
-            "status": "OK", "structure": structure, "bias": bias, "zone": zone,
-            "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, "target": take_profit,
-            "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
-            "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt,
-            "mean_threshold": mean_threshold, "curr_price": curr_price
-        }
-    except Exception as e:
-        return {"status": "Error", "msg": str(e)}
+        # --- SETUP KURULUMU (DÜZELTİLMİŞ) ---
+        setup_type = "BEKLE"
+        entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
+        setup_desc = "Mantıklı bir R/R kurulumu veya Bölge uyumu bekleniyor."
+        
+        # LONG: Sadece İndirim bölgesinde ve Hedef > Giriş ise
+        if bias in ["bullish", "bullish_retrace"] and zone == "DISCOUNT (Ucuz)":
+            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price]
+            if valid_fvgs and next_bsl > curr_price:
+                best_fvg = valid_fvgs[-1]
+                temp_entry = best_fvg['top']
+                if next_bsl > temp_entry: # Matematiksel kontrol
+                    entry_price = temp_entry
+                    take_profit = next_bsl
+                    stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
+                    risk = entry_price - stop_loss
+                    reward = take_profit - entry_price
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        setup_type = "LONG"
+                        setup_desc = "Fiyat ucuzluk bölgesinde. FVG desteğinden yukarı yönlü likidite hedefleniyor."
+
+        # SHORT: Sadece Pahalılık bölgesinde ve Hedef < Giriş ise
+        elif bias in ["bearish", "bearish_retrace"] and zone == "PREMIUM (Pahalı)":
+            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price]
+            if valid_fvgs and next_ssl < curr_price:
+                best_fvg = valid_fvgs[-1]
+                temp_entry = best_fvg['bot']
+                if next_ssl < temp_entry: # Matematiksel kontrol
+                    entry_price = temp_entry
+                    take_profit = next_ssl
+                    stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
+                    risk = stop_loss - entry_price
+                    reward = entry_price - take_profit
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        setup_type = "SHORT"
+                        setup_desc = "Fiyat pahalılık bölgesinde. Direnç bloğundan aşağıdaki likidite havuzu hedefleniyor."
 
 # --- PRICE ACTION MODÜLÜ (YENİ EKLENDİ) ---
 @st.cache_data(ttl=600)
@@ -1601,6 +1599,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
