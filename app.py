@@ -1344,18 +1344,80 @@ with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input
 with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
-if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
+# --- AI ANALİST PROMPT ÜRETİCİ (GÜNCELLENMİŞ) ---
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
-    ict_data = calculate_ict_deep_analysis(t) or {}; sent_data = calculate_sentiment_score(t) or {}; tech_data = get_tech_card_data(t) or {}
-    radar_val = "Veri Yok"; radar_setup = "Belirsiz"
+    # Verileri topla
+    ict_data = calculate_ict_deep_analysis(t) or {}
+    sent_data = calculate_sentiment_score(t) or {}
+    tech_data = get_tech_card_data(t) or {}
+    pa_data = calculate_price_action_dna(t) or {}
+    
+    # Radar verilerini kontrol et
+    radar_val = "Veri Yok"
+    radar_setup = "Belirsiz"
     if st.session_state.radar2_data is not None:
         r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
-        if not r_row.empty: radar_val = f"{r_row.iloc[0]['Skor']}/8"; radar_setup = r_row.iloc[0]['Setup']
+        if not r_row.empty:
+            radar_val = f"{r_row.iloc[0]['Skor']}/8"
+            radar_setup = r_row.iloc[0]['Setup']
+    
+    # Metin temizleme fonksiyonu (HTML etiketlerini kaldırır)
     def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
-    mom_clean = clean_text(sent_data.get('mom', 'Veri Yok')); vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
-    prompt = f"""*** SİSTEM ROLLERİ ***\nSen Dünya çapında tanınan, borsa portföyü yönetimi uzmanı ve Price Action ustası bir Swing Tradersın.\nAşağıda {t} varlığı için gelen HAM VERİLER var. Bunları yorumla.\n\n*** 1. TEKNİK VERİLER (Rakamlara Güven) ***\n- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}\n- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}\n- Radar 2 Skoru: {radar_val}\n- Radar Setup: {radar_setup}\n\n*** 2. DUYGU VE MOMENTUM ***\n- Sentiment Puanı: {sent_data.get('total', 0)}/100\n- Momentum Durumu: {mom_clean}\n- Hacim/Para Girişi: {vol_clean}\n\n*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***\n- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}\n- Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)\n- Hedef Likidite: {ict_data.get('target', 'Belirsiz')}\n\n*** GÖREVİN ***\nBu verileri analiz et ve işlem planı ver.\nKısa, net, maddeler halinde yaz. Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.\n\nÇIKTI:\n💡 ANALİZ: Yarım paragraflık Temel Analiz yap, P/E, PEG, 12 aylık analist beklentilerini ver ve analiz et. \n🎯 YÖN: [LONG/SHORT/BEKLE]\n💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)\n⚠️ RİSK: (Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et )\n"""
-    with st.sidebar: st.code(prompt, language="text"); st.success("Metin kopyalanmaya hazır! 📋")
+    
+    mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
+    vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
+    
+    # PRICE ACTION verilerini hazırla
+    pa_candle = pa_data.get('candle', {}).get('title', 'Bilinmiyor')
+    pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
+    pa_vol = pa_data.get('vol', {}).get('title', 'Bilinmiyor')
+    pa_loc = pa_data.get('loc', {}).get('title', 'Bilinmiyor')
+    pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
+
+    # YENİ PROMPT TASLAĞI
+    prompt = f"""*** SİSTEM ROLLERİ ***
+Sen Dünya çapında tanınan, borsa portföyü yönetimi uzmanı ve Price Action ustası bir Swing Tradersın.
+Aşağıda {t} varlığı için gelen HAM VERİLER var. Bunları yorumla.
+
+*** 1. TEKNİK VERİLER (Rakamlara Güven) ***
+- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}
+- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}
+- Radar 2 Skoru: {radar_val}
+- Radar Setup: {radar_setup}
+
+*** 2. DUYGU VE MOMENTUM ***
+- Sentiment Puanı: {sent_data.get('total', 0)}/100
+- Momentum Durumu: {mom_clean}
+- Hacim/Para Girişi: {vol_clean}
+
+*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***
+- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
+- Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)
+- Hedef Likidite: {ict_data.get('target', 'Belirsiz')}
+
+*** 4. PRICE ACTION DNA (MİKRO ANALİZ) ***
+- Mum & Formasyonlar: {pa_candle}
+- Tuzak Durumu: {pa_sfp}
+- Hacim & VSA: {pa_vol}
+- Bağlam & Konum: {pa_loc}
+- Volatilite: {pa_sq}
+
+*** GÖREVİN ***
+Bu verileri analiz et ve işlem planı ver. Kısa, net, maddeler halinde yaz. 
+Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
+
+ÇIKTI:
+💡 ANALİZ: Yarım paragraflık Temel Analiz yap, P/E, PEG, 12 aylık analist beklentilerini ver ve analiz et. 
+🎯 YÖN: [LONG/SHORT/BEKLE]
+💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
+⚠️ RİSK: (Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et)
+"""
+    # Sidebar'da göster
+    with st.sidebar:
+        st.code(prompt, language="text")
+        st.success("Metin kopyalanmaya hazır! 📋")
+    
     st.session_state.generate_prompt = False
 
 # Hisse bilgisini çekiyoruz (Hem sol hem sağ sütun kullanacak)
@@ -1538,6 +1600,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
