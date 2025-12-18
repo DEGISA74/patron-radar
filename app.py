@@ -1025,7 +1025,7 @@ def render_deep_xray_card(xray):
             <div class="label-long">3. Trend Sağlığı:</div>
             <div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div>
         </div>
-        <div class="edu-note">Fiyatın ana ortalamaların üzerindeki kalıcılığını ve trendin gücünü denetler. EMA50 EMA200'ü yukarı kesmiş? </div>
+        <div class="edu-note">Fiyatın EMA50 ve EMA200 üzerindeki kalıcılığını ve trendin gücünü denetler. 1. EMA50 EMA200'ü yukarı kesmiş? 2. Zaten üstünde?</div>
 
         <div class="info-row">
             <div class="label-long">4. Volatilite:</div>
@@ -1644,6 +1644,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
