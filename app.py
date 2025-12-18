@@ -838,36 +838,57 @@ def calculate_ict_deep_analysis(ticker):
                     mean_threshold = (ob_low + ob_high) / 2 # %50 Hesabı
                     break
 
-        # --- SETUP KURULUMU (RİSK / GETİRİ HESABI) ---
+        # --- SETUP KURULUMU (KESİN ÇÖZÜM) ---
         setup_type = "BEKLE"
         entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
-        setup_desc = "Net bir kurulum oluşmadı."
+        setup_desc = "Mantıklı bir R/R kurulumu veya Bölge uyumu bekleniyor."
         
-        if bias in ["bullish", "bullish_retrace"]:
-            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price * 1.02]
-            if valid_fvgs:
+        # 1. LONG SENARYOSU: Boğa yapısı + Ucuzluk Bölgesi + Hedef > Giriş
+        if bias in ["bullish", "bullish_retrace"] and zone == "DISCOUNT (Ucuz)":
+            valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price]
+            if valid_fvgs and next_bsl > curr_price:
                 best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['top']
-                stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
-                take_profit = next_bsl
-                risk = entry_price - stop_loss; reward = take_profit - entry_price
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "LONG"
-                    setup_desc = "Fiyat Bullish yapıda. FVG bölgesinden tepki bekleniyor."
+                temp_entry = best_fvg['top']
+                
+                # Matematiksel Doğrulama: Hedef girişten yukarıda mı?
+                if next_bsl > temp_entry: 
+                    entry_price = temp_entry
+                    take_profit = next_bsl
+                    # Stop: Ya son swing low, ya da FVG'nin altı (hangisi daha güvenliyse)
+                    stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - (atr * 0.5)
+                    
+                    risk = entry_price - stop_loss
+                    reward = take_profit - entry_price
+                    
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        # Sadece R/R oranı 1.0'dan büyükse sinyal ver
+                        if rr_ratio >= 1.0:
+                            setup_type = "LONG"
+                            setup_desc = "Fiyat indirim bölgesinde. FVG desteğinden likiditeye (BSL) yükseliş bekleniyor."
 
-        elif bias in ["bearish", "bearish_retrace"]:
-            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price * 0.98]
-            if valid_fvgs:
+        # 2. SHORT SENARYOSU: Ayı yapısı + Pahalılık Bölgesi + Hedef < Giriş
+        elif bias in ["bearish", "bearish_retrace"] and zone == "PREMIUM (Pahalı)":
+            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price]
+            if valid_fvgs and next_ssl < curr_price:
                 best_fvg = valid_fvgs[-1]
-                entry_price = best_fvg['bot']
-                stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
-                take_profit = next_ssl
-                risk = stop_loss - entry_price; reward = entry_price - take_profit
-                if risk > 0:
-                    rr_ratio = reward / risk
-                    setup_type = "SHORT"
-                    setup_desc = "Fiyat Bearish yapıda. Direnç bloğundan ret bekleniyor."
+                temp_entry = best_fvg['bot']
+                
+                # Matematiksel Doğrulama: Hedef girişten aşağıda mı?
+                if next_ssl < temp_entry:
+                    entry_price = temp_entry
+                    take_profit = next_ssl
+                    # Stop: Ya son swing high, ya da FVG'nin üstü
+                    stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + (atr * 0.5)
+                    
+                    risk = stop_loss - entry_price
+                    reward = entry_price - take_profit
+                    
+                    if risk > 0:
+                        rr_ratio = reward / risk
+                        if rr_ratio >= 1.0:
+                            setup_type = "SHORT"
+                            setup_desc = "Fiyat pahalılık bölgesinde. Direnç bloğundan likiditeye (SSL) düşüş bekleniyor."
 
         # Bölge Analizi
         range_high = max(high.tail(60)); range_low = min(low.tail(60))
@@ -1601,6 +1622,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
