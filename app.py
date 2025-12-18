@@ -998,31 +998,31 @@ def render_sentiment_card(sent):
             <div class="label-long">1. Momentum:</div>
             <div class="info-val">{sent['mom']}</div>
         </div>
-        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI ve yükselen MACD ivme kazandırır.</div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (+10) ve yükselen MACD (+10). 30-70 arası stabil RSI (+10)</div>
         
         <div class="info-row">
             <div class="label-long">2. Hacim:</div>
             <div class="info-val">{sent['vol']}</div>
         </div>
-        <div class="edu-note">Hacmin 20G ortalamaya oranını ve Para Akışını (OBV) denetler. Para girişi puanı artırır.</div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve Para Akışını (OBV) denetler. Bugünün hacmi 20G ort.üstünde (+15) Para girişi 5G ort.üstünde (+10).</div>
         
         <div class="info-row">
             <div class="label-long">3. Trend:</div>
             <div class="info-val">{sent['tr']}</div>
         </div>
-        <div class="edu-note">SMA50/200 konumuna bakar. Golden Cross ve fiyatın ortalamalar üstünde olması şarttır.</div>
+        <div class="edu-note">SMA 50/200 konumuna bakar. Hisse fiyatı SMA50 ve SMA200 üstünde (+10). SMA50 üstünde (+10). </div>
         
         <div class="info-row">
             <div class="label-long">4. Volatilite:</div>
             <div class="info-val">{sent['vola']}</div>
         </div>
-        <div class="edu-note">Bollinger Bant patlamalarını ve ATR durumunu inceler. Bant dışı taşmalar güç gösterisidir.</div>
+        <div class="edu-note">Bollinger Bant patlamalarını ve ATR durumunu inceler. Bol.Bant yukarı kırmış (+10). ATR düşük - panik satış bitmiş (+5).</div>
         
         <div class="info-row">
             <div class="label-long">5. Yapı:</div>
             <div class="info-val">{sent['str']}</div>
         </div>
-        <div class="edu-note">Market Yapısını (BOS) kontrol eder. Son 20 günün zirve kırılımı yükseliş onayıdır.</div>
+        <div class="edu-note">Market Yapısını (BOS) kontrol eder. Son 20 günün zirvesini yukarı kırmış (+10).</div>
     </div>
     """.replace("\n", "")
     
@@ -1699,6 +1699,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
