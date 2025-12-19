@@ -1002,76 +1002,124 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
-# 7. BACKTEST MOTORU (SADELEŞTİRİLMİŞ SATIŞ ODAKLI MODÜL)
+# 7. BACKTEST MOTORU (YENİ R/R ODAKLI STRATEJİ)
 # ==============================================================================
 
 @st.cache_data(ttl=3600)
-def backtest_stp_strategy(ticker, initial_capital=10000):
+def backtest_stp_with_rr(ticker, rr_ratio=2.0, initial_capital=10000):
     """
-    STP Stratejisini geçmiş veride test eder.
-    Kural: Fiyat STP'yi yukarı keserse AL, aşağı keserse SAT.
+    YENİ BACKTEST MANTIĞI:
+    1. Giriş: Mavi (Close) Sarı (STP) yukarı keserse AL.
+    2. Hedef: Girişte Stop Loss (2 ATR) ve Take Profit (Risk * RR) belirlenir.
+    3. Çıkış: Fiyat ya Stop'a ya Hedef'e değer. STP'ye bakılmaz.
+    4. Döngü: Çıktıktan sonra YENİ bir kesişim beklenir.
     """
-    # 1. SÜRE 1 YILA DÜŞÜRÜLDÜ (Daha taze veri)
+    # 1. Veri Hazırlığı
     df = get_safe_historical_data(ticker, period="1y")
     if df is None or len(df) < 50: return None
 
-    # 2. Göstergeleri Hesapla (Tüm tarihçe için)
-    # STP Hesabı
+    # 2. İndikatörler
     df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
     df['STP'] = df['Typical_Price'].ewm(span=6, adjust=False).mean()
     
-    # 3. Sinyalleri Oluştur
-    # AL Sinyali: Dün Fiyat < STP VE Bugün Fiyat > STP
-    df['Signal'] = 0
-    df.loc[(df['Close'] > df['STP']) & (df['Close'].shift(1) <= df['STP'].shift(1)), 'Signal'] = 1 # AL
-    df.loc[(df['Close'] < df['STP']) & (df['Close'].shift(1) >= df['STP'].shift(1)), 'Signal'] = -1 # SAT
+    # ATR Hesaplama (Stop Loss için)
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    df['ATR'] = true_range.rolling(14).mean()
+
+    # 3. Sinyal Tespiti
+    df['Crossover'] = (df['Close'] > df['STP']) & (df['Close'].shift(1) <= df['STP'].shift(1))
     
-    # 4. Ticaret Simülasyonu
+    # 4. Simülasyon
     balance = initial_capital
-    position = 0 # 0: Nakit, >0: Hisse Adedi
+    position = 0 
     trades = []
     equity_curve = []
     
-    entry_price = 0
+    in_position = False
+    stop_loss = 0.0
+    take_profit = 0.0
+    entry_price = 0.0
     entry_date = None
 
     for i in range(len(df)):
+        if i < 20: # ATR oturması için bekle
+            equity_curve.append(balance)
+            continue
+            
         date = df.index[i]
-        price = float(df['Close'].iloc[i])
-        signal = df['Signal'].iloc[i]
+        close = df['Close'].iloc[i]
+        low = df['Low'].iloc[i]
+        high = df['High'].iloc[i]
+        atr = df['ATR'].iloc[i]
+        signal = df['Crossover'].iloc[i]
         
-        # ALIM YAP (Eğer nakitteysek ve sinyal varsa)
-        if position == 0 and signal == 1:
-            position = balance / price
-            entry_price = price
-            entry_date = date
-            balance = 0 # Tüm parayla al
-            trades.append({"Tarih": date.strftime('%Y-%m-%d'), "İşlem": "AL", "Fiyat": f"{price:.2f}", "Durum": "Giriş"})
+        # --- POZİSYONDA DEĞİLSEK (GİRİŞ ARA) ---
+        if not in_position:
+            if signal:
+                # ALIM YAP
+                entry_price = close
+                entry_date = date
+                
+                # Dinamik Stop ve Hedef Belirle (2 ATR Risk)
+                risk_per_share = 2 * atr
+                stop_loss = entry_price - risk_per_share
+                take_profit = entry_price + (risk_per_share * rr_ratio)
+                
+                position = balance / entry_price
+                balance = 0
+                in_position = True
+                
+                trades.append({
+                    "Tarih": date.strftime('%Y-%m-%d'), "İşlem": "GİRİŞ", 
+                    "Fiyat": f"{entry_price:.2f}", "Durum": f"Hedef: {take_profit:.2f} | Stop: {stop_loss:.2f}"
+                })
         
-        # SATIŞ YAP (Eğer maldaysak ve sinyal -1 ise)
-        elif position > 0 and signal == -1:
-            balance = position * price
-            profit = balance - (position * entry_price)
-            profit_pct = (price - entry_price) / entry_price
+        # --- POZİSYONDAYSAK (ÇIKIŞ ARA) ---
+        elif in_position:
+            exit_type = None
+            exit_price = 0.0
             
-            position = 0
-            trades.append({
-                "Tarih": date.strftime('%Y-%m-%d'), "İşlem": "SAT", "Fiyat": f"{price:.2f}", 
-                "Kar/Zarar": f"{profit:.2f}", "Yüzde": f"%{profit_pct * 100:.2f}"
-            })
+            # Önce Stop Loss Kontrolü (Daha güvenli test için)
+            if low <= stop_loss:
+                exit_type = "STOP (Zarar)"
+                exit_price = stop_loss
+            # Sonra Take Profit Kontrolü
+            elif high >= take_profit:
+                exit_type = "HEDEF (Kâr)"
+                exit_price = take_profit
             
-        # Günlük Portföy Değeri (Equity Curve)
-        current_equity = balance + (position * price)
-        equity_curve.append(current_equity)
+            # Eğer çıkış gerçekleştiyse
+            if exit_type:
+                balance = position * exit_price
+                profit = balance - (position * entry_price)
+                profit_pct = (exit_price - entry_price) / entry_price
+                
+                trades.append({
+                    "Tarih": date.strftime('%Y-%m-%d'), "İşlem": "ÇIKIŞ", 
+                    "Fiyat": f"{exit_price:.2f}", "Kar/Zarar": f"{profit:.2f}", 
+                    "Durum": f"{exit_type} (%{profit_pct*100:.2f})"
+                })
+                
+                position = 0
+                in_position = False
+        
+        # Günlük Bakiye Kaydı
+        curr_val = balance + (position * close)
+        equity_curve.append(curr_val)
 
+    df = df.iloc[len(df)-len(equity_curve):] # Boyut eşitleme
     df['Equity'] = equity_curve
     
-    # MAX DRAWDOWN HESABI (YENİ)
+    # Max Drawdown Hesabı
     cum_max = df['Equity'].cummax()
     drawdown = (df['Equity'] - cum_max) / cum_max
     max_drawdown = drawdown.min() * 100
 
-    # 5. İstatistikleri Çıkar
+    # Sonuçlar
     trade_df = pd.DataFrame(trades)
     total_return_pct = ((equity_curve[-1] - initial_capital) / initial_capital) * 100
     
@@ -1754,15 +1802,18 @@ with col_right:
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
     with tab3:
-        st.markdown(f"### 🧪 {st.session_state.ticker} STP Strateji Testi")
-        st.caption("Son 1 yılda 'STP Kesişimi' stratejisi uygulansaydı ne olurdu?")
+        st.markdown(f"### 🧪 {st.session_state.ticker} Risk/Ödül Strateji Testi")
+        st.caption("Son 1 yılda: **STP Giriş + Sabit Risk/Ödül** uygulansaydı ne olurdu?")
+        
+        # SLIDER EKLENDİ: Kullanıcı R/R oranını kendi seçebilir
+        user_rr = st.slider("Hedef Risk/Ödül Oranı (Örn: 2 = Riske attığının 2 katını kazan)", 1.0, 5.0, 2.0, 0.5)
         
         if st.button("🚀 Testi Başlat", key="btn_run_backtest"):
             with st.spinner("Geçmiş veriler simüle ediliyor..."):
-                bt_result = backtest_stp_strategy(st.session_state.ticker)
+                # Yeni R/R Fonksiyonunu Kullanıyoruz
+                bt_result = backtest_stp_with_rr(st.session_state.ticker, rr_ratio=user_rr)
                 
                 if bt_result:
-                    # 4 Sütunlu Metrik Alanı (Yeni Risk Metriği Eklendi)
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Toplam Getiri", f"%{bt_result['return_pct']:.2f}")
                     c2.metric("Max Erime (Risk)", f"%{bt_result['max_drawdown']:.2f}", help="En yüksek tepe noktasından yaşanan en büyük düşüş.")
@@ -1772,12 +1823,10 @@ with col_right:
                     st.markdown("**💰 Kasa Büyüme Grafiği**")
                     st.line_chart(bt_result['df']['Equity'], color="#22c55e")
                     
-                    # DÜRÜST ANALİST NOTU
-                    st.info("ℹ️ **Analist Notu:** Bu strateji boğa piyasalarında 'Al-Tut' getirisinin gerisinde kalabilir. Amacı; olası ayı piyasalarında ve sert düşüşlerde sizi erkenden nakite geçirerek sermayenizi korumaktır.")
+                    st.info(f"ℹ️ **Analist Notu:** Bu testte her girişte **%2 ATR kadar stop loss** koyulmuş ve riske edilen tutarın **{user_rr} katı** kâr hedeflenmiştir. Pozisyon hedefe veya stopa değince kapanır.")
 
                     st.markdown("**📜 İşlem Geçmişi**")
                     st.dataframe(bt_result['trades'], use_container_width=True)
                     
                 else:
                     st.error("Backtest için yeterli veri yok.")
-
