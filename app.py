@@ -1577,7 +1577,7 @@ Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
 # Hisse bilgisini çekiyoruz (Hem sol hem sağ sütun kullanacak)
 info = fetch_stock_info(st.session_state.ticker)
 
-col_left, col_right = st.columns([3, 1])
+col_left, col_right = st.columns([4, 1])
 
 # --- SOL SÜTUN (Grafikler ve Analizler) ---
 with col_left:
@@ -1754,3 +1754,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
