@@ -1002,19 +1002,22 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
-# 7. BACKTEST MOTORU: PORTFÖY AVCISI (Asset Rotation)
+# 7. BACKTEST MOTORU: PORTFÖY AVCISI + TIME STOP (Asset Rotation + Time Decay)
 # ==============================================================================
 
 @st.cache_data(ttl=3600)
-def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=10000):
+def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, initial_capital=10000):
     """
-    PORTFÖY AVCISI STRATEJİSİ:
+    PORTFÖY AVCISI STRATEJİSİ (ZAMAN STOPLU):
     1. Her gün tüm piyasayı tara.
     2. Nakitteysek: STP AL sinyali veren İLK hisseye gir.
-    3. Maldaysak: Hedef (TP) veya Stop (SL) olana kadar bekle.
+    3. Maldaysak: 
+        - Hedef (TP) gelirse SAT.
+        - Stop (SL) gelirse SAT.
+        - 10 Gün (Time Stop) dolarsa SAT.
     4. Çıkınca: Tekrar tarama moduna dön.
     """
-    scan_list = asset_list[:50] # Hız limiti
+    scan_list = asset_list[:50] 
     
     try:
         raw_data = yf.download(scan_list, period="1y", group_by="ticker", threads=True, progress=False)
@@ -1064,11 +1067,15 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=1000
     equity_curve = []
 
     for current_date in common_dates:
+        # --- DURUM 1: POZİSYONDAYIZ (ÇIKIŞ ARA) ---
         if state == "INVESTED":
             sym = active_position['symbol']
             if current_date not in market_data[sym].index: 
                 equity_curve.append(balance + (active_position['amount'] * active_position['last_close']))
                 continue
+            
+            # GÜN SAYACI ARTIR
+            active_position['days_held'] += 1
             
             daily_row = market_data[sym].loc[current_date]
             curr_high = daily_row['High']
@@ -1076,18 +1083,25 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=1000
             curr_close = daily_row['Close']
             
             current_val = balance + (active_position['amount'] * curr_close)
-            active_position['last_close'] = curr_close
+            active_position['last_close'] = curr_close 
             
             exit_type = None
             exit_price = 0
             
+            # 1. Stop Loss Kontrolü
             if curr_low <= active_position['stop']:
                 exit_type = "🛑 STOP"
                 exit_price = active_position['stop']
+            # 2. Take Profit Kontrolü
             elif curr_high >= active_position['target']:
                 exit_type = "✅ HEDEF"
                 exit_price = active_position['target']
+            # 3. Time Stop (Zaman Doldu) Kontrolü
+            elif active_position['days_held'] >= max_hold_days:
+                exit_type = "⏳ ZAMAN STOP"
+                exit_price = curr_close # O günün kapanışından sat
             
+            # Çıkış gerçekleştiyse
             if exit_type:
                 revenue = active_position['amount'] * exit_price
                 balance += revenue 
@@ -1108,6 +1122,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=1000
 
             equity_curve.append(current_val)
 
+        # --- DURUM 2: NAKİTTEYİZ (YENİ AV ARA) ---
         elif state == "CASH":
             equity_curve.append(balance)
             found_stock = None
@@ -1118,19 +1133,19 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=1000
                     candidates.append(sym)
             
             if candidates:
-                found_stock = candidates[0]
+                found_stock = candidates[0] 
                 
                 row = market_data[found_stock].loc[current_date]
                 entry_price = row['Close']
                 atr = row['ATR']
                 
-                if np.isnan(atr) or atr == 0: continue
+                if np.isnan(atr) or atr == 0: continue 
                 
                 stop_level = entry_price - (2 * atr)
                 target_level = entry_price + (2 * atr * rr_ratio)
                 
                 qty = balance / entry_price
-                balance = 0
+                balance = 0 
                 
                 active_position = {
                     'symbol': found_stock,
@@ -1138,7 +1153,8 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, initial_capital=1000
                     'entry': entry_price,
                     'stop': stop_level,
                     'target': target_level,
-                    'last_close': entry_price
+                    'last_close': entry_price,
+                    'days_held': 0 # Sayaç Başlat
                 }
                 
                 trades.append({
@@ -1843,10 +1859,12 @@ with col_right:
         st.markdown(f"### 🏹 Portföy Avcısı (Hunter) Testi")
         st.info(f"**Senaryo:** Seçili kategori ({st.session_state.category}) içindeki hisselerden hangisi STP Al sinyali verirse ona gireriz. Hedefe ulaşınca satar, ertesi gün yeni av ararız. Tek seferde tek hisse taşınır.")
         
-        col_set1, col_set2 = st.columns(2)
+        col_set1, col_set2, col_set3 = st.columns(3)
         with col_set1:
             user_rr = st.slider("Hedef Risk/Ödül Oranı", 1.0, 5.0, 2.0, 0.5)
         with col_set2:
+            max_days = st.number_input("Max Taşıma Süresi (Gün)", min_value=1, max_value=60, value=10)
+        with col_set3:
             st.write("") # Boşluk
             st.write("") 
             run_btn = st.button("🚀 Avı Başlat (1 Yıllık Simülasyon)", key="btn_hunter_backtest", type="primary")
@@ -1855,8 +1873,8 @@ with col_right:
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             with st.spinner(f"Son 1 yılda {len(current_assets)} hisse üzerinde sanal ticaret yapılıyor..."):
                 
-                # Yeni Hunter Fonksiyonunu Çağır
-                bt_result = run_portfolio_hunter_backtest(current_assets, rr_ratio=user_rr)
+                # Yeni Hunter Fonksiyonunu Çağır (Time Stop Eklendi)
+                bt_result = run_portfolio_hunter_backtest(current_assets, rr_ratio=user_rr, max_hold_days=max_days)
                 
                 if bt_result is not None:
                     # 4 Sütunlu Metrik Alanı
