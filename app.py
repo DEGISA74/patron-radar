@@ -1853,7 +1853,7 @@ with col_left:
                             y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
                             tooltip=['Tarih', 'Portföy Değeri']
                         ).properties(
-                            height=400, # Sabit Yükseklik
+                            height=300, # Sabit Yükseklik
                             title="Bakiye Değişimi"
                         ).interactive() # Kaydırma/Zoom Aktif
                         
@@ -1867,7 +1867,7 @@ with col_left:
                                 column_config={
                                     "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
                                 },
-                                height=400, # Sabit Yükseklik (Grafikle aynı)
+                                height=300, # Sabit Yükseklik (Grafikle aynı)
                                 use_container_width=True
                             )
                         else:
@@ -1936,4 +1936,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
