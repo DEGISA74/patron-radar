@@ -3,5 +3,4 @@ yfinance
 pandas
 feedparser
 textblob
-plotly
-altair
+google-generativeai
