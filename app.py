@@ -402,8 +402,6 @@ def calculate_synthetic_sentiment(ticker):
     except Exception: return None
 
 # --- TOPLU TARAMA FONKSİYONLARI (BATCH PROCESSING) ---
-# Burada her fonksiyon kendi verisini 'Batch' olarak çeker ve güvenli işler.
-# Bu yapı, UI'ı bozmadan hızı artırmanın en iyi yoludur.
 
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
@@ -411,13 +409,11 @@ def scan_stp_signals(asset_list):
     cross_signals = []; trend_signals = []
     
     try:
-        # BATCH DOWNLOAD (Hız buradan geliyor)
         data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
     except: return [], []
 
     for symbol in asset_list:
         try:
-            # MultiIndex Ayrıştırma (Güvenli)
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
@@ -425,12 +421,10 @@ def scan_stp_signals(asset_list):
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
 
-            # Temizlik ve Kontrol
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna()
             if len(df) < 10: continue
 
-            # Hesaplama
             close = df['Close']; high = df['High']; low = df['Low']
             typical_price = (high + low + close) / 3
             stp = typical_price.ewm(span=6, adjust=False).mean()
@@ -454,8 +448,6 @@ def scan_hidden_accumulation(asset_list):
     except: return pd.DataFrame()
 
     results = []
-    # Bu fonksiyon hızlı olduğu için döngüyle işleyebiliriz,
-    # ama yine de hata korumalı.
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
@@ -1007,6 +999,94 @@ def calculate_price_action_dna(ticker):
             "sq": {"title": sq_txt, "desc": sq_desc}
         }
     except: return None
+
+# ==============================================================================
+# 7. BACKTEST MOTORU (YENİ EKLENTİ)
+# ==============================================================================
+
+@st.cache_data(ttl=3600)
+def backtest_stp_strategy(ticker, initial_capital=10000):
+    """
+    STP Stratejisini geçmiş veride test eder.
+    Kural: Fiyat STP'yi yukarı keserse AL, aşağı keserse SAT.
+    """
+    # 1. Veriyi Çek (2 Yıllık)
+    df = get_safe_historical_data(ticker, period="2y")
+    if df is None or len(df) < 50: return None
+
+    # 2. Göstergeleri Hesapla (Tüm tarihçe için)
+    # STP Hesabı
+    df['Typical_Price'] = (df['High'] + df['Low'] + df['Close']) / 3
+    df['STP'] = df['Typical_Price'].ewm(span=6, adjust=False).mean()
+    
+    # 3. Sinyalleri Oluştur
+    # AL Sinyali: Dün Fiyat < STP VE Bugün Fiyat > STP
+    df['Signal'] = 0
+    df.loc[(df['Close'] > df['STP']) & (df['Close'].shift(1) <= df['STP'].shift(1)), 'Signal'] = 1 # AL
+    df.loc[(df['Close'] < df['STP']) & (df['Close'].shift(1) >= df['STP'].shift(1)), 'Signal'] = -1 # SAT
+    
+    # 4. Ticaret Simülasyonu
+    balance = initial_capital
+    position = 0 # 0: Nakit, >0: Hisse Adedi
+    trades = []
+    equity_curve = []
+    
+    entry_price = 0
+    entry_date = None
+
+    for i in range(len(df)):
+        date = df.index[i]
+        price = float(df['Close'].iloc[i])
+        signal = df['Signal'].iloc[i]
+        
+        # ALIM YAP (Eğer nakitteysek ve sinyal varsa)
+        if position == 0 and signal == 1:
+            position = balance / price
+            entry_price = price
+            entry_date = date
+            balance = 0 # Tüm parayla al
+            trades.append({"Tarih": date.strftime('%Y-%m-%d'), "İşlem": "AL", "Fiyat": f"{price:.2f}", "Durum": "Giriş"})
+        
+        # SATIŞ YAP (Eğer maldaysak ve sinyal -1 ise)
+        elif position > 0 and signal == -1:
+            balance = position * price
+            profit = balance - (position * entry_price)
+            profit_pct = (price - entry_price) / entry_price
+            
+            position = 0
+            trades.append({
+                "Tarih": date.strftime('%Y-%m-%d'), "İşlem": "SAT", "Fiyat": f"{price:.2f}", 
+                "Kar/Zarar": f"{profit:.2f}", "Yüzde": f"%{profit_pct * 100:.2f}"
+            })
+            
+        # Günlük Portföy Değeri (Equity Curve)
+        current_equity = balance + (position * price)
+        equity_curve.append(current_equity)
+
+    df['Equity'] = equity_curve
+    
+    # 5. İstatistikleri Çıkar
+    trade_df = pd.DataFrame(trades)
+    total_return_pct = ((equity_curve[-1] - initial_capital) / initial_capital) * 100
+    
+    win_rate = 0
+    if not trade_df.empty:
+        # Kar/Zarar string olduğu için hesaplama öncesi temizlik gerekir ama basitçe işlem sayısından gidelim
+        # "SAT" işlemlerini filtrele
+        sells = trade_df[trade_df['İşlem'] == 'SAT']
+        if not sells.empty:
+             # Yüzde sütununu temizleyip sayıya çevir
+             wins = sells[sells['Yüzde'].str.replace('%','').astype(float) > 0]
+             win_rate = (len(wins) / len(sells)) * 100
+
+    return {
+        "df": df,
+        "trades": trade_df,
+        "final_balance": equity_curve[-1],
+        "return_pct": total_return_pct,
+        "win_rate": win_rate,
+        "buy_hold_return": ((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100
+    }
 
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (KORUMALI)
@@ -1657,7 +1737,7 @@ with col_right:
         else: st.caption("İki radar da çalıştırılmalı.")
     st.markdown("<hr>", unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
+    tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "🧪 BACKTEST LAB"])
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
@@ -1678,3 +1758,39 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+    with tab3:
+        st.markdown(f"### 🧪 {st.session_state.ticker} STP Strateji Testi")
+        st.caption("Son 2 yılda 'STP Kesişimi' stratejisi uygulansaydı ne olurdu?")
+        
+        if st.button("🚀 Testi Başlat", key="btn_run_backtest"):
+            with st.spinner("Geçmiş veriler simüle ediliyor..."):
+                bt_result = backtest_stp_strategy(st.session_state.ticker)
+                
+                if bt_result:
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Toplam Getiri", f"%{bt_result['return_pct']:.2f}", delta=f"{bt_result['return_pct'] - bt_result['buy_hold_return']:.2f}% (vs Al-Tut)")
+                    c2.metric("Kasa (Başlangıç 10k)", f"${bt_result['final_balance']:.0f}")
+                    c3.metric("Başarı Oranı (Win Rate)", f"%{bt_result['win_rate']:.1f}")
+
+                    st.markdown("**💰 Kasa Büyüme Grafiği**")
+                    st.line_chart(bt_result['df']['Equity'], color="#22c55e")
+                    
+                    st.markdown("**📍 Al-Sat Sinyalleri**")
+                    base = alt.Chart(bt_result['df'].reset_index()).encode(x='Date:T')
+                    line_price = base.mark_line(color='gray').encode(y='Close')
+                    line_stp = base.mark_line(color='orange').encode(y='STP')
+                    
+                    buys = bt_result['df'][bt_result['df']['Signal'] == 1].reset_index()
+                    sells = bt_result['df'][bt_result['df']['Signal'] == -1].reset_index()
+                    
+                    points_buy = alt.Chart(buys).mark_point(shape='triangle-up', color='green', size=100, filled=True).encode(x='Date:T', y='Close', tooltip=['Date', 'Close'])
+                    points_sell = alt.Chart(sells).mark_point(shape='triangle-down', color='red', size=100, filled=True).encode(x='Date:T', y='Close', tooltip=['Date', 'Close'])
+                    
+                    chart = (line_price + line_stp + points_buy + points_sell).interactive()
+                    st.altair_chart(chart, use_container_width=True)
+
+                    st.markdown("**📜 İşlem Geçmişi**")
+                    st.dataframe(bt_result['trades'], use_container_width=True)
+                    
+                else:
+                    st.error("Backtest için yeterli veri yok.")
