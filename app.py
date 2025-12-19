@@ -12,6 +12,7 @@ import os
 import concurrent.futures
 import re
 import altair as alt
+import random # Backtest rastgelelik için gerekli
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -36,11 +37,11 @@ st.markdown(f"""
 <style>
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
-    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
+    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI (Hepsi 0.7rem) --- */
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 600; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    /* ------------------------------------------------ */
+    /* ----------------------------------------------------------------- */
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
@@ -1002,24 +1003,28 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
-# 7. BACKTEST MOTORU: PORTFÖY AVCISI + TIME STOP (Asset Rotation + Time Decay)
+# 7. BACKTEST MOTORU: PORTFÖY AVCISI + RANDOM SELECTION (GÜNCELLENMİŞ)
 # ==============================================================================
 
-@st.cache_data(ttl=3600)
+# DİKKAT: @st.cache_data KALDIRILDI! (Her seferinde yeni sonuç üretmesi için)
 def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, initial_capital=10000):
     """
-    PORTFÖY AVCISI STRATEJİSİ (ZAMAN STOPLU):
-    1. Her gün tüm piyasayı tara.
-    2. Nakitteysek: STP AL sinyali veren İLK hisseye gir.
-    3. Maldaysak: 
-        - Hedef (TP) gelirse SAT.
-        - Stop (SL) gelirse SAT.
-        - 10 Gün (Time Stop) dolarsa SAT.
-    4. Çıkınca: Tekrar tarama moduna dön.
+    PORTFÖY AVCISI (RANDOM):
+    1. Listeden rastgele 50 hisse seç.
+    2. Her gün tarama yap.
+    3. Birden fazla hisse AL verirse, RASTGELE birini seç (Hep 'A' harfiyle başlayanı değil).
     """
-    scan_list = asset_list[:50] 
+    
+    # 1. LİSTEYİ KARIŞTIR (Her testte farklı hisseler seçilsin)
+    # asset_list'in kopyasını alıp karıştırıyoruz
+    temp_list = list(asset_list)
+    random.shuffle(temp_list)
+    
+    # İlk 50'yi al (Ama artık karışık 50)
+    scan_list = temp_list[:50] 
     
     try:
+        # Batch Download
         raw_data = yf.download(scan_list, period="1y", group_by="ticker", threads=True, progress=False)
     except: return None
 
@@ -1027,6 +1032,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
 
     market_data = {}
     
+    # Veri Hazırlığı
     for symbol in scan_list:
         try:
             if isinstance(raw_data.columns, pd.MultiIndex):
@@ -1052,6 +1058,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
             market_data[symbol] = df
         except: continue
 
+    # Tarihleri Eşitle
     common_dates = None
     for sym in market_data:
         if common_dates is None: common_dates = market_data[sym].index
@@ -1074,7 +1081,6 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
                 equity_curve.append(balance + (active_position['amount'] * active_position['last_close']))
                 continue
             
-            # GÜN SAYACI ARTIR
             active_position['days_held'] += 1
             
             daily_row = market_data[sym].loc[current_date]
@@ -1088,20 +1094,19 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
             exit_type = None
             exit_price = 0
             
-            # 1. Stop Loss Kontrolü
+            # Stop Loss
             if curr_low <= active_position['stop']:
                 exit_type = "🛑 STOP"
                 exit_price = active_position['stop']
-            # 2. Take Profit Kontrolü
+            # Take Profit
             elif curr_high >= active_position['target']:
                 exit_type = "✅ HEDEF"
                 exit_price = active_position['target']
-            # 3. Time Stop (Zaman Doldu) Kontrolü
+            # Time Stop
             elif active_position['days_held'] >= max_hold_days:
                 exit_type = "⏳ ZAMAN STOP"
-                exit_price = curr_close # O günün kapanışından sat
+                exit_price = curr_close 
             
-            # Çıkış gerçekleştiyse
             if exit_type:
                 revenue = active_position['amount'] * exit_price
                 balance += revenue 
@@ -1125,15 +1130,19 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
         # --- DURUM 2: NAKİTTEYİZ (YENİ AV ARA) ---
         elif state == "CASH":
             equity_curve.append(balance)
-            found_stock = None
             
+            # O gün AL sinyali yakan ADAYLARI bul
             candidates = []
             for sym, df in market_data.items():
                 if current_date in df.index and df.loc[current_date, 'Buy_Signal']:
                     candidates.append(sym)
             
             if candidates:
-                found_stock = candidates[0] 
+                # -----------------------------------------------------------
+                # KRİTİK DEĞİŞİKLİK: ARTIK RASTGELE SEÇİYORUZ!
+                # Eskiden: found_stock = candidates[0] idi.
+                # -----------------------------------------------------------
+                found_stock = random.choice(candidates) 
                 
                 row = market_data[found_stock].loc[current_date]
                 entry_price = row['Close']
@@ -1154,7 +1163,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
                     'stop': stop_level,
                     'target': target_level,
                     'last_close': entry_price,
-                    'days_held': 0 # Sayaç Başlat
+                    'days_held': 0 
                 }
                 
                 trades.append({
