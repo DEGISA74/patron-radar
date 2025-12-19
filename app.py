@@ -11,7 +11,7 @@ import sqlite3
 import os
 import concurrent.futures
 import re
-import altair as alt 
+import altair as alt
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -136,7 +136,8 @@ def remove_watchlist_db(symbol):
     conn.commit()
     conn.close()
 
-if not os.path.exists(DB_FILE): init_db()
+# 5️⃣ FIX: GÜVENLİ INIT (Her zaman çalıştır)
+init_db()
 
 # --- VARLIK LİSTELERİ (TAM LİSTE) ---
 priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD"]
@@ -277,19 +278,39 @@ def toggle_watchlist(symbol):
 # 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
-# --- YARDIMCI FONKSİYONLAR (EN ÜSTE TAŞINDI - GÜVENLİK İÇİN) ---
+# 4️⃣ FIX: yfinance stabilizasyonu (fast_info + fallback)
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
+    t = yf.Ticker(ticker)
+    price = prev_close = volume = None
+
     try:
-        info = yf.Ticker(ticker).info
-        return {
-            'price': info.get('currentPrice') or info.get('regularMarketPrice'),
-            'change_pct': ((info.get('currentPrice') or info.get('regularMarketPrice')) - info.get('previousClose')) / info.get('previousClose') * 100 if info.get('previousClose') else 0,
-            'volume': info.get('volume', 0),
-            'sector': info.get('sector', '-'),
-            'target': info.get('targetMeanPrice', '-')
-        }
-    except: return None
+        fi = getattr(t, "fast_info", None)
+        if fi:
+            price = fi.get("last_price")
+            prev_close = fi.get("previous_close")
+            volume = fi.get("last_volume")
+    except:
+        pass
+
+    if price is None or prev_close is None:
+        try:
+            h = t.history(period="5d")
+            if not h.empty:
+                price = float(h["Close"].iloc[-1])
+                prev_close = float(h["Close"].iloc[-2]) if len(h) > 1 else price
+                volume = float(h["Volume"].iloc[-1]) if "Volume" in h else 0
+        except:
+            return None
+
+    change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
+    return {
+        "price": price,
+        "change_pct": change_pct,
+        "volume": volume or 0,
+        "sector": "-",
+        "target": "-"
+    }
 
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
@@ -464,6 +485,7 @@ def scan_hidden_accumulation(asset_list):
     if results: return pd.DataFrame(results).sort_values(by="MF Gücü", ascending=False)
     return pd.DataFrame()
 
+# 1️⃣ FIX: MACD Hesaplaması Düzeltildi
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -491,7 +513,14 @@ def analyze_market_intelligence(asset_list):
             sma20 = close.rolling(20).mean()
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
-            hist = (close.ewm(span=12, adjust=False).mean() - close.ewm(span=12, adjust=False).mean()).ewm(span=9, adjust=False).mean()
+
+            # --- MACD (DOĞRU HESAP) ---
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            hist = macd_line - signal_line
+            
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -674,6 +703,7 @@ def agent3_breakout_scan(asset_list):
     results = [r for r in results if r is not None]
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
+# 3️⃣ FIX: RSI Division & MACD Stabilizasyonu
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -681,28 +711,47 @@ def calculate_sentiment_score(ticker):
         if df.empty: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
+        
+        # --- STABİL RSI ---
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = 100 - (100 / (1 + rs))
+        rsi = rsi.fillna(50)
+        
         score_mom = 0; reasons_mom = []
-        rsi = 100 - (100 / (1 + (close.diff().clip(lower=0).rolling(14).mean() / close.diff().clip(upper=0).abs().rolling(14).mean())))
         if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score_mom += 10; reasons_mom.append("RSI ↑")
-        macd = close.ewm(span=12).mean() - close.ewm(span=26).mean(); hist = macd - macd.ewm(span=9).mean()
+        
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        signal = macd.ewm(span=9, adjust=False).mean()
+        hist = macd - signal
+        
         if hist.iloc[-1] > 0 and hist.iloc[-1] > hist.iloc[-2]: score_mom += 10; reasons_mom.append("MACD ↑")
         if rsi.iloc[-1] < 30: reasons_mom.append("OS")
         elif rsi.iloc[-1] > 70: reasons_mom.append("OB")
         else: score_mom += 10; reasons_mom.append("Stoch Stabil")
+        
         score_vol = 0; reasons_vol = []
         if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]: score_vol += 15; reasons_vol.append("Vol ↑")
         else: reasons_vol.append("Vol ↓")
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]: score_vol += 10; reasons_vol.append("OBV ↑")
+        
         score_tr = 0; reasons_tr = []; sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
         if sma50.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("GoldCross")
         if close.iloc[-1] > sma50.iloc[-1]: score_tr += 10; reasons_tr.append("P > SMA50")
+        
         score_vola = 0; reasons_vola = []; std = close.rolling(20).std(); upper = close.rolling(20).mean() + (2 * std)
         if close.iloc[-1] > upper.iloc[-1]: score_vola += 10; reasons_vola.append("BB Break")
         atr = (high-low).rolling(14).mean(); 
         if atr.iloc[-1] < atr.iloc[-5]: score_vola += 5; reasons_vola.append("Vola ↓")
+        
         score_str = 0; reasons_str = []
         if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
+        
         total = score_mom + score_vol + score_tr + score_vola + score_str
         bars = int(total / 5); bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
         def fmt(lst): return f"<span style='font-size:0.75rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
@@ -896,7 +945,7 @@ def calculate_ict_deep_analysis(ticker):
     except Exception as e: # İŞTE EKSİK OLAN VE HATAYA YOL AÇAN KISIM BURASI
         return {"status": "Error", "msg": str(e)}
         
-# --- PRICE ACTION MODÜLÜ (YENİ EKLENDİ) ---
+# 2️⃣ FIX: 3 White Soldiers FIX
 @st.cache_data(ttl=600)
 def calculate_price_action_dna(ticker):
     try:
@@ -937,7 +986,13 @@ def calculate_price_action_dna(ticker):
         
         # Üçlü Formasyonlar (Star, Soldiers, Crows)
         if prev_c < prev_o and abs(prev_c - prev_o) < abs(p2_c - p2_o) * 0.3 and is_green: bulls.append("Morning Star ⭐")
-        if is_green and o.iloc[-2] > o.iloc[-3] and is_green: bulls.append("3 White Soldiers ⚔️")
+        
+        # --- 3 White Soldiers FIX ---
+        g1 = curr_c > curr_o
+        g2 = prev_c > prev_o
+        g3 = p2_c > p2_o
+        if g1 and g2 and g3 and curr_c > prev_c > p2_c:
+            bulls.append("3 White Soldiers ⚔️")
 
         candle_title = ", ".join(bulls + bears + neutrals) if (bulls + bears + neutrals) else "Standart Mum"
         candle_desc = f"Tespit edilen sinyaller: {len(bulls)} Boğa, {len(bears)} Ayı, {len(neutrals)} Kararsız."
@@ -1699,13 +1754,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
-
-
-
-
-
-
-
