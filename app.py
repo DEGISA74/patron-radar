@@ -34,14 +34,13 @@ current_theme = THEMES[st.session_state.theme]
 
 st.markdown(f"""
 <style>
-    /* --- SIDEBAR AYARI --- */
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
-    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI (YENİ) --- */
+    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
     div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 600; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    /* -------------------------------------------------------- */
+    /* ------------------------------------------------ */
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
@@ -282,10 +281,9 @@ def toggle_watchlist(symbol):
     st.session_state.watchlist = wl
 
 # ==============================================================================
-# 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC - OPTIMIZED & STABILIZED)
+# 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
-# --- TEKİL VERİ ÇEKİCİ (Güvenli) ---
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
@@ -297,7 +295,6 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
         
         if df.empty: return None
             
-        # MultiIndex Düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             try:
                 if clean_ticker in df.columns.levels[1]: df = df.xs(clean_ticker, axis=1, level=1)
@@ -314,11 +311,9 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
 
     except Exception: return None
 
-# --- TEKİL BİLGİ (Fiyat vb.) ---
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
-        # Hızlı bilgi için fast_info dene
         t = yf.Ticker(ticker)
         price = prev_close = volume = None
         try:
@@ -329,7 +324,6 @@ def fetch_stock_info(ticker):
                 volume = fi.get("last_volume")
         except: pass
 
-        # Olmazsa geçmiş veriden al
         if price is None or prev_close is None:
             df = get_safe_historical_data(ticker, period="5d")
             if df is not None and not df.empty:
@@ -409,8 +403,7 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
     except Exception: return None
 
-# --- TOPLU TARAMA FONKSİYONLARI (BATCH PROCESSING) ---
-
+# --- BATCH SCANNER ---
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
     if not asset_list: return None, None
@@ -1009,7 +1002,7 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
-# 7. BACKTEST MOTORU (YENİ EKLENTİ)
+# 7. BACKTEST MOTORU (SADELEŞTİRİLMİŞ SATIŞ ODAKLI MODÜL)
 # ==============================================================================
 
 @st.cache_data(ttl=3600)
@@ -1018,8 +1011,8 @@ def backtest_stp_strategy(ticker, initial_capital=10000):
     STP Stratejisini geçmiş veride test eder.
     Kural: Fiyat STP'yi yukarı keserse AL, aşağı keserse SAT.
     """
-    # 1. Veriyi Çek (2 Yıllık)
-    df = get_safe_historical_data(ticker, period="2y")
+    # 1. SÜRE 1 YILA DÜŞÜRÜLDÜ (Daha taze veri)
+    df = get_safe_historical_data(ticker, period="1y")
     if df is None or len(df) < 50: return None
 
     # 2. Göstergeleri Hesapla (Tüm tarihçe için)
@@ -1079,7 +1072,6 @@ def backtest_stp_strategy(ticker, initial_capital=10000):
     
     win_rate = 0
     if not trade_df.empty:
-        # Kar/Zarar string olduğu için hesaplama öncesi temizlik gerekir ama basitçe işlem sayısından gidelim
         # "SAT" işlemlerini filtrele
         sells = trade_df[trade_df['İşlem'] == 'SAT']
         if not sells.empty:
@@ -1768,38 +1760,22 @@ with col_right:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
     with tab3:
         st.markdown(f"### 🧪 {st.session_state.ticker} STP Strateji Testi")
-        st.caption("Son 2 yılda 'STP Kesişimi' stratejisi uygulansaydı ne olurdu?")
+        st.caption("Son 1 yılda 'STP Kesişimi' stratejisi uygulansaydı ne olurdu?")
         
         if st.button("🚀 Testi Başlat", key="btn_run_backtest"):
             with st.spinner("Geçmiş veriler simüle ediliyor..."):
                 bt_result = backtest_stp_strategy(st.session_state.ticker)
                 
                 if bt_result:
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Toplam Getiri", f"%{bt_result['return_pct']:.2f}", delta=f"{bt_result['return_pct'] - bt_result['buy_hold_return']:.2f}% (vs Al-Tut)")
+                    c1, c2 = st.columns(2)
+                    c1.metric("Toplam Getiri", f"%{bt_result['return_pct']:.2f}")
                     c2.metric("Kasa (Başlangıç 10k)", f"${bt_result['final_balance']:.0f}")
-                    c3.metric("Başarı Oranı (Win Rate)", f"%{bt_result['win_rate']:.1f}")
 
                     st.markdown("**💰 Kasa Büyüme Grafiği**")
                     st.line_chart(bt_result['df']['Equity'], color="#22c55e")
                     
-                    st.markdown("**📍 Al-Sat Sinyalleri**")
-                    base = alt.Chart(bt_result['df'].reset_index()).encode(x='Date:T')
-                    line_price = base.mark_line(color='gray').encode(y='Close')
-                    line_stp = base.mark_line(color='orange').encode(y='STP')
-                    
-                    buys = bt_result['df'][bt_result['df']['Signal'] == 1].reset_index()
-                    sells = bt_result['df'][bt_result['df']['Signal'] == -1].reset_index()
-                    
-                    points_buy = alt.Chart(buys).mark_point(shape='triangle-up', color='green', size=100, filled=True).encode(x='Date:T', y='Close', tooltip=['Date', 'Close'])
-                    points_sell = alt.Chart(sells).mark_point(shape='triangle-down', color='red', size=100, filled=True).encode(x='Date:T', y='Close', tooltip=['Date', 'Close'])
-                    
-                    chart = (line_price + line_stp + points_buy + points_sell).interactive()
-                    st.altair_chart(chart, use_container_width=True)
-
                     st.markdown("**📜 İşlem Geçmişi**")
                     st.dataframe(bt_result['trades'], use_container_width=True)
                     
                 else:
                     st.error("Backtest için yeterli veri yok.")
-
