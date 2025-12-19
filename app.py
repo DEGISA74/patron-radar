@@ -34,6 +34,12 @@ current_theme = THEMES[st.session_state.theme]
 
 st.markdown(f"""
 <style>
+    /* --- YENİ EKLENEN KISIM: SIDEBAR GENİŞLİĞİ --- */
+    section[data-testid="stSidebar"] {{
+        width: 350px !important; /* Genişliği buradan ayarla (Standart: 336px) */
+    }}
+    /* --------------------------------------------- */
+
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
@@ -136,7 +142,7 @@ def remove_watchlist_db(symbol):
     conn.commit()
     conn.close()
 
-# 5️⃣ FIX: GÜVENLİ INIT (Her zaman çalıştır)
+# FIX: GÜVENLİ INIT (Her zaman çalıştır)
 init_db()
 
 # --- VARLIK LİSTELERİ (TAM LİSTE) ---
@@ -278,7 +284,7 @@ def toggle_watchlist(symbol):
 # 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
-# 4️⃣ FIX: yfinance stabilizasyonu (fast_info + fallback)
+# FIX: yfinance stabilizasyonu (fast_info + fallback)
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     t = yf.Ticker(ticker)
@@ -485,7 +491,7 @@ def scan_hidden_accumulation(asset_list):
     if results: return pd.DataFrame(results).sort_values(by="MF Gücü", ascending=False)
     return pd.DataFrame()
 
-# 1️⃣ FIX: MACD Hesaplaması Düzeltildi
+# FIX: MACD Hesaplaması Düzeltildi
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
     if not asset_list: return pd.DataFrame()
@@ -703,7 +709,7 @@ def agent3_breakout_scan(asset_list):
     results = [r for r in results if r is not None]
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
-# 3️⃣ FIX: RSI Division & MACD Stabilizasyonu
+# FIX: RSI Division & MACD Stabilizasyonu
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -887,7 +893,7 @@ def calculate_ict_deep_analysis(ticker):
                     mean_threshold = (ob_low + ob_high) / 2 # %50 Hesabı
                     break
 
-# --- 1. BÖLGE ANALİZİ (ÖNCE HESAPLANMALI) ---
+        # --- 1. BÖLGE ANALİZİ (ÖNCE HESAPLANMALI) ---
         range_high = max(high.tail(60)); range_low = min(low.tail(60))
         range_loc = (curr_price - range_low) / (range_high - range_low)
         zone = "PREMIUM (Pahalı)" if range_loc > 0.5 else "DISCOUNT (Ucuz)"
@@ -1457,7 +1463,7 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
             st.session_state.generate_prompt = True
 
-    # --- YENİ: DERİN TEKNİK RÖNTGEN PANELİ ---
+    # --- YENİ: DERİN TEKNİK RÖNTGEN PANELİ (SIDEBAR - KALACAK) ---
     # AI Analist kutusunun hemen altına yerleştiriyoruz
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
@@ -1577,7 +1583,7 @@ Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
 # Hisse bilgisini çekiyoruz (Hem sol hem sağ sütun kullanacak)
 info = fetch_stock_info(st.session_state.ticker)
 
-col_left, col_right = st.columns([3, 1])
+col_left, col_right = st.columns([4, 1])
 
 # --- SOL SÜTUN (Grafikler ve Analizler) ---
 with col_left:
@@ -1707,9 +1713,9 @@ with col_right:
     # 3. YENİ ICT PANELİ
     render_ict_deep_panel(st.session_state.ticker)
     
-    # 4. XRAY KARTI
-    xray_data = get_deep_xray_data(st.session_state.ticker)
-    render_deep_xray_card(xray_data)
+    # 4. XRAY KARTI - SİLİNDİ (İSTEĞİNİZE GÖRE)
+    # xray_data = get_deep_xray_data(st.session_state.ticker)
+    # render_deep_xray_card(xray_data)
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     with st.container(height=250):
@@ -1754,5 +1760,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
