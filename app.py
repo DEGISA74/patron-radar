@@ -1421,7 +1421,7 @@ def render_ict_deep_panel(ticker):
 
     <div class="info-card" style="border: 2px solid {border_color}; margin-top:5px;">
         <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
-            <span>{icon} ICT TİCARET KURULUMU</span>
+            <span>{icon} ICT TRADE SET-UP</span>
             <span style="font-family:'JetBrains Mono'; background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px;">{data['setup_type']}</span>
         </div>
         <div style="padding:10px; background-color:{bg_color};">
@@ -1769,3 +1769,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
