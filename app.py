@@ -12,7 +12,7 @@ import os
 import concurrent.futures
 import re
 import altair as alt
-import random # Backtest rastgelelik için gerekli
+import random 
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -37,11 +37,11 @@ st.markdown(f"""
 <style>
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
-    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI (Hepsi 0.7rem) --- */
+    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
     div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    /* ----------------------------------------------------------------- */
+    /* ------------------------------------------------ */
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
@@ -1804,68 +1804,12 @@ with col_left:
                     card_html = f"""<div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};"><div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div><div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div><div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div><div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div><div style="margin-top:8px; padding-top:4px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.8rem;"><div style="color:#166534;"><strong>🎯</strong> {target_text}</div><div style="color:#991b1b;"><strong>🛑 Stop:</strong> {stop_text}</div></div></div>"""
                     st.markdown(card_html, unsafe_allow_html=True)
         elif st.session_state.agent3_data is not None: st.info("Kriterlere uyan hisse yok.")
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
-    symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
-    st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
-
-# --- SAĞ SÜTUN ---
-with col_right:
-    if not info: info = fetch_stock_info(st.session_state.ticker)
     
-    if info and info.get('price'):
-        display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-        cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
-        st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
-    else: st.warning("Fiyat verisi alınamadı.")
-
-    render_price_action_panel(st.session_state.ticker)
-    render_ict_deep_panel(st.session_state.ticker)
-    
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
-    with st.container(height=250):
-        df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
-        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
-            commons = []; symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
-            if symbols:
-                for sym in symbols:
-                    row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
-                    r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
-                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
-                sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
-                cols = st.columns(2) 
-                for i, item in enumerate(sorted_commons):
-                    sym = item["symbol"]
-                    score_text_safe = f"{i+1}. {sym} ({int(item['combined'])})"
-                    with cols[i % 2]:
-                        if st.button(f"{score_text_safe} | R1:{int(item['r1_score'])} R2:{int(item['r2_score'])}", key=f"c_select_{sym}", help="Detaylar için seç", use_container_width=True): 
-                            on_scan_result_click(sym); st.rerun()
-            else: st.info("Kesişim yok.")
-        else: st.caption("İki radar da çalıştırılmalı.")
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
-    tab1, tab2, tab3 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2", "🧪 BACKTEST LAB"])
-    with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
-            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.scan_data is not None:
-            with st.container(height=250):
-                cols = st.columns(2)
-                for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
-                    sym = row["Sembol"]
-                    with cols[i % 2]:
-                        if st.button(f"🔥 {row['Skor']}/8 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-    with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
-            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.radar2_data is not None:
-            with st.container(height=250):
-                cols = st.columns(2)
-                for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
-                    sym = row["Sembol"]
-                    with cols[i % 2]:
-                        if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-    with tab3:
-        st.markdown(f"### 🏹 Portföy Avcısı (Hunter) Testi")
+    # -------------------------------------------------------------
+    # YENİ EKLENEN KISIM: BACKTEST LABORATUVARI (SOL SÜTUN)
+    # -------------------------------------------------------------
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🧪 Strateji Backtest Laboratuvarı</div>', unsafe_allow_html=True)
+    with st.expander("Geriye Dönük Testi Çalıştır", expanded=False):
         st.info(f"**Senaryo:** Seçili kategori ({st.session_state.category}) içindeki hisselerden hangisi STP Al sinyali verirse ona gireriz. Hedefe ulaşınca satar, ertesi gün yeni av ararız. Tek seferde tek hisse taşınır.")
         
         col_set1, col_set2, col_set3 = st.columns(3)
@@ -1909,3 +1853,65 @@ with col_right:
                         st.warning("Bu dönemde hiç sinyal bulunamadı.")
                 else:
                     st.error("Veri alınamadı veya liste boş.")
+    # -------------------------------------------------------------
+
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
+    symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
+    st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
+
+# --- SAĞ SÜTUN ---
+with col_right:
+    if not info: info = fetch_stock_info(st.session_state.ticker)
+    
+    if info and info.get('price'):
+        display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+        cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
+        st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
+    else: st.warning("Fiyat verisi alınamadı.")
+
+    render_price_action_panel(st.session_state.ticker)
+    render_ict_deep_panel(st.session_state.ticker)
+    
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
+    with st.container(height=250):
+        df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
+        if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
+            commons = []; symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
+            if symbols:
+                for sym in symbols:
+                    row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
+                    r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
+                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
+                sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                cols = st.columns(2) 
+                for i, item in enumerate(sorted_commons):
+                    sym = item["symbol"]
+                    score_text_safe = f"{i+1}. {sym} ({int(item['combined'])})"
+                    with cols[i % 2]:
+                        if st.button(f"{score_text_safe} | R1:{int(item['r1_score'])} R2:{int(item['r2_score'])}", key=f"c_select_{sym}", help="Detaylar için seç", use_container_width=True): 
+                            on_scan_result_click(sym); st.rerun()
+            else: st.info("Kesişim yok.")
+        else: st.caption("İki radar da çalıştırılmalı.")
+    st.markdown("<hr>", unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
+    with tab1:
+        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
+            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
+        if st.session_state.scan_data is not None:
+            with st.container(height=250):
+                cols = st.columns(2)
+                for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
+                    sym = row["Sembol"]
+                    with cols[i % 2]:
+                        if st.button(f"🔥 {row['Skor']}/8 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+    with tab2:
+        if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
+            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
+        if st.session_state.radar2_data is not None:
+            with st.container(height=250):
+                cols = st.columns(2)
+                for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
+                    sym = row["Sembol"]
+                    with cols[i % 2]:
+                        if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
