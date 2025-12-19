@@ -37,9 +37,9 @@ st.markdown(f"""
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
     /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
-    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 600; }}
-    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
+    div[data-testid="stMetricValue"] {{ font-size: 1.1rem !important; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.8rem !important; font-weight: 600; }}
+    div[data-testid="stMetricDelta"] {{ font-size: 0.75rem !important; }}
     /* ------------------------------------------------ */
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
@@ -1066,26 +1066,21 @@ def backtest_stp_strategy(ticker, initial_capital=10000):
 
     df['Equity'] = equity_curve
     
+    # MAX DRAWDOWN HESABI (YENİ)
+    cum_max = df['Equity'].cummax()
+    drawdown = (df['Equity'] - cum_max) / cum_max
+    max_drawdown = drawdown.min() * 100
+
     # 5. İstatistikleri Çıkar
     trade_df = pd.DataFrame(trades)
     total_return_pct = ((equity_curve[-1] - initial_capital) / initial_capital) * 100
     
-    win_rate = 0
-    if not trade_df.empty:
-        # "SAT" işlemlerini filtrele
-        sells = trade_df[trade_df['İşlem'] == 'SAT']
-        if not sells.empty:
-             # Yüzde sütununu temizleyip sayıya çevir
-             wins = sells[sells['Yüzde'].str.replace('%','').astype(float) > 0]
-             win_rate = (len(wins) / len(sells)) * 100
-
     return {
         "df": df,
         "trades": trade_df,
         "final_balance": equity_curve[-1],
         "return_pct": total_return_pct,
-        "win_rate": win_rate,
-        "buy_hold_return": ((df['Close'].iloc[-1] / df['Close'].iloc[0]) - 1) * 100
+        "max_drawdown": max_drawdown
     }
 
 # ==============================================================================
@@ -1767,13 +1762,19 @@ with col_right:
                 bt_result = backtest_stp_strategy(st.session_state.ticker)
                 
                 if bt_result:
-                    c1, c2 = st.columns(2)
+                    # 4 Sütunlu Metrik Alanı (Yeni Risk Metriği Eklendi)
+                    c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Toplam Getiri", f"%{bt_result['return_pct']:.2f}")
-                    c2.metric("Kasa (Başlangıç 10k)", f"${bt_result['final_balance']:.0f}")
+                    c2.metric("Max Erime (Risk)", f"%{bt_result['max_drawdown']:.2f}", help="En yüksek tepe noktasından yaşanan en büyük düşüş.")
+                    c3.metric("İşlem Sayısı", len(bt_result['trades']))
+                    c4.metric("Kasa", f"${bt_result['final_balance']:.0f}")
 
                     st.markdown("**💰 Kasa Büyüme Grafiği**")
                     st.line_chart(bt_result['df']['Equity'], color="#22c55e")
                     
+                    # DÜRÜST ANALİST NOTU
+                    st.info("ℹ️ **Analist Notu:** Bu strateji boğa piyasalarında 'Al-Tut' getirisinin gerisinde kalabilir. Amacı; olası ayı piyasalarında ve sert düşüşlerde sizi erkenden nakite geçirerek sermayenizi korumaktır.")
+
                     st.markdown("**📜 İşlem Geçmişi**")
                     st.dataframe(bt_result['trades'], use_container_width=True)
                     
