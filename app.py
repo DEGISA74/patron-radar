@@ -769,6 +769,7 @@ def calculate_sentiment_score(ticker):
         }
     except: return None
 
+# FIX: BAŞLIĞA HİSSE ADI EKLENDİ
 def get_deep_xray_data(ticker):
     sent = calculate_sentiment_score(ticker)
     if not sent: return None
@@ -1089,14 +1090,18 @@ def render_sentiment_card(sent):
     
     st.markdown(html_content, unsafe_allow_html=True)
 
+# FIX: BAŞLIĞA HİSSE ADI EKLENDİ
 def render_deep_xray_card(xray):
     if not xray: return
+    
+    # Hisse adını temizle ve hazırla
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     
     # Tüm HTML yapısını ve italik açıklamaları tek bir değişkende topluyoruz.
     # .replace("\n", "") komutu HTML'in bozulmadan okunmasını sağlar.
     html_icerik = f"""
     <div class="info-card">
-        <div class="info-header">🔍 Derin Teknik Röntgen</div>
+        <div class="info-header">🔍 Derin Teknik Röntgen: {display_ticker}</div>
         
         <div class="info-row">
             <div class="label-long">1. Momentum:</div>
@@ -1256,16 +1261,20 @@ def render_synthetic_sentiment_panel(data):
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
         st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
 
+# FIX: BAŞLIĞA HİSSE ADI EKLENDİ
 def render_price_action_panel(ticker):
     pa = calculate_price_action_dna(ticker)
     if not pa: return
+
+    # Hisse adını temizle ve hazırla
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
 
     sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
     sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
-        <div class="info-header" style="color:#1e3a8a;">🕯️ PRICE ACTION DEDEKTİFİ</div>
+        <div class="info-header" style="color:#1e3a8a;">🕯️ PRICE ACTION DEDEKTİFİ: {display_ticker}</div>
 
         <div style="margin-bottom:8px;">
             <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
