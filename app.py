@@ -138,7 +138,7 @@ def remove_watchlist_db(symbol):
 
 init_db()
 
-# --- VARLIK LİSTELERİ (TAM LİSTE) ---
+# --- VARLIK LİSTELERİ ---
 priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD"]
 raw_sp500_rest = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
@@ -274,23 +274,17 @@ def toggle_watchlist(symbol):
     st.session_state.watchlist = wl
 
 # ==============================================================================
-# 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC) - STABILIZED
+# 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC - OPTIMIZED & STABILIZED)
 # ==============================================================================
 
-# --- YENİ EKLENEN GÜVENLİ VERİ ÇEKİCİ ---
+# --- TEKİL VERİ ÇEKİCİ (Güvenli) ---
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
-    """
-    Hata korumalı, formatı standartlaştırılmış veri çekici.
-    Asla programı çökertmez, veri yoksa None döner.
-    """
     try:
         clean_ticker = ticker.replace(".IS", "").replace("=F", "")
         if "BIST" in ticker or ".IS" in ticker:
             clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
         
-        # progress=False, auto_adjust=True veya False (ihtiyaca göre)
-        # MultiIndex sorununu çözmek için group_by='ticker' varsayılan olmamalı tekil çekimlerde
         df = yf.download(clean_ticker, period=period, interval=interval, progress=False)
         
         if df.empty: return None
@@ -298,37 +292,27 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
         # MultiIndex Düzeltmesi
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                # Bazen ('Close', 'THYAO.IS') döner, bazen sadece 'Close'
-                # İlk seviyeyi alıp sütunları düzeltelim
-                if clean_ticker in df.columns.levels[1]:
-                     df = df.xs(clean_ticker, axis=1, level=1)
-                else:
-                     df.columns = df.columns.get_level_values(0)
-            except:
-                # En kötü ihtimalle sadece ilk seviyeyi zorla
-                df.columns = df.columns.get_level_values(0)
+                if clean_ticker in df.columns.levels[1]: df = df.xs(clean_ticker, axis=1, level=1)
+                else: df.columns = df.columns.get_level_values(0)
+            except: df.columns = df.columns.get_level_values(0)
                 
-        # Sütun İsim Kontrolü
         df.columns = [c.capitalize() for c in df.columns]
         required = ['Close', 'High', 'Low', 'Open']
         if not all(col in df.columns for col in required): return None
 
-        # Hacim 0 ise 1 yap
         if 'Volume' not in df.columns: df['Volume'] = 1
         df['Volume'] = df['Volume'].replace(0, 1)
-        
         return df
 
-    except Exception as e:
-        return None
+    except Exception: return None
 
-# FIX: yfinance stabilizasyonu (fast_info + fallback)
+# --- TEKİL BİLGİ (Fiyat vb.) ---
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
+        # Hızlı bilgi için fast_info dene
         t = yf.Ticker(ticker)
         price = prev_close = volume = None
-
         try:
             fi = getattr(t, "fast_info", None)
             if fi:
@@ -337,23 +321,17 @@ def fetch_stock_info(ticker):
                 volume = fi.get("last_volume")
         except: pass
 
+        # Olmazsa geçmiş veriden al
         if price is None or prev_close is None:
             df = get_safe_historical_data(ticker, period="5d")
             if df is not None and not df.empty:
                  price = float(df["Close"].iloc[-1])
                  prev_close = float(df["Close"].iloc[-2]) if len(df) > 1 else price
                  volume = float(df["Volume"].iloc[-1])
-            else:
-                 return None
+            else: return None
 
         change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
-        return {
-            "price": price,
-            "change_pct": change_pct,
-            "volume": volume or 0,
-            "sector": "-",
-            "target": "-"
-        }
+        return { "price": price, "change_pct": change_pct, "volume": volume or 0, "sector": "-", "target": "-" }
     except: return None
 
 @st.cache_data(ttl=600)
@@ -361,10 +339,8 @@ def get_tech_card_data(ticker):
     try:
         df = get_safe_historical_data(ticker, period="2y")
         if df is None: return None
-        
         close = df['Close']; high = df['High']; low = df['Low']
         
-        # Veri uzunluğu kontrolü
         sma50 = close.rolling(50).mean().iloc[-1] if len(close) > 50 else 0
         sma100 = close.rolling(100).mean().iloc[-1] if len(close) > 100 else 0
         sma200 = close.rolling(200).mean().iloc[-1] if len(close) > 200 else 0
@@ -423,22 +399,25 @@ def calculate_synthetic_sentiment(ticker):
         
         plot_df['Date_Str'] = plot_df['Date'].dt.strftime('%d %b')
         return plot_df
-    except Exception as e: return None
+    except Exception: return None
 
-# --- ANA TARAMA VE ANALİZ FONKSİYONLARI ---
+# --- TOPLU TARAMA FONKSİYONLARI (BATCH PROCESSING) ---
+# Burada her fonksiyon kendi verisini 'Batch' olarak çeker ve güvenli işler.
+# Bu yapı, UI'ı bozmadan hızı artırmanın en iyi yoludur.
 
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
     if not asset_list: return None, None
-    cross_signals = []
-    trend_signals = []
+    cross_signals = []; trend_signals = []
+    
     try:
+        # BATCH DOWNLOAD (Hız buradan geliyor)
         data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
-    except:
-        return [], []
+    except: return [], []
 
     for symbol in asset_list:
         try:
+            # MultiIndex Ayrıştırma (Güvenli)
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
@@ -446,10 +425,12 @@ def scan_stp_signals(asset_list):
                 if len(asset_list) == 1: df = data.copy()
                 else: continue
 
+            # Temizlik ve Kontrol
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna()
             if len(df) < 10: continue
 
+            # Hesaplama
             close = df['Close']; high = df['High']; low = df['Low']
             typical_price = (high + low + close) / 3
             stp = typical_price.ewm(span=6, adjust=False).mean()
@@ -461,8 +442,8 @@ def scan_stp_signals(asset_list):
                 cross_signals.append({"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100})
             elif c_prev > s_prev and c_last > s_last:
                 trend_signals.append({"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100})
-        except:
-            continue
+        except: continue
+            
     return cross_signals, trend_signals
 
 @st.cache_data(ttl=900)
@@ -470,21 +451,23 @@ def scan_hidden_accumulation(asset_list):
     if not asset_list: return pd.DataFrame()
     try:
         data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-    def process_accumulation(symbol):
+    results = []
+    # Bu fonksiyon hızlı olduğu için döngüyle işleyebiliriz,
+    # ama yine de hata korumalı.
+    for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: return None
+                if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
             else:
                 if len(asset_list) == 1: df = data.copy()
-                else: return None
-
-            if df.empty or 'Close' not in df.columns: return None
+                else: continue
+            
+            if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
-            if len(df) < 15: return None 
+            if len(df) < 15: continue
 
             close = df['Close']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
@@ -496,34 +479,28 @@ def scan_hidden_accumulation(asset_list):
             last_6_mf = mf_smooth.tail(6)
             last_6_close = close.tail(6)
             
-            if len(last_6_mf) < 6: return None
-            is_all_blue = (last_6_mf > 0).all()
-            if not is_all_blue: return None
+            if len(last_6_mf) < 6: continue
+            if not (last_6_mf > 0).all(): continue
 
             price_start = float(last_6_close.iloc[0]) 
             price_max_in_period = float(last_6_close.max())
             price_now = float(last_6_close.iloc[-1])
             
-            if price_start == 0: return None
+            if price_start == 0: continue
             max_upward_move = (price_max_in_period - price_start) / price_start
 
             if max_upward_move <= 0.025:
                 current_change = (price_now - price_start) / price_start
-                return {
+                results.append({
                     "Sembol": symbol,
                     "Fiyat": f"{price_now:.2f}",
                     "Değişim (6G)": f"%{current_change*100:.2f}",
                     "Max Zirve": f"%{max_upward_move*100:.2f}",
                     "MF Gücü": float(last_6_mf.mean()), 
                     "Durum": "🤫 Gizli Toplama"
-                }
-            return None
-        except: return None
+                })
+        except: continue
 
-    results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(executor.map(process_accumulation, asset_list))
-    results = [r for r in results if r is not None]
     if results: return pd.DataFrame(results).sort_values(by="MF Gücü", ascending=False)
     return pd.DataFrame()
 
@@ -533,18 +510,19 @@ def analyze_market_intelligence(asset_list):
     try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
     except: return pd.DataFrame()
 
-    def process_symbol(symbol):
+    signals = []
+    for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol in data.columns.levels[0]: df = data[symbol].copy()
-                else: return None
+                else: continue
             else:
                 if len(asset_list) == 1: df = data.copy()
-                else: return None
+                else: continue
             
-            if df.empty or 'Close' not in df.columns: return None
+            if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
-            if len(df) < 60: return None
+            if len(df) < 60: continue
             
             close = df['Close']; high = df['High']; low = df['Low']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
@@ -555,7 +533,6 @@ def analyze_market_intelligence(asset_list):
             std20 = close.rolling(20).std()
             bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
 
-            # --- MACD (DOĞRU HESAP) ---
             ema12 = close.ewm(span=12, adjust=False).mean()
             ema26 = close.ewm(span=26, adjust=False).mean()
             macd_line = ema12 - ema26
@@ -599,14 +576,9 @@ def analyze_market_intelligence(asset_list):
             else: details['RSI Güçlü'] = False
             
             if score > 0:
-                return { "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details }
-            return None
-        except: return None
+                signals.append({ "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details })
+        except: continue
 
-    results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(executor.map(process_symbol, asset_list))
-    signals = [r for r in results if r is not None]
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -614,28 +586,30 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
     if not asset_list: return pd.DataFrame()
     try:
         data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
+    
     try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except: idx = None
 
-    def process_radar2(symbol):
+    results = []
+    for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: return None
+                if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
             else:
                 if len(asset_list) == 1: df = data.copy()
-                else: return None
-            if df.empty or 'Close' not in df.columns: return None
+                else: continue
+            
+            if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
-            if len(df) < 120: return None
+            if len(df) < 120: continue
             
             close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
             curr_c = float(close.iloc[-1])
-            if curr_c < min_price or curr_c > max_price: return None
+            if curr_c < min_price or curr_c > max_price: continue
             avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-            if avg_vol_20 < min_avg_vol_m * 1e6: return None
+            if avg_vol_20 < min_avg_vol_m * 1e6: continue
             
             sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean(); sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
             trend = "Yatay"
@@ -681,14 +655,9 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
             details['60G Zirve'] = breakout_ratio >= 0.90; details['RSI Bölgesi'] = (40 <= rsi_c <= 60); details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
             
             if score > 0:
-                return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
-            return None
-        except: return None
+                results.append({ "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details })
+        except: continue
 
-    results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(executor.map(process_radar2, asset_list))
-    results = [r for r in results if r is not None]
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -697,17 +666,20 @@ def agent3_breakout_scan(asset_list):
     try: data = yf.download(asset_list, period="6mo", group_by="ticker", threads=True, progress=False)
     except: return pd.DataFrame()
 
-    def process_agent3(symbol):
+    results = []
+    for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: return None
+                if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
             else:
                 if len(asset_list) == 1: df = data.copy()
-                else: return None
-            if df.empty or 'Close' not in df.columns: return None
+                else: continue
+            
+            if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close']); 
-            if len(df) < 60: return None
+            if len(df) < 60: continue
+
             close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
             ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
@@ -719,6 +691,7 @@ def agent3_breakout_scan(asset_list):
             delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
             cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2; cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70; sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
+            
             if cond_ema and cond_vol and cond_prox and cond_rsi:
                 is_short_signal = False; short_reason = ""
                 if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): is_short_signal = True; short_reason = "3 Kırmızı Mum (Düşüş)"
@@ -736,12 +709,9 @@ def agent3_breakout_scan(asset_list):
                     display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.8rem;'>🔻 SHORT FIRSATI</span>"
                     trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
                 else: trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
-                return { "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol }
-            return None
-        except: return None
-    results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor: results = list(executor.map(process_agent3, asset_list))
-    results = [r for r in results if r is not None]
+                results.append({ "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol })
+        except: continue
+        
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -816,10 +786,9 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT MODÜLÜ (GÜNCELLENMİŞ: TRY-EXCEPT ZIRHLI) ---
+# --- ICT MODÜLÜ (GÜNCELLENMİŞ: Hata Korumalı) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
-    # Varsayılan (Hata Durumu) Dönüş
     error_ret = {"status": "Error", "msg": "Veri Yok", "structure": "-", "bias": "-", "entry": 0, "target": 0, "stop": 0, "rr": 0, "desc": "Veri bekleniyor", "displacement": "-", "fvg_txt": "-", "ob_txt": "-", "zone": "-", "mean_threshold": 0, "curr_price": 0, "setup_type": "BEKLE"}
     
     try:
@@ -964,8 +933,7 @@ def calculate_ict_deep_analysis(ticker):
             "mean_threshold": mean_threshold, "curr_price": curr_price
         }
 
-    except Exception as e:
-        return error_ret
+    except Exception: return error_ret
         
 @st.cache_data(ttl=600)
 def calculate_price_action_dna(ticker):
@@ -1041,7 +1009,7 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
-# 4. GÖRSELLEŞTİRME FONKSİYONLARI
+# 4. GÖRSELLEŞTİRME FONKSİYONLARI (KORUMALI)
 # ==============================================================================
 
 def render_sentiment_card(sent):
