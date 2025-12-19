@@ -1850,7 +1850,7 @@ with col_left:
                         # ALTAIR GRAFİK (ÖZELLEŞTİRİLMİŞ)
                         chart = alt.Chart(df_equity).mark_line(color='#22c55e').encode(
                             x=alt.X('Tarih:T', title='Tarih'),
-                            y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
+                            y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 16000])),
                             tooltip=['Tarih', 'Portföy Değeri']
                         ).properties(
                             height=300, # Sabit Yükseklik
@@ -1936,5 +1936,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
