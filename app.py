@@ -38,9 +38,9 @@ st.markdown(f"""
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
     /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI (YENİ) --- */
-    div[data-testid="stMetricValue"] {{ font-size: 1.1rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.8rem !important; font-weight: 600; }}
-    div[data-testid="stMetricDelta"] {{ font-size: 0.75rem !important; }}
+    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 600; }}
+    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
     /* -------------------------------------------------------- */
 
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
@@ -1802,3 +1802,4 @@ with col_right:
                     
                 else:
                     st.error("Backtest için yeterli veri yok.")
+
