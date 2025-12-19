@@ -1837,20 +1837,41 @@ with col_left:
                     c3.metric("Tamamlanan İşlem", bt_result['total_trades'])
                     c4.metric("Son Kasa", f"${bt_result['final_balance']:.0f}")
 
-                    st.markdown("**💰 Portföy Değer Eğrisi**")
-                    st.line_chart(bt_result['equity_curve'], color="#22c55e")
+                    st.markdown("---")
+                    # İKİ SÜTUNLU YERLEŞİM (GRAFİK + TABLO)
+                    col_chart, col_table = st.columns(2)
                     
-                    if not bt_result['trades'].empty:
-                        st.markdown("**📜 Avlanma Günlüğü**")
-                        st.dataframe(
-                            bt_result['trades'], 
-                            column_config={
-                                "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
-                            },
-                            use_container_width=True
-                        )
-                    else:
-                        st.warning("Bu dönemde hiç sinyal bulunamadı.")
+                    with col_chart:
+                        st.markdown("**💰 Portföy Değer Eğrisi**")
+                        # Pandas Series -> DataFrame Dönüşümü
+                        df_equity = bt_result['equity_curve'].reset_index()
+                        df_equity.columns = ['Tarih', 'Portföy Değeri']
+                        
+                        # ALTAIR GRAFİK (ÖZELLEŞTİRİLMİŞ)
+                        chart = alt.Chart(df_equity).mark_line(color='#22c55e').encode(
+                            x=alt.X('Tarih:T', title='Tarih'),
+                            y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
+                            tooltip=['Tarih', 'Portföy Değeri']
+                        ).properties(
+                            height=600, # Sabit Yükseklik
+                            title="Bakiye Değişimi"
+                        ).interactive() # Kaydırma/Zoom Aktif
+                        
+                        st.altair_chart(chart, use_container_width=True)
+
+                    with col_table:
+                        if not bt_result['trades'].empty:
+                            st.markdown("**📜 Avlanma Günlüğü**")
+                            st.dataframe(
+                                bt_result['trades'], 
+                                column_config={
+                                    "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
+                                },
+                                height=600, # Sabit Yükseklik (Grafikle aynı)
+                                use_container_width=True
+                            )
+                        else:
+                            st.warning("Bu dönemde hiç sinyal bulunamadı.")
                 else:
                     st.error("Veri alınamadı veya liste boş.")
     # -------------------------------------------------------------
