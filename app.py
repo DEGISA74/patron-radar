@@ -1905,18 +1905,33 @@ with col_left:
                 with st.container(height=200, border=True):
                     if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
                         for index, row in st.session_state.accum_data.iterrows():
+                            
+                            # Fiyat değişim rengi
+                            change_val = row['Degisim_Raw']
+                            change_color = "#16a34a" if change_val >= 0 else "#dc2626"
+                            
+                            # İSTEDİĞİN HTML TASARIMI
                             card_html = f"""
-                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:4px; padding:4px; margin-bottom:4px; text-align:center;">
-                                <div style="font-weight:700; color:#4c1d95; font-size:0.8rem;">{row['Sembol']}</div>
-                                <div style="font-size:0.7rem; color:#5b21b6;">Değ: {row['Değişim (6G)']}</div>
+                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center;">
+                                <div style="font-weight:800; color:#4c1d95; font-size:0.85rem; margin-bottom:2px;">{row['Sembol']}</div>
+                                
+                                <div style="display:flex; justify-content:center; gap:8px; font-size:0.7rem; margin-bottom:2px;">
+                                    <span style="color:#6d28d9; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
+                                    <span style="color:{change_color}; font-weight:600;">Fiyat: {row['Degisim_Str']}</span>
+                                </div>
+                                
+                                <div style="font-size:0.65rem; color:#6b7280; font-style:italic;">
+                                    Para Girişi Gün: <strong>{row['Gun_Sayisi']}</strong>
+                                </div>
                             </div>
                             """
                             st.markdown(card_html, unsafe_allow_html=True)
+                            
                             if st.button(f"🔍 Git: {row['Sembol']}", key=f"btn_acc_{row['Sembol']}", use_container_width=True):
                                 on_scan_result_click(row['Sembol'])
                                 st.rerun()
                     else:
-                        st.caption("Tespit edilemedi.")
+                        st.caption("Şu an 'Sessiz Toplama' yapan hisse tespit edilemedi.")
 
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı Taraması</div>', unsafe_allow_html=True)
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
@@ -2076,5 +2091,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
