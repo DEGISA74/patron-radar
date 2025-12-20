@@ -12,7 +12,7 @@ import os
 import concurrent.futures
 import re
 import altair as alt
-import random 
+import random
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -456,11 +456,27 @@ def scan_stp_signals(asset_list):
                 if (c_last > sma_val) and (20 < rsi_val < 70):
                     filtered_signals.append(item)
 
-            # 3. TREND SİNYALİ
+            # 3. TREND SİNYALİ (DEĞİŞEN KISIM)
             elif c_prev > s_prev and c_last > s_last:
-                trend_signals.append({"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100})
+                # Geriye dönük gün sayma (Streak)
+                streak = 0
+                check_series = (close > stp).iloc[::-1]
+                for is_above in check_series:
+                    if is_above: streak += 1
+                    else: break
+                
+                trend_signals.append({
+                    "Sembol": symbol, 
+                    "Fiyat": c_last, 
+                    "STP": s_last, 
+                    "Fark": ((c_last/s_last)-1)*100,
+                    "Gun": streak
+                })
                 
         except: continue
+    
+    # Trend listesini "Gun" sayısına göre BÜYÜKTEN KÜÇÜĞE sırala
+    trend_signals.sort(key=lambda x: x["Gun"], reverse=True)
             
     return cross_signals, trend_signals, filtered_signals
 
@@ -1853,7 +1869,8 @@ with col_left:
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                         for item in st.session_state.stp_trends:
-                            if st.button(f"📈 {item['Sembol']} (+%{item['Fark']:.1f})", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
+                            # DEĞİŞEN KISIM: Gün sayısını göster
+                            if st.button(f"📈 {item['Sembol']} ({item['Gun']} Gün)", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
                                 st.session_state.ticker = item['Sembol']
                                 st.rerun()
                     else:
