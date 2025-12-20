@@ -668,7 +668,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
                 if trend == "Ayı": score -= 1
                 details['Boğa Trendi'] = False
             
-            details['60G Zirve'] = breakout_ratio >= 0.90; details['RSI Bölgesi'] = (40 <= rsi_c <= 60); details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
+            details['60G Zirve'] = breakout_ratio >= 0.90; details['RSI Bölgesi'] = (40 <= rsi_c <= 60, rsi_c); details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
             
             if score > 0:
                 results.append({ "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details })
@@ -1375,7 +1375,7 @@ def render_detail_card_advanced(ticker):
     ma_vals = "Veri Yok"
     stop_vals = "Veri Yok"
     if dt:
-        ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f}"
+        ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f} | SMA200: {dt['sma200']:.2f}"
         stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
 
     r1_res = {}
@@ -1407,12 +1407,28 @@ def render_detail_card_advanced(ticker):
     r1_html = ""
     for k, v in r1_res.items():
         text = ACIKLAMALAR.get(k, k)
-        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+        
+        # Eğer bu detay RSI Güçlü ise ve tuple/liste ise
+        if k == "RSI Güçlü" and isinstance(v, (tuple, list)):
+            is_valid = v[0]
+            val = v[1]
+            text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({val:.1f})"
+            r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+        else:
+            r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
     r2_html = ""
     for k, v in r2_res.items():
         text = ACIKLAMALAR.get(k, k)
-        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+        
+        # Eğer bu detay RSI Bölgesi ise ve tuple/liste ise
+        if k == "RSI Bölgesi" and isinstance(v, (tuple, list)):
+            is_valid = v[0]
+            val = v[1]
+            text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({val:.1f})"
+            r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+        else:
+            r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
 
     full_html = f"""
     <div class="info-card">
@@ -1812,7 +1828,7 @@ with col_left:
                         st.caption("Kesişim yok.")
             
             with c2:
-                st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🎯 STP KESTİ & RSI & SMA200</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🎯 STP + RSI + SMA</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_filtered:
                         for item in st.session_state.stp_filtered:
@@ -1823,7 +1839,7 @@ with col_left:
                         st.caption("Tam eşleşme yok.")
 
             with c3:
-                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP 2 GÜNDÜR ÜSTTE</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP TREND</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                         for item in st.session_state.stp_trends:
@@ -2009,7 +2025,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
-
