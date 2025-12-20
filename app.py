@@ -1812,7 +1812,7 @@ with col_left:
                         st.caption("Kesişim yok.")
             
             with c2:
-                st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🎯 STP + RSI + SMA</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.7rem; margin-bottom:5px;'>🎯 STP KESTİ & 20<RSI<70 & SMA200 ÜSTÜ</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_filtered:
                         for item in st.session_state.stp_filtered:
@@ -1823,7 +1823,7 @@ with col_left:
                         st.caption("Tam eşleşme yok.")
 
             with c3:
-                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP TREND</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP 2 GÜNDÜR ÜSTTE</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                         for item in st.session_state.stp_trends:
@@ -2009,3 +2009,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
