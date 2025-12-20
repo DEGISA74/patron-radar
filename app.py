@@ -508,17 +508,11 @@ def scan_hidden_accumulation(asset_list):
             force_index = delta * volume
             mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
-            # Son 6 günü al
             last_6_mf = mf_smooth.tail(6)
             last_6_close = close.tail(6)
             
             if len(last_6_mf) < 6: continue
-            
-            # --- YENİ MANTIK ---
-            # 1. Kaç gün pozitif para girişi olmuş?
             pos_days_count = (last_6_mf > 0).sum()
-            
-            # En az 4 gün para girişi olsun (Filtre)
             if pos_days_count < 4: continue
 
             price_start = float(last_6_close.iloc[0]) 
@@ -526,35 +520,34 @@ def scan_hidden_accumulation(asset_list):
             
             if price_start == 0: continue
             
-            # Fiyat değişimi (Mutlak değer olarak, ne kadar az oynarsa o kadar iyi)
             change_pct = (price_now - price_start) / price_start
             abs_change = abs(change_pct)
-            
-            # MF Gücü (Ortalama)
             avg_mf = float(last_6_mf.mean())
             
-            # Negatif ortalama varsa ele
             if avg_mf <= 0: continue
 
-            # --- SIRALAMA PUANI (Sikişma Katsayısı) ---
-            # Puan = Para Girişi / (Fiyat Değişimi + ufak bir sayı)
-            # Fiyat değişimi ne kadar azsa, Puan o kadar artar (Payda küçülür)
-            # Para girişi ne kadar çoksa, Puan o kadar artar (Pay büyür)
+            # --- DÜZELTİLEN KISIM: SAYI FORMATI ---
+            if avg_mf > 1_000_000:
+                mf_str = f"{avg_mf/1_000_000:.1f}M" # Milyon
+            elif avg_mf > 1_000:
+                mf_str = f"{avg_mf/1_000:.0f}K"    # Bin
+            else:
+                mf_str = f"{int(avg_mf)}"
+
             squeeze_score = avg_mf / (abs_change + 0.01)
 
             results.append({
                 "Sembol": symbol,
                 "Fiyat": f"{price_now:.2f}",
-                "Degisim_Raw": change_pct, # Renklendirme için ham veri
+                "Degisim_Raw": change_pct,
                 "Degisim_Str": f"%{change_pct*100:.1f}",
-                "MF_Gucu_Goster": f"{int(avg_mf/1000)}K" if avg_mf > 1000 else f"{int(avg_mf)}", # Okunabilir format
+                "MF_Gucu_Goster": mf_str, 
                 "Gun_Sayisi": f"{pos_days_count}/6",
-                "Skor": squeeze_score # Sıralama anahtarı
+                "Skor": squeeze_score
             })
 
         except: continue
 
-    # Puana göre en büyükten küçüğe sırala
     if results: return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
     return pd.DataFrame()
 
@@ -1906,25 +1899,24 @@ with col_left:
                     if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
                         for index, row in st.session_state.accum_data.iterrows():
                             
-                            # Fiyat değişim rengi
                             change_val = row['Degisim_Raw']
                             change_color = "#16a34a" if change_val >= 0 else "#dc2626"
                             
-                            # İSTEDİĞİN HTML TASARIMI
+                            # HTML Kart Tasarımı
                             card_html = f"""
                             <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center;">
                                 <div style="font-weight:800; color:#4c1d95; font-size:0.85rem; margin-bottom:2px;">{row['Sembol']}</div>
-                                
                                 <div style="display:flex; justify-content:center; gap:8px; font-size:0.7rem; margin-bottom:2px;">
                                     <span style="color:#6d28d9; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
                                     <span style="color:{change_color}; font-weight:600;">Fiyat: {row['Degisim_Str']}</span>
                                 </div>
-                                
                                 <div style="font-size:0.65rem; color:#6b7280; font-style:italic;">
                                     Para Girişi Gün: <strong>{row['Gun_Sayisi']}</strong>
                                 </div>
                             </div>
                             """
+                            
+                            # DÜZELTME: unsafe_allow_html=True EKLENDİ
                             st.markdown(card_html, unsafe_allow_html=True)
                             
                             if st.button(f"🔍 Git: {row['Sembol']}", key=f"btn_acc_{row['Sembol']}", use_container_width=True):
@@ -2091,6 +2083,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
