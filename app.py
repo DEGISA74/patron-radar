@@ -508,32 +508,54 @@ def scan_hidden_accumulation(asset_list):
             force_index = delta * volume
             mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
+            # Son 6 günü al
             last_6_mf = mf_smooth.tail(6)
             last_6_close = close.tail(6)
             
             if len(last_6_mf) < 6: continue
-            if not (last_6_mf > 0).all(): continue
+            
+            # --- YENİ MANTIK ---
+            # 1. Kaç gün pozitif para girişi olmuş?
+            pos_days_count = (last_6_mf > 0).sum()
+            
+            # En az 4 gün para girişi olsun (Filtre)
+            if pos_days_count < 4: continue
 
             price_start = float(last_6_close.iloc[0]) 
-            price_max_in_period = float(last_6_close.max())
             price_now = float(last_6_close.iloc[-1])
             
             if price_start == 0: continue
-            max_upward_move = (price_max_in_period - price_start) / price_start
+            
+            # Fiyat değişimi (Mutlak değer olarak, ne kadar az oynarsa o kadar iyi)
+            change_pct = (price_now - price_start) / price_start
+            abs_change = abs(change_pct)
+            
+            # MF Gücü (Ortalama)
+            avg_mf = float(last_6_mf.mean())
+            
+            # Negatif ortalama varsa ele
+            if avg_mf <= 0: continue
 
-            if max_upward_move <= 0.025:
-                current_change = (price_now - price_start) / price_start
-                results.append({
-                    "Sembol": symbol,
-                    "Fiyat": f"{price_now:.2f}",
-                    "Değişim (6G)": f"%{current_change*100:.2f}",
-                    "Max Zirve": f"%{max_upward_move*100:.2f}",
-                    "MF Gücü": float(last_6_mf.mean()), 
-                    "Durum": "🤫 Gizli Toplama"
-                })
+            # --- SIRALAMA PUANI (Sikişma Katsayısı) ---
+            # Puan = Para Girişi / (Fiyat Değişimi + ufak bir sayı)
+            # Fiyat değişimi ne kadar azsa, Puan o kadar artar (Payda küçülür)
+            # Para girişi ne kadar çoksa, Puan o kadar artar (Pay büyür)
+            squeeze_score = avg_mf / (abs_change + 0.01)
+
+            results.append({
+                "Sembol": symbol,
+                "Fiyat": f"{price_now:.2f}",
+                "Degisim_Raw": change_pct, # Renklendirme için ham veri
+                "Degisim_Str": f"%{change_pct*100:.1f}",
+                "MF_Gucu_Goster": f"{int(avg_mf/1000)}K" if avg_mf > 1000 else f"{int(avg_mf)}", # Okunabilir format
+                "Gun_Sayisi": f"{pos_days_count}/6",
+                "Skor": squeeze_score # Sıralama anahtarı
+            })
+
         except: continue
 
-    if results: return pd.DataFrame(results).sort_values(by="MF Gücü", ascending=False)
+    # Puana göre en büyükten küçüğe sırala
+    if results: return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -2054,4 +2076,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
