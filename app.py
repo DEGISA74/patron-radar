@@ -587,9 +587,11 @@ def analyze_market_intelligence(asset_list):
             if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout"); details['Breakout'] = True
             else: details['Breakout'] = False
             
-            rsi_c = rsi.iloc[-1]
-            if 30 < rsi_c < 65 and rsi_c > rsi.iloc[-2]: score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = True
-            else: details['RSI Güçlü'] = False
+            rsi_c = float(rsi.iloc[-1])
+            is_rsi_strong = 30 < rsi_c < 65 and rsi_c > float(rsi.iloc[-2])
+            
+            if is_rsi_strong: score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = (True, rsi_c)
+            else: details['RSI Güçlü'] = (False, rsi_c)
             
             if score > 0:
                 signals.append({ "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details })
@@ -668,7 +670,13 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
                 if trend == "Ayı": score -= 1
                 details['Boğa Trendi'] = False
             
-            details['60G Zirve'] = breakout_ratio >= 0.90; details['RSI Bölgesi'] = (40 <= rsi_c <= 60, rsi_c); details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
+            details['60G Zirve'] = breakout_ratio >= 0.90; 
+            
+            # RSI detayını değerle birlikte tuple olarak sakla
+            is_rsi_suitable = (40 <= rsi_c <= 60)
+            details['RSI Bölgesi'] = (is_rsi_suitable, rsi_c)
+            
+            details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
             
             if score > 0:
                 results.append({ "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details })
@@ -1375,7 +1383,7 @@ def render_detail_card_advanced(ticker):
     ma_vals = "Veri Yok"
     stop_vals = "Veri Yok"
     if dt:
-        ma_vals = f"SMA50: {dt['sma50']:.2f} | EMA144: {dt['ema144']:.2f} | SMA200: {dt['sma200']:.2f}"
+        ma_vals = f"SMA50: {dt['sma50']:.0f} | EMA144: {dt['ema144']:.0f} | SMA200: {dt['sma200']:.0f}"
         stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
 
     r1_res = {}
@@ -1408,27 +1416,29 @@ def render_detail_card_advanced(ticker):
     for k, v in r1_res.items():
         text = ACIKLAMALAR.get(k, k)
         
-        # Eğer bu detay RSI Güçlü ise ve tuple/liste ise
+        is_valid = v
         if k == "RSI Güçlü" and isinstance(v, (tuple, list)):
             is_valid = v[0]
             val = v[1]
-            text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({val:.1f})"
-            r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
-        else:
-            r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+            text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val)})"
+        elif isinstance(v, (tuple, list)): 
+            is_valid = v[0]
+            
+        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
     r2_html = ""
     for k, v in r2_res.items():
         text = ACIKLAMALAR.get(k, k)
         
-        # Eğer bu detay RSI Bölgesi ise ve tuple/liste ise
+        is_valid = v
         if k == "RSI Bölgesi" and isinstance(v, (tuple, list)):
             is_valid = v[0]
             val = v[1]
-            text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({val:.1f})"
-            r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
-        else:
-            r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(v)} <span style='margin-left:4px;'>{text}</span></div>"
+            text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val)})"
+        elif isinstance(v, (tuple, list)): 
+            is_valid = v[0]
+            
+        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
     full_html = f"""
     <div class="info-card">
@@ -1817,7 +1827,7 @@ with col_left:
             c1, c2, c3, c4 = st.columns(4)
 
             with c1:
-                st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_crosses:
                         for item in st.session_state.stp_crosses:
