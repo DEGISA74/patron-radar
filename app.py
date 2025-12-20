@@ -246,6 +246,7 @@ if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchl
 if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
 if 'stp_crosses' not in st.session_state: st.session_state.stp_crosses = []
 if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
+if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = [] # YENİ LİSTE İÇİN
 if 'accum_data' not in st.session_state: st.session_state.accum_data = None
 
 # --- CALLBACKLER ---
@@ -407,12 +408,13 @@ def calculate_synthetic_sentiment(ticker):
 # --- BATCH SCANNER ---
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
-    if not asset_list: return None, None
-    cross_signals = []; trend_signals = []
+    if not asset_list: return None, None, None
+    cross_signals = []; trend_signals = []; filtered_signals = []
     
     try:
-        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
-    except: return [], []
+        # SÜRE 2 YILA ÇIKARILDI (SMA200 için)
+        data = yf.download(asset_list, period="2y", group_by="ticker", threads=True, progress=False)
+    except: return [], [], []
 
     for symbol in asset_list:
         try:
@@ -425,22 +427,42 @@ def scan_stp_signals(asset_list):
 
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna()
-            if len(df) < 10: continue
+            if len(df) < 200: continue # SMA 200 için
 
             close = df['Close']; high = df['High']; low = df['Low']
+            
+            # Göstergeler
             typical_price = (high + low + close) / 3
             stp = typical_price.ewm(span=6, adjust=False).mean()
+            sma200 = close.rolling(200).mean()
+            
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
             
             c_last = float(close.iloc[-1]); c_prev = float(close.iloc[-2])
             s_last = float(stp.iloc[-1]); s_prev = float(stp.iloc[-2])
             
+            # 1. KESİŞİM SİNYALİ
             if c_prev <= s_prev and c_last > s_last:
-                cross_signals.append({"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100})
+                item = {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100}
+                cross_signals.append(item)
+                
+                # 2. ÖZEL FİLTRE (KESİŞİM + SMA200 + RSI)
+                sma_val = float(sma200.iloc[-1])
+                rsi_val = float(rsi.iloc[-1])
+                
+                if (c_last > sma_val) and (20 < rsi_val < 70):
+                    filtered_signals.append(item)
+
+            # 3. TREND SİNYALİ
             elif c_prev > s_prev and c_last > s_last:
                 trend_signals.append({"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100})
+                
         except: continue
             
-    return cross_signals, trend_signals
+    return cross_signals, trend_signals, filtered_signals
 
 @st.cache_data(ttl=900)
 def scan_hidden_accumulation(asset_list):
@@ -1759,23 +1781,27 @@ with col_left:
     
     if 'accum_data' not in st.session_state: st.session_state.accum_data = None
     if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
+    if 'stp_crosses' not in st.session_state: st.session_state.stp_crosses = []
+    if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
+    if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 
     with st.expander("Ajan Operasyonlarını Yönet", expanded=True):
         if st.button(f"🕵️ TAM TARAMA BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
             with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-                crosses, trends = scan_stp_signals(current_assets)
+                crosses, trends, filtered = scan_stp_signals(current_assets)
                 st.session_state.stp_crosses = crosses
                 st.session_state.stp_trends = trends
+                st.session_state.stp_filtered = filtered
                 st.session_state.stp_scanned = True
                 st.session_state.accum_data = scan_hidden_accumulation(current_assets)
 
         if st.session_state.stp_scanned or (st.session_state.accum_data is not None):
             st.markdown("---")
-            col_res1, col_res2, col_res3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
 
-            with col_res1:
-                st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
+            with c1:
+                st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_crosses:
                         for item in st.session_state.stp_crosses:
@@ -1784,9 +1810,20 @@ with col_left:
                                 st.rerun()
                     else:
                         st.caption("Kesişim yok.")
+            
+            with c2:
+                st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🎯 STP + RSI + SMA</div>", unsafe_allow_html=True)
+                with st.container(height=200, border=True):
+                    if st.session_state.stp_filtered:
+                        for item in st.session_state.stp_filtered:
+                            if st.button(f"🔥 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_f_{item['Sembol']}", use_container_width=True): 
+                                st.session_state.ticker = item['Sembol']
+                                st.rerun()
+                    else:
+                        st.caption("Tam eşleşme yok.")
 
-            with col_res2:
-                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>✅ STP TREND</div>", unsafe_allow_html=True)
+            with c3:
+                st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP TREND</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                         for item in st.session_state.stp_trends:
@@ -1796,8 +1833,8 @@ with col_left:
                     else:
                         st.caption("Trend yok.")
 
-            with col_res3:
-                st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>🤫 AKILLI PARA TOPLUYOR?</div>", unsafe_allow_html=True)
+            with c4:
+                st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🤫 AKILLI PARA TOPLUYOR?</div>", unsafe_allow_html=True)
                 with st.container(height=200, border=True):
                     if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
                         for index, row in st.session_state.accum_data.iterrows():
