@@ -1013,6 +1013,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
     1. Listeden rastgele 50 hisse seç.
     2. Her gün tarama yap.
     3. Birden fazla hisse AL verirse, RASTGELE birini seç (Hep 'A' harfiyle başlayanı değil).
+    4. YENİ KRİTERLER: SMA 200 Üstü + RSI 20-70 Arası
     """
     
     # 1. LİSTEYİ KARIŞTIR (Her testte farklı hisseler seçilsin)
@@ -1024,8 +1025,8 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
     scan_list = temp_list[:50] 
     
     try:
-        # Batch Download
-        raw_data = yf.download(scan_list, period="1y", group_by="ticker", threads=True, progress=False)
+        # Batch Download - period="2y" olarak güncellendi (SMA 200 için)
+        raw_data = yf.download(scan_list, period="2y", group_by="ticker", threads=True, progress=False)
     except: return None
 
     if raw_data.empty: return None
@@ -1042,29 +1043,63 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
                 df = raw_data.copy()
 
             df.dropna(subset=['Close'], inplace=True)
-            if len(df) < 50: continue
+            if len(df) < 200: continue # SMA 200 için en az 200 gün veri lazım
 
+            # ------------------------------------------------------------------
+            # GÖSTERGE HESAPLAMALARI
+            # ------------------------------------------------------------------
+            
+            # 1. STP
             df['Typical'] = (df['High'] + df['Low'] + df['Close']) / 3
             df['STP'] = df['Typical'].ewm(span=6, adjust=False).mean()
             
+            # 2. SMA 200 (YENİ)
+            df['SMA200'] = df['Close'].rolling(window=200).mean()
+
+            # 3. RSI 14 (YENİ)
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
+
+            # 4. ATR (Stop Loss için)
             high_low = df['High'] - df['Low']
             high_close = np.abs(df['High'] - df['Close'].shift())
             low_close = np.abs(df['Low'] - df['Close'].shift())
             tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             df['ATR'] = tr.rolling(14).mean()
 
-            df['Buy_Signal'] = (df['Close'] > df['STP']) & (df['Close'].shift(1) <= df['STP'].shift(1))
+            # ------------------------------------------------------------------
+            # AL SİNYALİ MANTIĞI (GÜNCELLENMİŞ)
+            # ------------------------------------------------------------------
+            
+            # Kriter 1: STP Kesişimi (Mavi Sarıyı Yukarı Keserse)
+            stp_cross = (df['Close'] > df['STP']) & (df['Close'].shift(1) <= df['STP'].shift(1))
+            
+            # Kriter 2: Trend Filtresi (Fiyat > SMA 200)
+            trend_ok = df['Close'] > df['SMA200']
+            
+            # Kriter 3: Momentum Filtresi (20 < RSI < 70)
+            rsi_ok = (df['RSI'] > 20) & (df['RSI'] < 70)
+
+            # Hepsi Doğruysa AL
+            df['Buy_Signal'] = stp_cross & trend_ok & rsi_ok
             
             market_data[symbol] = df
         except: continue
 
-    # Tarihleri Eşitle
+    # Tarihleri Eşitle ve Son 1 Yılı Al (Simülasyon için)
     common_dates = None
     for sym in market_data:
         if common_dates is None: common_dates = market_data[sym].index
         else: common_dates = common_dates.intersection(market_data[sym].index)
     
     if common_dates is None or len(common_dates) < 20: return None
+    
+    # Sadece son 1 yılı simüle et (Veri 2 yıllık çekildi ama test 1 yıllık)
+    cutoff_date = common_dates.max() - timedelta(days=365)
+    common_dates = common_dates[common_dates > cutoff_date]
     common_dates = common_dates.sort_values()
 
     balance = initial_capital
@@ -1138,10 +1173,7 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
                     candidates.append(sym)
             
             if candidates:
-                # -----------------------------------------------------------
-                # KRİTİK DEĞİŞİKLİK: ARTIK RASTGELE SEÇİYORUZ!
-                # Eskiden: found_stock = candidates[0] idi.
-                # -----------------------------------------------------------
+                # Rastgele Seçim
                 found_stock = random.choice(candidates) 
                 
                 row = market_data[found_stock].loc[current_date]
@@ -1850,10 +1882,10 @@ with col_left:
                         # ALTAIR GRAFİK (ÖZELLEŞTİRİLMİŞ)
                         chart = alt.Chart(df_equity).mark_line(color='#22c55e').encode(
                             x=alt.X('Tarih:T', title='Tarih'),
-                            y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 16000])),
+                            y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
                             tooltip=['Tarih', 'Portföy Değeri']
                         ).properties(
-                            height=300, # Sabit Yükseklik
+                            height=600, # Sabit Yükseklik
                             title="Bakiye Değişimi"
                         ).interactive() # Kaydırma/Zoom Aktif
                         
@@ -1867,7 +1899,7 @@ with col_left:
                                 column_config={
                                     "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
                                 },
-                                height=300, # Sabit Yükseklik (Grafikle aynı)
+                                height=600, # Sabit Yükseklik (Grafikle aynı)
                                 use_container_width=True
                             )
                         else:
@@ -1936,6 +1968,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
