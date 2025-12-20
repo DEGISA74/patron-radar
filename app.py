@@ -1869,8 +1869,10 @@ with col_left:
                 with st.container(height=200, border=True):
                     if st.session_state.stp_trends:
                         for item in st.session_state.stp_trends:
-                            # DEĞİŞEN KISIM: Gün sayısını göster
-                            if st.button(f"📈 {item['Sembol']} ({item['Gun']} Gün)", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
+                            # HATA DÜZELTME: .get() kullanarak eğer 'Gun' verisi yoksa '?' koy, çökmesin.
+                            gun_sayisi = item.get('Gun', '?')
+                            
+                            if st.button(f"📈 {item['Sembol']} ({gun_sayisi} Gün)", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
                                 st.session_state.ticker = item['Sembol']
                                 st.rerun()
                     else:
@@ -2052,3 +2054,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
