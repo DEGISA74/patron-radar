@@ -1842,7 +1842,7 @@ with col_left:
     # -------------------------------------------------------------
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🧪 Strateji Backtest Laboratuvarı</div>', unsafe_allow_html=True)
     with st.expander("Geriye Dönük Testi Çalıştır", expanded=False):
-        st.info(f"**Senaryo:** Seçili kategori ({st.session_state.category}) içindeki hisselerden hangisi STP Al sinyali verirse ona gireriz: STP Al sinyali, SMA200 üstü, 20<RSI<70 (Aşırı şişmemiş). Hedefe ulaşınca satar, ertesi gün yeni av ararız. Tek seferde tek hisse taşınır.")
+        st.info(f"**Senaryo:** Seçili kategori ({st.session_state.category}) içindeki hisselerden hangisi STP Al sinyali verirse ona gireriz: STP yukarı keserse, fiyat SMA200 üstündeyse, 20<RSI<70 arasındaysa (Aşırı şişmemiş). Hedefe ulaşınca satarız, ertesi gün yeni av ararız. Tek seferde tek hisse taşınır.")
         
         col_set1, col_set2, col_set3 = st.columns(3)
         with col_set1:
@@ -1885,7 +1885,7 @@ with col_left:
                             y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
                             tooltip=['Tarih', 'Portföy Değeri']
                         ).properties(
-                            height=600, # Sabit Yükseklik
+                            height=300, # Sabit Yükseklik
                             title="Bakiye Değişimi"
                         ).interactive() # Kaydırma/Zoom Aktif
                         
@@ -1899,7 +1899,7 @@ with col_left:
                                 column_config={
                                     "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
                                 },
-                                height=600, # Sabit Yükseklik (Grafikle aynı)
+                                height=00, # Sabit Yükseklik (Grafikle aynı)
                                 use_container_width=True
                             )
                         else:
@@ -1968,4 +1968,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
