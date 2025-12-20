@@ -39,7 +39,7 @@ st.markdown(f"""
 
     /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 400; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
     /* ------------------------------------------------ */
 
@@ -1842,7 +1842,11 @@ with col_left:
     # -------------------------------------------------------------
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🧪 Strateji Backtest Laboratuvarı</div>', unsafe_allow_html=True)
     with st.expander("Geriye Dönük Testi Çalıştır", expanded=False):
-        st.info(f"**Senaryo:** Seçili kategori ({st.session_state.category}) içindeki hisselerden hangisi STP Al sinyali verirse ona gireriz: STP yukarı keserse, fiyat SMA200 üstündeyse, 20<RSI<70 arasındaysa (Aşırı şişmemiş). Hedefe ulaşınca satarız, ertesi gün yeni av ararız. Tek seferde tek hisse taşınır.")
+        st.info(f"**Keskin Nişancı Senaryosu:** Seçili kategori ({st.session_state.category}) içinden sadece şu 3 şartı AYNI ANDA sağlayan hisselere girilir:\n\n"
+                f"1. ✅ **Trend:** Fiyat > SMA 200 (Ana Trend Yukarı)\n"
+                f"2. ✅ **Momentum:** 20 < RSI < 70 (Aşırı şişmemiş)\n"
+                f"3. ✅ **Tetik:** STP Al Sinyali (Kesişim)\n\n"
+                f"Hedefe ulaşınca, Stop olunca veya Süre dolunca (Time Stop) satar, ertesi gün yeni av ararız.")
         
         col_set1, col_set2, col_set3 = st.columns(3)
         with col_set1:
@@ -1885,7 +1889,7 @@ with col_left:
                             y=alt.Y('Portföy Değeri:Q', title='Dolar ($)', scale=alt.Scale(domain=[8000, 18000])),
                             tooltip=['Tarih', 'Portföy Değeri']
                         ).properties(
-                            height=300, # Sabit Yükseklik
+                            height=600, # Sabit Yükseklik 600px
                             title="Bakiye Değişimi"
                         ).interactive() # Kaydırma/Zoom Aktif
                         
@@ -1899,7 +1903,7 @@ with col_left:
                                 column_config={
                                     "Yüzde": st.column_config.NumberColumn("Kâr/Zarar %", format="%.2f %%")
                                 },
-                                height=00, # Sabit Yükseklik (Grafikle aynı)
+                                height=600, # Sabit Yükseklik 600px
                                 use_container_width=True
                             )
                         else:
@@ -1968,5 +1972,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
