@@ -2103,12 +2103,14 @@ with col_left:
                             </div>
                         </div>
                         """
+                        # DÜZELTME BURADA: unsafe_allow_html=True EKLENDİ
                         st.markdown(card_html_right, unsafe_allow_html=True)
+                        
                         if st.button(f"🔍 İncele: {sym}", key=f"R_btn_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym); st.rerun()
                 else:
                     st.info("Kırılım yapan hisse bulunamadı.")
-    
+                    
     # -------------------------------------------------------------
     # YENİ EKLENEN KISIM: BACKTEST LABORATUVARI (SOL SÜTUN)
     # -------------------------------------------------------------
@@ -2244,3 +2246,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
