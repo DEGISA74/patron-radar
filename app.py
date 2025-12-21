@@ -287,9 +287,37 @@ def toggle_watchlist(symbol):
     st.session_state.watchlist = wl
 
 # ==============================================================================
-# 3. HESAPLAMA FONKSİYONLARI (CORE LOGIC)
+# 3. OPTİMİZE EDİLMİŞ HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
+# --- GLOBAL DATA CACHE KATMANI ---
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_batch_data_cached(asset_list, period="1y"):
+    """
+    Tüm listenin verisini tek seferde çeker ve önbellekte tutar.
+    Tarama fonksiyonları internete değil, buraya başvurur.
+    """
+    if not asset_list:
+        return pd.DataFrame()
+    
+    try:
+        # Tickers listesini string'e çevir
+        tickers_str = " ".join(asset_list)
+        
+        # Tek seferde devasa indirme (Batch Download)
+        data = yf.download(
+            tickers_str, 
+            period=period, 
+            group_by='ticker', 
+            threads=True, 
+            progress=False,
+            auto_adjust=False 
+        )
+        return data
+    except Exception:
+        return pd.DataFrame()
+
+# --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
@@ -409,458 +437,483 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
     except Exception: return None
 
-# --- BATCH SCANNER ---
-@st.cache_data(ttl=900)
-def scan_stp_signals(asset_list):
-    if not asset_list: return None, None, None
-    cross_signals = []; trend_signals = []; filtered_signals = []
-    
+# --- OPTİMİZE EDİLMİŞ BATCH SCANNER'LAR ---
+
+def process_single_stock_stp(symbol, df):
+    """
+    Tek bir hissenin STP hesaplamasını yapar.
+    """
     try:
-        # SÜRE 2 YILA ÇIKARILDI (SMA200 için)
-        data = yf.download(asset_list, period="2y", group_by="ticker", threads=True, progress=False)
-    except: return [], [], []
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 200: return None
 
-    for symbol in asset_list:
-        try:
-            if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        
+        typical_price = (high + low + close) / 3
+        stp = typical_price.ewm(span=6, adjust=False).mean()
+        sma200 = close.rolling(200).mean()
+        
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        c_last = float(close.iloc[-1]); c_prev = float(close.iloc[-2])
+        s_last = float(stp.iloc[-1]); s_prev = float(stp.iloc[-2])
+        
+        result = None
+        
+        if c_prev <= s_prev and c_last > s_last:
+            result = {
+                "type": "cross",
+                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100}
+            }
+            sma_val = float(sma200.iloc[-1])
+            rsi_val = float(rsi.iloc[-1])
+            if (c_last > sma_val) and (20 < rsi_val < 70):
+                result["is_filtered"] = True
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
+                result["is_filtered"] = False
 
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna()
-            if len(df) < 200: continue # SMA 200 için
-
-            close = df['Close']; high = df['High']; low = df['Low']
+        elif c_prev > s_prev and c_last > s_last:
+            above = close > stp
+            streak = (above != above.shift()).cumsum()
+            streak_count = above.groupby(streak).sum().iloc[-1]
             
-            # Göstergeler
-            typical_price = (high + low + close) / 3
-            stp = typical_price.ewm(span=6, adjust=False).mean()
-            sma200 = close.rolling(200).mean()
-            
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss)))
-            
-            c_last = float(close.iloc[-1]); c_prev = float(close.iloc[-2])
-            s_last = float(stp.iloc[-1]); s_prev = float(stp.iloc[-2])
-            
-            # 1. KESİŞİM SİNYALİ
-            if c_prev <= s_prev and c_last > s_last:
-                item = {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100}
-                cross_signals.append(item)
-                
-                # 2. ÖZEL FİLTRE (KESİŞİM + SMA200 + RSI)
-                sma_val = float(sma200.iloc[-1])
-                rsi_val = float(rsi.iloc[-1])
-                
-                if (c_last > sma_val) and (20 < rsi_val < 70):
-                    filtered_signals.append(item)
-
-            # 3. TREND SİNYALİ (DEĞİŞEN KISIM)
-            elif c_prev > s_prev and c_last > s_last:
-                # Geriye dönük gün sayma (Streak)
-                streak = 0
-                check_series = (close > stp).iloc[::-1]
-                for is_above in check_series:
-                    if is_above: streak += 1
-                    else: break
-                
-                trend_signals.append({
+            result = {
+                "type": "trend",
+                "data": {
                     "Sembol": symbol, 
                     "Fiyat": c_last, 
                     "STP": s_last, 
                     "Fark": ((c_last/s_last)-1)*100,
-                    "Gun": streak
-                })
-                
-        except: continue
-    
-    # Trend listesini "Gun" sayısına göre BÜYÜKTEN KÜÇÜĞE sırala
-    trend_signals.sort(key=lambda x: x["Gun"], reverse=True)
-            
-    return cross_signals, trend_signals, filtered_signals
+                    "Gun": int(streak_count)
+                }
+            }
+        return result
+    except Exception: return None
 
 @st.cache_data(ttl=900)
-def scan_hidden_accumulation(asset_list):
-    if not asset_list: return pd.DataFrame()
-    try:
-        # 10 iş günü için '1mo' (1 ay) veri çekmek yeterlidir ve güvenlidir
-        data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
+def scan_stp_signals(asset_list):
+    """
+    Optimize edilmiş STP tarayıcı.
+    """
+    data = get_batch_data_cached(asset_list, period="2y")
+    if data.empty: return [], [], []
 
-    results = []
+    cross_signals = []
+    trend_signals = []
+    filtered_signals = []
+
+    stock_dfs = []
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-            
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close'])
-            # 10 günlük analiz için en az 15-20 bar veri olması sağlıklıdır
-            if len(df) < 15: continue
-
-            close = df['Close']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
-            
-            delta = close.diff()
-            force_index = delta * volume
-            mf_smooth = force_index.ewm(span=5, adjust=False).mean()
-
-            # --- DEĞİŞİKLİK 1: 6 YERİNE 10 GÜN ALINIYOR ---
-            last_10_mf = mf_smooth.tail(10)
-            last_10_close = close.tail(10)
-            
-            if len(last_10_mf) < 10: continue
-            
-            # --- DEĞİŞİKLİK 2: EŞİK GÜNCELLENDİ ---
-            # 10 günde istikrarı kanıtlamak için en az 7 gün (%70) pozitif olmalı.
-            pos_days_count = (last_10_mf > 0).sum()
-            if pos_days_count < 7: continue
-
-            price_start = float(last_10_close.iloc[0]) 
-            price_now = float(last_10_close.iloc[-1])
-            
-            if price_start == 0: continue
-            
-            # Fiyat Değişimi (10 Günlük)
-            change_pct = (price_now - price_start) / price_start
-            avg_mf = float(last_10_mf.mean())
-            
-            if avg_mf <= 0: continue
-
-            # --- FİLTRE 1: TAVAN LİMİTİ ---
-            # 10 günde %3-4 prim normal olabilir ama "gizli" kalması için yine %3.5 sınır koyalım.
-            if change_pct > 0.035: continue 
-
-            # --- FİLTRE 2: NEGATİF UYUMSUZLUK PUANLAMASI ---
-            score_multiplier = 1.0
-            
-            if change_pct < 0:
-                # 10 gündür fiyat düşüyor ama para giriyorsa bu ÇOK GÜÇLÜ bir sinyaldir.
-                score_multiplier = 10.0 
-            elif change_pct < 0.015:
-                score_multiplier = 5.0
-            else:
-                score_multiplier = 1.0
-
-            final_score = avg_mf * score_multiplier
-
-            # Sayı Formatlama
-            if avg_mf > 1_000_000:
-                mf_str = f"{avg_mf/1_000_000:.1f}M"
-            elif avg_mf > 1_000:
-                mf_str = f"{avg_mf/1_000:.0f}K"
-            else:
-                mf_str = f"{int(avg_mf)}"
-
-            # Sıralama Puanı
-            squeeze_score = final_score / (abs(change_pct) + 0.02)
-
-            results.append({
-                "Sembol": symbol,
-                "Fiyat": f"{price_now:.2f}",
-                "Degisim_Raw": change_pct,
-                "Degisim_Str": f"%{change_pct*100:.1f}",
-                "MF_Gucu_Goster": mf_str, 
-                "Gun_Sayisi": f"{pos_days_count}/10",
-                "Skor": squeeze_score
-            })
-
+                if len(asset_list) == 1:
+                    stock_dfs.append((symbol, data))
         except: continue
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_stock_stp, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res:
+                if res["type"] == "cross":
+                    cross_signals.append(res["data"])
+                    if res.get("is_filtered"):
+                        filtered_signals.append(res["data"])
+                elif res["type"] == "trend":
+                    trend_signals.append(res["data"])
+
+    trend_signals.sort(key=lambda x: x["Gun"], reverse=True)
+    return cross_signals, trend_signals, filtered_signals
+
+def process_single_accumulation(symbol, df):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 15: return None
+
+        close = df['Close']
+        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
+        
+        delta = close.diff()
+        force_index = delta * volume
+        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+
+        last_10_mf = mf_smooth.tail(10)
+        last_10_close = close.tail(10)
+        
+        if len(last_10_mf) < 10: return None
+        
+        pos_days_count = (last_10_mf > 0).sum()
+        if pos_days_count < 7: return None
+
+        price_start = float(last_10_close.iloc[0]) 
+        price_now = float(last_10_close.iloc[-1])
+        
+        if price_start == 0: return None
+        
+        change_pct = (price_now - price_start) / price_start
+        avg_mf = float(last_10_mf.mean())
+        
+        if avg_mf <= 0: return None
+        if change_pct > 0.035: return None 
+
+        score_multiplier = 10.0 if change_pct < 0 else 5.0 if change_pct < 0.015 else 1.0
+        final_score = avg_mf * score_multiplier
+
+        if avg_mf > 1_000_000: mf_str = f"{avg_mf/1_000_000:.1f}M"
+        elif avg_mf > 1_000: mf_str = f"{avg_mf/1_000:.0f}K"
+        else: mf_str = f"{int(avg_mf)}"
+
+        squeeze_score = final_score / (abs(change_pct) + 0.02)
+
+        return {
+            "Sembol": symbol,
+            "Fiyat": f"{price_now:.2f}",
+            "Degisim_Raw": change_pct,
+            "Degisim_Str": f"%{change_pct*100:.1f}",
+            "MF_Gucu_Goster": mf_str, 
+            "Gun_Sayisi": f"{pos_days_count}/10",
+            "Skor": squeeze_score
+        }
+    except: return None
+
+@st.cache_data(ttl=900)
+def scan_hidden_accumulation(asset_list):
+    data = get_batch_data_cached(asset_list, period="1mo")
+    if data.empty: return pd.DataFrame()
+
+    results = []
+    stock_dfs = []
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_accumulation, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
 
     if results: return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
     return pd.DataFrame()
 
+def process_single_radar1(symbol, df):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 60: return None
+        
+        close = df['Close']; high = df['High']; low = df['Low']
+        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+        
+        ema5 = close.ewm(span=5, adjust=False).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
+
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        hist = macd_line - signal_line
+        
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss)))
+        williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
+        daily_range = high - low
+        
+        score = 0; reasons = []; details = {}
+        curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
+        avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
+        
+        if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze"); details['Squeeze'] = True
+        else: details['Squeeze'] = False
+        
+        if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4"); details['NR4'] = True
+        else: details['NR4'] = False
+        
+        if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend"); details['Trend'] = True
+        else: details['Trend'] = False
+        
+        if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD"); details['MACD'] = True
+        else: details['MACD'] = False
+        
+        if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R"); details['W%R'] = True
+        else: details['W%R'] = False
+        
+        if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim"); details['Hacim'] = True
+        else: details['Hacim'] = False
+        
+        if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout"); details['Breakout'] = True
+        else: details['Breakout'] = False
+        
+        rsi_c = float(rsi.iloc[-1])
+        is_rsi_strong = 30 < rsi_c < 65 and rsi_c > float(rsi.iloc[-2])
+        
+        if is_rsi_strong: score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = (True, rsi_c)
+        else: details['RSI Güçlü'] = (False, rsi_c)
+        
+        if score > 0:
+            return { "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details }
+        return None
+    except: return None
+
 @st.cache_data(ttl=3600)
 def analyze_market_intelligence(asset_list):
-    if not asset_list: return pd.DataFrame()
-    try: data = yf.download(asset_list, period="6mo", group_by='ticker', threads=True, progress=False)
-    except: return pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="6mo")
+    if data.empty: return pd.DataFrame()
 
     signals = []
+    stock_dfs = []
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]: df = data[symbol].copy()
-                else: continue
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-            
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close'])
-            if len(df) < 60: continue
-            
-            close = df['Close']; high = df['High']; low = df['Low']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
-            
-            ema5 = close.ewm(span=5, adjust=False).mean()
-            ema20 = close.ewm(span=20, adjust=False).mean()
-            sma20 = close.rolling(20).mean()
-            std20 = close.rolling(20).std()
-            bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
-
-            ema12 = close.ewm(span=12, adjust=False).mean()
-            ema26 = close.ewm(span=26, adjust=False).mean()
-            macd_line = ema12 - ema26
-            signal_line = macd_line.ewm(span=9, adjust=False).mean()
-            hist = macd_line - signal_line
-            
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss)))
-            williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
-            daily_range = high - low
-            
-            score = 0; reasons = []; details = {}
-            curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
-            avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
-            
-            if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze"); details['Squeeze'] = True
-            else: details['Squeeze'] = False
-            
-            if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4"); details['NR4'] = True
-            else: details['NR4'] = False
-            
-            if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend"); details['Trend'] = True
-            else: details['Trend'] = False
-            
-            if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD"); details['MACD'] = True
-            else: details['MACD'] = False
-            
-            if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R"); details['W%R'] = True
-            else: details['W%R'] = False
-            
-            if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim"); details['Hacim'] = True
-            else: details['Hacim'] = False
-            
-            if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout"); details['Breakout'] = True
-            else: details['Breakout'] = False
-            
-            rsi_c = float(rsi.iloc[-1])
-            is_rsi_strong = 30 < rsi_c < 65 and rsi_c > float(rsi.iloc[-2])
-            
-            if is_rsi_strong: score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = (True, rsi_c)
-            else: details['RSI Güçlü'] = (False, rsi_c)
-            
-            if score > 0:
-                signals.append({ "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details })
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_radar1, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: signals.append(res)
 
     return pd.DataFrame(signals).sort_values(by="Skor", ascending=False) if signals else pd.DataFrame()
 
+def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 120: return None
+        
+        close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+        curr_c = float(close.iloc[-1])
+        if curr_c < min_price or curr_c > max_price: return None
+        avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
+        if avg_vol_20 < min_avg_vol_m * 1e6: return None
+        
+        sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean(); sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
+        trend = "Yatay"
+        if not np.isnan(sma200.iloc[-1]):
+            if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
+            elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
+        
+        delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
+        ema12 = close.ewm(span=12, adjust=False).mean(); ema26 = close.ewm(span=26, adjust=False).mean()
+        hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
+        recent_high_60 = float(high.rolling(60).max().iloc[-1])
+        breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
+        
+        rs_score = 0.0
+        if idx is not None and len(close) > 60 and len(idx) > 60:
+            common_index = close.index.intersection(idx.index)
+            if len(common_index) > 60:
+                cs = close.reindex(common_index); isx = idx.reindex(common_index)
+                rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
+        
+        setup = "-"; tags = []; score = 0; details = {}
+        avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
+        
+        if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve")
+        if vol_spike: score += 1; tags.append("Hacim+"); details['Hacim Patlaması'] = True
+        else: details['Hacim Patlaması'] = False
+        
+        if trend == "Boğa" and setup == "-":
+            if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55: setup = "Pullback"; score += 2; tags.append("Düzeltme")
+            if volume.iloc[-1] < avg_vol_20 * 0.9: score += 1; tags.append("Sığ Satış")
+        if setup == "-":
+            if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
+        
+        if rs_score > 0: score += 1; tags.append("RS+"); details['RS (S&P500)'] = True
+        else: details['RS (S&P500)'] = False
+        
+        if trend == "Boğa": score += 1; details['Boğa Trendi'] = True
+        else:
+            if trend == "Ayı": score -= 1
+            details['Boğa Trendi'] = False
+        
+        details['60G Zirve'] = breakout_ratio >= 0.90; 
+        is_rsi_suitable = (40 <= rsi_c <= 60)
+        details['RSI Bölgesi'] = (is_rsi_suitable, rsi_c)
+        details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
+        
+        if score > 0:
+            return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
+        return None
+    except: return None
+
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
-    if not asset_list: return pd.DataFrame()
-    try:
-        data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
     
     try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
     except: idx = None
 
     results = []
+    stock_dfs = []
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-            
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close'])
-            if len(df) < 120: continue
-            
-            close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
-            curr_c = float(close.iloc[-1])
-            if curr_c < min_price or curr_c > max_price: continue
-            avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
-            if avg_vol_20 < min_avg_vol_m * 1e6: continue
-            
-            sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean(); sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
-            trend = "Yatay"
-            if not np.isnan(sma200.iloc[-1]):
-                if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
-                elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
-            
-            delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
-            ema12 = close.ewm(span=12, adjust=False).mean(); ema26 = close.ewm(span=26, adjust=False).mean()
-            hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
-            recent_high_60 = float(high.rolling(60).max().iloc[-1])
-            breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
-            
-            rs_score = 0.0
-            if idx is not None and len(close) > 60 and len(idx) > 60:
-                common_index = close.index.intersection(idx.index)
-                if len(common_index) > 60:
-                    cs = close.reindex(common_index); isx = idx.reindex(common_index)
-                    rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
-            
-            setup = "-"; tags = []; score = 0; details = {}
-            avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
-            
-            if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve")
-            if vol_spike: score += 1; tags.append("Hacim+"); details['Hacim Patlaması'] = True
-            else: details['Hacim Patlaması'] = False
-            
-            if trend == "Boğa" and setup == "-":
-                if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55: setup = "Pullback"; score += 2; tags.append("Düzeltme")
-                if volume.iloc[-1] < avg_vol_20 * 0.9: score += 1; tags.append("Sığ Satış")
-            if setup == "-":
-                if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
-            
-            if rs_score > 0: score += 1; tags.append("RS+"); details['RS (S&P500)'] = True
-            else: details['RS (S&P500)'] = False
-            
-            if trend == "Boğa": score += 1; details['Boğa Trendi'] = True
-            else:
-                if trend == "Ayı": score -= 1
-                details['Boğa Trendi'] = False
-            
-            details['60G Zirve'] = breakout_ratio >= 0.90; 
-            
-            # RSI detayını değerle birlikte tuple olarak sakla
-            is_rsi_suitable = (40 <= rsi_c <= 60)
-            details['RSI Bölgesi'] = (is_rsi_suitable, rsi_c)
-            
-            details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
-            
-            if score > 0:
-                results.append({ "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details })
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_radar2, sym, df, idx, min_price, max_price, min_avg_vol_m) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
 
     return pd.DataFrame(results).sort_values(by=["Skor", "RS"], ascending=False).head(50) if results else pd.DataFrame()
 
+def process_single_breakout(symbol, df):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close']); 
+        if len(df) < 60: return None
+
+        close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
+        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+        ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
+        sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
+        std20 = close.rolling(20).std(); bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20); bb_width = (bb_upper - bb_lower) / sma20
+        vol_20 = volume.rolling(20).mean().iloc[-1]; curr_vol = volume.iloc[-1]
+        rvol = curr_vol / vol_20 if vol_20 != 0 else 1
+        high_60 = high.rolling(60).max().iloc[-1]; curr_price = close.iloc[-1]
+        delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+        cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2; cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70; sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
+        
+        if cond_ema and cond_vol and cond_prox and cond_rsi:
+            is_short_signal = False; short_reason = ""
+            if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): is_short_signal = True; short_reason = "3 Kırmızı Mum (Düşüş)"
+            body_last = abs(close.iloc[-1] - open_.iloc[-1]); body_prev1 = abs(close.iloc[-2] - open_.iloc[-2]); body_prev2 = abs(close.iloc[-3] - open_.iloc[-3])
+            if (close.iloc[-1] < open_.iloc[-1]) and (body_last > (body_prev1 + body_prev2)): is_short_signal = True; short_reason = "Yutan Ayı Mum (Engulfing)"
+            min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]; is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
+            prox_pct = (curr_price / high_60) * 100
+            prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınıra Dayandı)" if prox_pct >= 98 else " (Hazırlanıyor)"))
+            c_open = open_.iloc[-1]; c_close = close.iloc[-1]; c_high = high.iloc[-1]; body_size = abs(c_close - c_open); upper_wick = c_high - max(c_open, c_close)
+            is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
+            wick_warning = " <span style='color:#DC2626; font-weight:700; background:#fef2f2; padding:2px 4px; border-radius:4px;'>⚠️ Satış Baskısı (Uzun Fitil)</span>" if is_wick_rejected else ""
+            rvol_text = "Olağanüstü para girişi 🐳" if rvol > 2.0 else ("İlgi artıyor 📈" if rvol > 1.5 else "İlgi var 👀")
+            display_symbol = symbol
+            if is_short_signal:
+                display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.8rem;'>🔻 SHORT FIRSATI</span>"
+                trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
+            else: trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
+            return { "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol }
+        return None
+    except: return None
+
 @st.cache_data(ttl=3600)
 def agent3_breakout_scan(asset_list):
-    if not asset_list: return pd.DataFrame()
-    try: data = yf.download(asset_list, period="6mo", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="6mo")
+    if data.empty: return pd.DataFrame()
 
     results = []
+    stock_dfs = []
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-            
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close']); 
-            if len(df) < 60: continue
-
-            close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
-            volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
-            ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
-            sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
-            std20 = close.rolling(20).std(); bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20); bb_width = (bb_upper - bb_lower) / sma20
-            vol_20 = volume.rolling(20).mean().iloc[-1]; curr_vol = volume.iloc[-1]
-            rvol = curr_vol / vol_20 if vol_20 != 0 else 1
-            high_60 = high.rolling(60).max().iloc[-1]; curr_price = close.iloc[-1]
-            delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
-            cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2; cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70; sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
-            
-            if cond_ema and cond_vol and cond_prox and cond_rsi:
-                is_short_signal = False; short_reason = ""
-                if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): is_short_signal = True; short_reason = "3 Kırmızı Mum (Düşüş)"
-                body_last = abs(close.iloc[-1] - open_.iloc[-1]); body_prev1 = abs(close.iloc[-2] - open_.iloc[-2]); body_prev2 = abs(close.iloc[-3] - open_.iloc[-3])
-                if (close.iloc[-1] < open_.iloc[-1]) and (body_last > (body_prev1 + body_prev2)): is_short_signal = True; short_reason = "Yutan Ayı Mum (Engulfing)"
-                min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]; is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
-                prox_pct = (curr_price / high_60) * 100
-                prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınıra Dayandı)" if prox_pct >= 98 else " (Hazırlanıyor)"))
-                c_open = open_.iloc[-1]; c_close = close.iloc[-1]; c_high = high.iloc[-1]; body_size = abs(c_close - c_open); upper_wick = c_high - max(c_open, c_close)
-                is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
-                wick_warning = " <span style='color:#DC2626; font-weight:700; background:#fef2f2; padding:2px 4px; border-radius:4px;'>⚠️ Satış Baskısı (Uzun Fitil)</span>" if is_wick_rejected else ""
-                rvol_text = "Olağanüstü para girişi 🐳" if rvol > 2.0 else ("İlgi artıyor 📈" if rvol > 1.5 else "İlgi var 👀")
-                display_symbol = symbol
-                if is_short_signal:
-                    display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.8rem;'>🔻 SHORT FIRSATI</span>"
-                    trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
-                else: trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
-                results.append({ "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol })
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
-        
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_breakout, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+    
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
-# --- YENİ EKLENEN FONKSİYON: ONAYLI BREAKOUT (SAĞ SÜTUN) ---
+def process_single_confirmed(symbol, df):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close']); 
+        if len(df) < 65: return None
+
+        close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+        
+        high_60 = high.rolling(window=60).max().shift(1).iloc[-1]
+        curr_close = float(close.iloc[-1])
+        
+        if curr_close <= high_60: return None 
+
+        avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
+        curr_vol = float(volume.iloc[-1])
+        vol_factor = curr_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+        
+        if vol_factor < 1.2: return None 
+
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
+        bb_width = (bb_upper - bb_lower) / sma20
+        avg_width = bb_width.rolling(20).mean().iloc[-1]
+        is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
+        
+        breakout_type = "📦 RANGE KIRILIMI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI (Fiyat son 60 günün zirvesinde)"
+        
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+
+        return {
+            "Sembol": symbol,
+            "Fiyat": f"{curr_close:.2f}",
+            "Kirim_Turu": breakout_type,
+            "Hacim_Kati": f"{vol_factor:.1f}x",
+            "RSI": int(rsi),
+            "SortKey": vol_factor 
+        }
+    except: return None
+
 @st.cache_data(ttl=3600)
 def scan_confirmed_breakouts(asset_list):
-    if not asset_list: return pd.DataFrame()
-    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
-    except: return pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
 
     results = []
+    stock_dfs = []
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol not in data.columns.levels[0]: continue
-                df = data[symbol].copy()
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
             else:
-                if len(asset_list) == 1: df = data.copy()
-                else: continue
-            
-            if df.empty or 'Close' not in df.columns: continue
-            df = df.dropna(subset=['Close']); 
-            if len(df) < 65: continue
-
-            close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
-            
-            # --- KRİTERLER ---
-            # 1. Donchian Kırılımı: Bugünün kapanışı, dünden önceki 60 günün en yükseğinden büyük mü?
-            high_60 = high.rolling(window=60).max().shift(1).iloc[-1]
-            curr_close = float(close.iloc[-1])
-            
-            if curr_close <= high_60: continue 
-
-            # 2. Hacim Onayı: Bugünün hacmi, 20 günlük ortalamanın %20 üzerinde mi?
-            avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
-            curr_vol = float(volume.iloc[-1])
-            vol_factor = curr_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
-            
-            if vol_factor < 1.2: continue 
-
-            # 3. Range (Sıkışma) Kontrolü
-            sma20 = close.rolling(20).mean()
-            std20 = close.rolling(20).std()
-            bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
-            bb_width = (bb_upper - bb_lower) / sma20
-            avg_width = bb_width.rolling(20).mean().iloc[-1]
-            is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
-            
-            breakout_type = "📦 RANGE KIRILIMI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI (Fiyat son 60 günün zirvesinde)"
-            
-            # RSI Hesapla
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
-
-            results.append({
-                "Sembol": symbol,
-                "Fiyat": f"{curr_close:.2f}",
-                "Kirim_Turu": breakout_type,
-                "Hacim_Kati": f"{vol_factor:.1f}x",
-                "RSI": int(rsi),
-                "SortKey": vol_factor 
-            })
-
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
-        
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_confirmed, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+    
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -1179,10 +1232,8 @@ def run_portfolio_hunter_backtest(asset_list, rr_ratio=2.0, max_hold_days=10, in
     # İlk 50'yi al (Ama artık karışık 50)
     scan_list = temp_list[:50] 
     
-    try:
-        # Batch Download - period="2y" olarak güncellendi (SMA 200 için)
-        raw_data = yf.download(scan_list, period="2y", group_by="ticker", threads=True, progress=False)
-    except: return None
+    # Veri Çekme (Batch - Optimize)
+    raw_data = get_batch_data_cached(scan_list, period="2y")
 
     if raw_data.empty: return None
 
@@ -2243,7 +2294,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
-
