@@ -23,6 +23,7 @@ st.set_page_config(
     page_icon="💸"
 )
 
+# Tema seçeneği kaldırıldı, varsayılan "Buz Mavisi" olarak sabitlendi.
 if 'theme' not in st.session_state:
     st.session_state.theme = "Buz Mavisi"
 
@@ -1849,33 +1850,28 @@ def render_ict_deep_panel(ticker):
 # ==============================================================================
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">BORSA YATIRIM TERMİNALİ</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
-    st.markdown("### ⚙️ Ayarlar")
     
-    selected_theme_name = st.selectbox("", ["Beyaz", "Kirli Beyaz", "Buz Mavisi"], index=["Beyaz", "Kirli Beyaz", "Buz Mavisi"].index(st.session_state.theme), label_visibility="collapsed")
-    
-    if selected_theme_name != st.session_state.theme: 
-        st.session_state.theme = selected_theme_name
-        st.rerun()
-    
-    st.divider()
-
-    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
-        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
-        if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
-            st.session_state.generate_prompt = True
+    # 1. PİYASA DUYGUSU (En Üstte)
+    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
+    if sentiment_verisi:
+        render_sentiment_card(sentiment_verisi)
 
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
+    # 2. DERİN TEKNİK RÖNTGEN (Ortada)
     xray_verisi = get_deep_xray_data(st.session_state.ticker)
-    
     if xray_verisi:
         render_deep_xray_card(xray_verisi)
     else:
         st.caption("Röntgen verisi şu an hazırlanamıyor.")
 
-    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
-    if sentiment_verisi:
-        render_sentiment_card(sentiment_verisi)
+    st.divider()
+
+    # 3. AI ANALIST (En Altta)
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
+            st.session_state.generate_prompt = True
 
 # ==============================================================================
 # 6. ANA SAYFA (MAIN UI)
