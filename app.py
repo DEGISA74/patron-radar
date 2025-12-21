@@ -2019,7 +2019,7 @@ with col_left:
                     else:
                         st.caption("Şu an 'Sessiz Toplama' yapan hisse tespit edilemedi.")
 
-    # --- YENİ BREAKOUT AJANI ARAYÜZÜ (ÇİFT SÜTUN) ---
+    # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout & Kırılım İstihbaratı</div>', unsafe_allow_html=True)
     
     # Session State Tanımları (Eğer yoksa)
@@ -2066,7 +2066,7 @@ with col_left:
                 else:
                     st.info("Isınan hisse bulunamadı.")
 
-        # --- SAĞ SÜTUN: KIRANLAR (YENİ) ---
+        # --- SAĞ SÜTUN: KIRANLAR (YENİ - DÜZELTİLMİŞ) ---
         with c_right:
             st.markdown("<div style='text-align:center; color:#16a34a; font-weight:800; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
             with st.container(height=600): # Scroll Alanı
@@ -2080,6 +2080,7 @@ with col_left:
                         vol_val = float(row['Hacim_Kati'].replace('x',''))
                         vol_color = "#dc2626" if vol_val < 1.0 else "#16a34a" if vol_val > 1.5 else "#d97706"
                         
+                        # HTML String oluşturuluyor
                         card_html_right = f"""
                         <div class="info-card" style="margin-bottom:8px; border-left:4px solid #16a34a; background:#ffffff;">
                             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
@@ -2103,7 +2104,8 @@ with col_left:
                             </div>
                         </div>
                         """
-                        # DÜZELTME BURADA: unsafe_allow_html=True EKLENDİ
+                        
+                        # KESİN ÇÖZÜM: unsafe_allow_html=True BURADA
                         st.markdown(card_html_right, unsafe_allow_html=True)
                         
                         if st.button(f"🔍 İncele: {sym}", key=f"R_btn_{sym}_{i}", use_container_width=True):
@@ -2246,4 +2248,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
