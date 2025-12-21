@@ -2041,7 +2041,7 @@ with col_left:
         # --- SOL SÜTUN: ISINANLAR ---
         with c_left:
             st.markdown("<div style='text-align:center; color:#d97706; font-weight:500; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
-            with st.container(height=600): # Scroll Alanı
+            with st.container(height=400): # Scroll Alanı
                 if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
                     df_left = st.session_state.breakout_left.head(20)
                     for i, (index, row) in enumerate(df_left.iterrows()):
@@ -2069,7 +2069,7 @@ with col_left:
         # --- SAĞ SÜTUN: KIRANLAR (YENİ - DÜZELTİLMİŞ) ---
         with c_right:
             st.markdown("<div style='text-align:center; color:#16a34a; font-weight:500; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
-            with st.container(height=600): # Scroll Alanı
+            with st.container(height=400): # Scroll Alanı
                 if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
                     df_right = st.session_state.breakout_right.head(20)
                     for i, (index, row) in enumerate(df_right.iterrows()):
@@ -2243,6 +2243,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
