@@ -246,8 +246,10 @@ if 'watchlist' not in st.session_state: st.session_state.watchlist = load_watchl
 if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
 if 'stp_crosses' not in st.session_state: st.session_state.stp_crosses = []
 if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
-if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = [] # YENİ LİSTE İÇİN
+if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 if 'accum_data' not in st.session_state: st.session_state.accum_data = None
+if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
+if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -260,6 +262,8 @@ def on_category_change():
         st.session_state.agent3_data = None
         st.session_state.stp_scanned = False
         st.session_state.accum_data = None 
+        st.session_state.breakout_left = None
+        st.session_state.breakout_right = None
 
 def on_asset_change():
     new_asset = st.session_state.get("selected_asset_key")
@@ -517,7 +521,6 @@ def scan_hidden_accumulation(asset_list):
             if len(last_10_mf) < 10: continue
             
             # --- DEĞİŞİKLİK 2: EŞİK GÜNCELLENDİ ---
-            # 6 günde 4 gün (%66) arıyorduk. 
             # 10 günde istikrarı kanıtlamak için en az 7 gün (%70) pozitif olmalı.
             pos_days_count = (last_10_mf > 0).sum()
             if pos_days_count < 7: continue
@@ -558,7 +561,7 @@ def scan_hidden_accumulation(asset_list):
             else:
                 mf_str = f"{int(avg_mf)}"
 
-            # Sıralama Puanı (Daha geniş zaman dilimi olduğu için paydayı biraz daha toleranslı yapıyoruz)
+            # Sıralama Puanı
             squeeze_score = final_score / (abs(change_pct) + 0.02)
 
             results.append({
@@ -567,7 +570,6 @@ def scan_hidden_accumulation(asset_list):
                 "Degisim_Raw": change_pct,
                 "Degisim_Str": f"%{change_pct*100:.1f}",
                 "MF_Gucu_Goster": mf_str, 
-                # --- DEĞİŞİKLİK 3: ÇIKTI GÜNCELLENDİ ---
                 "Gun_Sayisi": f"{pos_days_count}/10",
                 "Skor": squeeze_score
             })
@@ -794,6 +796,72 @@ def agent3_breakout_scan(asset_list):
         except: continue
         
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
+
+# --- YENİ EKLENEN FONKSİYON: ONAYLI BREAKOUT (SAĞ SÜTUN) ---
+@st.cache_data(ttl=3600)
+def scan_confirmed_breakouts(asset_list):
+    if not asset_list: return pd.DataFrame()
+    try: data = yf.download(asset_list, period="1y", group_by="ticker", threads=True, progress=False)
+    except: return pd.DataFrame()
+
+    results = []
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: continue
+                df = data[symbol].copy()
+            else:
+                if len(asset_list) == 1: df = data.copy()
+                else: continue
+            
+            if df.empty or 'Close' not in df.columns: continue
+            df = df.dropna(subset=['Close']); 
+            if len(df) < 65: continue
+
+            close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+            
+            # --- KRİTERLER ---
+            # 1. Donchian Kırılımı: Bugünün kapanışı, dünden önceki 60 günün en yükseğinden büyük mü?
+            high_60 = high.rolling(window=60).max().shift(1).iloc[-1]
+            curr_close = float(close.iloc[-1])
+            
+            if curr_close <= high_60: continue 
+
+            # 2. Hacim Onayı: Bugünün hacmi, 20 günlük ortalamanın %20 üzerinde mi?
+            avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
+            curr_vol = float(volume.iloc[-1])
+            vol_factor = curr_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+            
+            if vol_factor < 1.2: continue 
+
+            # 3. Range (Sıkışma) Kontrolü
+            sma20 = close.rolling(20).mean()
+            std20 = close.rolling(20).std()
+            bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
+            bb_width = (bb_upper - bb_lower) / sma20
+            avg_width = bb_width.rolling(20).mean().iloc[-1]
+            is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
+            
+            breakout_type = "📦 KUTU PATLAMASI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI"
+            
+            # RSI Hesapla
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+
+            results.append({
+                "Sembol": symbol,
+                "Fiyat": f"{curr_close:.2f}",
+                "Kirim_Turu": breakout_type,
+                "Hacim_Kati": f"{vol_factor:.1f}x",
+                "RSI": int(rsi),
+                "SortKey": vol_factor 
+            })
+
+        except: continue
+        
+    return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
@@ -1951,28 +2019,95 @@ with col_left:
                     else:
                         st.caption("Şu an 'Sessiz Toplama' yapan hisse tespit edilemedi.")
 
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı Taraması</div>', unsafe_allow_html=True)
+    # --- YENİ BREAKOUT AJANI ARAYÜZÜ (ÇİFT SÜTUN) ---
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout & Kırılım İstihbaratı</div>', unsafe_allow_html=True)
+    
+    # Session State Tanımları (Eğer yoksa)
+    if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
+    if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
+
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="a3_main_scan_btn"):
-            with st.spinner("Ajan 3 piyasayı kokluyor..."): st.session_state.agent3_data = agent3_breakout_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.agent3_data is not None and not st.session_state.agent3_data.empty:
-            display_df = st.session_state.agent3_data.head(12)
-            st.caption(f"En sıcak {len(display_df)} fırsat listeleniyor (Toplam Bulunan: {len(st.session_state.agent3_data)})")
-            for i, (index, row) in enumerate(display_df.iterrows()):
-                if i % 3 == 0: cols = st.columns(3)
-                with cols[i % 3]:
-                    sym_raw = row.get("Sembol_Raw"); 
-                    if not sym_raw: sym_raw = row.get("Sembol", row.name if isinstance(row.name, str) else "Bilinmiyor")
-                    ict_vals = calculate_ict_deep_analysis(sym_raw) or {}; tech_vals = get_tech_card_data(sym_raw) or {}
-                    target_text = ict_vals.get('target', 'Belirsiz'); stop_text = f"{tech_vals['stop_level']:.2f}" if tech_vals else "-"
-                    is_short = "SHORT" in str(row.get('Sembol_Display', '')) or "SHORT" in str(row.get('Trend Durumu', ''))
-                    if is_short: card_bg = "#fef2f2"; card_border = "#b91c1c"; btn_icon = "🔻"; signal_text = "SHORT"
-                    else: card_bg = "#f0fdf4"; card_border = "#15803d"; btn_icon = "🚀"; signal_text = "LONG"
-                    btn_label = f"{btn_icon} {signal_text} | {sym_raw} | {row['Fiyat']}"
-                    if st.button(f"{btn_label}", key=f"a3_hdr_{sym_raw}_{i}", use_container_width=True): on_scan_result_click(sym_raw); st.rerun()
-                    card_html = f"""<div class="info-card" style="margin-top: 0px; height: 100%; background-color: {card_bg}; border: 1px solid {card_border}; border-top: 3px solid {card_border};"><div class="info-row"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div><div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div><div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div><div class="info-row"><div class="label-short">RSI:</div><div class="info-val">{row['RSI']}</div></div><div style="margin-top:8px; padding-top:4px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.8rem;"><div style="color:#166534;"><strong>🎯</strong> {target_text}</div><div style="color:#991b1b;"><strong>🛑 Stop:</strong> {stop_text}</div></div></div>"""
-                    st.markdown(card_html, unsafe_allow_html=True)
-        elif st.session_state.agent3_data is not None: st.info("Kriterlere uyan hisse yok.")
+        if st.button(f"⚡ {st.session_state.category} İÇİN TARAMA BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
+            with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
+                curr_list = ASSET_GROUPS.get(st.session_state.category, [])
+                # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
+                st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
+                st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
+                st.rerun()
+
+        # 2 Sütunlu Yapı
+        c_left, c_right = st.columns(2)
+        
+        # --- SOL SÜTUN: ISINANLAR ---
+        with c_left:
+            st.markdown("<div style='text-align:center; color:#d97706; font-weight:800; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+            with st.container(height=600): # Scroll Alanı
+                if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
+                    df_left = st.session_state.breakout_left.head(20)
+                    for i, (index, row) in enumerate(df_left.iterrows()):
+                        sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
+                        
+                        # Isınanlar Kartı (Mevcut Tasarım)
+                        card_html = f"""
+                        <div class="info-card" style="margin-bottom:8px; border-left:4px solid #f59e0b;">
+                            <div style="display:flex; justify-content:space-between; font-weight:700; color:#0f172a; font-size:0.85rem; border-bottom:1px solid #e2e8f0; padding-bottom:2px;">
+                                <span>{sym_raw}</span>
+                                <span>{row['Fiyat']}</span>
+                            </div>
+                            <div class="info-row" style="margin-top:4px;"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
+                            <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
+                            <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
+                            <div style="text-align:right; font-size:0.75rem; color:#64748B; margin-top:2px;">RSI: <strong>{row['RSI']}</strong></div>
+                        </div>
+                        """
+                        st.markdown(card_html, unsafe_allow_html=True)
+                        if st.button(f"🔍 İncele: {sym_raw}", key=f"L_btn_{sym_raw}_{i}", use_container_width=True):
+                            on_scan_result_click(sym_raw); st.rerun()
+                else:
+                    st.info("Isınan hisse bulunamadı.")
+
+        # --- SAĞ SÜTUN: KIRANLAR (YENİ) ---
+        with c_right:
+            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:800; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+            with st.container(height=600): # Scroll Alanı
+                if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
+                    df_right = st.session_state.breakout_right.head(20)
+                    for i, (index, row) in enumerate(df_right.iterrows()):
+                        sym = row['Sembol']
+                        
+                        # Kıranlar Kartı (Yeni Tasarım)
+                        # Hacim katsayısına göre renk
+                        vol_val = float(row['Hacim_Kati'].replace('x',''))
+                        vol_color = "#dc2626" if vol_val < 1.0 else "#16a34a" if vol_val > 1.5 else "#d97706"
+                        
+                        card_html_right = f"""
+                        <div class="info-card" style="margin-bottom:8px; border-left:4px solid #16a34a; background:#ffffff;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
+                                <div style="font-weight:800; color:#15803d; font-size:0.9rem;">🚀 {sym}</div>
+                                <div style="font-family:'JetBrains Mono'; font-weight:700;">{row['Fiyat']}</div>
+                            </div>
+                            
+                            <div class="info-row">
+                                <div class="label-long" style="width:90px;">Kırılım:</div>
+                                <div class="info-val" style="font-weight:700; color:#1e3a8a;">{row['Kirim_Turu']}</div>
+                            </div>
+                            
+                            <div class="info-row">
+                                <div class="label-long" style="width:90px;">Hacim Artışı:</div>
+                                <div class="info-val" style="font-weight:800; color:{vol_color};">{row['Hacim_Kati']} <span style="font-size:0.7rem; color:#64748B; font-weight:400;">(Ort. Katı)</span></div>
+                            </div>
+                            
+                            <div class="info-row">
+                                <div class="label-long" style="width:90px;">RSI Gücü:</div>
+                                <div class="info-val">{row['RSI']}</div>
+                            </div>
+                        </div>
+                        """
+                        st.markdown(card_html_right, unsafe_allow_html=True)
+                        if st.button(f"🔍 İncele: {sym}", key=f"R_btn_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym); st.rerun()
+                else:
+                    st.info("Kırılım yapan hisse bulunamadı.")
     
     # -------------------------------------------------------------
     # YENİ EKLENEN KISIM: BACKTEST LABORATUVARI (SOL SÜTUN)
@@ -2109,9 +2244,3 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
-
-
-
