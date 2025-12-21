@@ -484,14 +484,13 @@ def scan_stp_signals(asset_list):
 def scan_hidden_accumulation(asset_list):
     if not asset_list: return pd.DataFrame()
     try:
-        # Son 1 aylık veriyi çekiyoruz
+        # 10 iş günü için '1mo' (1 ay) veri çekmek yeterlidir ve güvenlidir
         data = yf.download(asset_list, period="1mo", group_by="ticker", threads=True, progress=False)
     except: return pd.DataFrame()
 
     results = []
     for symbol in asset_list:
         try:
-            # Veri ayrıştırma (MultiIndex kontrolü)
             if isinstance(data.columns, pd.MultiIndex):
                 if symbol not in data.columns.levels[0]: continue
                 df = data[symbol].copy()
@@ -501,61 +500,57 @@ def scan_hidden_accumulation(asset_list):
             
             if df.empty or 'Close' not in df.columns: continue
             df = df.dropna(subset=['Close'])
+            # 10 günlük analiz için en az 15-20 bar veri olması sağlıklıdır
             if len(df) < 15: continue
 
             close = df['Close']
             volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
             
-            # Para Akışı (Money Flow) Hesaplama
             delta = close.diff()
             force_index = delta * volume
             mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
-            # Son 6 güne odaklan
-            last_6_mf = mf_smooth.tail(6)
-            last_6_close = close.tail(6)
+            # --- DEĞİŞİKLİK 1: 6 YERİNE 10 GÜN ALINIYOR ---
+            last_10_mf = mf_smooth.tail(10)
+            last_10_close = close.tail(10)
             
-            if len(last_6_mf) < 6: continue
+            if len(last_10_mf) < 10: continue
             
-            # Kural: Son 6 günün en az 4'ünde para girişi pozitif olmalı
-            pos_days_count = (last_6_mf > 0).sum()
-            if pos_days_count < 4: continue
+            # --- DEĞİŞİKLİK 2: EŞİK GÜNCELLENDİ ---
+            # 6 günde 4 gün (%66) arıyorduk. 
+            # 10 günde istikrarı kanıtlamak için en az 7 gün (%70) pozitif olmalı.
+            pos_days_count = (last_10_mf > 0).sum()
+            if pos_days_count < 7: continue
 
-            price_start = float(last_6_close.iloc[0]) 
-            price_now = float(last_6_close.iloc[-1])
+            price_start = float(last_10_close.iloc[0]) 
+            price_now = float(last_10_close.iloc[-1])
             
             if price_start == 0: continue
             
-            # Fiyat Değişimi (Net Yüzde)
+            # Fiyat Değişimi (10 Günlük)
             change_pct = (price_now - price_start) / price_start
-            avg_mf = float(last_6_mf.mean())
+            avg_mf = float(last_10_mf.mean())
             
             if avg_mf <= 0: continue
 
-            # --- FİLTRE 1: TAVAN LİMİTİ (HARD CEILING) ---
-            # Eğer hisse son 6 günde %3'ten fazla yükseldiyse, o artık "gizli" değildir. Listeye alma.
-            if change_pct > 0.03: continue 
+            # --- FİLTRE 1: TAVAN LİMİTİ ---
+            # 10 günde %3-4 prim normal olabilir ama "gizli" kalması için yine %3.5 sınır koyalım.
+            if change_pct > 0.035: continue 
 
             # --- FİLTRE 2: NEGATİF UYUMSUZLUK PUANLAMASI ---
-            # Amaç: Fiyat düşerken veya yatayken para girenleri en üste taşımak.
-            # Yöntem: MF Gücünü, fiyat durumuna göre bir çarpanla ödüllendiriyoruz.
-            
             score_multiplier = 1.0
             
             if change_pct < 0:
-                # Fiyat DÜŞMÜŞ ama para giriyor -> EN DEĞERLİSİ (Altın Madeni)
+                # 10 gündür fiyat düşüyor ama para giriyorsa bu ÇOK GÜÇLÜ bir sinyaldir.
                 score_multiplier = 10.0 
             elif change_pct < 0.015:
-                # Fiyat YATAY (%0 - %1.5 arası) -> ÇOK DEĞERLİ (Toplama Evresi)
                 score_multiplier = 5.0
             else:
-                # Fiyat %1.5 - %3.0 arası yükselmiş -> NORMAL (Hareket Başlamış)
                 score_multiplier = 1.0
 
-            # Nihai Skor: Para Gücü * Stratejik Çarpan
             final_score = avg_mf * score_multiplier
 
-            # Sayı Formatlama (Okunabilirlik için Milyon/Bin ayarı)
+            # Sayı Formatlama
             if avg_mf > 1_000_000:
                 mf_str = f"{avg_mf/1_000_000:.1f}M"
             elif avg_mf > 1_000:
@@ -563,19 +558,22 @@ def scan_hidden_accumulation(asset_list):
             else:
                 mf_str = f"{int(avg_mf)}"
 
+            # Sıralama Puanı (Daha geniş zaman dilimi olduğu için paydayı biraz daha toleranslı yapıyoruz)
+            squeeze_score = final_score / (abs(change_pct) + 0.02)
+
             results.append({
                 "Sembol": symbol,
                 "Fiyat": f"{price_now:.2f}",
                 "Degisim_Raw": change_pct,
                 "Degisim_Str": f"%{change_pct*100:.1f}",
                 "MF_Gucu_Goster": mf_str, 
-                "Gun_Sayisi": f"{pos_days_count}/6",
-                "Skor": final_score # Sıralama buna göre yapılacak
+                # --- DEĞİŞİKLİK 3: ÇIKTI GÜNCELLENDİ ---
+                "Gun_Sayisi": f"{pos_days_count}/10",
+                "Skor": squeeze_score
             })
 
         except: continue
 
-    # Skora göre (En çok puan alandan en aza) sırala
     if results: return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
     return pd.DataFrame()
 
@@ -2111,6 +2109,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
