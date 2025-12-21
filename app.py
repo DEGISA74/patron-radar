@@ -147,7 +147,7 @@ def remove_watchlist_db(symbol):
 init_db()
 
 # --- VARLIK LİSTELERİ ---
-priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD", "JEPX"]
+priority_sp = ["AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD", "JEPQ"]
 raw_sp500_rest = [
     "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "AMD",
     "INTC", "QCOM", "TXN", "AMAT", "LRCX", "MU", "ADI", "CSCO", "ORCL", "CRM", 
@@ -2243,6 +2243,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
