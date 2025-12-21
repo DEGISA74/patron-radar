@@ -842,7 +842,7 @@ def scan_confirmed_breakouts(asset_list):
             avg_width = bb_width.rolling(20).mean().iloc[-1]
             is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
             
-            breakout_type = "📦 KUTU PATLAMASI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI"
+            breakout_type = "📦 KUTU PATLAMASI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI (Fiyat son 60 günün zirvesinde)"
             
             # RSI Hesapla
             delta = close.diff()
@@ -2243,6 +2243,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
