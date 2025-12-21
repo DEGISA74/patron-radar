@@ -2075,37 +2075,32 @@ with col_left:
                     for i, (index, row) in enumerate(df_right.iterrows()):
                         sym = row['Sembol']
                         
-                        # Kıranlar Kartı (Yeni Tasarım)
-                        # Hacim katsayısına göre renk
+                        # Kıranlar Kartı
                         vol_val = float(row['Hacim_Kati'].replace('x',''))
                         vol_color = "#dc2626" if vol_val < 1.0 else "#16a34a" if vol_val > 1.5 else "#d97706"
                         
-                        # HTML String oluşturuluyor
+                        # HTML String - GİRİNTİLER (BOŞLUKLAR) TEMİZLENDİ
+                        # Markdown'ın bunu "kod bloğu" sanmaması için sola yaslıyoruz.
                         card_html_right = f"""
-                        <div class="info-card" style="margin-bottom:8px; border-left:4px solid #16a34a; background:#ffffff;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
-                                <div style="font-weight:800; color:#15803d; font-size:0.9rem;">🚀 {sym}</div>
-                                <div style="font-family:'JetBrains Mono'; font-weight:700;">{row['Fiyat']}</div>
-                            </div>
-                            
-                            <div class="info-row">
-                                <div class="label-long" style="width:90px;">Kırılım:</div>
-                                <div class="info-val" style="font-weight:700; color:#1e3a8a;">{row['Kirim_Turu']}</div>
-                            </div>
-                            
-                            <div class="info-row">
-                                <div class="label-long" style="width:90px;">Hacim Artışı:</div>
-                                <div class="info-val" style="font-weight:800; color:{vol_color};">{row['Hacim_Kati']} <span style="font-size:0.7rem; color:#64748B; font-weight:400;">(Ort. Katı)</span></div>
-                            </div>
-                            
-                            <div class="info-row">
-                                <div class="label-long" style="width:90px;">RSI Gücü:</div>
-                                <div class="info-val">{row['RSI']}</div>
-                            </div>
-                        </div>
-                        """
-                        
-                        # KESİN ÇÖZÜM: unsafe_allow_html=True BURADA
+<div class="info-card" style="margin-bottom:8px; border-left:4px solid #16a34a; background:#ffffff;">
+<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
+<div style="font-weight:800; color:#15803d; font-size:0.9rem;">🚀 {sym}</div>
+<div style="font-family:'JetBrains Mono'; font-weight:700;">{row['Fiyat']}</div>
+</div>
+<div class="info-row">
+<div class="label-long" style="width:90px;">Kırılım:</div>
+<div class="info-val" style="font-weight:700; color:#1e3a8a;">{row['Kirim_Turu']}</div>
+</div>
+<div class="info-row">
+<div class="label-long" style="width:90px;">Hacim Artışı:</div>
+<div class="info-val" style="font-weight:800; color:{vol_color};">{row['Hacim_Kati']} <span style="font-size:0.7rem; color:#64748B; font-weight:400;">(Ort. Katı)</span></div>
+</div>
+<div class="info-row">
+<div class="label-long" style="width:90px;">RSI Gücü:</div>
+<div class="info-val">{row['RSI']}</div>
+</div>
+</div>
+"""
                         st.markdown(card_html_right, unsafe_allow_html=True)
                         
                         if st.button(f"🔍 İncele: {sym}", key=f"R_btn_{sym}_{i}", use_container_width=True):
@@ -2248,5 +2243,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
