@@ -232,7 +232,7 @@ final_bist100_list = priority_bist_indices + raw_bist_stocks
 
 ASSET_GROUPS = {
     "S&P 500": final_sp500_list,
-    "NASDAQ (TOP 100)": raw_nasdaq,
+    "NASDAQ-100": raw_nasdaq,
     "BIST 100": final_bist100_list,
     "EMTİA & KRİPTO": final_crypto_list
 }
@@ -2292,6 +2292,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
