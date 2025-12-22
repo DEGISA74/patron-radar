@@ -231,12 +231,12 @@ raw_bist_stocks.sort()
 final_bist100_list = priority_bist_indices + raw_bist_stocks
 
 ASSET_GROUPS = {
-    "S&P 500 (TOP 300)": final_sp500_list,
+    "S&P 500": final_sp500_list,
     "NASDAQ (TOP 100)": raw_nasdaq,
     "BIST 100": final_bist100_list,
     "EMTİA & KRİPTO": final_crypto_list
 }
-INITIAL_CATEGORY = "S&P 500 (TOP 300)"
+INITIAL_CATEGORY = "S&P 500"
 
 # --- STATE YÖNETİMİ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
@@ -2292,6 +2292,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
