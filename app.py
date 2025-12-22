@@ -1666,7 +1666,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("STP Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("EMA6 Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_price_action_panel(ticker):
     pa = calculate_price_action_dna(ticker)
@@ -2290,6 +2290,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
