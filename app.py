@@ -1660,7 +1660,7 @@ def render_synthetic_sentiment_panel(data):
             tooltip=['Date_Str', 'Price', 'MF_Smooth']
         )
         price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
-        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Sentiment Değişimi", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#1e40af")), use_container_width=True)
     with c2:
         base2 = alt.Chart(data).encode(x=x_axis)
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
@@ -1975,7 +1975,7 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment & İstihbarat Ajanı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı</div>', unsafe_allow_html=True)
     
     if 'accum_data' not in st.session_state: st.session_state.accum_data = None
     if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
@@ -2067,7 +2067,7 @@ with col_left:
                         st.caption("Şu an 'Sessiz Toplama' yapan hisse tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout & Kırılım İstihbaratı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı</div>', unsafe_allow_html=True)
     
     # Session State Tanımları (Eğer yoksa)
     if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
@@ -2290,4 +2290,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
