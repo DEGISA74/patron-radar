@@ -1216,6 +1216,418 @@ def calculate_price_action_dna(ticker):
     except: return None
 
 # ==============================================================================
+# 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
+# ==============================================================================
+
+def render_sentiment_card(sent):
+    if not sent: return
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
+    
+    html_content = f"""
+    <div class="info-card">
+        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
+        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
+            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
+        </div>
+        <div style="font-family:'Courier New'; font-size:0.8rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
+        
+        <div class="info-row">
+            <div class="label-long">1. Momentum:</div>
+            <div class="info-val">{sent['mom']}</div>
+        </div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (+10) ve yükselen MACD (+10). 30-70 arası stabil RSI (+10)</div>
+        
+        <div class="info-row">
+            <div class="label-long">2. Hacim:</div>
+            <div class="info-val">{sent['vol']}</div>
+        </div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve Para Akışını (OBV) denetler. Bugünün hacmi 20G ort.üstünde (+15) Para girişi 5G ort.üstünde (+10).</div>
+        
+        <div class="info-row">
+            <div class="label-long">3. Trend:</div>
+            <div class="info-val">{sent['tr']}</div>
+        </div>
+        <div class="edu-note">SMA 50/200 konumuna bakar. Hisse fiyatı SMA50 ve SMA200 üstünde (+10). SMA50 üstünde (+10). </div>
+        
+        <div class="info-row">
+            <div class="label-long">4. Volatilite:</div>
+            <div class="info-val">{sent['vola']}</div>
+        </div>
+        <div class="edu-note">Bollinger Bant patlamalarını ve ATR durumunu inceler. Bol.Bant yukarı kırmış (+10). ATR düşük - panik satış bitmiş (+5).</div>
+        
+        <div class="info-row">
+            <div class="label-long">5. Yapı:</div>
+            <div class="info-val">{sent['str']}</div>
+        </div>
+        <div class="edu-note">Market Yapısını (BOS) kontrol eder. Son 20 günün zirvesini yukarı kırmış (+10).</div>
+    </div>
+    """.replace("\n", "")
+    
+    st.markdown(html_content, unsafe_allow_html=True)
+
+def render_deep_xray_card(xray):
+    if not xray: return
+    
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    
+    html_icerik = f"""
+    <div class="info-card">
+        <div class="info-header">🔍 Derin Teknik Röntgen: {display_ticker}</div>
+        
+        <div class="info-row">
+            <div class="label-long">1. Momentum:</div>
+            <div class="info-val">{xray['mom_rsi']} | {xray['mom_macd']}</div>
+        </div>
+        <div class="edu-note">RSI 50 üstü ve MACD pozitif bölgedeyse ivme alıcıların kontrolündedir. RSI 50 üstünde? MACD 0'dan büyük?</div>
+
+        <div class="info-row">
+            <div class="label-long">2. Hacim Akışı:</div>
+            <div class="info-val">{xray['vol_obv']}</div>
+        </div>
+        <div class="edu-note">Para girişinin (OBV) fiyat hareketini destekleyip desteklemediğini ölçer. OBV, 5 günlük ortalamasının üzerinde?</div>
+
+        <div class="info-row">
+            <div class="label-long">3. Trend Sağlığı:</div>
+            <div class="info-val">{xray['tr_ema']} | {xray['tr_adx']}</div>
+        </div>
+        <div class="edu-note">Fiyatın EMA50 ve EMA200 üzerindeki kalıcılığını ve trendin gücünü denetler. 1. EMA50 EMA200'ü yukarı kesmiş? 2. Zaten üstünde?</div>
+
+        <div class="info-row">
+            <div class="label-long">4. Volatilite:</div>
+            <div class="info-val">{xray['vola_bb']}</div>
+        </div>
+        <div class="edu-note">Bollinger Bantlarındaki daralma, yakında bir patlama olabileceğini gösterir. Fiyat üst bandı yukarı kırdı?</div>
+
+        <div class="info-row">
+            <div class="label-long">5. Piyasa Yapısı:</div>
+            <div class="info-val">{xray['str_bos']}</div>
+        </div>
+        <div class="edu-note">Kritik direnç seviyelerinin kalıcı olarak aşılması (BOS) yükselişin devamı için şarttır. Fiyat son 20 günün en yüksek seviyesini aştı?</div>
+    </div>
+    """.replace("\n", "")
+    
+    st.markdown(html_icerik, unsafe_allow_html=True)
+    
+def render_detail_card_advanced(ticker):
+    ACIKLAMALAR = {
+        "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
+        "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
+        "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliyor)",
+        "MACD": "🟢 MACD: Histogram bir önceki günden yüksek (Momentum Artışı Var)",
+        "W%R": "🔫 W%R: -50 üzerinde (Aşırı satım seviyesinden kurtulmuş)",
+        "Hacim": "🔊 Hacim: Son 5 günlük hacim ortalama hacmin %20 üzerinde",
+        "Breakout": "🔨 Breakout: Fiyat son 20 gün zirvesinin %98 veya üzerinde",
+        "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arasında ve artışta",
+        "Hacim Patlaması": "💥 Hacim son 20 gün ortalamanın %30 üzerinde seyrediyor",
+        "RS (S&P500)": "💪 Hisse, S&P 500 endeksinden daha güçlü",
+        "Boğa Trendi": "🐂 Boğa Trendi: Fiyat Üç Ortalamanın da (SMA50 > SMA100 > SMA200) üzerinde",
+        "60G Zirve": "⛰️ Zirve: Fiyat son 60 günün tepesine %97 yakınlıkta",
+        "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
+        "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
+        "RS": "💪 Relatif Güç (RS)",
+        "Setup": "🛠️ Setup Durumu"
+    }
+
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+    dt = get_tech_card_data(ticker)
+    info = fetch_stock_info(ticker)
+    
+    price_val = "Veri Yok"
+    if info and info.get('price'):
+        price_val = f"{info['price']:.2f}"
+    elif dt and 'close_last' in dt:
+        price_val = f"{dt['close_last']:.2f}"
+        
+    ma_vals = "Veri Yok"
+    stop_vals = "Veri Yok"
+    if dt:
+        ma_vals = f"SMA50: {dt['sma50']:.0f} | EMA144: {dt['ema144']:.0f} | SMA200: {dt['sma200']:.0f}"
+        stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
+
+    r1_res = {}
+    r1_score = 0
+    if st.session_state.scan_data is not None:
+        row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
+        if not row.empty and "Detaylar" in row.columns: 
+            r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
+    
+    if not r1_res:
+        temp_df = analyze_market_intelligence([ticker])
+        if not temp_df.empty and "Detaylar" in temp_df.columns: 
+            r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
+
+    r2_res = {}
+    r2_score = 0
+    if st.session_state.radar2_data is not None:
+        row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
+        if not row.empty and "Detaylar" in row.columns: 
+            r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
+    
+    if not r2_res:
+        temp_df2 = radar2_scan([ticker])
+        if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
+            r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
+
+    def get_icon(val): return "✅" if val else "❌"
+
+    r1_html = ""
+    for k, v in r1_res.items():
+        text = ACIKLAMALAR.get(k, k)
+        
+        is_valid = v
+        if k == "RSI Güçlü" and isinstance(v, (tuple, list)):
+            is_valid = v[0]
+            val = v[1]
+            text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val)})"
+        elif isinstance(v, (tuple, list)): 
+            is_valid = v[0]
+            
+        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+
+    r2_html = ""
+    for k, v in r2_res.items():
+        text = ACIKLAMALAR.get(k, k)
+        
+        is_valid = v
+        if k == "RSI Bölgesi" and isinstance(v, (tuple, list)):
+            is_valid = v[0]
+            val = v[1]
+            text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val)})"
+        elif isinstance(v, (tuple, list)): 
+            is_valid = v[0]
+            
+        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+
+    full_html = f"""
+    <div class="info-card">
+        <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
+            <div style="font-size:0.8rem; color:#64748B;">{ma_vals}</div>
+        </div>
+        <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
+        <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (Momentum) - Skor: {r1_score}/8</div>
+            <div class="tech-grid" style="font-size:0.75rem;">
+                {r1_html}
+            </div>
+        </div>
+        <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (Trend & Setup) - Skor: {r2_score}/6</div>
+            <div class="tech-grid" style="font-size:0.75rem;">
+                {r2_html}
+            </div>
+        </div>
+    </div>
+    """
+    clean_html = full_html.replace("\n", " ")
+    st.markdown(clean_html, unsafe_allow_html=True)
+
+def render_synthetic_sentiment_panel(data):
+    if data is None or data.empty: return
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
+    with c1:
+        base = alt.Chart(data).encode(x=x_axis)
+        color_condition = alt.condition(
+            alt.datum.MF_Smooth > 0,
+            alt.value("#3b82f6"), 
+            alt.value("#ef4444")
+        )
+        bars = base.mark_bar(size=15, opacity=0.9).encode(
+            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
+            color=color_condition, 
+            tooltip=['Date_Str', 'Price', 'MF_Smooth']
+        )
+        price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#1e40af")), use_container_width=True)
+    with c2:
+        base2 = alt.Chart(data).encode(x=x_axis)
+        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
+        line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
+        area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("EMA6 Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+
+def render_price_action_panel(ticker):
+    pa = calculate_price_action_dna(ticker)
+    if not pa:
+        st.info("PA verisi bekleniyor...")
+        return
+
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+
+    sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
+    sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
+    
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid #6366f1;">
+        <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
+
+        <div style="margin-bottom:8px;">
+            <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
+            <div class="edu-note">{pa['candle']['desc']}</div>
+        </div>
+
+        <div style="margin-bottom:8px; border-left: 2px solid {sfp_color}; padding-left:6px;">
+            <div style="font-weight:700; font-size:0.8rem; color:{sfp_color};">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
+            <div class="edu-note">{pa['sfp']['desc']}</div>
+        </div>
+
+        <div style="margin-bottom:8px;">
+            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
+            <div class="edu-note">{pa['vol']['desc']}</div>
+        </div>
+
+        <div style="margin-bottom:8px;">
+            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">4. BAĞLAM & KONUM: {pa['loc']['title']}</div>
+            <div class="edu-note">{pa['loc']['desc']}</div>
+        </div>
+
+        <div style="margin-bottom:6px;">
+            <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
+            <div class="edu-note">{pa['sq']['desc']}</div>
+        </div>
+    </div>
+    """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+    
+
+def render_ict_deep_panel(ticker):
+    data = calculate_ict_deep_analysis(ticker)
+    
+    if not data or data.get("status") == "Error":
+        st.warning(f"ICT Analiz Bekleniyor... ({data.get('msg', 'Veri Yok')})")
+        return
+    
+    struct_desc = "Piyasa kararsız."
+    if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
+    elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
+    elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
+
+    energy_desc = "Mum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
+    if "Güçlü" in data['displacement']: energy_desc = "Fiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
+
+    zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu seviyelerden alım yapmayı tercih eder."
+    if "PREMIUM" in data['zone']: zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+
+    fvg_desc = "Dengesizlik Boşluğu: Yani, Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar."
+    if "Yok" in data['fvg_txt']: fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu tespit edilemedi."
+
+    ob_desc = "Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir."
+    
+    liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
+
+    bias_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#475569"
+    bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
+
+    mt_html = "" 
+    mt_val = data.get('mean_threshold', 0)
+    curr = data.get('curr_price', 0)
+    
+    if mt_val > 0 and curr > 0:
+        diff_pct = (curr - mt_val) / mt_val
+        if abs(diff_pct) < 0.003: 
+            mt_status = "⚠️ KARAR ANI (BIÇAK SIRTI)"
+            mt_desc = "Fiyat, yapının tam %50 denge noktasını test ediyor. Kırılım yönü beklenmeli."
+            mt_color = "#d97706"; mt_bg = "#fffbeb" 
+        elif diff_pct > 0:
+            mt_status = "🛡️ Alıcılar Korumada" if "bullish" in data['bias'] else "Fiyat Dengenin Üzerinde"
+            mt_desc = "Fiyat kritik orta noktanın üzerinde tutunuyor. Yapı korunuyor."
+            mt_color = "#15803d"; mt_bg = "#f0fdf4" 
+        else:
+            mt_status = "🛡️ Satıcılar Baskın" if "bearish" in data['bias'] else "💀 Savunma Çöktü"
+            mt_desc = "Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir."
+            mt_color = "#b91c1c"; mt_bg = "#fef2f2" 
+            
+        mt_html = f"""
+        <div style="background:{mt_bg}; padding:6px; border-radius:5px; border-left:3px solid {mt_color}; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:700; color:{mt_color}; font-size:0.8rem;">⚖️ {mt_status}</span>
+                <span style="font-family:'JetBrains Mono'; font-size:0.8rem; font-weight:700;">{mt_val:.2f}</span>
+            </div>
+            <div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
+        </div>
+        """
+
+    if data['setup_type'] == "LONG":
+        header_color = "#166534"; bg_color = "#f0fdf4"; border_color = "#16a34a"; icon = "🚀"
+    elif data['setup_type'] == "SHORT":
+        header_color = "#991b1b"; bg_color = "#fef2f2"; border_color = "#ef4444"; icon = "🔻"
+    else:
+        header_color = "#475569"; bg_color = "#f8fafc"; border_color = "#cbd5e1"; icon = "⏳"
+
+    rr_display = f"{data['rr']:.2f}R" if data['rr'] > 0 else "-"
+    
+    html_content = f"""
+    <div class="info-card" style="margin-bottom:8px;">
+        <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
+        
+        <div style="background:{bg_color_old}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
+            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
+            <div class="edu-note">{struct_desc}</div>
+            
+            <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
+            <div class="edu-note">{energy_desc}</div>
+        </div>
+
+        {mt_html}
+
+        <div style="margin-bottom:8px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 Ucuz Pahalı Okları (Giriş/Çıkış Referansları)</div>
+            
+            <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
+            <div class="edu-note">{zone_desc}</div>
+            
+            <div class="info-row"><div class="label-long">GAP (FVG):</div><div class="info-val">{data['fvg_txt']}</div></div>
+            <div class="edu-note">{fvg_desc}</div>
+            
+            <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val">{data['ob_txt']}</div></div>
+            <div class="edu-note">{ob_desc}</div>
+        </div>
+
+        <div style="background:#f1f5f9; padding:5px; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:0.8rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.8rem; color:#0f172a;">{data['target']:.2f}</span>
+            </div>
+            <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
+        </div>
+    </div>
+
+    <div class="info-card" style="border: 2px solid {border_color}; margin-top:5px;">
+        <div style="background-color:{header_color}; color:white; padding:5px 10px; font-weight:700; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
+            <span>{icon} ICT TRADE SET-UP</span>
+            <span style="font-family:'JetBrains Mono'; background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px;">{data['setup_type']}</span>
+        </div>
+        <div style="padding:10px; background-color:{bg_color};">
+            <div style="font-size:0.85rem; margin-bottom:10px; font-style:italic; color:#374151;">"{data['desc']}"</div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                <div style="background:white; padding:5px; border:1px solid #e5e7eb; border-radius:4px; text-align:center;">
+                    <div style="font-size:0.7rem; color:#6b7280; font-weight:600;">GİRİŞ (ENTRY)</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:700; color:{header_color};">{data['entry']:.2f}</div>
+                </div>
+                <div style="background:white; padding:5px; border:1px solid #e5e7eb; border-radius:4px; text-align:center;">
+                    <div style="font-size:0.7rem; color:#6b7280; font-weight:600;">HEDEF (TP)</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:700; color:#16a34a;">{data['target']:.2f}</div>
+                </div>
+                <div style="background:white; padding:5px; border:1px solid #e5e7eb; border-radius:4px; text-align:center;">
+                    <div style="font-size:0.7rem; color:#6b7280; font-weight:600;">STOP (SL)</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:700; color:#dc2626;">{data['stop']:.2f}</div>
+                </div>
+                <div style="background:white; padding:5px; border:1px solid #e5e7eb; border-radius:4px; text-align:center;">
+                    <div style="font-size:0.7rem; color:#6b7280; font-weight:600;">RİSK/GETİRİ</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a;">{rr_display}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    """
+    
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+
+# ==============================================================================
 # 5. SIDEBAR UI
 # ==============================================================================
 with st.sidebar:
