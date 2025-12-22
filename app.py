@@ -234,7 +234,7 @@ ASSET_GROUPS = {
     "S&P 500": final_sp500_list,
     "NASDAQ-100": raw_nasdaq,
     "BIST 100": final_bist100_list,
-    "KRİPTO": final_crypto_list
+    "KRİPTO-TOP 25": final_crypto_list
 }
 INITIAL_CATEGORY = "S&P 500"
 
@@ -2292,6 +2292,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
