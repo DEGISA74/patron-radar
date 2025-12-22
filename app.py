@@ -1984,7 +1984,7 @@ with col_left:
     if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 
     with st.expander("Ajan Operasyonlarını Yönet", expanded=True):
-        if st.button(f"🕵️ TAM TARAMA BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
+        if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
             with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
                 crosses, trends, filtered = scan_stp_signals(current_assets)
@@ -2074,7 +2074,7 @@ with col_left:
     if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
 
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} İÇİN TARAMA BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
+        if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
             with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
                 curr_list = ASSET_GROUPS.get(st.session_state.category, [])
                 # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
@@ -2290,6 +2290,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
