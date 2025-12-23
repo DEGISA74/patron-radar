@@ -1969,10 +1969,15 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
+    
+    # Tüm Verileri Topla
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
     tech_data = get_tech_card_data(t) or {}
     pa_data = calculate_price_action_dna(t) or {}
+    
+    # YENİ: Kritik Seviyeler (SuperTrend & Fib)
+    levels_data = get_advanced_levels_data(t) or {}
     
     radar_val = "Veri Yok"
     radar_setup = "Belirsiz"
@@ -1987,48 +1992,71 @@ if st.session_state.generate_prompt:
     mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
     vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
     
+    # Price Action Verilerini Ayrıştır
     pa_candle = pa_data.get('candle', {}).get('title', 'Bilinmiyor')
     pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
     pa_vol = pa_data.get('vol', {}).get('title', 'Bilinmiyor')
     pa_loc = pa_data.get('loc', {}).get('title', 'Bilinmiyor')
     pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
+    # YENİ: RSI Uyumsuzluk Metni
+    pa_div = pa_data.get('div', {}).get('title', 'Yok')
+
+    # YENİ: Kritik Seviyeler Metni Hazırlığı
+    st_txt = "Veri Yok"
+    fib_res = "Veri Yok"
+    fib_sup = "Veri Yok"
+    
+    if levels_data:
+        st_dir_txt = "YÜKSELİŞ (AL)" if levels_data.get('st_dir') == 1 else "DÜŞÜŞ (SAT)"
+        st_txt = f"{st_dir_txt} | Seviye: {levels_data.get('st_val', 0):.2f}"
+        
+        # Fib Destek/Direnç
+        sup_l, sup_v = levels_data.get('nearest_sup', (None, 0))
+        res_l, res_v = levels_data.get('nearest_res', (None, 0))
+        fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
+        fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
 
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Dünya çapında tanınan, borsa portföyü yönetimi uzmanı ve Price Action ustası bir Swing Tradersın.
 Aşağıda {t} varlığı için gelen HAM VERİLER var. Bunları yorumla.
 
-*** 1. TEKNİK VERİLER (Rakamlara Güven) ***
+*** 1. TREND VE KRİTİK SEVİYELER (YENİ VE ÖNEMLİ) ***
+- SuperTrend Durumu: {st_txt}
+- En Yakın Direnç (Fib): {fib_res}
+- En Yakın Destek (Fib): {fib_sup}
 - SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}
-- Teknik Stop Seviyesi (ATR): {tech_data.get('stop_level', 'Bilinmiyor')}
-- Radar 2 Skoru: {radar_val}
-- Radar Setup: {radar_setup}
 
-*** 2. DUYGU VE MOMENTUM ***
-- Sentiment Puanı: {sent_data.get('total', 0)}/100
-- Momentum Durumu: {mom_clean}
-- Hacim/Para Girişi: {vol_clean}
-
-*** 3. ICT / KURUMSAL YAPILAR (KRİTİK) ***
+*** 2. ICT / KURUMSAL YAPILAR ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
 - Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)
 - Hedef Likidite: {ict_data.get('target', 'Belirsiz')}
+- Aktif FVG/Gap: {ict_data.get('fvg_txt', 'Yok')}
 
-*** 4. PRICE ACTION DNA (MİKRO ANALİZ) ***
+*** 3. PRICE ACTION DNA (MİKRO ANALİZ) ***
 - Mum & Formasyonlar: {pa_candle}
-- Tuzak Durumu: {pa_sfp}
+- RSI Uyumsuzluğu: {pa_div} (Çok Kritik!)
+- Tuzak Durumu (SFP): {pa_sfp}
 - Hacim & VSA: {pa_vol}
-- Bağlam & Konum: {pa_loc}
-- Volatilite: {pa_sq}
+- Volatilite (Sıkışma): {pa_sq}
+
+*** 4. DUYGU VE MOMENTUM ***
+- Sentiment Puanı: {sent_data.get('total', 0)}/100
+- Momentum Durumu: {mom_clean}
+- Radar Skoru: {radar_val} ({radar_setup})
 
 *** GÖREVİN ***
 Bu verileri analiz et ve işlem planı ver. Kısa, net, maddeler halinde yaz. 
 Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
+SuperTrend yönü ile ICT Yapısı çelişiyorsa riski belirt.
 
-ÇIKTI:
-💡 ANALİZ: Yarım paragraflık Temel Analiz yap, P/E, PEG, 12 aylık analist beklentilerini ver ve analiz et. 
+ÇIKTI FORMATI:
+💡 ANALİZ: Bir paragraflık Temel Analiz yap, P/E, PEG, 12 aylık analist beklentilerini ver ve analiz et. 
 🎯 YÖN: [LONG/SHORT/BEKLE]
-💡 STRATEJİ: (Giriş yeri, Stop yeri, Hedef yeri)
-⚠️ RİSK: (Eğer içinde çelişki varsa (Örn: Teknik AL derken Fiyat Premium'da mı?) analiz et)
+💡 STRATEJİ:
+   - Giriş: (Fib destekleri veya FVG'ye göre)
+   - Stop: (SuperTrend veya Son Dip altına)
+   - Hedef: (Fib direnci veya Likidite)
+⚠️ RİSK: (RSI uyumsuzluğu veya Trend tersliği varsa uyar)
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -2313,4 +2341,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
