@@ -1658,7 +1658,7 @@ def render_price_action_panel(ticker):
         </div>
 
         <div style="margin-bottom:6px; padding:4px; border-radius:4px; {div_style}">
-            <div style="font-weight:800; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
+            <div style="font-weight:700; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
             <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
         </div>
         
@@ -2258,6 +2258,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
