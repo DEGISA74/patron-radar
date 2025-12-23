@@ -2138,11 +2138,11 @@ with col_left:
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
 
-# --- SAĞ SÜTUN (BU BLOĞU KOMPLE DEĞİŞTİR) ---
+# --- SAĞ SÜTUN (Sıralama Güncellendi) ---
 with col_right:
     if not info: info = fetch_stock_info(st.session_state.ticker)
     
-    # 1. Fiyat Kutusu
+    # 1. Fiyat Kutusu (En Üstte)
     if info and info.get('price'):
         display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -2152,17 +2152,16 @@ with col_right:
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
     
-    # 3. ICT Paneli
+    # 3. YENİ YERİ: Kritik Seviyeler & Trend (Price Action'ın Hemen Altına Aldık)
+    render_levels_card(st.session_state.ticker)
+    
+    # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
     
-    # --- YENİ EKLENEN KART BURADA ---
-    render_levels_card(st.session_state.ticker)
-    # --------------------------------
-    
-    # 4. Ortak Fırsatlar Başlığı (Hata veren satır burasıydı, düzelttik)
+    # 5. Ortak Fırsatlar Başlığı
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     
-    # 5. Ortak Fırsatlar Listesi
+    # 6. Ortak Fırsatlar Listesi
     with st.container(height=250):
         df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
         if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
@@ -2182,7 +2181,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
             else: st.info("Kesişim yok.")
         else: st.caption("İki radar da çalıştırılmalı.")
-
    
     tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
     with tab1:
@@ -2205,6 +2203,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
