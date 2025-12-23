@@ -2176,8 +2176,7 @@ with col_right:
             else: st.info("Kesişim yok.")
         else: st.caption("İki radar da çalıştırılmalı.")
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
+   
     tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
     with tab1:
         if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
@@ -2199,6 +2198,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
