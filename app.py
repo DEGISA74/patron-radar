@@ -1616,9 +1616,9 @@ def render_detail_card_advanced(ticker):
     # --- YENİ EKLENEN: SKOR UYARI MANTIĞI ---
     r1_suffix = ""
     if r1_score < 2:
-        r1_suffix = " <span style='color:#dc2626; font-weight:800; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
+        r1_suffix = " <span style='color:#dc2626; font-weight:400; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
     elif r1_score > 6:
-        r1_suffix = " <span style='color:#16a34a; font-weight:800; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
+        r1_suffix = " <span style='color:#16a34a; font-weight:400; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
     # ----------------------------------------
 
     def get_icon(val): return "✅" if val else "❌"
@@ -2397,6 +2397,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
