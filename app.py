@@ -1553,7 +1553,6 @@ def render_deep_xray_card(xray):
     st.markdown(html_icerik, unsafe_allow_html=True)
     
 def render_detail_card_advanced(ticker):
-    # Sabit açıklamalar (Yedek metinler)
     ACIKLAMALAR = {
         "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
         "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
@@ -1571,7 +1570,7 @@ def render_detail_card_advanced(ticker):
         "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
         "RS": "💪 Relatif Güç (RS)",
         "Setup": "🛠️ Setup Durumu",
-        "ADX Durumu": "💪 ADX Trend Gücü" # Varsayılan metin
+        "ADX Durumu": "💪 ADX Trend Gücü"
     }
 
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
@@ -1614,24 +1613,26 @@ def render_detail_card_advanced(ticker):
         if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
             r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
 
+    # --- YENİ EKLENEN: SKOR UYARI MANTIĞI ---
+    r1_suffix = ""
+    if r1_score < 2:
+        r1_suffix = " <span style='color:#dc2626; font-weight:800; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
+    elif r1_score > 6:
+        r1_suffix = " <span style='color:#16a34a; font-weight:800; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
+    # ----------------------------------------
+
     def get_icon(val): return "✅" if val else "❌"
 
-    # --- RADAR 1 HTML OLUŞTURMA (GÜNCELLENDİ) ---
     r1_html = ""
     for k, v in r1_res.items():
         text = ACIKLAMALAR.get(k, k)
         is_valid = v
         
-        # Eğer değer bir liste/tuple ise (True, 45) gibi
         if isinstance(v, (tuple, list)): 
             is_valid = v[0]
-            val_num = v[1] # Sayısal değer
-            
-            # 1. RSI Özelleştirmesi
+            val_num = v[1]
             if k == "RSI Güçlü":
                 text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val_num)})"
-            
-            # 2. ADX Özelleştirmesi (YENİ EKLENEN KISIM)
             elif k == "ADX Durumu":
                 if is_valid:
                     text = f"💪 ADX Trend Gücü: 25 üzerinde (Güçlü: {int(val_num)})"
@@ -1640,7 +1641,6 @@ def render_detail_card_advanced(ticker):
 
         r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    # --- RADAR 2 HTML OLUŞTURMA ---
     r2_html = ""
     for k, v in r2_res.items():
         text = ACIKLAMALAR.get(k, k)
@@ -1654,6 +1654,7 @@ def render_detail_card_advanced(ticker):
             
         r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
+    # HTML OLUŞTURMA (r1_suffix eklendi)
     full_html = f"""
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
@@ -1663,7 +1664,7 @@ def render_detail_card_advanced(ticker):
         </div>
         <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade (Harekete Hazır?) - Skor: {r1_score}/9</div>
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade (Harekete Hazır?) - Skor: {r1_score}/9{r1_suffix}</div>
             <div class="tech-grid" style="font-size:0.75rem;">
                 {r1_html}
             </div>
@@ -2396,6 +2397,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
