@@ -1569,8 +1569,8 @@ def render_detail_card_advanced(ticker):
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
         "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
         "RS": "💪 Relatif Güç (RS)",
-        "Setup": "🛠️ Setup Durumu"
-        "ADX Durumu": "💪 Trend Gücü: 25 üzerinde (Güçlü Trend)",
+        "Setup": "🛠️ Setup Durumu",
+        "ADX Durumu": "💪 Trend Gücü: 25 üzerinde (Güçlü Trend)"
     }
 
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
@@ -2385,6 +2385,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
