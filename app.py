@@ -1889,9 +1889,19 @@ with col_left:
                             <div style="text-align:right; font-size:0.75rem; color:#64748B; margin-top:2px;">RSI: <strong>{row['RSI']}</strong></div>
                         </div>
                         """
-                        st.markdown(card_html, unsafe_allow_html=True)
-                        if st.button(f"🔍 İncele: {sym_raw}", key=f"L_btn_{sym_raw}_{i}", use_container_width=True):
-                            on_scan_result_click(sym_raw); st.rerun()
+                        
+                        # YAN YANA YERLEŞİM (SÜTUN SİSTEMİ)
+                        c_card, c_btn = st.columns([0.75, 0.25])
+                        
+                        with c_card:
+                            st.markdown(card_html, unsafe_allow_html=True)
+                            
+                        with c_btn:
+                            st.markdown("<div style='height:35px'></div>", unsafe_allow_html=True)
+                            if st.button("🔍", key=f"L_btn_{sym_raw}_{i}", help=f"İncele: {sym_raw}", use_container_width=True):
+                                on_scan_result_click(sym_raw)
+                                st.rerun()
+
                 else:
                     st.info("Isınan hisse bulunamadı.")
 
@@ -1930,10 +1940,18 @@ with col_left:
 </div>
 </div>
 """
-                        st.markdown(card_html_right, unsafe_allow_html=True)
+                        # YAN YANA YERLEŞİM (SÜTUN SİSTEMİ)
+                        c_card_r, c_btn_r = st.columns([0.75, 0.25])
                         
-                        if st.button(f"🔍 İncele: {sym}", key=f"R_btn_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym); st.rerun()
+                        with c_card_r:
+                            st.markdown(card_html_right, unsafe_allow_html=True)
+                        
+                        with c_btn_r:
+                            st.markdown("<div style='height:35px'></div>", unsafe_allow_html=True)
+                            if st.button("🔍", key=f"R_btn_{sym}_{i}", help=f"İncele: {sym}", use_container_width=True):
+                                on_scan_result_click(sym)
+                                st.rerun()
+
                 else:
                     st.info("Kırılım yapan hisse bulunamadı.")
     
