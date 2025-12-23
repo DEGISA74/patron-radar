@@ -1761,6 +1761,9 @@ def render_levels_card(ticker):
     sup_str = f"{sup_val:.2f} ({sup_lbl})" if sup_lbl else "Dip Seviyesi"
     res_str = f"{res_val:.2f} ({res_lbl})" if res_lbl else "Zirve Seviyesi"
 
+    # HATA DÜZELTME NOTU: HTML stringi oluşturulurken girintiler markdown tarafından kod bloğu sanılmasın diye
+    # en sonda .replace("\n", " ") ile düzleştiriyoruz.
+    
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
         <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
@@ -1797,7 +1800,10 @@ def render_levels_card(ticker):
         </div>
     </div>
     """
-    st.markdown(html_content, unsafe_allow_html=True)
+    
+    # KRİTİK DÜZELTME BURADA:
+    # html_content değişkenindeki satır sonlarını (\n) silip tek satır haline getiriyoruz.
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -2198,6 +2204,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
