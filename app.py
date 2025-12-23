@@ -1187,9 +1187,9 @@ def calculate_price_action_dna(ticker):
         sfp_txt, sfp_desc = "Yok", "Önemli bir tuzak tespiti yok."
         recent_highs, recent_lows = h.iloc[-20:-1].max(), l.iloc[-20:-1].min()
         if curr_h > recent_highs and curr_c < recent_highs: 
-            sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Zirve delindi ama fiyat altında kapandı. Düşüş riski!"
+            sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Zirve delindi ama fiyat altında kapandı. Düşüş riski var!"
         elif curr_l < recent_lows and curr_c > recent_lows: 
-            sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip delindi ama alıcılar topladı. Yükseliş potansiyeli!"
+            sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip delindi ama alıcılar topladı. Yükseliş potansiyeli var!"
 
         avg_v = v.rolling(20).mean().iloc[-1]
         vol_txt, vol_desc = "Normal", "Hacim ortalama seviyelerde."
@@ -1204,7 +1204,7 @@ def calculate_price_action_dna(ticker):
         atr = (h-l).rolling(14).mean().iloc[-1]
         range_5 = h.tail(5).max() - l.tail(5).min()
         sq_txt, sq_desc = "Normal", "Oynaklık olağan seyrediyor."
-        if range_5 < (2 * atr): sq_txt, sq_desc = "⏳ BOBİN (Sıkışma)", "Fiyat dar alanda patlamaya hazırlanıyor."
+        if range_5 < (2 * atr): sq_txt, sq_desc = "⏳ BOBİN (Sıkışma)", "Fiyat dar alanda sıkıştı. Patlamaya hazırlanıyor."
 
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
@@ -2203,5 +2203,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
