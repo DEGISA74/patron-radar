@@ -1215,6 +1215,124 @@ def calculate_price_action_dna(ticker):
         }
     except: return None
 
+# --- SUPERTREND VE FIBONACCI HESAPLAYICI ---
+
+def calculate_supertrend(df, period=10, multiplier=3.0):
+    """
+    SuperTrend indikatörünü hesaplar.
+    Dönüş: (SuperTrend Değeri, Trend Yönü [1: Boğa, -1: Ayı])
+    """
+    try:
+        high = df['High']
+        low = df['Low']
+        close = df['Close']
+        
+        # ATR Hesaplama
+        tr1 = pd.DataFrame(high - low)
+        tr2 = pd.DataFrame(abs(high - close.shift(1)))
+        tr3 = pd.DataFrame(abs(low - close.shift(1)))
+        frames = [tr1, tr2, tr3]
+        tr = pd.concat(frames, axis=1, join='inner').max(axis=1)
+        atr = tr.ewm(alpha=1/period, adjust=False).mean()
+
+        # Temel Bantlar
+        hl2 = (high + low) / 2
+        final_upperband = hl2 + (multiplier * atr)
+        final_lowerband = hl2 - (multiplier * atr)
+        
+        supertrend = [True] * len(df) # Başlangıç (True = Boğa varsayımı)
+        st_value = [0.0] * len(df)
+        
+        # Döngüsel Hesaplama (SuperTrend doğası gereği önceki değere bakar)
+        for i in range(1, len(df.index)):
+            curr, prev = i, i-1
+            
+            # Üst Bant Mantığı
+            if close.iloc[curr] > final_upperband.iloc[prev]:
+                supertrend[curr] = True
+            elif close.iloc[curr] < final_lowerband.iloc[prev]:
+                supertrend[curr] = False
+            else:
+                supertrend[curr] = supertrend[prev]
+                
+                # Bantları Daraltma (Trailing Stop Mantığı)
+                if supertrend[curr] == True and final_lowerband.iloc[curr] < final_lowerband.iloc[prev]:
+                    final_lowerband.iloc[curr] = final_lowerband.iloc[prev]
+                
+                if supertrend[curr] == False and final_upperband.iloc[curr] > final_upperband.iloc[prev]:
+                    final_upperband.iloc[curr] = final_upperband.iloc[prev]
+
+            if supertrend[curr] == True:
+                st_value[curr] = final_lowerband.iloc[curr]
+            else:
+                st_value[curr] = final_upperband.iloc[curr]
+                
+        return st_value[-1], (1 if supertrend[-1] else -1)
+        
+    except Exception:
+        return 0, 0
+
+def calculate_fib_levels(df, period=144):
+    """
+    Son N periyodun en yüksek ve en düşüğüne göre Fibonacci seviyelerini hesaplar.
+    """
+    try:
+        if len(df) < period: period = len(df)
+        recent_data = df.tail(period)
+        
+        max_h = recent_data['High'].max()
+        min_l = recent_data['Low'].min()
+        diff = max_h - min_l
+        
+        levels = {
+            "0 (Tepe)": max_h,
+            "0.236": max_h - (diff * 0.236),
+            "0.382": max_h - (diff * 0.382),
+            "0.5 (Orta)": max_h - (diff * 0.5),
+            "0.618 (Golden)": max_h - (diff * 0.618),
+            "0.786": max_h - (diff * 0.786),
+            "1 (Dip)": min_l
+        }
+        return levels
+    except:
+        return {}
+
+@st.cache_data(ttl=600)
+def get_advanced_levels_data(ticker):
+    """
+    Arayüz için verileri paketler.
+    """
+    df = get_safe_historical_data(ticker, period="1y")
+    if df is None: return None
+    
+    # 1. SuperTrend
+    st_val, st_dir = calculate_supertrend(df)
+    
+    # 2. Fibonacci (Son 6 ay ~120 gün baz alınarak)
+    fibs = calculate_fib_levels(df, period=120)
+    
+    curr_price = df['Close'].iloc[-1]
+    
+    # En yakın destek ve direnci bulma
+    sorted_fibs = sorted(fibs.items(), key=lambda x: x[1])
+    support = (None, -999999)
+    resistance = (None, 999999)
+    
+    for label, val in sorted_fibs:
+        if val < curr_price and val > support[1]:
+            support = (label, val)
+        if val > curr_price and val < resistance[1]:
+            resistance = (label, val)
+            
+    return {
+        "st_val": st_val,
+        "st_dir": st_dir,
+        "fibs": fibs,
+        "nearest_sup": support,
+        "nearest_res": resistance,
+        "curr_price": curr_price
+    }
+
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
 # ==============================================================================
@@ -1627,6 +1745,60 @@ def render_ict_deep_panel(ticker):
     
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
+def render_levels_card(ticker):
+    data = get_advanced_levels_data(ticker)
+    if not data: return
+
+    # Renk ve İkon Ayarları
+    st_color = "#16a34a" if data['st_dir'] == 1 else "#dc2626"
+    st_text = "YÜKSELİŞ (AL)" if data['st_dir'] == 1 else "DÜŞÜŞ (SAT)"
+    st_icon = "🐂" if data['st_dir'] == 1 else "🐻"
+    
+    # Fibonacci Formatlama
+    sup_lbl, sup_val = data['nearest_sup']
+    res_lbl, res_val = data['nearest_res']
+    
+    sup_str = f"{sup_val:.2f} ({sup_lbl})" if sup_lbl else "Dip Seviyesi"
+    res_str = f"{res_val:.2f} ({res_lbl})" if res_lbl else "Zirve Seviyesi"
+
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid #8b5cf6;">
+        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
+        
+        <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:700; color:{st_color}; font-size:0.8rem;">{st_icon} SuperTrend (10,3)</span>
+                <span style="font-weight:800; color:{st_color}; font-size:0.9rem;">{st_text}</span>
+            </div>
+            <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
+                Takip Eden Stop (Stop-Loss): <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
+            </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+            <div style="background:#f0fdf4; padding:6px; border-radius:4px; border:1px solid #bbf7d0;">
+                <div style="font-size:0.65rem; color:#166534; font-weight:700;">EN YAKIN DİRENÇ 🚧</div>
+                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_val:.2f}</div>
+                <div style="font-size:0.6rem; color:#166534;">Fib {res_lbl}</div>
+            </div>
+            
+            <div style="background:#fef2f2; padding:6px; border-radius:4px; border:1px solid #fecaca;">
+                <div style="font-size:0.65rem; color:#991b1b; font-weight:700;">EN YAKIN DESTEK 🛡️</div>
+                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#b91c1c; font-size:0.85rem;">{sup_val:.2f}</div>
+                <div style="font-size:0.6rem; color:#991b1b;">Fib {sup_lbl}</div>
+            </div>
+        </div>
+        
+        <div style="margin-top:6px;">
+            <div style="font-size:0.7rem; font-weight:700; color:#6b7280; margin-bottom:2px;">⚜️ Golden Pocket (0.618 - 0.65):</div>
+            <div style="font-family:'JetBrains Mono'; font-size:0.8rem; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px dashed #f59e0b; display:inline-block;">
+                {data['fibs'].get('0.618 (Golden)', 0):.2f}
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(html_content, unsafe_allow_html=True)
+
 # ==============================================================================
 # 5. SIDEBAR UI
 # ==============================================================================
@@ -1971,6 +2143,15 @@ with col_right:
 
     render_price_action_panel(st.session_state.ticker)
     render_ict_deep_panel(st.session_state.ticker)
+
+    # ... Mevcut kodlar ...
+    render_ict_deep_panel(st.session_state.ticker)
+    
+    # YENİ EKLENEN KISIM:
+    render_levels_card(st.session_state.ticker)
+    # -------------------
+
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; ...
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     with st.container(height=250):
@@ -2015,6 +2196,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
