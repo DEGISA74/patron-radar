@@ -242,7 +242,7 @@ INITIAL_CATEGORY = "S&P 500"
 
 # --- STATE YÖNETİMİ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
-if 'ticker' not in st.session_state: st.session_state.ticker = "DJI"
+if 'ticker' not in st.session_state: st.session_state.ticker = "NVDA"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
@@ -2015,5 +2015,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
