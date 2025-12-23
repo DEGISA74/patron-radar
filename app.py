@@ -1847,9 +1847,22 @@ def render_levels_card(ticker):
     if not data: return
 
     # Renk ve İkon Ayarları
-    st_color = "#16a34a" if data['st_dir'] == 1 else "#dc2626"
-    st_text = "YÜKSELİŞ (AL)" if data['st_dir'] == 1 else "DÜŞÜŞ (SAT)"
-    st_icon = "🐂" if data['st_dir'] == 1 else "🐻"
+    is_bullish = data['st_dir'] == 1
+    
+    st_color = "#16a34a" if is_bullish else "#dc2626"
+    st_text = "YÜKSELİŞ (AL)" if is_bullish else "DÜŞÜŞ (SAT)"
+    st_icon = "🐂" if is_bullish else "🐻"
+    
+    # --- DİNAMİK METİN AYARLARI (YENİ KISIM) ---
+    if is_bullish:
+        # Yükseliş Senaryosu
+        st_label = "Takip Eden Stop (Stop-Loss)"
+        st_desc = "⚠️ Fiyat bu seviyenin <b>altına inerse</b> trend bozulur, stop olunmalıdır."
+    else:
+        # Düşüş Senaryosu
+        st_label = "Trend Dönüşü (Direnç)"
+        st_desc = "🚀 Fiyat bu seviyenin <b>üstüne çıkarsa</b> düşüş biter, yükseliş başlar."
+    # -------------------------------------------
     
     # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
@@ -1857,7 +1870,7 @@ def render_levels_card(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Kritik Fibo.Seviyeleri & Trend: {display_ticker}</div>
+        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
         
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1865,10 +1878,10 @@ def render_levels_card(ticker):
                 <span style="font-weight:800; color:{st_color}; font-size:0.9rem;">{st_text}</span>
             </div>
             <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
-                Takip Eden Stop: <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
+                {st_label}: <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
             </div>
             <div style="font-size:0.65rem; color:#6b7280; font-style:italic; margin-top:4px; border-top:1px dashed {st_color}40; padding-top:2px;">
-                💡 Fiyat bu seviyenin { 'altına inerse' if data['st_dir'] == 1 else 'üstüne çıkarsa' } trend bozulur ve stop olunmalıdır.
+                {st_desc}
             </div>
         </div>
 
@@ -2300,3 +2313,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
