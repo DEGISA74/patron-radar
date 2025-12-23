@@ -1553,6 +1553,7 @@ def render_deep_xray_card(xray):
     st.markdown(html_icerik, unsafe_allow_html=True)
     
 def render_detail_card_advanced(ticker):
+    # Sabit açıklamalar (Yedek metinler)
     ACIKLAMALAR = {
         "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
         "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
@@ -1570,7 +1571,7 @@ def render_detail_card_advanced(ticker):
         "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
         "RS": "💪 Relatif Güç (RS)",
         "Setup": "🛠️ Setup Durumu",
-        "ADX Durumu": "💪 ADX Trend Gücü: 25 üzerinde (Güçlü Trend)"
+        "ADX Durumu": "💪 ADX Trend Gücü" # Varsayılan metin
     }
 
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
@@ -1615,31 +1616,41 @@ def render_detail_card_advanced(ticker):
 
     def get_icon(val): return "✅" if val else "❌"
 
+    # --- RADAR 1 HTML OLUŞTURMA (GÜNCELLENDİ) ---
     r1_html = ""
     for k, v in r1_res.items():
         text = ACIKLAMALAR.get(k, k)
-        
         is_valid = v
-        if k == "RSI Güçlü" and isinstance(v, (tuple, list)):
+        
+        # Eğer değer bir liste/tuple ise (True, 45) gibi
+        if isinstance(v, (tuple, list)): 
             is_valid = v[0]
-            val = v[1]
-            text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val)})"
-        elif isinstance(v, (tuple, list)): 
-            is_valid = v[0]
+            val_num = v[1] # Sayısal değer
             
+            # 1. RSI Özelleştirmesi
+            if k == "RSI Güçlü":
+                text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val_num)})"
+            
+            # 2. ADX Özelleştirmesi (YENİ EKLENEN KISIM)
+            elif k == "ADX Durumu":
+                if is_valid:
+                    text = f"💪 ADX Trend Gücü: 25 üzerinde (Güçlü: {int(val_num)})"
+                else:
+                    text = f"⚠️ ADX Trend Gücü: 25 altında (Zayıf: {int(val_num)})"
+
         r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
+    # --- RADAR 2 HTML OLUŞTURMA ---
     r2_html = ""
     for k, v in r2_res.items():
         text = ACIKLAMALAR.get(k, k)
-        
         is_valid = v
-        if k == "RSI Bölgesi" and isinstance(v, (tuple, list)):
+        
+        if isinstance(v, (tuple, list)): 
             is_valid = v[0]
-            val = v[1]
-            text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val)})"
-        elif isinstance(v, (tuple, list)): 
-            is_valid = v[0]
+            val_num = v[1]
+            if k == "RSI Bölgesi":
+                text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val_num)})"
             
         r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
@@ -2385,6 +2396,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
