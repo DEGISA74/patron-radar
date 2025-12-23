@@ -1758,12 +1758,6 @@ def render_levels_card(ticker):
     sup_lbl, sup_val = data['nearest_sup']
     res_lbl, res_val = data['nearest_res']
     
-    sup_str = f"{sup_val:.2f} ({sup_lbl})" if sup_lbl else "Dip Seviyesi"
-    res_str = f"{res_val:.2f} ({res_lbl})" if res_lbl else "Zirve Seviyesi"
-
-    # HATA DÜZELTME NOTU: HTML stringi oluşturulurken girintiler markdown tarafından kod bloğu sanılmasın diye
-    # en sonda .replace("\n", " ") ile düzleştiriyoruz.
-    
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
         <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
@@ -1774,7 +1768,10 @@ def render_levels_card(ticker):
                 <span style="font-weight:800; color:{st_color}; font-size:0.9rem;">{st_text}</span>
             </div>
             <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
-                Takip Eden Stop (Stop-Loss): <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
+                Takip Eden Stop: <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
+            </div>
+            <div style="font-size:0.65rem; color:#6b7280; font-style:italic; margin-top:4px; border-top:1px dashed {st_color}40; padding-top:2px;">
+                💡 Fiyat bu seviyenin { 'altına inerse' if data['st_dir'] == 1 else 'üstüne çıkarsa' } trend bozulur ve stop olunmalıdır.
             </div>
         </div>
 
@@ -1782,27 +1779,31 @@ def render_levels_card(ticker):
             <div style="background:#f0fdf4; padding:6px; border-radius:4px; border:1px solid #bbf7d0;">
                 <div style="font-size:0.65rem; color:#166534; font-weight:700;">EN YAKIN DİRENÇ 🚧</div>
                 <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_val:.2f}</div>
-                <div style="font-size:0.6rem; color:#166534;">Fib {res_lbl}</div>
+                <div style="font-size:0.6rem; color:#166534; margin-bottom:2px;">Fib {res_lbl}</div>
+                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">Zorlu tavan. Geçilirse yükseliş hızlanır.</div>
             </div>
             
             <div style="background:#fef2f2; padding:6px; border-radius:4px; border:1px solid #fecaca;">
                 <div style="font-size:0.65rem; color:#991b1b; font-weight:700;">EN YAKIN DESTEK 🛡️</div>
                 <div style="font-family:'JetBrains Mono'; font-weight:700; color:#b91c1c; font-size:0.85rem;">{sup_val:.2f}</div>
-                <div style="font-size:0.6rem; color:#991b1b;">Fib {sup_lbl}</div>
+                <div style="font-size:0.6rem; color:#991b1b; margin-bottom:2px;">Fib {sup_lbl}</div>
+                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">İlk savunma hattı. Düşüşü tutmalı.</div>
             </div>
         </div>
         
         <div style="margin-top:6px;">
             <div style="font-size:0.7rem; font-weight:700; color:#6b7280; margin-bottom:2px;">⚜️ Golden Pocket (0.618 - 0.65):</div>
-            <div style="font-family:'JetBrains Mono'; font-size:0.8rem; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px dashed #f59e0b; display:inline-block;">
-                {data['fibs'].get('0.618 (Golden)', 0):.2f}
+            <div style="display:flex; align-items:center; gap:6px;">
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px dashed #f59e0b;">
+                    {data['fibs'].get('0.618 (Golden)', 0):.2f}
+                </div>
+                <div style="font-size:0.65rem; color:#92400e; font-style:italic;">
+                    Kurumsal alım bölgesi (İdeal Giriş).
+                </div>
             </div>
         </div>
     </div>
     """
-    
-    # KRİTİK DÜZELTME BURADA:
-    # html_content değişkenindeki satır sonlarını (\n) silip tek satır haline getiriyoruz.
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 # ==============================================================================
@@ -2204,6 +2205,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
