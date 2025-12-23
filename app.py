@@ -1145,11 +1145,13 @@ def calculate_ict_deep_analysis(ticker):
 @st.cache_data(ttl=600)
 def calculate_price_action_dna(ticker):
     try:
-        df = get_safe_historical_data(ticker, period="3mo")
-        if df is None or len(df) < 20: return None
+        # Periyodu biraz uzattık (Divergence için geçmiş tepelere ihtiyaç var)
+        df = get_safe_historical_data(ticker, period="6mo") 
+        if df is None or len(df) < 30: return None
         
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
+        # --- MEVCUT MUM ANALİZLERİ ---
         curr_o, curr_h, curr_l, curr_c, curr_v = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1]), float(v.iloc[-1])
         prev_h, prev_l, prev_c, prev_o = float(h.iloc[-2]), float(l.iloc[-2]), float(c.iloc[-2]), float(o.iloc[-2])
         p2_o, p2_h, p2_l, p2_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3])
@@ -1175,11 +1177,8 @@ def calculate_price_action_dna(ticker):
         
         if prev_c < prev_o and abs(prev_c - prev_o) < abs(p2_c - p2_o) * 0.3 and is_green: bulls.append("Morning Star ⭐")
         
-        g1 = curr_c > curr_o
-        g2 = prev_c > prev_o
-        g3 = p2_c > p2_o
-        if g1 and g2 and g3 and curr_c > prev_c > p2_c:
-            bulls.append("3 White Soldiers ⚔️")
+        g1 = curr_c > curr_o; g2 = prev_c > prev_o; g3 = p2_c > p2_o
+        if g1 and g2 and g3 and curr_c > prev_c > p2_c: bulls.append("3 White Soldiers ⚔️")
 
         candle_title = ", ".join(bulls + bears + neutrals) if (bulls + bears + neutrals) else "Standart Mum"
         candle_desc = f"Tespit edilen sinyaller: {len(bulls)} Boğa, {len(bears)} Ayı, {len(neutrals)} Kararsız."
@@ -1187,9 +1186,9 @@ def calculate_price_action_dna(ticker):
         sfp_txt, sfp_desc = "Yok", "Önemli bir tuzak tespiti yok."
         recent_highs, recent_lows = h.iloc[-20:-1].max(), l.iloc[-20:-1].min()
         if curr_h > recent_highs and curr_c < recent_highs: 
-            sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Zirve delindi ama fiyat altında kapandı. Düşüş riski var!"
+            sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Zirve delindi ama fiyat altında kapandı. Düşüş riski!"
         elif curr_l < recent_lows and curr_c > recent_lows: 
-            sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip delindi ama alıcılar topladı. Yükseliş potansiyeli var!"
+            sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip delindi ama alıcılar topladı. Yükseliş potansiyeli!"
 
         avg_v = v.rolling(20).mean().iloc[-1]
         vol_txt, vol_desc = "Normal", "Hacim ortalama seviyelerde."
@@ -1204,16 +1203,57 @@ def calculate_price_action_dna(ticker):
         atr = (h-l).rolling(14).mean().iloc[-1]
         range_5 = h.tail(5).max() - l.tail(5).min()
         sq_txt, sq_desc = "Normal", "Oynaklık olağan seyrediyor."
-        if range_5 < (2 * atr): sq_txt, sq_desc = "⏳ BOBİN (Sıkışma)", "Fiyat dar alanda sıkıştı. Patlamaya hazırlanıyor."
+        if range_5 < (2 * atr): sq_txt, sq_desc = "⏳ BOBİN (Sıkışma)", "Fiyat dar alanda patlamaya hazırlanıyor."
+
+        # --- YENİ EKLENEN KISIM: RSI DIVERGENCE (UYUMSUZLUK) ---
+        delta = c.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        div_txt = "Uyumlu (Normal)"
+        div_desc = "Fiyat ve RSI paralel hareket ediyor."
+        div_type = "neutral" # neutral, bullish, bearish
+        
+        # Son 5 günün zirvesi vs Önceki 15 günün zirvesi
+        last_5_idx = c.iloc[-5:].idxmax()
+        prev_window_idx = c.iloc[-20:-5].idxmax()
+        
+        # Eğer veri yeterliyse ve indeksler timestamp değilse integer'a çevir (yfinance bazen karıştırır)
+        try:
+            p_last = c.loc[last_5_idx]; r_last = rsi.loc[last_5_idx]
+            p_prev = c.loc[prev_window_idx]; r_prev = rsi.loc[prev_window_idx]
+            
+            # Negatif Uyumsuzluk (Ayı) - Fiyat Tepe, RSI Düşük
+            if p_last > p_prev and r_last < r_prev and r_last > 50:
+                div_txt = "🐻 NEGATİF UYUMSUZLUK (RSI)"
+                div_desc = "Fiyat yeni tepe yaptı ama RSI desteklemedi. Smart Money satışta olabilir!"
+                div_type = "bearish"
+                
+            # Pozitif Uyumsuzluk (Boğa) - Fiyat Dip, RSI Yüksek
+            last_5_min_idx = c.iloc[-5:].idxmin()
+            prev_win_min_idx = c.iloc[-20:-5].idxmin()
+            p_last_min = c.loc[last_5_min_idx]; r_last_min = rsi.loc[last_5_min_idx]
+            p_prev_min = c.loc[prev_win_min_idx]; r_prev_min = rsi.loc[prev_win_min_idx]
+            
+            if p_last_min < p_prev_min and r_last_min > r_prev_min and r_last_min < 50:
+                div_txt = "💎 POZİTİF UYUMSUZLUK (RSI)"
+                div_desc = "Fiyat yeni dip yaptı ama RSI yükseliyor. Smart Money topluyor olabilir!"
+                div_type = "bullish"
+                
+        except: pass
+        # -------------------------------------------------------
 
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
             "sfp": {"title": sfp_txt, "desc": sfp_desc},
             "vol": {"title": vol_txt, "desc": vol_desc},
             "loc": {"title": loc_txt, "desc": loc_desc},
-            "sq": {"title": sq_txt, "desc": sq_desc}
+            "sq": {"title": sq_txt, "desc": sq_desc},
+            "div": {"title": div_txt, "desc": div_desc, "type": div_type} # Yeni Veri
         }
-    except: return None
+    except Exception: return None
 
 # --- SUPERTREND VE FIBONACCI HESAPLAYICI ---
 
@@ -1579,6 +1619,15 @@ def render_price_action_panel(ticker):
     sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
     sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
     
+    # RSI DIV RENKLENDİRME
+    div_data = pa.get('div', {'type': 'neutral', 'title': '-', 'desc': '-'})
+    if div_data['type'] == 'bearish':
+        div_style = "background:#fef2f2; border-left:3px solid #dc2626; color:#991b1b;"
+    elif div_data['type'] == 'bullish':
+        div_style = "background:#f0fdf4; border-left:3px solid #16a34a; color:#166534;"
+    else:
+        div_style = "color:#475569;"
+    
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
         <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
@@ -1603,10 +1652,16 @@ def render_price_action_panel(ticker):
             <div class="edu-note">{pa['loc']['desc']}</div>
         </div>
 
-        <div style="margin-bottom:6px;">
+        <div style="margin-bottom:8px;">
             <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
             <div class="edu-note">{pa['sq']['desc']}</div>
         </div>
+
+        <div style="margin-bottom:6px; padding:4px; border-radius:4px; {div_style}">
+            <div style="font-weight:800; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
+            <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
+        </div>
+        
     </div>
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
@@ -2203,6 +2258,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
