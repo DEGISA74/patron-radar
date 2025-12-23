@@ -2352,7 +2352,7 @@ with col_right:
                 for sym in symbols:
                     row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
                     r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
-                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 8, "r2_max": 8})
+                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 9, "r2_max": 8})
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
                 cols = st.columns(2) 
                 for i, item in enumerate(sorted_commons):
@@ -2374,7 +2374,7 @@ with col_right:
                 for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🔥 {row['Skor']}/8 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+                        if st.button(f"🔥 {row['Skor']}/9 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
@@ -2385,6 +2385,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
