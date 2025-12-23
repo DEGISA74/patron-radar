@@ -1931,7 +1931,7 @@ def render_levels_card(ticker):
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span style="font-weight:700; color:{st_color}; font-size:0.8rem;">{st_icon} SuperTrend (10,3)</span>
-                <span style="font-weight:800; color:{st_color}; font-size:0.9rem;">{st_text}</span>
+                <span style="font-weight:500; color:{st_color}; font-size:0.9rem;">{st_text}</span>
             </div>
             <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
                 {st_label}: <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
@@ -2397,6 +2397,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
