@@ -2018,7 +2018,7 @@ if st.session_state.generate_prompt:
 
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Dünya çapında tanınan, borsa portföyü yönetimi uzmanı ve Price Action ustası bir Swing Tradersın.
-Aşağıda {t} varlığı için gelen HAM VERİLER var. Bunları yorumla.
+Aşağıda {t} varlığı için gelen HAM VERİLER var. Bunları (3-20 gün vadeli trade için) yorumla.
 
 *** 1. TREND VE KRİTİK SEVİYELER (YENİ VE ÖNEMLİ) ***
 - SuperTrend Durumu: {st_txt}
@@ -2341,5 +2341,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
