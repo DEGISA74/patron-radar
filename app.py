@@ -1680,7 +1680,7 @@ def render_ict_deep_panel(ticker):
     
     html_content = f"""
     <div class="info-card" style="margin-bottom:8px;">
-        <div class="info-header">🧠 ICT Smart Money Analisti: {ticker}</div>
+        <div class="info-header">🧠 ICT Smart Money Analizi: {display_ticker}</div>
         
         <div style="background:{bg_color_old}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
             <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
@@ -2203,4 +2203,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
