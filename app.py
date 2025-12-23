@@ -1760,7 +1760,7 @@ def render_levels_card(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
+        <div class="info-header" style="color:#4c1d95;">📐 Kritik Fibo.Seviyeleri & Trend: {display_ticker}</div>
         
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -2203,3 +2203,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
