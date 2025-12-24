@@ -1535,7 +1535,7 @@ def render_detail_card_advanced(ticker):
         "Breakout": "🔨 Breakout: Fiyat son 20 gün zirvesinin %98 veya üzerinde",
         "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arasında ve artışta",
         "Hacim Patlaması": "💥 Hacim son 20 gün ortalamanın %30 üzerinde seyrediyor",
-        "RS (S&P500)": "💪 Hisse, S&P 500 endeksinden daha güçlü",
+        "RS (S&P500)": "💪 Hisse, Endeksten daha güçlü",
         "Boğa Trendi": "🐂 Boğa Trendi: Fiyat Üç Ortalamanın da (SMA50 > SMA100 > SMA200) üzerinde",
         "60G Zirve": "⛰️ Zirve: Fiyat son 60 günün tepesine %97 yakınlıkta",
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
@@ -1585,48 +1585,51 @@ def render_detail_card_advanced(ticker):
         if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
             r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
 
-    # --- YENİ EKLENEN: SKOR UYARI MANTIĞI ---
+    # --- SKOR UYARI MANTIĞI (7 Üzerinden Güncellendi) ---
     r1_suffix = ""
     if r1_score < 2:
-        r1_suffix = " <span style='color:#dc2626; font-weight:400; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
-    elif r1_score > 6:
-        r1_suffix = " <span style='color:#16a34a; font-weight:400; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
+        r1_suffix = " <span style='color:#dc2626; font-weight:500; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
+    elif r1_score > 5: # Skor 7 üzerinden olduğu için >5 yeterli
+        r1_suffix = " <span style='color:#16a34a; font-weight:500; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
     # ----------------------------------------
 
     def get_icon(val): return "✅" if val else "❌"
 
     r1_html = ""
     for k, v in r1_res.items():
-        text = ACIKLAMALAR.get(k, k)
-        is_valid = v
-        
-        if isinstance(v, (tuple, list)): 
-            is_valid = v[0]
-            val_num = v[1]
-            if k == "RSI Güçlü":
-                text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val_num)})"
-            elif k == "ADX Durumu":
-                if is_valid:
-                    text = f"💪 ADX Trend Gücü: 25 üzerinde (Güçlü: {int(val_num)})"
-                else:
-                    text = f"⚠️ ADX Trend Gücü: 25 altında (Zayıf: {int(val_num)})"
+        # FARK BURADA! Bu satırı eklemezsen eski verileri filtrelemez.
+        if k in ACIKLAMALAR: 
+            text = ACIKLAMALAR.get(k, k)
+            is_valid = v
+            
+            if isinstance(v, (tuple, list)): 
+                is_valid = v[0]
+                val_num = v[1]
+                if k == "RSI Güçlü":
+                    text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val_num)})"
+                elif k == "ADX Durumu":
+                    if is_valid:
+                        text = f"💪 ADX Trend Gücü: 25 üzerinde (Güçlü: {int(val_num)})"
+                    else:
+                        text = f"⚠️ ADX Trend Gücü: 25 altında (Zayıf: {int(val_num)})"
 
-        r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+            r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
     r2_html = ""
     for k, v in r2_res.items():
-        text = ACIKLAMALAR.get(k, k)
-        is_valid = v
-        
-        if isinstance(v, (tuple, list)): 
-            is_valid = v[0]
-            val_num = v[1]
-            if k == "RSI Bölgesi":
-                text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val_num)})"
+        # Burada da filtre koymak iyi bir güvenlik önlemidir
+        if k in ACIKLAMALAR:
+            text = ACIKLAMALAR.get(k, k)
+            is_valid = v
             
-        r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
+            if isinstance(v, (tuple, list)): 
+                is_valid = v[0]
+                val_num = v[1]
+                if k == "RSI Bölgesi":
+                    text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val_num)})"
+                
+            r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
-    # HTML OLUŞTURMA (r1_suffix eklendi)
     full_html = f"""
     <div class="info-card">
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
@@ -2369,6 +2372,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
