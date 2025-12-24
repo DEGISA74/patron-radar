@@ -1241,17 +1241,16 @@ def calculate_price_action_dna(ticker):
         
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
-        # --- VERİ HAZIRLIĞI ---
-        # Son 3 günün mum verileri
-        c1_o, c1_h, c1_l, c1_c = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1])
-        c2_o, c2_h, c2_l, c2_c = float(o.iloc[-2]), float(h.iloc[-2]), float(l.iloc[-2]), float(c.iloc[-2])
-        c3_o, c3_h, c3_l, c3_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3])
+        # --- VERİ HAZIRLIĞI (SON 3 GÜN) ---
+        c1_o, c1_h, c1_l, c1_c = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1]) # Bugün
+        c2_o, c2_h, c2_l, c2_c = float(o.iloc[-2]), float(h.iloc[-2]), float(l.iloc[-2]), float(c.iloc[-2]) # Dün
+        c3_o, c3_h, c3_l, c3_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3]) # Önceki Gün
         
         c1_v = float(v.iloc[-1])
         avg_v = float(v.rolling(20).mean().iloc[-1]) 
         sma50 = c.rolling(50).mean().iloc[-1]
         
-        # RSI Serisi (Uyumsuzluk ve Aşırı Bölgeler İçin)
+        # RSI Serisi (Uyumsuzluk için)
         delta = c.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -1259,7 +1258,7 @@ def calculate_price_action_dna(ticker):
         rsi_series = 100 - (100 / (1 + rs_calc))
         rsi_val = rsi_series.iloc[-1]
 
-        # Mum Geometrisi
+        # Mum Geometrisi (Son gün)
         body = abs(c1_c - c1_o)
         total_len = c1_h - c1_l
         u_wick = c1_h - max(c1_o, c1_c)
@@ -1280,7 +1279,7 @@ def calculate_price_action_dna(ticker):
         is_oversold = rsi_val < 30
         vol_confirmed = c1_v > avg_v * 1.2 
 
-        # Sinyal Ekleme Yardımcısı
+        # Sinyal Ekleme Fonksiyonu
         def add_signal(sig_list, name, is_bullish):
             prefix = ""
             if is_bullish:
@@ -1298,25 +1297,25 @@ def calculate_price_action_dna(ticker):
         # 1. TEKLİ MUM FORMASYONLARI
         # ======================================================
         if total_len > 0:
-            # Hammer (Çekiç)
+            # Hammer
             if l_wick > body * wick_ratio and u_wick < body * 0.5: 
                 if trend_dir == "DÜŞÜŞ" or is_oversold: add_signal(bulls, "Hammer 🔨", True)
                 else: neutrals.append("Hanging Man Potansiyeli")
             
-            # Shooting Star (Kayan Yıldız)
+            # Shooting Star
             if u_wick > body * wick_ratio and l_wick < body * 0.5: 
                 if trend_dir == "YÜKSELİŞ" or is_overbought: add_signal(bears, "Shooting Star 🔫", False)
             
-            # Stopping Volume (Hacimli Durdurma)
+            # Stopping Volume (Smart Money İmzası)
             if (l_wick > body * 2.0) and (c1_v > avg_v * 1.5) and (c1_l < c2_l):
                 bulls.append("🛑 STOPPING VOLUME (Kurumsal Alım)")
             
-            # Marubozu (Tam Gövde)
+            # Marubozu
             if body > total_len * 0.85: 
                 if is_green: add_signal(bulls, "Marubozu 🚀", True)
                 else: add_signal(bears, "Marubozu 🔻", False)
             
-            # Doji (Kararsızlık)
+            # Doji
             if body < total_len * doji_threshold: neutrals.append("Doji (Kararsızlık) ⚖️")
 
         # ======================================================
@@ -1327,43 +1326,46 @@ def calculate_price_action_dna(ticker):
         if (c2_c < c2_o) and is_green and (c1_o > c2_o): 
             add_signal(bulls, "Bullish Kicker (Sert GAP) 🦵", True)
 
-        # Engulfing (Yutan Mum)
+        # Engulfing (Yutan)
         if (c2_c < c2_o) and is_green and (c1_c > c2_o) and (c1_o < c2_c): add_signal(bulls, "Bullish Engulfing 🐂", True)
         if (c2_c > c2_o) and is_red and (c1_c < c2_o) and (c1_o > c2_c): add_signal(bears, "Bearish Engulfing 🐻", False)
         
-        # Piercing Line / Dark Cloud Cover
+        # Piercing / Dark Cloud
         c2_mid = (c2_o + c2_c) / 2
         if (c2_c < c2_o) and is_green and (c1_o < c2_c) and (c1_c > c2_mid) and (c1_c < c2_o): add_signal(bulls, "Piercing Line 🌤️", True)
         if (c2_c > c2_o) and is_red and (c1_o > c2_c) and (c1_c < c2_mid) and (c1_c > c2_o): add_signal(bears, "Dark Cloud Cover ☁️", False)
         
-        # Tweezer (Cımbız) Top & Bottom
+        # Tweezer (Cımbız)
         if abs(c1_l - c2_l) < tweezer_tol and (c1_l < c3_l): add_signal(bulls, "Tweezer Bottom 🥢", True)
         if abs(c1_h - c2_h) < tweezer_tol and (c1_h > c3_h): add_signal(bears, "Tweezer Top 🥢", False)
         
-        # Harami (Inside Bar)
+        # Harami
         if (c1_h < c2_h) and (c1_l > c2_l): neutrals.append("Harami (Inside Bar) 🤰")
 
         # ======================================================
         # 3. ÜÇLÜ MUM FORMASYONLARI
         # ======================================================
         
-        # Morning Star
+        # Morning Star (Sabah Yıldızı - Dipten Dönüş)
+        # 1. Kırmızı, 2. Küçük Gövde, 3. Yeşil (ilk mumun yarısını geçen)
         if (c3_c < c3_o) and (abs(c2_c - c2_o) < total_len * 0.3) and is_green and (c1_c > (c3_o + c3_c)/2):
              if is_oversold or trend_dir == "DÜŞÜŞ": add_signal(bulls, "Morning Star ⭐", True)
 
-        # 3 White Soldiers (3 Beyaz Asker)
+        # [EKLENEN EKSİK PARÇA] Evening Star (Akşam Yıldızı - Tepeden Dönüş)
+        # 1. Yeşil, 2. Küçük Gövde, 3. Kırmızı (ilk mumun yarısını aşağı geçen)
+        if (c3_c > c3_o) and (abs(c2_c - c2_o) < total_len * 0.3) and is_red and (c1_c < (c3_o + c3_c)/2):
+             if is_overbought or trend_dir == "YÜKSELİŞ": add_signal(bears, "Evening Star 🌆", False)
+
+        # 3 White Soldiers
         if (c1_c > c1_o) and (c2_c > c2_o) and (c3_c > c3_o) and (c1_c > c2_c > c3_c):
-             if c1_c > c1_h * 0.95: # Son mum güçlüyse
-                add_signal(bulls, "3 White Soldiers ⚔️", True)
+             if c1_c > c1_h * 0.95: add_signal(bulls, "3 White Soldiers ⚔️", True)
 
-        # 3 Black Crows (3 Kara Karga)
+        # 3 Black Crows
         if (c1_c < c1_o) and (c2_c < c2_o) and (c3_c < c3_o) and (c1_c < c2_c < c3_c):
-             if c1_c < c1_l * 1.05: # Son mum güçlüyse
-                add_signal(bears, "3 Black Crows 🦅", False)
+             if c1_c < c1_l * 1.05: add_signal(bears, "3 Black Crows 🦅", False)
 
-        # --- ÇIKTI FORMATLAMA & ÖNCELİKLENDİRME ---
+        # --- ÇIKTI FORMATLAMA ---
         signal_summary = ""
-        # En güçlüleri en başa al
         priorities = ["Bullish Kicker", "Stopping Volume", "3 White Soldiers"]
         for p in priorities:
             for b in bulls:
@@ -1377,16 +1379,16 @@ def calculate_price_action_dna(ticker):
         candle_title = "Formasyon Tespiti"
 
         # ======================================================
-        # DİĞER PA GÖSTERGELERİ (SFP, HACİM, SIKIŞMA)
+        # DİĞER GÖSTERGELER (SFP, VSA, KONUM, SIKIŞMA)
         # ======================================================
         
-        # SFP (Swing Failure Pattern)
+        # SFP
         sfp_txt, sfp_desc = "Yok", "Önemli bir tuzak tespiti yok."
         recent_highs = h.iloc[-20:-1].max(); recent_lows = l.iloc[-20:-1].min()
         if c1_h > recent_highs and c1_c < recent_highs: sfp_txt, sfp_desc = "⚠️ Bearish SFP (Boğa Tuzağı)", "Tepe temizlendi ama tutunamadı."
         elif c1_l < recent_lows and c1_c > recent_lows: sfp_txt, sfp_desc = "💎 Bullish SFP (Ayı Tuzağı)", "Dip temizlendi ve geri döndü."
 
-        # VSA (Volume Spread Analysis)
+        # VSA
         vol_txt, vol_desc = "Normal", "Hacim ortalama seyrediyor."
         if c1_v > avg_v * 1.5:
             if "🛑 STOPPING VOLUME" in signal_summary: vol_txt, vol_desc = "🛑 STOPPING VOLUME", "Düşüşte devasa hacimle frenleme."
@@ -1398,43 +1400,38 @@ def calculate_price_action_dna(ticker):
         if c1_c > h.iloc[-20:-1].max(): loc_txt, loc_desc = "📈 Zirve Kırılımı (BOS)", "Son 20 günün zirvesi aşıldı."
         elif c1_c < l.iloc[-20:-1].min(): loc_txt, loc_desc = "📉 Dip Kırılımı (BOS)", "Son 20 günün dibi kırıldı."
 
-        # Volatilite (Coil/Sıkışma)
+        # Volatilite (Coil)
         atr = (h-l).rolling(14).mean().iloc[-1]
         range_5 = h.tail(5).max() - l.tail(5).min()
         sq_txt, sq_desc = "Normal", "Oynaklık normal seviyede."
         if range_5 < (1.5 * atr): sq_txt, sq_desc = "⏳ SÜPER SIKIŞMA (Coil)", "Fiyat yay gibi gerildi. Patlama yakın."
 
         # ======================================================
-        # RSI UYUMSUZLUK MOTORU (DIVERGENCE) - [TEYİTLİ VAR]
+        # RSI UYUMSUZLUK (DIVERGENCE)
         # ======================================================
         div_txt, div_desc, div_type = "Uyumlu", "RSI ve Fiyat paralel.", "neutral"
         try:
-            # Pencereler
+            # Son 5 gün vs Önceki 15 gün
             current_window = c.iloc[-5:]
             prev_window = c.iloc[-20:-5]
             
             # Negatif Uyumsuzluk (Fiyat Tepe, RSI Düşük)
-            p_curr_max = current_window.max()
-            p_prev_max = prev_window.max()
-            r_curr_max = rsi_series.iloc[-5:].max()
-            r_prev_max = rsi_series.iloc[-20:-5].max()
+            p_curr_max = current_window.max(); p_prev_max = prev_window.max()
+            r_curr_max = rsi_series.iloc[-5:].max(); r_prev_max = rsi_series.iloc[-20:-5].max()
             
             if (p_curr_max > p_prev_max) and (r_curr_max < r_prev_max) and (r_prev_max > 60):
                 div_txt = "🐻 NEGATİF UYUMSUZLUK (Tepe Zayıflığı)"
-                div_desc = "Fiyat yeni tepe yaptı ama RSI desteklemiyor. Momentum bitiyor, düşüş riski yüksek!"
+                div_desc = "Fiyat yeni tepe yaptı ama RSI desteklemiyor. Düşüş riski!"
                 div_type = "bearish"
                 
             # Pozitif Uyumsuzluk (Fiyat Dip, RSI Yüksek)
-            p_curr_min = current_window.min()
-            p_prev_min = prev_window.min()
-            r_curr_min = rsi_series.iloc[-5:].min()
-            r_prev_min = rsi_series.iloc[-20:-5].min()
+            p_curr_min = current_window.min(); p_prev_min = prev_window.min()
+            r_curr_min = rsi_series.iloc[-5:].min(); r_prev_min = rsi_series.iloc[-20:-5].min()
             
             if (p_curr_min < p_prev_min) and (r_curr_min > r_prev_min) and (r_prev_min < 45):
                 div_txt = "💎 POZİTİF UYUMSUZLUK (Gizli Güç)"
-                div_desc = "Fiyat yeni dip yaptı ama RSI yükseliyor. Satıcılar yoruldu, akıllı para topluyor!"
-                div_type = "bullish"
-                
+                div_desc = "Fiyat yeni dip yaptı ama RSI yükseliyor. Toplama sinyali!"
+                div_type = "bullish"     
         except: pass
 
         return {
@@ -2483,6 +2480,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
