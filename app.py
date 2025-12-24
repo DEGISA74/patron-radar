@@ -537,7 +537,7 @@ def scan_stp_signals(asset_list):
                 elif res["type"] == "trend":
                     trend_signals.append(res["data"])
 
-    trend_signals.sort(key=lambda x: x["Gun"], reverse=True)
+    trend_signals.sort(key=lambda x: x["Gun"], reverse=False)
     return cross_signals, trend_signals, filtered_signals
 
 def process_single_accumulation(symbol, df):
@@ -2397,4 +2397,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
