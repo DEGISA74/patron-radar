@@ -525,7 +525,7 @@ def scan_stp_signals(asset_list):
                     stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_stock_stp, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -608,7 +608,7 @@ def scan_hidden_accumulation(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_accumulation, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -739,7 +739,7 @@ def analyze_market_intelligence(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_radar1, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -828,7 +828,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_radar2, sym, df, idx, min_price, max_price, min_avg_vol_m) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -890,7 +890,7 @@ def agent3_breakout_scan(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_breakout, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -956,7 +956,7 @@ def scan_confirmed_breakouts(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor((max_workers=20)) as executor:
         futures = [executor.submit(process_single_confirmed, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -2397,5 +2397,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
