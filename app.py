@@ -1592,85 +1592,60 @@ def render_detail_card_advanced(ticker):
     dt = get_tech_card_data(ticker)
     info = fetch_stock_info(ticker)
     
-    price_val = "Veri Yok"
-    if info and info.get('price'):
-        price_val = f"{info['price']:.2f}"
-    elif dt and 'close_last' in dt:
-        price_val = f"{dt['close_last']:.2f}"
-        
-    ma_vals = "Veri Yok"
-    stop_vals = "Veri Yok"
-    if dt:
-        ma_vals = f"SMA50: {dt['sma50']:.0f} | EMA144: {dt['ema144']:.0f} | SMA200: {dt['sma200']:.0f}"
-        stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})"
+    price_val = f"{info['price']:.2f}" if info else "Veri Yok"
+    ma_vals = f"SMA50: {dt['sma50']:.0f} | SMA200: {dt['sma200']:.0f}" if dt else ""
+    stop_vals = f"{dt['stop_level']:.2f} (Risk: %{dt['risk_pct']:.1f})" if dt else ""
 
-    r1_res = {}
-    r1_score = 0
+    # RADAR 1 VERİSİ
+    r1_res = {}; r1_score = 0
     if st.session_state.scan_data is not None:
         row = st.session_state.scan_data[st.session_state.scan_data["Sembol"] == ticker]
-        if not row.empty and "Detaylar" in row.columns: 
-            r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
-    
+        if not row.empty and "Detaylar" in row.columns: r1_res = row.iloc[0]["Detaylar"]; r1_score = row.iloc[0]["Skor"]
     if not r1_res:
         temp_df = analyze_market_intelligence([ticker])
-        if not temp_df.empty and "Detaylar" in temp_df.columns: 
-            r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
+        if not temp_df.empty and "Detaylar" in temp_df.columns: r1_res = temp_df.iloc[0]["Detaylar"]; r1_score = temp_df.iloc[0]["Skor"]
 
-    r2_res = {}
-    r2_score = 0
+    # RADAR 2 VERİSİ
+    r2_res = {}; r2_score = 0
     if st.session_state.radar2_data is not None:
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
-        if not row.empty and "Detaylar" in row.columns: 
-            r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
-    
+        if not row.empty and "Detaylar" in row.columns: r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
     if not r2_res:
         temp_df2 = radar2_scan([ticker])
-        if not temp_df2.empty and "Detaylar" in temp_df2.columns: 
-            r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
+        if not temp_df2.empty and "Detaylar" in temp_df2.columns: r2_res = temp_df2.iloc[0]["Detaylar"]; r2_score = temp_df2.iloc[0]["Skor"]
 
-    # --- SKOR UYARI MANTIĞI (7 Üzerinden Güncellendi) ---
     r1_suffix = ""
-    if r1_score < 2:
-        r1_suffix = " <span style='color:#dc2626; font-weight:500; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ LONG GİRİŞ RİSKLİ)</span>"
-    elif r1_score > 5: # Skor 7 üzerinden olduğu için >5 yeterli
-        r1_suffix = " <span style='color:#16a34a; font-weight:500; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 TREND GÜÇLÜ)</span>"
-    # ----------------------------------------
+    if r1_score < 2: r1_suffix = " <span style='color:#dc2626; font-weight:500; background:#fef2f2; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(⛔ RİSKLİ)</span>"
+    elif r1_score > 5: r1_suffix = " <span style='color:#16a34a; font-weight:500; background:#f0fdf4; padding:1px 4px; border-radius:3px; margin-left:5px; font-size:0.7rem;'>(🚀 GÜÇLÜ)</span>"
 
     def get_icon(val): return "✅" if val else "❌"
 
+    # RADAR 1 HTML (FİLTRELİ)
     r1_html = ""
     for k, v in r1_res.items():
-        # FARK BURADA! Bu satırı eklemezsen eski verileri filtrelemez.
         if k in ACIKLAMALAR: 
-            text = ACIKLAMALAR.get(k, k)
-            is_valid = v
-            
+            text = ACIKLAMALAR.get(k, k); is_valid = v
             if isinstance(v, (tuple, list)): 
-                is_valid = v[0]
-                val_num = v[1]
-                if k == "RSI Güçlü":
-                    text = f"⚓ RSI Güçlü: 30-65 arasında ve artışta ({int(val_num)})"
-                elif k == "ADX Durumu":
-                    if is_valid:
-                        text = f"💪 ADX Trend Gücü: 25 üzerinde (Güçlü: {int(val_num)})"
-                    else:
-                        text = f"⚠️ ADX Trend Gücü: 25 altında (Zayıf: {int(val_num)})"
-
+                is_valid = v[0]; val_num = v[1]
+                if k == "RSI Güçlü": text = f"⚓ RSI Güçlü: ({int(val_num)})"
+                elif k == "ADX Durumu": text = f"💪 ADX Güçlü: {int(val_num)}" if is_valid else f"⚠️ ADX Zayıf: {int(val_num)}"
             r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
+    # RADAR 2 HTML (FİLTRELİ ve DÜZELTİLMİŞ)
     r2_html = ""
     for k, v in r2_res.items():
-        # Burada da filtre koymak iyi bir güvenlik önlemidir
         if k in ACIKLAMALAR:
-            text = ACIKLAMALAR.get(k, k)
-            is_valid = v
+            text = ACIKLAMALAR.get(k, k); is_valid = v
             
             if isinstance(v, (tuple, list)): 
-                is_valid = v[0]
-                val_num = v[1]
-                if k == "RSI Bölgesi":
-                    text = f"🎯 RSI Uygun: Pullback için uygun (40-55 arası) ({int(val_num)})"
-                
+                is_valid = v[0]; val_num = v[1]
+                if k == "RSI Bölgesi": text = f"🎯 RSI Uygun: ({int(val_num)})"
+            
+            # Ichimoku Özel Kontrolü (Gerekirse)
+            if k == "Ichimoku":
+                # Eğer özel bir şey yapmak istersen buraya, yoksa standart metin gelir
+                pass 
+
             r2_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
     full_html = f"""
@@ -1678,25 +1653,20 @@ def render_detail_card_advanced(ticker):
         <div class="info-header">📋 Gelişmiş Teknik Kart: {display_ticker}</div>
         <div style="display:flex; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">
             <div style="font-size:0.8rem; font-weight:700; color:#1e40af;">Fiyat: {price_val}</div>
-            <div style="font-size:0.8rem; color:#64748B;">{ma_vals}</div>
+            <div style="font-size:0.75rem; color:#64748B;">{ma_vals}</div>
         </div>
         <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade (Harekete Hazır?) - Skor: {r1_score}/7{r1_suffix}</div>
-            <div class="tech-grid" style="font-size:0.75rem;">
-                {r1_html}
-            </div>
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade - Skor: {r1_score}/7{r1_suffix}</div>
+            <div class="tech-grid" style="font-size:0.75rem;">{r1_html}</div>
         </div>
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
-            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 Orta Vade (Trend Sağlığı? Trade Setup?) - Skor: {r2_score}/6</div>
-            <div class="tech-grid" style="font-size:0.75rem;">
-                {r2_html}
-            </div>
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 Orta Vade - Skor: {r2_score}/7</div>
+            <div class="tech-grid" style="font-size:0.75rem;">{r2_html}</div>
         </div>
     </div>
     """
-    clean_html = full_html.replace("\n", " ")
-    st.markdown(clean_html, unsafe_allow_html=True)
+    st.markdown(full_html.replace("\n", " "), unsafe_allow_html=True)
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
@@ -2415,6 +2385,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
