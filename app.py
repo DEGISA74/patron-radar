@@ -1571,45 +1571,53 @@ def get_advanced_levels_data(ticker):
 def render_sentiment_card(sent):
     if not sent: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-    color = "🔥" if sent['total'] >= 70 else "❄️" if sent['total'] <= 30 else "⚖️"
+    
+    # 1. SKOR RENKLERİ VE İKONLARI
+    score = sent['total']
+    if score >= 70: color = "#16a34a"; icon = "🔥"; status = "GÜÇLÜ BOĞA"
+    elif score >= 50: color = "#d97706"; icon = "↔️"; status = "NÖTR / POZİTİF" # Tahteravalli (Denge)
+    elif score >= 30: color = "#b91c1c"; icon = "🐻"; status = "ZAYIF / AYI"
+    else: color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"
     
     html_content = f"""
     <div class="info-card">
-        <div class="info-header">🎭 Piyasa Duygusu (Sentiment): {display_ticker}</div>
-        <div class="info-row" style="border-bottom: 1px dashed #e5e7eb; padding-bottom:4px; margin-bottom:6px;">
-            <div style="font-weight:700; color:#1e40af; font-size:0.8rem;">SKOR: {sent['total']}/100 {color}</div>
-        </div>
-        <div style="font-family:'Courier New'; font-size:0.8rem; color:#1e3a8a; margin-bottom:5px;">{sent['bar']}</div>
+        <div class="info-header">🎭 Smart Money Duygusu: {display_ticker}</div>
         
-        <div class="info-row">
-            <div class="label-long">1. Momentum:</div>
-            <div class="info-val">{sent['mom']}</div>
+        <div class="info-row" style="border-bottom: 2px solid {color}; padding-bottom:6px; margin-bottom:8px; background-color:{color}10; border-radius:4px; padding:6px;">
+            <div style="font-weight:800; color:{color}; font-size:1rem;">{score}/100 {icon} {status}</div>
         </div>
-        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5)</div>
         
-        <div class="info-row">
-            <div class="label-long">2. Hacim:</div>
-            <div class="info-val">{sent['vol']}</div>
+        <div style="font-family:'Arial', sans-serif; font-size:0.8rem; color:#1e3a8a; margin-bottom:8px; text-align:center; letter-spacing:1px;">{sent['bar']}</div>
+        
+        <div class="info-row" style="background:#f0f9ff; padding:2px; border-radius:4px;">
+            <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI (25p):</div>
+            <div class="info-val" style="font-weight:700;">{sent['str']}</div>
         </div>
-        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (15) Para girişi var: 10G ortalamanın üstünde (10).</div>
-        
+        <div class="edu-note">Fiyatın yeni tepe yapması (BOS) ve dipleri yükseltmesi en kritik sinyaldir. (Eskisi 10 puandı, şimdi 25)</div>
+
         <div class="info-row">
-            <div class="label-long">3. Trend:</div>
+            <div class="label-long" style="width:120px;">2. TREND (25p):</div>
             <div class="info-val">{sent['tr']}</div>
         </div>
-        <div class="edu-note">Ortalamalar bakar. Hisse fiyatı SMA200 üstünde (10). EMA20 üstünde (10). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (5)</div>
+        <div class="edu-note">SMA200 (Ana Trend) ve EMA20 (Kısa Vade) üzerinde mi? Trend hizalı mı?</div>
         
         <div class="info-row">
-            <div class="label-long">4. Volatilite:</div>
+            <div class="label-long" style="width:120px;">3. HACİM (25p):</div>
+            <div class="info-val">{sent['vol']}</div>
+        </div>
+        <div class="edu-note">Fiyat artarken Hacim ve OBV (Para Girişi) destekliyor mu?</div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">4. MOMENTUM (15p):</div>
+            <div class="info-val">{sent['mom']}</div>
+        </div>
+        <div class="edu-note">RSI 50 üzerinde mi? İvme artıyor mu? MACD Al konumunda mı? (Ağırlığı azaltıldı)</div>
+        
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">5. SIKIŞMA (10p):</div>
             <div class="info-val">{sent['vola']}</div>
         </div>
-        <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10).</div>
-        
-        <div class="info-row">
-            <div class="label-long">5. Yapı:</div>
-            <div class="info-val">{sent['str']}</div>
-        </div>
-        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (15). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (10)</div>
+        <div class="edu-note">Bollinger Bantlarında daralma (Sıkışma) var mı? Patlama öncesi hazırlık.</div>
     </div>
     """.replace("\n", "")
     
@@ -2474,6 +2482,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
