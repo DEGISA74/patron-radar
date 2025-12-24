@@ -1584,7 +1584,7 @@ def render_sentiment_card(sent):
         <div class="info-header">🎭 Smart Money Duygusu: {display_ticker}</div>
         
         <div class="info-row" style="border-bottom: 2px solid {color}; padding-bottom:6px; margin-bottom:8px; background-color:{color}10; border-radius:4px; padding:6px;">
-            <div style="font-weight:800; color:{color}; font-size:1rem;">{score}/100 {icon} {status}</div>
+            <div style="font-weight:500; color:{color}; font-size:1rem;">{score}/100 {icon} {status}</div>
         </div>
         
         <div style="font-family:'Arial', sans-serif; font-size:0.8rem; color:#1e3a8a; margin-bottom:8px; text-align:center; letter-spacing:1px;">{sent['bar']}</div>
@@ -1593,31 +1593,31 @@ def render_sentiment_card(sent):
             <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI (25p):</div>
             <div class="info-val" style="font-weight:700;">{sent['str']}</div>
         </div>
-        <div class="edu-note">Fiyatın yeni tepe yapması (BOS) ve dipleri yükseltmesi en kritik sinyaldir. (Eskisi 10 puandı, şimdi 25)</div>
+        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (15). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (10)</div>
 
         <div class="info-row">
             <div class="label-long" style="width:120px;">2. TREND (25p):</div>
             <div class="info-val">{sent['tr']}</div>
         </div>
-        <div class="edu-note">SMA200 (Ana Trend) ve EMA20 (Kısa Vade) üzerinde mi? Trend hizalı mı?</div>
+        <div class="edu-note">Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (10). EMA20 üstünde (10). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (5)</div>
         
         <div class="info-row">
             <div class="label-long" style="width:120px;">3. HACİM (25p):</div>
             <div class="info-val">{sent['vol']}</div>
         </div>
-        <div class="edu-note">Fiyat artarken Hacim ve OBV (Para Girişi) destekliyor mu?</div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (15) Para girişi var: 10G ortalamanın üstünde (10)</div>
 
         <div class="info-row">
             <div class="label-long" style="width:120px;">4. MOMENTUM (15p):</div>
             <div class="info-val">{sent['mom']}</div>
         </div>
-        <div class="edu-note">RSI 50 üzerinde mi? İvme artıyor mu? MACD Al konumunda mı? (Ağırlığı azaltıldı)</div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5)</div>
         
         <div class="info-row">
             <div class="label-long" style="width:120px;">5. SIKIŞMA (10p):</div>
             <div class="info-val">{sent['vola']}</div>
         </div>
-        <div class="edu-note">Bollinger Bantlarında daralma (Sıkışma) var mı? Patlama öncesi hazırlık.</div>
+        <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)</div>
     </div>
     """.replace("\n", "")
     
@@ -2482,6 +2482,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
