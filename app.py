@@ -2348,7 +2348,7 @@ info = fetch_stock_info(st.session_state.ticker)
 col_left, col_right = st.columns([4, 1])
 
 # 3. YENİ 3 SÜTUNLU BREAKOUT PANELİ ÇAĞIRILACAK
-render_breakout_section_v2()
+    render_breakout_section_v2()
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
@@ -2419,6 +2419,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
