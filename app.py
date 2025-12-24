@@ -982,6 +982,9 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 @st.cache_data(ttl=600)
+# ... (önceki import ve tanımlamalar)
+
+@st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
         df = get_safe_historical_data(ticker, period="6mo")
@@ -989,56 +992,83 @@ def calculate_sentiment_score(ticker):
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
+        # 1. YAPI (STRUCTURE) - 25 PUAN (ÖNEMİ ARTIRILDI)
+        # Mantık: Fiyat son 20 günün en yükseğini (Local High) geçti mi?
+        # Ve son 5 günün dibi, önceki 20 günün dibinden yukarıda mı? (Higher Low)
+        score_str = 0; reasons_str = []
+        recent_high = high.rolling(20).max().shift(1).iloc[-1]
+        recent_low = low.rolling(20).min().shift(1).iloc[-1]
+        
+        if close.iloc[-1] > recent_high: 
+            score_str += 15; reasons_str.append("BOS (Kırılım)")
+        if low.iloc[-1] > recent_low:
+            score_str += 10; reasons_str.append("HL (Yükselen Dip)")
+
+        # 2. TREND - 25 PUAN (GECİKMELİ SİNYALLER AZALTILDI)
+        # Golden Cross yerine daha reaktif olan EMA 20/50 ilişkisi
+        score_tr = 0; reasons_tr = []
+        sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
+        
+        if close.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("Ana Trend Pozitif")
+        if close.iloc[-1] > ema20.iloc[-1]: score_tr += 10; reasons_tr.append("Kısa Vade Güçlü")
+        if ema20.iloc[-1] > sma50.iloc[-1]: score_tr += 5; reasons_tr.append("Trend Hizalı")
+
+        # 3. HACİM - 25 PUAN (AYNEN KORUNDU)
+        score_vol = 0; reasons_vol = []
+        vol_ma = volume.rolling(20).mean()
+        if volume.iloc[-1] > vol_ma.iloc[-1]: score_vol += 15; reasons_vol.append("Hacim Artışı")
+        
+        obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+        obv_ma = obv.rolling(10).mean() # 5 yerine 10 yaptık, biraz daha smooth olsun
+        if obv.iloc[-1] > obv_ma.iloc[-1]: score_vol += 10; reasons_vol.append("OBV Destekli")
+
+        # 4. MOMENTUM - 15 PUAN (DÜŞÜRÜLDÜ)
+        score_mom = 0; reasons_mom = []
         delta = close.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
         loss = (-delta.clip(upper=0)).rolling(14).mean()
         rs = gain / loss.replace(0, np.nan)
-        rsi = 100 - (100 / (1 + rs))
-        rsi = rsi.fillna(50)
+        rsi = 100 - (100 / (1 + rs)).fillna(50)
         
-        score_mom = 0; reasons_mom = []
-        if rsi.iloc[-1] > 50 and rsi.iloc[-1] > rsi.iloc[-2]: score_mom += 10; reasons_mom.append("RSI ↑")
+        if rsi.iloc[-1] > 50: score_mom += 5; reasons_mom.append("RSI>50")
+        if rsi.iloc[-1] > rsi.iloc[-5]: score_mom += 5; reasons_mom.append("RSI Yükseliyor")
         
+        # MACD
         ema12 = close.ewm(span=12, adjust=False).mean()
         ema26 = close.ewm(span=26, adjust=False).mean()
         macd = ema12 - ema26
         signal = macd.ewm(span=9, adjust=False).mean()
-        hist = macd - signal
+        if macd.iloc[-1] > signal.iloc[-1]: score_mom += 5; reasons_mom.append("MACD Al")
+
+        # 5. VOLATİLİTE - 10 PUAN (MANTIK DÜZELTİLDİ)
+        # Sadece "Sıkışma" varsa puan veriyoruz. Patlama varsa Trend puanından zaten alıyor.
+        score_vola = 0; reasons_vola = []
+        std = close.rolling(20).std()
+        upper = close.rolling(20).mean() + (2 * std)
+        lower = close.rolling(20).mean() - (2 * std)
+        bb_width = (upper - lower) / close.rolling(20).mean()
         
-        if hist.iloc[-1] > 0 and hist.iloc[-1] > hist.iloc[-2]: score_mom += 10; reasons_mom.append("MACD ↑")
-        if rsi.iloc[-1] < 30: reasons_mom.append("OS")
-        elif rsi.iloc[-1] > 70: reasons_mom.append("OB")
-        else: score_mom += 10; reasons_mom.append("Stoch Stabil")
+        # BB Width son 20 günün ortalamasından düşükse (Sıkışma)
+        if bb_width.iloc[-1] < bb_width.rolling(20).mean().iloc[-1]:
+            score_vola += 10; reasons_vola.append("Sıkışma (Hazırlık)")
         
-        score_vol = 0; reasons_vol = []
-        if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]: score_vol += 15; reasons_vol.append("Vol ↑")
-        else: reasons_vol.append("Vol ↓")
-        obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
-        if obv.iloc[-1] > obv.rolling(5).mean().iloc[-1]: score_vol += 10; reasons_vol.append("OBV ↑")
+        total = score_str + score_tr + score_vol + score_mom + score_vola
         
-        score_tr = 0; reasons_tr = []; sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
-        if sma50.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("GoldCross")
-        if close.iloc[-1] > sma50.iloc[-1]: score_tr += 10; reasons_tr.append("P > SMA50")
-        
-        score_vola = 0; reasons_vola = []; std = close.rolling(20).std(); upper = close.rolling(20).mean() + (2 * std)
-        if close.iloc[-1] > upper.iloc[-1]: score_vola += 10; reasons_vola.append("BB Break")
-        atr = (high-low).rolling(14).mean(); 
-        if atr.iloc[-1] < atr.iloc[-5]: score_vola += 5; reasons_vola.append("Vola ↓")
-        
-        score_str = 0; reasons_str = []
-        if close.iloc[-1] > high.rolling(20).max().shift(1).iloc[-1]: score_str += 10; reasons_str.append("Yeni Tepe (BOS)")
-        
-        total = score_mom + score_vol + score_tr + score_vola + score_str
+        # ... (Geri kalan formatlama kodları aynı kalabilir) ...
         bars = int(total / 5); bar_str = "[" + "|" * bars + "." * (20 - bars) + "]"
         def fmt(lst): return f"<span style='font-size:0.75rem; color:#64748B;'>({' + '.join(lst)})</span>" if lst else ""
+        
         return {
-            "total": total, "bar": bar_str, "mom": f"{score_mom}/30 {fmt(reasons_mom)}",
-            "vol": f"{score_vol}/25 {fmt(reasons_vol)}", "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
-            "vola": f"{score_vola}/15 {fmt(reasons_vola)}", "str": f"{score_str}/10 {fmt(reasons_str)}",
-            "raw_rsi": rsi.iloc[-1], "raw_macd": hist.iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": atr.iloc[-1]
+            "total": total, "bar": bar_str, 
+            "mom": f"{score_mom}/15 {fmt(reasons_mom)}",
+            "vol": f"{score_vol}/25 {fmt(reasons_vol)}", 
+            "tr": f"{score_tr}/25 {fmt(reasons_tr)}",
+            "vola": f"{score_vola}/10 {fmt(reasons_vola)}", 
+            "str": f"{score_str}/25 {fmt(reasons_str)}",
+            "raw_rsi": rsi.iloc[-1], "raw_macd": (macd-signal).iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": 0
         }
     except: return None
-
 def get_deep_xray_data(ticker):
     sent = calculate_sentiment_score(ticker)
     if not sent: return None
@@ -2385,6 +2415,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
