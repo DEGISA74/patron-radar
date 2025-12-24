@@ -1056,7 +1056,7 @@ def calculate_sentiment_score(ticker):
             # Her bir sebebin arasına ' + ' koyup birleştiriyoruz
             content = " + ".join(lst)
             # HTML string olarak döndürüyoruz. CSS stillerine dikkat et.
-            return f"<span style='font-size:0.75rem; color:#64748B; font-style:italic; font-weight:300;'>({content})</span>"
+            return f"<span style='font-size:0.7rem; color:#64748B; font-style:italic; font-weight:300;'>({content})</span>"
         
         return {
             "total": total, "bar": bar_str, 
@@ -2480,6 +2480,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
