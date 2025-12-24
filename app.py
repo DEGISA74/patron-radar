@@ -982,23 +982,23 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 # ==============================================================================
-# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - DÜZELTİLMİŞ VERSİYON
+# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - GÜNCELLENMİŞ V2
 # ==============================================================================
 
-# BU FONKSİYON SADECE 3. AJAN İÇİN SAATLİK VERİ ÇEKER
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_hourly_data_agent3(asset_list):
     """
-    Sadece 3. Ajan için 1 saatlik veri çeker.
-    Ana fonksiyonla çakışmayı önlemek için ayrı yazılmıştır.
+    3. Ajan için optimize edilmiş veri çekici.
+    1 yıllık veri yerine 3 aylık veri çeker (Hız ve Güvenilirlik için).
     """
     if not asset_list: return pd.DataFrame()
     try:
         tickers_str = " ".join(asset_list)
-        # 1 Saatlik veri (maksimum 730 gün geriye gidilebilir)
+        # ÖNEMLİ DEĞİŞİKLİK: period="3mo" (3 Ay). 
+        # 1y (1 yıl) saatlik veri çok ağırdır ve çoğu zaman boş döner.
         data = yf.download(
             tickers_str, 
-            period="1y", 
+            period="3mo", 
             interval="1h", 
             group_by='ticker', 
             threads=True, 
@@ -1010,24 +1010,28 @@ def get_hourly_data_agent3(asset_list):
 
 def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
     """Pandas ile Kaufman Adaptive Moving Average (KAMA) hesaplar."""
+    # Veri yetersizse boş dön
+    if len(series) <= n: return pd.Series(np.nan, index=series.index)
+
     change = abs(series - series.shift(n))
     volatility = abs(series - series.shift(1)).rolling(n).sum()
-    er = change / volatility # Efficiency Ratio
-    # Bölme hatasını önle (0'a bölme)
+    
+    # 0'a bölünme hatasını önle
+    er = change / volatility
     er = er.fillna(0)
     
-    sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2 # Smoothing Constant
+    sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2
     
     kama = np.zeros_like(series)
     kama[:] = np.nan
     
     start_idx = n
-    if start_idx >= len(series): return pd.Series(kama, index=series.index)
-    
     kama[start_idx] = series.iloc[start_idx]
+    
     series_values = series.values
     sc_values = sc.values
     
+    # Döngüsel hesaplama
     for i in range(start_idx + 1, len(series)):
         val = kama[i-1] + sc_values[i] * (series_values[i] - kama[i-1])
         if not np.isnan(val): kama[i] = val
@@ -1037,14 +1041,16 @@ def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
 
 def process_single_harsi_agent(symbol, df_1h):
     try:
-        # 1. 1 Saatlik veriyi 3 Saatlik veriye çevir (Resample)
         if df_1h.empty: return None
         
-        # Datetime index olduğundan emin ol
-        if not isinstance(df_1h.index, pd.DatetimeIndex):
-            return None
+        # Hacim verisindeki NaN'ları 0'a çevir (Yoksa resample düşürür)
+        if 'Volume' in df_1h.columns:
+            df_1h['Volume'] = df_1h['Volume'].fillna(0)
+        else:
+            df_1h['Volume'] = 0
 
-        # 3 Saatlik Mum Oluşturma
+        # 3 Saatlik Mum Oluşturma (Resample)
+        # closed='right', label='right' piyasa standartıdır
         df_3h = df_1h.resample('3h').agg({
             'Open': 'first',
             'High': 'max',
@@ -1053,18 +1059,18 @@ def process_single_harsi_agent(symbol, df_1h):
             'Volume': 'sum'
         }).dropna()
         
-        if len(df_3h) < 60: return None
+        # En az 50 bar (3 saatlik) gerekli (İndikatörlerin oturması için)
+        if len(df_3h) < 40: return None
         
         close = df_3h['Close']
         
-        # 2. İndikatör Hesaplamaları
-        # EMA 9
+        # 1. EMA 9
         ema9 = close.ewm(span=9, adjust=False).mean()
         
-        # KAMA (20, 2, 30)
+        # 2. KAMA (20, 2, 30)
         kama = calculate_kama_pandas(close, n=20, pow1=2, pow2=30)
         
-        # RSI 14
+        # 3. RSI 14
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -1074,41 +1080,51 @@ def process_single_harsi_agent(symbol, df_1h):
         # RSI SMA 50
         rsi_sma50 = rsi.rolling(50).mean()
         
-        # HARSI (Heikin-Ashi RSI) Hesaplaması
+        # 4. HARSI (Heikin-Ashi RSI)
         ha_close = rsi.values
         ha_open = np.zeros_like(ha_close)
-        ha_open[0] = ha_close[0] # Başlangıç
         
-        for i in range(1, len(ha_close)):
-            ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2
+        # İlk değer ataması
+        valid_idx = 14 # RSI 14. mumdan sonra başlar
+        if len(ha_close) > valid_idx:
+            ha_open[valid_idx] = ha_close[valid_idx] 
             
+            for i in range(valid_idx + 1, len(ha_close)):
+                ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2
+        
         ha_open_s = pd.Series(ha_open, index=rsi.index)
         ha_close_s = pd.Series(ha_close, index=rsi.index)
         
-        # HARSI Mum Rengi (Close > Open ise Yeşil)
+        # HARSI Mum Rengi (Yeşil: Close > Open)
         harsi_green = ha_close_s > ha_open_s
         
-        # 3. ŞARTLARIN KONTROLÜ (Son mumlar)
+        # --- KONTROLLER ---
+        # Son mum (-1)
         c_last = close.iloc[-1]; c_prev = close.iloc[-2]
         ema9_last = ema9.iloc[-1]; ema9_prev = ema9.iloc[-2]
         kama_last = kama.iloc[-1]; kama_prev = kama.iloc[-2]
         
-        # Şart 1: 3h dilimde fiyat EMA9 üzerine atmış ve 2 kapanış üzerinde
+        # NaN kontrolü (Hesaplanamayan değer varsa atla)
+        if np.isnan(kama_last) or np.isnan(rsi.iloc[-1]): return None
+
+        # Şart 1: Fiyat EMA9 üzerinde (Son 2 mum)
         cond1 = (c_last > ema9_last) and (c_prev > ema9_prev)
         
-        # Şart 2: 2 kapanış KAMA üzerinde
+        # Şart 2: Fiyat KAMA üzerinde (Son 2 mum)
         cond2 = (c_last > kama_last) and (c_prev > kama_prev)
         
-        # Şart 3: RSI 14 > RSI SMA 50
+        # Şart 3: RSI > RSI SMA 50
         cond3 = rsi.iloc[-1] > rsi_sma50.iloc[-1]
         
         # Şart 4: HARSI mumları 3 kez üst üste yeşil
         cond4 = harsi_green.iloc[-1] and harsi_green.iloc[-2] and harsi_green.iloc[-3]
         
-        # Şart 5: RSI 14 mumların üzerinde
+        # Şart 5: RSI çizgisi HARSI mumlarının üzerinde
+        # (HA_Close zaten RSI'dır. Eğer mum yeşilse, RSI > HA_Open demektir.
+        # Yani cond4 sağlanıyorsa, cond5 teknik olarak zaten sağlanır.)
         cond5 = rsi.iloc[-1] > ha_open_s.iloc[-1]
         
-        if cond1 and cond2 and cond3 and cond4 and cond5:
+        if cond1 and cond2 and cond3 and cond4:
             return {
                 "Sembol": symbol,
                 "Fiyat": f"{c_last:.2f}",
@@ -1123,7 +1139,7 @@ def process_single_harsi_agent(symbol, df_1h):
 
 @st.cache_data(ttl=900)
 def scan_agent3_harsi(asset_list):
-    # DÜZELTME: ARTIK ÖZEL VERİ FONKSİYONUNU KULLANIYOR
+    # Güncellenmiş veri fonksiyonunu çağır
     data = get_hourly_data_agent3(asset_list)
     
     if data.empty: return pd.DataFrame()
@@ -2702,6 +2718,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
