@@ -1526,19 +1526,19 @@ def render_sentiment_card(sent):
             <div class="label-long">1. Momentum:</div>
             <div class="info-val">{sent['mom']}</div>
         </div>
-        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (+10) ve yükselen MACD (+10). 30-70 arası stabil RSI (+10)</div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5)</div>
         
         <div class="info-row">
             <div class="label-long">2. Hacim:</div>
             <div class="info-val">{sent['vol']}</div>
         </div>
-        <div class="edu-note">Hacmin 20G ortalamaya oranını ve Para Akışını (OBV) denetler. Bugünün hacmi 20G ort.üstünde (+15) Para girişi 5G ort.üstünde (+10).</div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (15) Para girişi var: 10G ortalamanın üstünde (10).</div>
         
         <div class="info-row">
             <div class="label-long">3. Trend:</div>
             <div class="info-val">{sent['tr']}</div>
         </div>
-        <div class="edu-note">SMA 50/200 konumuna bakar. Hisse fiyatı SMA50 ve SMA200 üstünde (+10). SMA50 üstünde (+10). </div>
+        <div class="edu-note">Ortalamalar bakar. Hisse fiyatı SMA200 üstünde (10). EMA20 üstünde (10). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (5)</div>
         
         <div class="info-row">
             <div class="label-long">4. Volatilite:</div>
@@ -1550,7 +1550,7 @@ def render_sentiment_card(sent):
             <div class="label-long">5. Yapı:</div>
             <div class="info-val">{sent['str']}</div>
         </div>
-        <div class="edu-note">Market Yapısını (BOS) kontrol eder. Son 20 günün zirvesini yukarı kırmış (+10).</div>
+        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (15). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (10)</div>
     </div>
     """.replace("\n", "")
     
@@ -2415,6 +2415,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
