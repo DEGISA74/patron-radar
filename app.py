@@ -2569,7 +2569,7 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V5 (SÜRE GÖSTERGELİ)
+    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V6 (HATA KORUMALI)
     # ---------------------------------------------------------
     
     if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
@@ -2607,11 +2607,13 @@ with col_left:
             with st.container(height=300):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
-                    # YENİ FORMAT: Süre (Trend_Suresi) eklendi
-                    # Örnek: 🚀 AAPL | Fiyat: 150.2 | RSI: 65.2 | Süre: 8 Mum
-                    trend_info = row['Trend_Suresi']
-                    # 10 mumdan fazlaysa yanına ateş ikonu koyalım
-                    if row['Trend_Raw'] >= 10: trend_info = f"🔥 {trend_info}"
+                    # --- HATA KORUMASI ---
+                    # Eski veride 'Trend_Suresi' olmayabilir, .get() ile güvenli çekiyoruz.
+                    trend_info = row.get('Trend_Suresi', 'Yenile...')
+                    raw_trend = row.get('Trend_Raw', 0)
+                    
+                    # 10 mumdan fazlaysa yanına ateş ikonu koy
+                    if raw_trend >= 10: trend_info = f"🔥 {trend_info}"
                     
                     button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | Süre: {trend_info}"
                     
@@ -2693,6 +2695,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
