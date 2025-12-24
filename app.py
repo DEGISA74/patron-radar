@@ -982,79 +982,57 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 # ==============================================================================
-# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - SIRALAMALI V3
+# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - STREAK (SÜRE) EKLENDİ
 # ==============================================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_hourly_data_agent3(asset_list):
-    """
-    3. Ajan için optimize edilmiş veri çekici.
-    """
     if not asset_list: return pd.DataFrame()
     try:
         tickers_str = " ".join(asset_list)
         data = yf.download(
-            tickers_str, 
-            period="3mo", 
-            interval="1h", 
-            group_by='ticker', 
-            threads=True, 
-            progress=False, 
-            auto_adjust=False
+            tickers_str, period="3mo", interval="1h", group_by='ticker', 
+            threads=True, progress=False, auto_adjust=False
         )
         return data
     except Exception: return pd.DataFrame()
 
 def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
-    """Pandas ile Kaufman Adaptive Moving Average (KAMA) hesaplar."""
     if len(series) <= n: return pd.Series(np.nan, index=series.index)
-
     change = abs(series - series.shift(n))
     volatility = abs(series - series.shift(1)).rolling(n).sum()
     er = change / volatility
     er = er.fillna(0)
-    
     sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2
     
     kama = np.zeros_like(series)
     kama[:] = np.nan
-    
     start_idx = n
     kama[start_idx] = series.iloc[start_idx]
     
     series_values = series.values
     sc_values = sc.values
-    
     for i in range(start_idx + 1, len(series)):
         val = kama[i-1] + sc_values[i] * (series_values[i] - kama[i-1])
         if not np.isnan(val): kama[i] = val
         else: kama[i] = kama[i-1]
-            
     return pd.Series(kama, index=series.index)
 
 def process_single_harsi_agent(symbol, df_1h):
     try:
         if df_1h.empty: return None
-        
-        if 'Volume' in df_1h.columns:
-            df_1h['Volume'] = df_1h['Volume'].fillna(0)
-        else:
-            df_1h['Volume'] = 0
+        if 'Volume' in df_1h.columns: df_1h['Volume'] = df_1h['Volume'].fillna(0)
+        else: df_1h['Volume'] = 0
 
-        # 3 Saatlik Mum Oluşturma
+        # 3 Saatlik Mum
         df_3h = df_1h.resample('3h').agg({
-            'Open': 'first',
-            'High': 'max',
-            'Low': 'min',
-            'Close': 'last',
-            'Volume': 'sum'
+            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
         }).dropna()
         
         if len(df_3h) < 40: return None
-        
         close = df_3h['Close']
         
-        # İndikatörler
+        # --- İNDİKATÖRLER ---
         ema9 = close.ewm(span=9, adjust=False).mean()
         kama = calculate_kama_pandas(close, n=20, pow1=2, pow2=30)
         
@@ -1065,10 +1043,9 @@ def process_single_harsi_agent(symbol, df_1h):
         rsi = 100 - (100 / (1 + rs))
         rsi_sma50 = rsi.rolling(50).mean()
         
-        # HARSI Hesaplama
+        # HARSI
         ha_close = rsi.values
         ha_open = np.zeros_like(ha_close)
-        
         valid_idx = 14
         if len(ha_close) > valid_idx:
             ha_open[valid_idx] = ha_close[valid_idx] 
@@ -1077,30 +1054,58 @@ def process_single_harsi_agent(symbol, df_1h):
         
         ha_open_s = pd.Series(ha_open, index=rsi.index)
         ha_close_s = pd.Series(ha_close, index=rsi.index)
-        harsi_green = ha_close_s > ha_open_s
         
-        # Kontroller
+        # --- SERİ (VECTORIZED) KONTROLLER ---
+        # Geçmişe dönük tarama yapabilmek için serileri hazırlıyoruz
+        s_ema9 = close > ema9
+        s_kama = close > kama
+        s_rsi_sma = rsi > rsi_sma50
+        s_harsi_green = ha_close_s > ha_open_s
+        s_rsi_mom = rsi > ha_open_s
+        
+        # Hepsini sağlayan mumlar (True/False Serisi)
+        # Not: HARSI 3 mum şartını aşağıda manuel kontrol ediyoruz, burada genel trend uyumuna bakıyoruz
+        trend_ok = s_ema9 & s_kama & s_rsi_sma & s_harsi_green & s_rsi_mom
+        
+        # Son Mum Kontrolleri (Giriş Şartları)
         c_last = close.iloc[-1]; c_prev = close.iloc[-2]
         ema9_last = ema9.iloc[-1]; ema9_prev = ema9.iloc[-2]
         kama_last = kama.iloc[-1]; kama_prev = kama.iloc[-2]
         
         if np.isnan(kama_last) or np.isnan(rsi.iloc[-1]): return None
 
+        # Giriş Kuralları (Kesin Şartlar)
         cond1 = (c_last > ema9_last) and (c_prev > ema9_prev)
         cond2 = (c_last > kama_last) and (c_prev > kama_prev)
         cond3 = rsi.iloc[-1] > rsi_sma50.iloc[-1]
-        cond4 = harsi_green.iloc[-1] and harsi_green.iloc[-2] and harsi_green.iloc[-3]
+        cond4 = s_harsi_green.iloc[-1] and s_harsi_green.iloc[-2] and s_harsi_green.iloc[-3]
         cond5 = rsi.iloc[-1] > ha_open_s.iloc[-1]
         
-        if cond1 and cond2 and cond3 and cond4:
+        if cond1 and cond2 and cond3 and cond4 and cond5:
+            
+            # --- KAÇ MUMDUR DEVAM EDİYOR? (STREAK HESABI) ---
+            streak_count = 0
+            # Sondan geriye doğru say (Maksimum 50 mum geriye bak)
+            # -1 son mum, -2 önceki...
+            # Trend bozulduğu anda döngüyü kır.
+            vals = trend_ok.values
+            for i in range(len(vals)-1, max(0, len(vals)-50), -1):
+                if vals[i]:
+                    streak_count += 1
+                else:
+                    break
+            
+            # En az 3 mumluk (HARSI şartı gereği) bir seri zaten var.
+            trend_str = f"{streak_count} Mum"
+
             return {
                 "Sembol": symbol,
                 "Fiyat": f"{c_last:.2f}",
                 "RSI": f"{rsi.iloc[-1]:.1f}",
-                "RSI_Raw": rsi.iloc[-1], # SIRALAMA İÇİN EKLENDİ
+                "RSI_Raw": rsi.iloc[-1],
                 "HARSI": "3x🟢",
-                "KAMA": f"{kama_last:.2f}",
-                "EMA9": f"{ema9_last:.2f}"
+                "Trend_Suresi": trend_str, # YENİ VERİ
+                "Trend_Raw": streak_count  # Sıralama istersek diye
             }
         return None
         
@@ -1128,8 +1133,6 @@ def scan_agent3_harsi(asset_list):
             if res: results.append(res)
             
     df = pd.DataFrame(results)
-    
-    # SIRALAMA MANTIĞI BURADA EKLENDİ:
     if not df.empty and "RSI_Raw" in df.columns:
         df = df.sort_values(by="RSI_Raw", ascending=False)
         
@@ -2591,7 +2594,7 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V4 (ZORUNLU SIRALAMA)
+    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V5 (SÜRE GÖSTERGELİ)
     # ---------------------------------------------------------
     
     if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
@@ -2612,7 +2615,7 @@ with col_left:
     
     # Tarama Butonu
     if st.button(f"🌊 3H TREND TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
-        with st.spinner("3. Ajan sahada: 3 saatlik grafikler, KAMA ve HARSI analiz ediliyor..."):
+        with st.spinner("3. Ajan sahada: Trend süreleri hesaplanıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.harsi_data = scan_agent3_harsi(current_assets)
     
@@ -2620,18 +2623,22 @@ with col_left:
     if st.session_state.harsi_data is not None:
         if not st.session_state.harsi_data.empty:
             
-            # --- DÜZELTME: SIRALAMAYI BURADA ZORLUYORUZ ---
-            # Veri nasıl gelirse gelsin, burada RSI değerine göre BÜYÜKTEN KÜÇÜĞE sıralanır.
+            # RSI Sıralaması
             if "RSI_Raw" in st.session_state.harsi_data.columns:
                 st.session_state.harsi_data = st.session_state.harsi_data.sort_values(by="RSI_Raw", ascending=False)
-            # -------------------------------------------------
 
-            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu! (RSI Gücüne Göre Sıralı)")
+            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
             with st.container(height=300):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
-                    button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | HARSI: {row['HARSI']}"
+                    # YENİ FORMAT: Süre (Trend_Suresi) eklendi
+                    # Örnek: 🚀 AAPL | Fiyat: 150.2 | RSI: 65.2 | Süre: 8 Mum
+                    trend_info = row['Trend_Suresi']
+                    # 10 mumdan fazlaysa yanına ateş ikonu koyalım
+                    if row['Trend_Raw'] >= 10: trend_info = f"🔥 {trend_info}"
+                    
+                    button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | Süre: {trend_info}"
                     
                     if st.button(button_label, key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
@@ -2711,6 +2718,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
