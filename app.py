@@ -1544,7 +1544,7 @@ def render_sentiment_card(sent):
             <div class="label-long">4. Volatilite:</div>
             <div class="info-val">{sent['vola']}</div>
         </div>
-        <div class="edu-note">Bollinger Bant patlamalarını ve ATR durumunu inceler. Bol.Bant yukarı kırmış (+10). ATR düşük - panik satış bitmiş (+5).</div>
+        <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10).</div>
         
         <div class="info-row">
             <div class="label-long">5. Yapı:</div>
@@ -2415,6 +2415,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
