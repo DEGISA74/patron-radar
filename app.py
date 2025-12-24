@@ -2591,8 +2591,7 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V2 (LİSTE GÖRÜNÜMÜ)
-    # Breakout Ajanı ile Haberler Arasına Konumlandırıldı
+    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V4 (ZORUNLU SIRALAMA)
     # ---------------------------------------------------------
     
     if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
@@ -2620,17 +2619,20 @@ with col_left:
     # Sonuçların Gösterimi
     if st.session_state.harsi_data is not None:
         if not st.session_state.harsi_data.empty:
-            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
-            # İSTEK 2 & 3: Scrollbar içinde ve yüksekliği 250px
-            with st.container(height=250):
+            # --- DÜZELTME: SIRALAMAYI BURADA ZORLUYORUZ ---
+            # Veri nasıl gelirse gelsin, burada RSI değerine göre BÜYÜKTEN KÜÇÜĞE sıralanır.
+            if "RSI_Raw" in st.session_state.harsi_data.columns:
+                st.session_state.harsi_data = st.session_state.harsi_data.sort_values(by="RSI_Raw", ascending=False)
+            # -------------------------------------------------
+
+            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu! (RSI Gücüne Göre Sıralı)")
+            
+            with st.container(height=300):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
-                    # İSTEK 1: Tek satırda, "|" ile ayrılmış format
-                    # Örnek: AAPL | Fiyat: 150.20 | RSI: 65.2 | HARSI: 3x🟢
                     button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | HARSI: {row['HARSI']}"
                     
-                    # Butona basınca hisseye git
                     if st.button(button_label, key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
@@ -2709,6 +2711,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
