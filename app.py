@@ -2374,7 +2374,7 @@ with col_right:
                 for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🔥 {row['Skor']}/9 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+                        if st.button(f"🔥 {row['Skor']}/7 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
     with tab2:
         if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
             with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
@@ -2384,7 +2384,8 @@ with col_right:
                 for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+                        if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
