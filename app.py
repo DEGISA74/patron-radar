@@ -863,32 +863,32 @@ def process_single_breakout(symbol, df):
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
         sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
-        std20 = close.rolling(20).std(); bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20); bb_width = (bb_upper - bb_lower) / sma20
+        std20 = close.rolling(20).std(); bb_upper = sma20 + (2 * std20); bb_width = (bb_upper - (sma20 - 2*std20)) / sma20
         vol_20 = volume.rolling(20).mean().iloc[-1]; curr_vol = volume.iloc[-1]
         rvol = curr_vol / vol_20 if vol_20 != 0 else 1
         high_60 = high.rolling(60).max().iloc[-1]; curr_price = close.iloc[-1]
+        
+        # RSI
         delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
-        cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2; cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70; sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
+        
+        cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2
+        cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70
+        sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
         
         if cond_ema and cond_vol and cond_prox and cond_rsi:
-            is_short_signal = False; short_reason = ""
-            if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): is_short_signal = True; short_reason = "3 Kırmızı Mum (Düşüş)"
-            body_last = abs(close.iloc[-1] - open_.iloc[-1]); body_prev1 = abs(close.iloc[-2] - open_.iloc[-2]); body_prev2 = abs(close.iloc[-3] - open_.iloc[-3])
-            if (close.iloc[-1] < open_.iloc[-1]) and (body_last > (body_prev1 + body_prev2)): is_short_signal = True; short_reason = "Yutan Ayı Mum (Engulfing)"
-            min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]; is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
+            is_squeeze = bb_width.iloc[-1] <= bb_width.rolling(60).min().iloc[-1] * 1.10
             prox_pct = (curr_price / high_60) * 100
-            prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınıra Dayandı)" if prox_pct >= 98 else " (Hazırlanıyor)"))
-            c_open = open_.iloc[-1]; c_close = close.iloc[-1]; c_high = high.iloc[-1]; body_size = abs(c_close - c_open); upper_wick = c_high - max(c_open, c_close)
-            is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
-            wick_warning = " <span style='color:#DC2626; font-weight:700; background:#fef2f2; padding:2px 4px; border-radius:4px;'>⚠️ Satış Baskısı (Uzun Fitil)</span>" if is_wick_rejected else ""
-            rvol_text = "Olağanüstü para girişi 🐳" if rvol > 2.0 else ("İlgi artıyor 📈" if rvol > 1.5 else "İlgi var 👀")
-            display_symbol = symbol
-            if is_short_signal:
-                display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.8rem;'>🔻 SHORT FIRSATI</span>"
-                trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
-            else: trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
-            return { "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol }
+            prox_str = f"💣 Sıkışma Var" if is_squeeze else (f"%{prox_pct:.1f} (Zirveye Yakın)")
+            
+            c_open = open_.iloc[-1]; c_close = close.iloc[-1]; c_high = high.iloc[-1]
+            is_wick_rejected = (c_high - max(c_open, c_close)) > abs(c_close - c_open) * 1.5
+            wick_warning = " ⚠️ Fitil" if is_wick_rejected else ""
+            
+            trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
+            rvol_text = f"{rvol:.1f}x Hacim"
+            
+            return { "Sembol_Raw": symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol }
         return None
     except: return None
 
@@ -896,7 +896,6 @@ def process_single_breakout(symbol, df):
 def agent3_breakout_scan(asset_list):
     data = get_batch_data_cached(asset_list, period="6mo")
     if data.empty: return pd.DataFrame()
-
     results = []
     stock_dfs = []
     for symbol in asset_list:
@@ -906,15 +905,14 @@ def agent3_breakout_scan(asset_list):
             else:
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(process_single_breakout, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
-            res = future.result()
+            res = future.result(); 
             if res: results.append(res)
-    
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
 
+# --- 2. FONKSİYON: KIRANLAR (ONAYLI) ---
 def process_single_confirmed(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
@@ -934,35 +932,25 @@ def process_single_confirmed(symbol, df):
         
         if vol_factor < 1.2: return None 
 
-        sma20 = close.rolling(20).mean()
-        std20 = close.rolling(20).std()
+        sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
         bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
         bb_width = (bb_upper - bb_lower) / sma20
         avg_width = bb_width.rolling(20).mean().iloc[-1]
         is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
         
-        breakout_type = "📦 RANGE KIRILIMI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI (Fiyat son 60 günün zirvesinde)"
+        breakout_type = "📦 RANGE KIRILIMI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI"
         
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
 
-        return {
-            "Sembol": symbol,
-            "Fiyat": f"{curr_close:.2f}",
-            "Kirim_Turu": breakout_type,
-            "Hacim_Kati": f"{vol_factor:.1f}x",
-            "RSI": int(rsi),
-            "SortKey": vol_factor 
-        }
+        return { "Sembol": symbol, "Fiyat": f"{curr_close:.2f}", "Kirim_Turu": breakout_type, "Hacim_Kati": f"{vol_factor:.1f}x", "RSI": int(rsi), "SortKey": vol_factor }
     except: return None
 
 @st.cache_data(ttl=3600)
 def scan_confirmed_breakouts(asset_list):
     data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
-
     results = []
     stock_dfs = []
     for symbol in asset_list:
@@ -972,15 +960,82 @@ def scan_confirmed_breakouts(asset_list):
             else:
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(process_single_confirmed, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
-            res = future.result()
+            res = future.result(); 
             if res: results.append(res)
-    
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
+# --- 3. FONKSİYON: DÖNÜŞ AVCISI (SUPERTREND FLIP / KUTSAL KASE) ---
+def process_single_reversal(symbol, df):
+    try:
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 60: return None
+
+        high = df['High']; low = df['Low']; close = df['Close']; open_ = df['Open']
+        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+        
+        # Basit SuperTrend Mantığı (ATR Tabanlı Kanal)
+        # Amacımız "Dün SAT, Bugün AL" yakanı bulmak.
+        # Manuel SuperTrend Simülasyonu (Hız için)
+        tr = pd.concat([high-low, abs(high-close.shift(1)), abs(low-close.shift(1))], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1/10, adjust=False).mean()
+        
+        # Dünün Üst Bandı (Yaklaşık)
+        hl2_prev = (high.iloc[-2] + low.iloc[-2]) / 2
+        upper_band_prev = hl2_prev + (3 * atr.iloc[-2])
+        
+        c_today = close.iloc[-1]; c_prev = close.iloc[-2]
+        
+        # KRİTER 1: TREND DÖNÜŞÜ (FLIP)
+        # Dün fiyat "Düşüş Kanalı" içindeymiş (Upper Band'in altında)
+        # Bugün fiyat bu bandı sert kırmış.
+        # (Tam bilimsel ST hesabı yerine bu 'Kırılım' mantığı tarama için daha hassastır)
+        is_reversal = (c_prev < upper_band_prev) and (c_today > upper_band_prev)
+        
+        # KRİTER 2: HACİM VE GÜÇ
+        vol_avg = volume.rolling(20).mean().iloc[-1]
+        vol_cond = volume.iloc[-1] > vol_avg * 1.3 # %30 Hacim artışı
+        body_cond = (c_today - open_.iloc[-1]) / open_.iloc[-1] > 0.015 # %1.5 üzeri dolu mum
+        
+        # KRİTER 3: DİPTE OLMA ŞARTI (Ana trendin altındaysa değerlidir)
+        sma200 = close.rolling(200).mean().iloc[-1]
+        is_bottom = c_today < sma200 # Fiyat hala SMA200 altındaysa bu bir "Dip Dönüşüdür"
+        
+        if is_reversal and vol_cond and body_cond and is_bottom:
+             return {
+                "Sembol": symbol,
+                "Fiyat": f"{c_today:.2f}",
+                "Degisim": f"%{body_cond*100:.1f}",
+                "Hacim_Kat": f"{volume.iloc[-1]/vol_avg:.1f}x",
+                "Durum": "KUTSAL KASE MUMU 🕯️",
+                "SortKey": body_cond
+            }
+        return None
+    except: return None
+
+@st.cache_data(ttl=3600)
+def scan_trend_reversals(asset_list):
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
+    results = []
+    stock_dfs = []
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(process_single_reversal, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result(); 
+            if res: results.append(res)
+    return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
+    
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -2305,61 +2360,74 @@ with col_left:
                         st.caption("Şu an 'Sessiz Toplama' yapan hisse tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı</div>', unsafe_allow_html=True)
+    def render_breakout_section():
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout & Dönüş Ajanı</div>', unsafe_allow_html=True)
     
-    # Session State Tanımları (Eğer yoksa)
     if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
     if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
+    if 'breakout_reversal' not in st.session_state: st.session_state.breakout_reversal = None
 
     with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
-            with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
+        # TEK BUTONLA 3 TARAMA
+        if st.button(f"⚡ {st.session_state.category} İÇİN TAM KAPSAMLI TARAMA BAŞLAT", type="primary", key="tri_breakout_btn", use_container_width=True):
+            with st.spinner("Ajanlar 3 koldan saldırıyor: Hazırlık, Kırılım ve Dönüş..."):
                 curr_list = ASSET_GROUPS.get(st.session_state.category, [])
-                # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
-                st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
-                st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
+                st.session_state.breakout_left = agent3_breakout_scan(curr_list)
+                st.session_state.breakout_right = scan_confirmed_breakouts(curr_list)
+                st.session_state.breakout_reversal = scan_trend_reversals(curr_list)
                 st.rerun()
 
-        # 2 Sütunlu Yapı
-        c_left, c_right = st.columns(2)
+        # 3 SÜTUNLU YAPI
+        c1, c2, c3 = st.columns(3)
         
-        # --- SOL SÜTUN: ISINANLAR ---
-        with c_left:
-            st.markdown("<div style='text-align:center; color:#d97706; font-weight:500; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
-            with st.container(height=300): # Scroll Alanı
+        # 1. ISINANLAR
+        with c1:
+            st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#fffbeb; padding:4px; border-radius:4px;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+            with st.container(height=300):
                 if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
-                    df_left = st.session_state.breakout_left.head(20)
-                    for i, (index, row) in enumerate(df_left.iterrows()):
-                        sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
-                        
-                        # Isınanlar Kartı (Mevcut Tasarım)
-                        card_html = f"""
-                        <div class="info-card" style="margin-bottom:6px; border-left:3px solid #f59e0b;">
-                            <div style="display:flex; justify-content:space-between; font-weight:700; color:#0f172a; font-size:0.85rem; border-bottom:1px solid #e2e8f0; padding-bottom:2px;">
-                                <span>{sym_raw}</span>
+                    for i, row in st.session_state.breakout_left.head(15).iterrows():
+                        sym = row.get("Sembol_Raw", "UNK")
+                        html = f"""<div style="border-left:3px solid #f59e0b; padding-left:4px; margin-bottom:4px;"><div style="font-weight:700; font-size:0.8rem;">{sym} <span style="font-weight:400; color:#64748B;">{row['Fiyat']}</span></div><div style="font-size:0.7rem; color:#d97706;">{row['Zirveye Yakınlık']}</div></div>"""
+                        st.markdown(html, unsafe_allow_html=True)
+                        if st.button("🔍", key=f"btn_l_{sym}_{i}", use_container_width=True): on_scan_result_click(sym); st.rerun()
+                else: st.caption("Sonuç yok.")
+
+        # 2. KIRANLAR
+        with c2:
+            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#f0fdf4; padding:4px; border-radius:4px;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+            with st.container(height=300):
+                if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
+                    for i, row in st.session_state.breakout_right.head(15).iterrows():
+                        sym = row['Sembol']
+                        html = f"""<div style="border-left:3px solid #16a34a; padding-left:4px; margin-bottom:4px;"><div style="font-weight:700; font-size:0.8rem;">{sym} <span style="font-weight:400; color:#64748B;">{row['Fiyat']}</span></div><div style="font-size:0.7rem; color:#15803d;">Hacim: {row['Hacim_Kati']}</div></div>"""
+                        st.markdown(html, unsafe_allow_html=True)
+                        if st.button("🔍", key=f"btn_r_{sym}_{i}", use_container_width=True): on_scan_result_click(sym); st.rerun()
+                else: st.caption("Sonuç yok.")
+
+        # 3. DÖNÜŞ AVCISI
+        with c3:
+            st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#f5f3ff; padding:4px; border-radius:4px;'>💎 DİP DÖNÜŞÜ (Reversal)</div>", unsafe_allow_html=True)
+            with st.container(height=300):
+                if st.session_state.breakout_reversal is not None and not st.session_state.breakout_reversal.empty:
+                    for i, row in st.session_state.breakout_reversal.head(15).iterrows():
+                        sym = row['Sembol']
+                        html = f"""
+                        <div style="border-left:3px solid #8b5cf6; padding-left:4px; margin-bottom:4px;">
+                            <div style="display:flex; justify-content:space-between; font-weight:800; color:#6d28d9; font-size:0.8rem;">
+                                <span>{sym}</span>
                                 <span>{row['Fiyat']}</span>
                             </div>
-                            <div class="info-row" style="margin-top:4px;"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                            <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
-                            <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
-                            <div style="text-align:right; font-size:0.75rem; color:#64748B; margin-top:2px;">RSI: <strong>{row['RSI']}</strong></div>
+                            <div style="font-size:0.7rem; color:#4b5563;">Hacim: <b>{row['Hacim_Kat']}</b></div>
+                            <div style="font-size:0.65rem; color:#7c3aed; font-style:italic;">{row['Durum']}</div>
                         </div>
                         """
-                        
-                        # YAN YANA YERLEŞİM (SÜTUN SİSTEMİ)
-                        c_card, c_btn = st.columns([0.75, 0.25])
-                        
-                        with c_card:
-                            st.markdown(card_html, unsafe_allow_html=True)
-                            
-                        with c_btn:
-                            st.markdown("<div style='height:35px'></div>", unsafe_allow_html=True)
-                            if st.button("🔍", key=f"L_btn_{sym_raw}_{i}", help=f"İncele: {sym_raw}", use_container_width=True):
-                                on_scan_result_click(sym_raw)
-                                st.rerun()
+                        st.markdown(html, unsafe_allow_html=True)
+                        if st.button("🔍", key=f"btn_rev_{sym}_{i}", use_container_width=True): on_scan_result_click(sym); st.rerun()
+                else: 
+                    st.info("Kutsal kase mumu yok.")
+                    st.caption("Düşüş trendini hacimli kıran (SuperTrend Flip) hisse yok.")
 
-                else:
-                    st.info("Isınan hisse bulunamadı.")
+# Ana akışta bu fonksiyonu çağırmayı unutma: render_breakout_section()
 
         # --- SAĞ SÜTUN: KIRANLAR (YENİ - DÜZELTİLMİŞ) ---
         with c_right:
@@ -2480,5 +2548,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
