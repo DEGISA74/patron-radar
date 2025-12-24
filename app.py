@@ -822,7 +822,7 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         
         # 7. Setup Puanı (Yukarıda hesaplandı, max 2 puan ama biz varlığını kontrol edelim)
         # Setup varsa ekstra güvenilirdir.
-        if setup != "-": score += 1
+        if setup != "-": score += 0
         
         return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
     except: return None
@@ -2385,6 +2385,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
