@@ -727,25 +727,35 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         df = df.dropna(subset=['Close'])
         if len(df) < 120: return None
         
-        close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
+        close = df['Close']; high = df['High']; low = df['Low']
+        volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
         curr_c = float(close.iloc[-1])
+        
+        # Filtreler
         if curr_c < min_price or curr_c > max_price: return None
         avg_vol_20 = float(volume.rolling(20).mean().iloc[-1])
         if avg_vol_20 < min_avg_vol_m * 1e6: return None
         
-        sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean(); sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
+        # Trend Ortalamaları
+        sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
+        sma100 = close.rolling(100).mean(); sma200 = close.rolling(200).mean()
+        
         trend = "Yatay"
         if not np.isnan(sma200.iloc[-1]):
             if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
             elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
         
+        # RSI ve MACD (Sadece Setup için histogram hesabı kalıyor, puanlamadan çıkacak)
         delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))); rsi_c = float(rsi.iloc[-1])
         ema12 = close.ewm(span=12, adjust=False).mean(); ema26 = close.ewm(span=26, adjust=False).mean()
         hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
+        
+        # Breakout Oranı
         recent_high_60 = float(high.rolling(60).max().iloc[-1])
         breakout_ratio = curr_c / recent_high_60 if recent_high_60 > 0 else 0
         
+        # RS Skoru (Endeks)
         rs_score = 0.0
         if idx is not None and len(close) > 60 and len(idx) > 60:
             common_index = close.index.intersection(idx.index)
@@ -753,35 +763,68 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
                 cs = close.reindex(common_index); isx = idx.reindex(common_index)
                 rs_score = float((cs.iloc[-1]/cs.iloc[-60]-1) - (isx.iloc[-1]/isx.iloc[-60]-1))
         
+        # --- YENİ EKLENEN: ICHIMOKU BULUTU (Kumo) ---
+        # Bulut şu anki fiyatın altında mı? (Trend Desteği)
+        # Ichimoku değerleri 26 periyot ileri ötelenir. Yani bugünün bulutu, 26 gün önceki verilerle çizilir.
+        tenkan = (high.rolling(9).max() + low.rolling(9).min()) / 2
+        kijun = (high.rolling(26).max() + low.rolling(26).min()) / 2
+        
+        # Span A (Bugün için değeri 26 gün önceki hesaptan gelir)
+        span_a_calc = (tenkan + kijun) / 2
+        # Span B (Bugün için değeri 26 gün önceki hesaptan gelir)
+        span_b_calc = (high.rolling(52).max() + low.rolling(52).min()) / 2
+        
+        # Bugünün bulut sınırları (Veri setinin sonundan 26 önceki değerler)
+        cloud_a = float(span_a_calc.iloc[-26])
+        cloud_b = float(span_b_calc.iloc[-26])
+        is_above_cloud = curr_c > max(cloud_a, cloud_b)
+        # -----------------------------------------------
+
         setup = "-"; tags = []; score = 0; details = {}
         avg_vol_20 = max(avg_vol_20, 1); vol_spike = volume.iloc[-1] > avg_vol_20 * 1.3
         
+        # Setup Tespiti
         if trend == "Boğa" and breakout_ratio >= 0.97: setup = "Breakout"; score += 2; tags.append("Zirve")
-        if vol_spike: score += 1; tags.append("Hacim+"); details['Hacim Patlaması'] = True
-        else: details['Hacim Patlaması'] = False
-        
         if trend == "Boğa" and setup == "-":
             if sma20.iloc[-1] <= curr_c <= sma50.iloc[-1] * 1.02 and 40 <= rsi_c <= 55: setup = "Pullback"; score += 2; tags.append("Düzeltme")
             if volume.iloc[-1] < avg_vol_20 * 0.9: score += 1; tags.append("Sığ Satış")
         if setup == "-":
             if rsi.iloc[-2] < 30 <= rsi_c and hist.iloc[-1] > hist.iloc[-2]: setup = "Dip Dönüşü"; score += 2; tags.append("Dip Dönüşü")
         
+        # --- PUANLAMA (7 Madde) ---
+        
+        # 1. Hacim Patlaması
+        if vol_spike: score += 1; tags.append("Hacim+"); details['Hacim Patlaması'] = True
+        else: details['Hacim Patlaması'] = False
+
+        # 2. RS (Endeks Gücü)
         if rs_score > 0: score += 1; tags.append("RS+"); details['RS (S&P500)'] = True
         else: details['RS (S&P500)'] = False
         
+        # 3. Boğa Trendi (SMA Dizilimi)
         if trend == "Boğa": score += 1; details['Boğa Trendi'] = True
         else:
             if trend == "Ayı": score -= 1
             details['Boğa Trendi'] = False
-        
-        details['60G Zirve'] = breakout_ratio >= 0.90; 
-        is_rsi_suitable = (40 <= rsi_c <= 60)
+            
+        # 4. Ichimoku Bulutu (YENİ - MACD YERİNE GELDİ)
+        if is_above_cloud: score += 1; details['Ichimoku'] = True
+        else: details['Ichimoku'] = False
+
+        # 5. 60 Günlük Zirveye Yakınlık
+        details['60G Zirve'] = breakout_ratio >= 0.90
+        if details['60G Zirve']: score += 1
+
+        # 6. RSI Uygun Bölge (Aşırı şişmemiş)
+        is_rsi_suitable = (40 <= rsi_c <= 65) # Biraz genişlettim
         details['RSI Bölgesi'] = (is_rsi_suitable, rsi_c)
-        details['MACD Hist'] = hist.iloc[-1] > hist.iloc[-2]
+        if is_rsi_suitable: score += 1
         
-        if score > 0:
-            return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
-        return None
+        # 7. Setup Puanı (Yukarıda hesaplandı, max 2 puan ama biz varlığını kontrol edelim)
+        # Setup varsa ekstra güvenilirdir.
+        if setup != "-": score += 1
+        
+        return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
     except: return None
 
 @st.cache_data(ttl=3600)
@@ -1539,7 +1582,7 @@ def render_detail_card_advanced(ticker):
         "Boğa Trendi": "🐂 Boğa Trendi: Fiyat Üç Ortalamanın da (SMA50 > SMA100 > SMA200) üzerinde",
         "60G Zirve": "⛰️ Zirve: Fiyat son 60 günün tepesine %97 yakınlıkta",
         "RSI Bölgesi": "🎯 RSI Uygun: Pullback için uygun (40-55 arası)",
-        "MACD Hist": "🔄 MACD Dönüş: Histogram artışa geçti",
+        "Ichimoku": "☁️ Ichimoku: Fiyat Bulutun Üzerinde (Trend Pozitif)",
         "RS": "💪 Relatif Güç (RS)",
         "Setup": "🛠️ Setup Durumu",
         "ADX Durumu": "💪 ADX Trend Gücü"
@@ -2372,6 +2415,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
