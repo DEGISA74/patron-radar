@@ -982,14 +982,40 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 # ==============================================================================
-# 4. YENİ GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU)
+# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - DÜZELTİLMİŞ VERSİYON
 # ==============================================================================
+
+# BU FONKSİYON SADECE 3. AJAN İÇİN SAATLİK VERİ ÇEKER
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_hourly_data_agent3(asset_list):
+    """
+    Sadece 3. Ajan için 1 saatlik veri çeker.
+    Ana fonksiyonla çakışmayı önlemek için ayrı yazılmıştır.
+    """
+    if not asset_list: return pd.DataFrame()
+    try:
+        tickers_str = " ".join(asset_list)
+        # 1 Saatlik veri (maksimum 730 gün geriye gidilebilir)
+        data = yf.download(
+            tickers_str, 
+            period="1y", 
+            interval="1h", 
+            group_by='ticker', 
+            threads=True, 
+            progress=False, 
+            auto_adjust=False
+        )
+        return data
+    except Exception: return pd.DataFrame()
 
 def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
     """Pandas ile Kaufman Adaptive Moving Average (KAMA) hesaplar."""
     change = abs(series - series.shift(n))
     volatility = abs(series - series.shift(1)).rolling(n).sum()
     er = change / volatility # Efficiency Ratio
+    # Bölme hatasını önle (0'a bölme)
+    er = er.fillna(0)
+    
     sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2 # Smoothing Constant
     
     kama = np.zeros_like(series)
@@ -1049,9 +1075,6 @@ def process_single_harsi_agent(symbol, df_1h):
         rsi_sma50 = rsi.rolling(50).mean()
         
         # HARSI (Heikin-Ashi RSI) Hesaplaması
-        # HA Close = RSI değerinin kendisi
-        # HA Open = (Önceki HA Open + Önceki RSI) / 2
-        
         ha_close = rsi.values
         ha_open = np.zeros_like(ha_close)
         ha_open[0] = ha_close[0] # Başlangıç
@@ -1082,7 +1105,7 @@ def process_single_harsi_agent(symbol, df_1h):
         # Şart 4: HARSI mumları 3 kez üst üste yeşil
         cond4 = harsi_green.iloc[-1] and harsi_green.iloc[-2] and harsi_green.iloc[-3]
         
-        # Şart 5: RSI 14 mumların üzerinde (RSI değeri HA Open'dan büyükse mumun üstündedir)
+        # Şart 5: RSI 14 mumların üzerinde
         cond5 = rsi.iloc[-1] > ha_open_s.iloc[-1]
         
         if cond1 and cond2 and cond3 and cond4 and cond5:
@@ -1100,8 +1123,9 @@ def process_single_harsi_agent(symbol, df_1h):
 
 @st.cache_data(ttl=900)
 def scan_agent3_harsi(asset_list):
-    # 1 Yıllık 1 Saatlik veri çekiyoruz (3h resample için)
-    data = get_batch_data_cached(asset_list, period="1y", interval="1h")
+    # DÜZELTME: ARTIK ÖZEL VERİ FONKSİYONUNU KULLANIYOR
+    data = get_hourly_data_agent3(asset_list)
+    
     if data.empty: return pd.DataFrame()
 
     results = []
@@ -2678,6 +2702,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
