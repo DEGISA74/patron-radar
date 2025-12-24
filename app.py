@@ -626,102 +626,76 @@ def process_single_radar1(symbol, df):
         close = df['Close']; high = df['High']; low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([0]*len(df))
         
-        # --- MEVCUT GÖSTERGELER ---
+        # Göstergeler
         ema5 = close.ewm(span=5, adjust=False).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
-        sma20 = close.rolling(20).mean()
-        std20 = close.rolling(20).std()
+        sma20 = close.rolling(20).mean(); std20 = close.rolling(20).std()
+        
+        # Bollinger Squeeze Hesabı
         bb_width = ((sma20 + 2*std20) - (sma20 - 2*std20)) / (sma20 - 0.0001)
 
+        # MACD Hesabı
         ema12 = close.ewm(span=12, adjust=False).mean()
         ema26 = close.ewm(span=26, adjust=False).mean()
-        macd_line = ema12 - ema26
-        signal_line = macd_line.ewm(span=9, adjust=False).mean()
-        hist = macd_line - signal_line
+        hist = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
         
+        # RSI Hesabı
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss)))
-        williams_r = (high.rolling(14).max() - close) / (high.rolling(14).max() - low.rolling(14).min()) * -100
-        daily_range = high - low
         
-        # --- YENİ EKLENEN: ADX HESAPLAMASI (Trend Gücü) ---
+        # ADX Hesabı (Trend Gücü)
         try:
-            plus_dm = high.diff()
-            minus_dm = low.diff()
-            plus_dm[plus_dm < 0] = 0
-            minus_dm[minus_dm > 0] = 0
-            
-            tr1 = pd.DataFrame(high - low)
-            tr2 = pd.DataFrame(abs(high - close.shift(1)))
-            tr3 = pd.DataFrame(abs(low - close.shift(1)))
+            plus_dm = high.diff(); minus_dm = low.diff()
+            plus_dm[plus_dm < 0] = 0; minus_dm[minus_dm > 0] = 0
+            tr1 = pd.DataFrame(high - low); tr2 = pd.DataFrame(abs(high - close.shift(1))); tr3 = pd.DataFrame(abs(low - close.shift(1)))
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             atr_adx = tr.rolling(14).mean()
-            
             plus_di = 100 * (plus_dm.ewm(alpha=1/14).mean() / atr_adx)
             minus_di = 100 * (abs(minus_dm).ewm(alpha=1/14).mean() / atr_adx)
             dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
-            adx = dx.rolling(14).mean()
-            curr_adx = float(adx.iloc[-1])
-        except:
-            curr_adx = 20 # Hata olursa nötr varsay
-        # -----------------------------------------------------
+            curr_adx = float(dx.rolling(14).mean().iloc[-1])
+        except: curr_adx = 20
 
         score = 0; reasons = []; details = {}
         curr_c = float(close.iloc[-1]); curr_vol = float(volume.iloc[-1])
         avg_vol = float(volume.rolling(5).mean().iloc[-1]) if len(volume) > 5 else 1.0
         
-        # --- PUANLAMA MANTIĞI ---
+        # --- PUANLAMA (7 MADDE) ---
         
-        # 1. Squeeze
+        # 1. Squeeze (Patlama Hazırlığı)
         if bb_width.iloc[-1] <= bb_width.tail(60).min() * 1.1: score += 1; reasons.append("🚀 Squeeze"); details['Squeeze'] = True
         else: details['Squeeze'] = False
         
-        # 2. NR4
-        if daily_range.iloc[-1] == daily_range.tail(4).min() and daily_range.iloc[-1] > 0: score += 1; reasons.append("🔇 NR4"); details['NR4'] = True
-        else: details['NR4'] = False
-        
-        # 3. Trend
+        # 2. Trend (Kısa Vade Yükseliş)
         if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend"); details['Trend'] = True
         else: details['Trend'] = False
         
-        # 4. MACD
+        # 3. MACD (Momentum Artışı)
         if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD"); details['MACD'] = True
         else: details['MACD'] = False
         
-        # 5. Williams %R
-        if williams_r.iloc[-1] > -50: score += 1; reasons.append("🔫 W%R"); details['W%R'] = True
-        else: details['W%R'] = False
-        
-        # 6. Hacim
+        # 4. Hacim (İlgi Var mı?)
         if curr_vol > avg_vol * 1.2: score += 1; reasons.append("🔊 Hacim"); details['Hacim'] = True
         else: details['Hacim'] = False
         
-        # 7. Breakout
+        # 5. Breakout (Zirveye Yakınlık)
         if curr_c >= high.tail(20).max() * 0.98: score += 1; reasons.append("🔨 Breakout"); details['Breakout'] = True
         else: details['Breakout'] = False
         
-        # 8. RSI
+        # 6. RSI Güçlü (İvme)
         rsi_c = float(rsi.iloc[-1])
-        is_rsi_strong = 30 < rsi_c < 65 and rsi_c > float(rsi.iloc[-2])
-        if is_rsi_strong: score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = (True, rsi_c)
+        if 30 < rsi_c < 65 and rsi_c > float(rsi.iloc[-2]): score += 1; reasons.append("⚓ RSI Güçlü"); details['RSI Güçlü'] = (True, rsi_c)
         else: details['RSI Güçlü'] = (False, rsi_c)
         
-        # --- YENİ EKLENEN: ADX FİLTRESİ ---
-        # ADX 25'ten büyükse trend güçlüdür (+1 Puan)
-        # ADX 20'den küçükse trend zayıftır (Puan vermiyoruz, hatta Squeeze yoksa listeleme riskli olabilir)
+        # 7. ADX (Trendin Gücü Yerinde mi?)
         if curr_adx > 25: 
-            score += 1
-            reasons.append(f"💪 Güçlü Trend (ADX {int(curr_adx)})")
-            details['ADX Durumu'] = (True, curr_adx)
+            score += 1; reasons.append(f"💪 Güçlü Trend"); details['ADX Durumu'] = (True, curr_adx)
         else:
             details['ADX Durumu'] = (False, curr_adx)
-        # ----------------------------------
 
-        if score > 0:
-            return { "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details }
-        return None
+        return { "Sembol": symbol, "Fiyat": f"{curr_c:.2f}", "Skor": score, "Nedenler": " | ".join(reasons), "Detaylar": details }
     except: return None
 
 @st.cache_data(ttl=3600)
@@ -1555,10 +1529,8 @@ def render_deep_xray_card(xray):
 def render_detail_card_advanced(ticker):
     ACIKLAMALAR = {
         "Squeeze": "🚀 Squeeze: Bollinger Bant genişliği son 60 günün en dar aralığında (Patlama Hazır)",
-        "NR4": "🔇 NR4: (Daralma) Fiyat son 4 günün en dar fiyat aralığında",
         "Trend": "⚡ Trend: EMA5 > EMA20 üzerinde (Yükseliyor)",
         "MACD": "🟢 MACD: Histogram bir önceki günden yüksek (Momentum Artışı Var)",
-        "W%R": "🔫 W%R: -50 üzerinde (Aşırı satım seviyesinden kurtulmuş)",
         "Hacim": "🔊 Hacim: Son 5 günlük hacim ortalama hacmin %20 üzerinde",
         "Breakout": "🔨 Breakout: Fiyat son 20 gün zirvesinin %98 veya üzerinde",
         "RSI Güçlü": "⚓ RSI Güçlü: 30-65 arasında ve artışta",
@@ -1664,7 +1636,7 @@ def render_detail_card_advanced(ticker):
         </div>
         <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade (Harekete Hazır?) - Skor: {r1_score}/9{r1_suffix}</div>
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 Kısa Vade (Harekete Hazır?) - Skor: {r1_score}/7{r1_suffix}</div>
             <div class="tech-grid" style="font-size:0.75rem;">
                 {r1_html}
             </div>
@@ -2397,6 +2369,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/8 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
