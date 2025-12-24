@@ -981,6 +981,147 @@ def scan_confirmed_breakouts(asset_list):
     
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
+# ==============================================================================
+# 4. YENİ GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU)
+# ==============================================================================
+
+def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
+    """Pandas ile Kaufman Adaptive Moving Average (KAMA) hesaplar."""
+    change = abs(series - series.shift(n))
+    volatility = abs(series - series.shift(1)).rolling(n).sum()
+    er = change / volatility # Efficiency Ratio
+    sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2 # Smoothing Constant
+    
+    kama = np.zeros_like(series)
+    kama[:] = np.nan
+    
+    start_idx = n
+    if start_idx >= len(series): return pd.Series(kama, index=series.index)
+    
+    kama[start_idx] = series.iloc[start_idx]
+    series_values = series.values
+    sc_values = sc.values
+    
+    for i in range(start_idx + 1, len(series)):
+        val = kama[i-1] + sc_values[i] * (series_values[i] - kama[i-1])
+        if not np.isnan(val): kama[i] = val
+        else: kama[i] = kama[i-1]
+            
+    return pd.Series(kama, index=series.index)
+
+def process_single_harsi_agent(symbol, df_1h):
+    try:
+        # 1. 1 Saatlik veriyi 3 Saatlik veriye çevir (Resample)
+        if df_1h.empty: return None
+        
+        # Datetime index olduğundan emin ol
+        if not isinstance(df_1h.index, pd.DatetimeIndex):
+            return None
+
+        # 3 Saatlik Mum Oluşturma
+        df_3h = df_1h.resample('3h').agg({
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',
+            'Volume': 'sum'
+        }).dropna()
+        
+        if len(df_3h) < 60: return None
+        
+        close = df_3h['Close']
+        
+        # 2. İndikatör Hesaplamaları
+        # EMA 9
+        ema9 = close.ewm(span=9, adjust=False).mean()
+        
+        # KAMA (20, 2, 30)
+        kama = calculate_kama_pandas(close, n=20, pow1=2, pow2=30)
+        
+        # RSI 14
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        # RSI SMA 50
+        rsi_sma50 = rsi.rolling(50).mean()
+        
+        # HARSI (Heikin-Ashi RSI) Hesaplaması
+        # HA Close = RSI değerinin kendisi
+        # HA Open = (Önceki HA Open + Önceki RSI) / 2
+        
+        ha_close = rsi.values
+        ha_open = np.zeros_like(ha_close)
+        ha_open[0] = ha_close[0] # Başlangıç
+        
+        for i in range(1, len(ha_close)):
+            ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2
+            
+        ha_open_s = pd.Series(ha_open, index=rsi.index)
+        ha_close_s = pd.Series(ha_close, index=rsi.index)
+        
+        # HARSI Mum Rengi (Close > Open ise Yeşil)
+        harsi_green = ha_close_s > ha_open_s
+        
+        # 3. ŞARTLARIN KONTROLÜ (Son mumlar)
+        c_last = close.iloc[-1]; c_prev = close.iloc[-2]
+        ema9_last = ema9.iloc[-1]; ema9_prev = ema9.iloc[-2]
+        kama_last = kama.iloc[-1]; kama_prev = kama.iloc[-2]
+        
+        # Şart 1: 3h dilimde fiyat EMA9 üzerine atmış ve 2 kapanış üzerinde
+        cond1 = (c_last > ema9_last) and (c_prev > ema9_prev)
+        
+        # Şart 2: 2 kapanış KAMA üzerinde
+        cond2 = (c_last > kama_last) and (c_prev > kama_prev)
+        
+        # Şart 3: RSI 14 > RSI SMA 50
+        cond3 = rsi.iloc[-1] > rsi_sma50.iloc[-1]
+        
+        # Şart 4: HARSI mumları 3 kez üst üste yeşil
+        cond4 = harsi_green.iloc[-1] and harsi_green.iloc[-2] and harsi_green.iloc[-3]
+        
+        # Şart 5: RSI 14 mumların üzerinde (RSI değeri HA Open'dan büyükse mumun üstündedir)
+        cond5 = rsi.iloc[-1] > ha_open_s.iloc[-1]
+        
+        if cond1 and cond2 and cond3 and cond4 and cond5:
+            return {
+                "Sembol": symbol,
+                "Fiyat": f"{c_last:.2f}",
+                "RSI": f"{rsi.iloc[-1]:.1f}",
+                "HARSI": "3x🟢",
+                "KAMA": f"{kama_last:.2f}",
+                "EMA9": f"{ema9_last:.2f}"
+            }
+        return None
+        
+    except Exception: return None
+
+@st.cache_data(ttl=900)
+def scan_agent3_harsi(asset_list):
+    # 1 Yıllık 1 Saatlik veri çekiyoruz (3h resample için)
+    data = get_batch_data_cached(asset_list, period="1y", interval="1h")
+    if data.empty: return pd.DataFrame()
+
+    results = []
+    stock_dfs = []
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(process_single_harsi_agent, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+            
+    return pd.DataFrame(results)
+
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -2410,6 +2551,63 @@ with col_left:
 
                 else:
                     st.info("Kırılım yapan hisse bulunamadı.")
+
+    # ---------------------------------------------------------
+    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ
+    # Breakout Ajanı ile Haberler Arasına Konumlandırıldı
+    # ---------------------------------------------------------
+    
+    if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
+
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="info-card" style="border-left: 4px solid #8b5cf6;">
+        <div class="info-header" style="color:#5b21b6;">🕵️ 3. Ajan: 3 Saatlik Trend Avcısı</div>
+        <div class="edu-note">
+            Bu ajan hisseleri <b>3 saatlik</b> periyotlarda tarar ve şu şartları arar:<br>
+            1. Fiyat son 2 mumda <b>EMA9</b> ve <b>KAMA(20-2-30)</b> üzerinde.<br>
+            2. <b>RSI</b> kendi 50 ortalamasının üzerinde.<br>
+            3. <b>HARSI (Heikin Ashi RSI)</b> son 3 mumda 🟢 YEŞİL yaktı.<br>
+            4. RSI çizgisi mumların üzerinde (Momentum güçlü).
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Tarama Butonu
+    if st.button(f"🌊 3H TREND TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
+        with st.spinner("3. Ajan sahada: 3 saatlik grafikler, KAMA ve HARSI analiz ediliyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.harsi_data = scan_agent3_harsi(current_assets)
+    
+    # Sonuçların Gösterimi
+    if st.session_state.harsi_data is not None:
+        if not st.session_state.harsi_data.empty:
+            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
+            
+            # Kartları 3'lü kolonlar halinde göster
+            harsi_cols = st.columns(3)
+            for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
+                with harsi_cols[i % 3]:
+                    # Sonuç Kartı Tasarımı
+                    st.markdown(f"""
+                    <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:6px; padding:8px; margin-bottom:8px; text-align:center;">
+                        <div style="font-weight:800; color:#5b21b6; font-size:1rem; margin-bottom:4px;">{row['Sembol']}</div>
+                        <div style="font-size:0.8rem; color:#334155; margin-bottom:4px;">Fiyat: <b>{row['Fiyat']}</b></div>
+                        <div style="display:flex; justify-content:center; gap:5px; font-size:0.7rem;">
+                            <span style="background:#dcfce7; color:#166534; padding:2px 4px; border-radius:3px;">RSI: {row['RSI']}</span>
+                            <span style="background:#fffbeb; color:#b45309; padding:2px 4px; border-radius:3px;">HARSI: {row['HARSI']}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("İncele", key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
+                        on_scan_result_click(row['Sembol'])
+                        st.rerun()
+        else:
+            st.warning("Bu zorlu kriterlere uyan hisse şu an bulunamadı. Piyasa trend modunda olmayabilir.")
+
+    st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
+    # ---------------------------------------------------------
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
@@ -2480,6 +2678,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
