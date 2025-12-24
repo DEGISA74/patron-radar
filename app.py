@@ -2593,7 +2593,7 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ
+    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V2 (LİSTE GÖRÜNÜMÜ)
     # Breakout Ajanı ile Haberler Arasına Konumlandırıldı
     # ---------------------------------------------------------
     
@@ -2624,23 +2624,16 @@ with col_left:
         if not st.session_state.harsi_data.empty:
             st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
-            # Kartları 3'lü kolonlar halinde göster
-            harsi_cols = st.columns(3)
-            for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
-                with harsi_cols[i % 3]:
-                    # Sonuç Kartı Tasarımı
-                    st.markdown(f"""
-                    <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:6px; padding:8px; margin-bottom:8px; text-align:center;">
-                        <div style="font-weight:800; color:#5b21b6; font-size:1rem; margin-bottom:4px;">{row['Sembol']}</div>
-                        <div style="font-size:0.8rem; color:#334155; margin-bottom:4px;">Fiyat: <b>{row['Fiyat']}</b></div>
-                        <div style="display:flex; justify-content:center; gap:5px; font-size:0.7rem;">
-                            <span style="background:#dcfce7; color:#166534; padding:2px 4px; border-radius:3px;">RSI: {row['RSI']}</span>
-                            <span style="background:#fffbeb; color:#b45309; padding:2px 4px; border-radius:3px;">HARSI: {row['HARSI']}</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+            # İSTEK 2 & 3: Scrollbar içinde ve yüksekliği 600px
+            with st.container(height=600):
+                for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
-                    if st.button("İncele", key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
+                    # İSTEK 1: Tek satırda, "|" ile ayrılmış format
+                    # Örnek: AAPL | Fiyat: 150.20 | RSI: 65.2 | HARSI: 3x🟢
+                    button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | HARSI: {row['HARSI']}"
+                    
+                    # Butona basınca hisseye git
+                    if st.button(button_label, key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
                         on_scan_result_click(row['Sembol'])
                         st.rerun()
         else:
@@ -2718,6 +2711,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
