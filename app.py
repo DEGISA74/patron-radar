@@ -2624,8 +2624,8 @@ with col_left:
         if not st.session_state.harsi_data.empty:
             st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
-            # İSTEK 2 & 3: Scrollbar içinde ve yüksekliği 400px
-            with st.container(height=400):
+            # İSTEK 2 & 3: Scrollbar içinde ve yüksekliği 250px
+            with st.container(height=250):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
                     # İSTEK 1: Tek satırda, "|" ile ayrılmış format
@@ -2711,6 +2711,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
