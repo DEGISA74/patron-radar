@@ -295,6 +295,24 @@ def toggle_watchlist(symbol):
 # 3. OPTİMİZE EDİLMİŞ HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
+@st.cache_data(ttl=3600)
+def get_benchmark_data(category):
+    """
+    Seçili kategoriye göre Endeks verisini (S&P 500 veya BIST 100) çeker.
+    RS (Göreceli Güç) hesaplaması için referans noktasıdır.
+    """
+    try:
+        # Kategoriye göre sembol seçimi
+        ticker = "XU100.IS" if "BIST" in category else "^GSPC"
+        
+        # Hisse verileriyle uyumlu olması için 1 yıllık çekiyoruz
+        df = yf.download(ticker, period="1y", progress=False)
+        
+        if df.empty: return None
+        return df['Close']
+    except:
+        return None
+
 # --- GLOBAL DATA CACHE KATMANI ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_batch_data_cached(asset_list, period="1y"):
@@ -540,15 +558,20 @@ def scan_stp_signals(asset_list):
     trend_signals.sort(key=lambda x: x["Gun"], reverse=False)
     return cross_signals, trend_signals, filtered_signals
 
-def process_single_accumulation(symbol, df):
+def process_single_accumulation(symbol, df, benchmark_series):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        if len(df) < 15: return None
+        # RS hesaplaması için en az 60 gün veri iyi olur (Mansfield ortalaması için)
+        if len(df) < 60: return None
 
         close = df['Close']
+        open_ = df['Open']
+        high = df['High']
+        low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
+        # --- MEVCUT MANTIK (TOPLAMA) ---
         delta = close.diff()
         force_index = delta * volume
         mf_smooth = force_index.ewm(span=5, adjust=False).mean()
@@ -559,7 +582,7 @@ def process_single_accumulation(symbol, df):
         if len(last_10_mf) < 10: return None
         
         pos_days_count = (last_10_mf > 0).sum()
-        if pos_days_count < 7: return None
+        if pos_days_count < 7: return None # İstikrar Kuralı
 
         price_start = float(last_10_close.iloc[0]) 
         price_now = float(last_10_close.iloc[-1])
@@ -570,11 +593,67 @@ def process_single_accumulation(symbol, df):
         avg_mf = float(last_10_mf.mean())
         
         if avg_mf <= 0: return None
-        if change_pct > 0.035: return None 
+        if change_pct > 0.05: return None # Baskı limiti (Biraz esnettim: %3.5 -> %5)
 
-        score_multiplier = 10.0 if change_pct < 0 else 5.0 if change_pct < 0.015 else 1.0
-        final_score = avg_mf * score_multiplier
+        # --- YENİ EKLENTİ 1: MANSFIELD RELATIVE STRENGTH (RS) ---
+        rs_status = "Zayıf"
+        rs_score = 0
+        
+        if benchmark_series is not None:
+            try:
+                # Tarihleri eşleştir (Reindex)
+                common_idx = close.index.intersection(benchmark_series.index)
+                stock_aligned = close.loc[common_idx]
+                bench_aligned = benchmark_series.loc[common_idx]
+                
+                if len(stock_aligned) > 50:
+                    # 1. Rasyo: Hisse / Endeks
+                    rs_ratio = stock_aligned / bench_aligned
+                    # 2. Rasyonun 50 günlük ortalaması (Standart Mansfield 52 haftadır ama 50 gün daha reaktif)
+                    rs_ma = rs_ratio.rolling(50).mean()
+                    # 3. Mansfield RS Değeri (Normalize)
+                    mansfield = ((rs_ratio / rs_ma) - 1) * 10
+                    
+                    curr_rs = float(mansfield.iloc[-1])
+                    
+                    if curr_rs > 0: 
+                        rs_status = "GÜÇLÜ (Endeks Üstü)"
+                        rs_score = 1 # Puana katkı
+                        if curr_rs > float(mansfield.iloc[-5]): # RS Yükseliyor mu?
+                            rs_status += " 🚀"
+                            rs_score = 2
+                    else:
+                        rs_status = "Zayıf (Endeks Altı)"
+            except:
+                rs_status = "Veri Yok"
 
+        # --- YENİ EKLENTİ 2: POCKET PIVOT (Hacim Patlaması) ---
+        # Mantık: Bugünkü hacim > Son 10 günün en büyük "Düşüş Günü" hacmi
+        is_pocket_pivot = False
+        pp_desc = "-"
+        
+        # 1. Düşüş günlerini bul (Kapanış < Açılış)
+        is_down_day = close < open_
+        # 2. Sadece düşüş günlerinin hacmini al, diğerlerini 0 yap
+        down_volumes = volume.where(is_down_day, 0)
+        # 3. Son 10 günün (bugün hariç) en büyük düşüş hacmi
+        max_down_vol_10 = down_volumes.iloc[-11:-1].max()
+        
+        curr_vol = float(volume.iloc[-1])
+        is_up_day = float(close.iloc[-1]) > float(open_.iloc[-1])
+        
+        # Pivot Kuralı: Bugün yükseliş günü + Hacim > Max Satış Hacmi
+        if is_up_day and (curr_vol > max_down_vol_10):
+            is_pocket_pivot = True
+            pp_desc = "⚡ POCKET PIVOT (Hazır!)"
+            rs_score += 3 # Pivot varsa skoru uçur
+
+        # --- SKORLAMA VE ÇIKTI ---
+        # Eski skor mantığına eklemeler yapıyoruz
+        base_score = avg_mf * (10.0 if change_pct < 0 else 5.0)
+        final_score = base_score * (1 + rs_score) # RS ve Pivot varsa puanı katla
+
+        # Hacim Yazısı
         if avg_mf > 1_000_000: mf_str = f"{avg_mf/1_000_000:.1f}M"
         elif avg_mf > 1_000: mf_str = f"{avg_mf/1_000:.0f}K"
         else: mf_str = f"{int(avg_mf)}"
@@ -588,14 +667,23 @@ def process_single_accumulation(symbol, df):
             "Degisim_Str": f"%{change_pct*100:.1f}",
             "MF_Gucu_Goster": mf_str, 
             "Gun_Sayisi": f"{pos_days_count}/10",
-            "Skor": squeeze_score
+            "Skor": squeeze_score,
+            "RS_Durumu": rs_status,      # YENİ SÜTUN
+            "Pivot_Sinyali": pp_desc,    # YENİ SÜTUN
+            "Pocket_Pivot": is_pocket_pivot # Sıralama/Filtre için
         }
-    except: return None
+    except Exception as e: 
+        return None
 
 @st.cache_data(ttl=900)
 def scan_hidden_accumulation(asset_list):
-    data = get_batch_data_cached(asset_list, period="1mo")
+    # 1. Önce Hisse Verilerini Çek
+    data = get_batch_data_cached(asset_list, period="1y") # RS için süreyi 1y yaptım (önce 1mo idi)
     if data.empty: return pd.DataFrame()
+
+    # 2. Endeks Verisini Çek (Sadece tek sefer)
+    current_cat = st.session_state.get('category', 'S&P 500')
+    benchmark = get_benchmark_data(current_cat)
 
     results = []
     stock_dfs = []
@@ -608,13 +696,19 @@ def scan_hidden_accumulation(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
+    # 3. Paralel İşlem (Benchmark'ı da gönderiyoruz)
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [executor.submit(process_single_accumulation, sym, df) for sym, df in stock_dfs]
+        # benchmark serisini her fonksiyona argüman olarak geçiyoruz
+        futures = [executor.submit(process_single_accumulation, sym, df, benchmark) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res: results.append(res)
 
-    if results: return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+    if results: 
+        df_res = pd.DataFrame(results)
+        # Önce Pocket Pivot olanları, sonra Skoru yüksek olanları üste al
+        return df_res.sort_values(by=["Pocket_Pivot", "Skor"], ascending=[False, False])
+    
     return pd.DataFrame()
 
 def process_single_radar1(symbol, df):
@@ -2438,19 +2532,33 @@ with col_left:
                             change_val = row['Degisim_Raw']
                             change_color = "#16a34a" if change_val >= 0 else "#dc2626"
                             
-                            # HTML Kart Tasarımı
+                            # İkon ve Renk Ayarları
+                            rs_txt = row.get('RS_Durumu', '-')
+                            pp_txt = row.get('Pivot_Sinyali', '-')
+                            
+                            pp_style = ""
+                            if row.get('Pocket_Pivot', False):
+                                pp_style = "border: 2px solid #f59e0b; background: #fffbeb;" # Sarı Çerçeve (Highlight)
+                                pp_txt = "⚡ POCKET PIVOT"
+                            
+                            # HTML Kart Tasarımı (GÜNCELLENMİŞ)
                             card_html = f"""
-                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center;">
-                                <div style="font-weight:800; color:#4c1d95; font-size:0.85rem; margin-bottom:2px;">{row['Sembol']}</div>
-                                <div style="display:flex; justify-content:center; gap:8px; font-size:0.7rem; margin-bottom:2px;">
-                                    <span style="color:#6d28d9; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
-                                    <span style="color:{change_color}; font-weight:600;">Fiyat: {row['Degisim_Str']}</span>
+                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center; {pp_style}">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <div style="font-weight:800; color:#4c1d95; font-size:0.9rem;">{row['Sembol']}</div>
+                                    <div style="font-size:0.7rem; font-weight:700; color:{change_color};">{row['Degisim_Str']}</div>
                                 </div>
-                                <div style="font-size:0.65rem; color:#6b7280; font-style:italic;">
-                                    Para Girişi Gün: <strong>{row['Gun_Sayisi']}</strong>
+                                
+                                <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px; background:rgba(255,255,255,0.5); padding:2px; border-radius:3px;">
+                                    <span style="color:#6d28d9; font-weight:600;">RS: {rs_txt.split(' ')[0]}</span>
+                                    <span style="color:#059669; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
+                                </div>
+                                
+                                <div style="font-size:0.65rem; color:#d97706; font-weight:700; margin-top:2px;">
+                                    {pp_txt if row.get('Pocket_Pivot', False) else f"İstikrar: {row['Gun_Sayisi']}"}
                                 </div>
                             </div>
-                            """
+                            """    
                             
                             # DÜZELTME: unsafe_allow_html=True EKLENDİ
                             st.markdown(card_html, unsafe_allow_html=True)
@@ -2695,6 +2803,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
