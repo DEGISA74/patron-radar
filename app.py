@@ -2713,7 +2713,7 @@ with col_left:
             
             st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
-            with st.container(height=300):
+            with st.container(height=200):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
                     
                     # --- HATA KORUMASI ---
@@ -2804,6 +2804,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
