@@ -2525,23 +2525,34 @@ with col_left:
 
             with c4:
                 st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🤫 AKILLI PARA TOPLUYOR?</div>", unsafe_allow_html=True)
+                
                 with st.container(height=200, border=True):
+                    # Veri kontrolü
                     if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
+                        
                         for index, row in st.session_state.accum_data.iterrows():
-                            
+                            # --- RENK VE İKON AYARLARI ---
                             change_val = row['Degisim_Raw']
                             change_color = "#16a34a" if change_val >= 0 else "#dc2626"
                             
-                            # İkon ve Renk Ayarları
-                            rs_txt = row.get('RS_Durumu', '-')
+                            # RS Metin Düzeltmesi ('Veri Yok' ise bölmesin)
+                            raw_rs = row.get('RS_Durumu', '-')
+                            if "Veri" in str(raw_rs):
+                                rs_display = "N/A"
+                            else:
+                                rs_display = str(raw_rs).split(' ')[0]
+
+                            # Pocket Pivot Kontrolü
                             pp_txt = row.get('Pivot_Sinyali', '-')
-                            
                             pp_style = ""
                             if row.get('Pocket_Pivot', False):
-                                pp_style = "border: 2px solid #f59e0b; background: #fffbeb;" # Sarı Çerçeve (Highlight)
+                                pp_style = "border: 2px solid #f59e0b; background: #fffbeb;" # Sarı Çerçeve
                                 pp_txt = "⚡ POCKET PIVOT"
-                            
-                            # HTML Kart Tasarımı (GÜNCELLENMİŞ)
+                            else:
+                                # Pivot yoksa istikrar bilgisini göster
+                                pp_txt = f"İstikrar: {row['Gun_Sayisi']}"
+
+                            # --- HTML KART TASARIMI (DÜZELTİLMİŞ) ---
                             card_html = f"""
                             <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center; {pp_style}">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -2550,19 +2561,20 @@ with col_left:
                                 </div>
                                 
                                 <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px; background:rgba(255,255,255,0.5); padding:2px; border-radius:3px;">
-                                    <span style="color:#6d28d9; font-weight:600;">RS: {rs_txt.split(' ')[0]}</span>
+                                    <span style="color:#6d28d9; font-weight:600;">RS: {rs_display}</span>
                                     <span style="color:#059669; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
                                 </div>
                                 
                                 <div style="font-size:0.65rem; color:#d97706; font-weight:700; margin-top:2px;">
-                                    {pp_txt if row.get('Pocket_Pivot', False) else f"İstikrar: {row['Gun_Sayisi']}"}
+                                    {pp_txt}
                                 </div>
                             </div>
-                            """    
+                            """
                             
-                            # DÜZELTME: unsafe_allow_html=True EKLENDİ
+                            # --- KRİTİK NOKTA: HTML RENDERING ---
                             st.markdown(card_html, unsafe_allow_html=True)
                             
+                            # İncele Butonu
                             if st.button(f"🔍 Git: {row['Sembol']}", key=f"btn_acc_{row['Sembol']}", use_container_width=True):
                                 on_scan_result_click(row['Sembol'])
                                 st.rerun()
@@ -2803,6 +2815,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
