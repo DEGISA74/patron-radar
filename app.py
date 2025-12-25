@@ -2557,7 +2557,7 @@ with col_left:
                 st.session_state.accum_data = scan_hidden_accumulation(current_assets)
 
         if st.session_state.stp_scanned or (st.session_state.accum_data is not None):
-            st.markdown("---")
+
             c1, c2, c3, c4 = st.columns(4)
 
             with c1:
@@ -2811,6 +2811,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
