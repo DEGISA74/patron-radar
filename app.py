@@ -1227,8 +1227,14 @@ def scan_agent3_harsi(asset_list):
             if res: results.append(res)
             
     df = pd.DataFrame(results)
-    if not df.empty and "RSI_Raw" in df.columns:
-        df = df.sort_values(by="RSI_Raw", ascending=False)
+    if not df.empty:
+        # Trend_Raw: Mum sayısı (Streak)
+        # ascending=True diyerek en küçük sayıyı (1 mum, 2 mum...) en başa alıyoruz.
+        if "Trend_Raw" in df.columns:
+            df = df.sort_values(by="Trend_Raw", ascending=True)
+        elif "RSI_Raw" in df.columns:
+            # Yedek plan: Trend bilgisi yoksa RSI'a göre sırala
+            df = df.sort_values(by="RSI_Raw", ascending=False)
         
     return df
 
@@ -2796,6 +2802,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
