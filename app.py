@@ -2711,7 +2711,14 @@ with col_left:
     if st.session_state.harsi_data is not None:
         if not st.session_state.harsi_data.empty:
             
-            st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
+            # Özel İnce Bilgi Kutusu
+            count = len(st.session_state.harsi_data)
+            st.markdown(f"""
+            <div style="background-color: #dcfce7; color: #14532d; padding: 8px 12px; border-radius: 6px; border: 1px solid #86efac; font-size: 0.9rem; margin-bottom: 10px; display: flex; align-items: center;">
+                <span style="font-size: 1.1rem; margin-right: 8px;">🎯</span>
+                <b>{count}</b>&nbsp;hisse kriterlere uydu!
+            </div>
+            """, unsafe_allow_html=True)
             
             with st.container(height=150):
                 for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
@@ -2804,6 +2811,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
