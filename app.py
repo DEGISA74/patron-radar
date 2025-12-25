@@ -2535,10 +2535,10 @@ with col_left:
                             change_val = row['Degisim_Raw']
                             change_color = "#16a34a" if change_val >= 0 else "#dc2626"
                             
-                            # RS Metin Düzeltmesi ('Veri Yok' ise bölmesin)
+                            # DÜZELTME 1: RS Verisi 'Veri Yok' ise '-' yazsın
                             raw_rs = row.get('RS_Durumu', '-')
                             if "Veri" in str(raw_rs):
-                                rs_display = "N/A"
+                                rs_display = "-"
                             else:
                                 rs_display = str(raw_rs).split(' ')[0]
 
@@ -2553,25 +2553,25 @@ with col_left:
                                 pp_txt = f"İstikrar: {row['Gun_Sayisi']}"
 
                             # --- HTML KART TASARIMI (DÜZELTİLMİŞ) ---
+                            # DİKKAT: HTML kodları en sola yaslı olmalı!
                             card_html = f"""
-                            <div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center; {pp_style}">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                                    <div style="font-weight:800; color:#4c1d95; font-size:0.9rem;">{row['Sembol']}</div>
-                                    <div style="font-size:0.7rem; font-weight:700; color:{change_color};">{row['Degisim_Str']}</div>
-                                </div>
-                                
-                                <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px; background:rgba(255,255,255,0.5); padding:2px; border-radius:3px;">
-                                    <span style="color:#6d28d9; font-weight:600;">RS: {rs_display}</span>
-                                    <span style="color:#059669; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
-                                </div>
-                                
-                                <div style="font-size:0.65rem; color:#d97706; font-weight:700; margin-top:2px;">
-                                    {pp_txt}
-                                </div>
-                            </div>
-                            """
+<div style="background:#f5f3ff; border:1px solid #8b5cf6; border-radius:6px; padding:6px; margin-bottom:6px; text-align:center; {pp_style}">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <div style="font-weight:800; color:#4c1d95; font-size:0.9rem;">{row['Sembol']}</div>
+        <div style="font-size:0.7rem; font-weight:700; color:{change_color};">{row['Degisim_Str']}</div>
+    </div>
+    
+    <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px; background:rgba(255,255,255,0.5); padding:2px; border-radius:3px;">
+        <span style="color:#6d28d9; font-weight:600;">RS: {rs_display}</span>
+        <span style="color:#059669; font-weight:600;">Güç: {row['MF_Gucu_Goster']}</span>
+    </div>
+    
+    <div style="font-size:0.65rem; color:#d97706; font-weight:700; margin-top:2px;">
+        {pp_txt}
+    </div>
+</div>"""
                             
-                            # --- KRİTİK NOKTA: HTML RENDERING ---
+                            # Render işlemi
                             st.markdown(card_html, unsafe_allow_html=True)
                             
                             # İncele Butonu
@@ -2815,6 +2815,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
