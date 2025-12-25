@@ -2385,7 +2385,7 @@ with st.sidebar:
             elif not (has_warm or has_break):
                 st.info("Sonra 'Breakout Ajanı' taramasını başlatın.")
             else:
-                st.warning("Şu an hem toplanan hem de harekete geçen ORTAK bir hisse yok.")
+                st.warning("Şu an toplanan ORTAK bir hisse yok.")
 
     st.divider()
 
@@ -2796,6 +2796,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
