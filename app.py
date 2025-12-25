@@ -1228,11 +1228,20 @@ def scan_agent3_harsi(asset_list):
             
     df = pd.DataFrame(results)
     if not df.empty:
-        if "Trend_Raw" in df.columns:
-            df = df.sort_values(by="Trend_Raw", ascending=[True, False])
+        # Eğer hem Trend hem RSI verisi varsa ÇİFTE SIRALAMA yap
+        if "Trend_Raw" in df.columns and "RSI_Raw" in df.columns:
+            # 1. Kural: Trend_Raw -> Küçükten Büyüğe (True) - Yani az mum en üstte
+            # 2. Kural: RSI_Raw -> Büyükten Küçüğe (False) - Eşit mum varsa güçlü olan üstte
+            df = df.sort_values(by=["Trend_Raw", "RSI_Raw"], ascending=[True, False])
+            
+        # Sadece Trend verisi varsa
+        elif "Trend_Raw" in df.columns:
+            df = df.sort_values(by="Trend_Raw", ascending=True)
+            
+        # Sadece RSI verisi varsa (Eski usul)
         elif "RSI_Raw" in df.columns:
             df = df.sort_values(by="RSI_Raw", ascending=False)
-        
+            
     return df
 
 @st.cache_data(ttl=600)
@@ -2799,6 +2808,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
