@@ -2317,14 +2317,75 @@ with st.sidebar:
     if sentiment_verisi:
         render_sentiment_card(sentiment_verisi)
 
-    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     
-    # 2. DERİN TEKNİK RÖNTGEN (Ortada)
-    xray_verisi = get_deep_xray_data(st.session_state.ticker)
-    if xray_verisi:
-        render_deep_xray_card(xray_verisi)
-    else:
-        st.caption("Röntgen verisi şu an hazırlanamıyor.")
+    # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
+    st.markdown(f"""
+    <div style="background: linear-gradient(45deg, #4f46e5, #7c3aed); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        🌟 YILDIZ ADAYLARI
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Kesişim Mantığı
+    stars_found = False
+    
+    # Scroll Alanı Başlatıyoruz
+    with st.container(height=350):
+        
+        # Verilerin varlığını kontrol et
+        has_accum = st.session_state.accum_data is not None and not st.session_state.accum_data.empty
+        has_warm = st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty
+        has_break = st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty
+        
+        if has_accum:
+            # Akıllı Para listesindeki sembolleri al
+            acc_df = st.session_state.accum_data
+            acc_symbols = set(acc_df['Sembol'].values)
+            
+            # 1. SENARYO: HAREKET (Kıranlar + Akıllı Para)
+            if has_break:
+                bo_df = st.session_state.breakout_right
+                bo_symbols = set(bo_df['Sembol'].values)
+                # Kesişim Bul
+                move_stars = acc_symbols.intersection(bo_symbols)
+                
+                for sym in move_stars:
+                    stars_found = True
+                    # Fiyatı Accumulation listesinden çekelim
+                    price = acc_df[acc_df['Sembol'] == sym]['Fiyat'].values[0]
+                    
+                    # Buton Formatı: 🚀 THYAO (305.50) | HAREKET
+                    label = f"🚀 {sym} ({price}) | HAREKET"
+                    if st.button(label, key=f"star_mov_{sym}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+
+            # 2. SENARYO: HAZIRLIK (Isınanlar + Akıllı Para)
+            if has_warm:
+                warm_df = st.session_state.breakout_left
+                # Isınanlar listesinde bazen 'Sembol_Raw' bazen 'Sembol' olabilir, kontrol edelim
+                col_name = 'Sembol_Raw' if 'Sembol_Raw' in warm_df.columns else 'Sembol'
+                warm_symbols = set(warm_df[col_name].values)
+                # Kesişim Bul
+                prep_stars = acc_symbols.intersection(warm_symbols)
+                
+                for sym in prep_stars:
+                    stars_found = True
+                    price = acc_df[acc_df['Sembol'] == sym]['Fiyat'].values[0]
+                    
+                    # Buton Formatı: ⏳ ASELS (60.20) | HAZIRLIK
+                    label = f"⏳ {sym} ({price}) | HAZIRLIK"
+                    if st.button(label, key=f"star_prep_{sym}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        
+        if not stars_found:
+            if not has_accum:
+                st.info("Önce 'Sentiment Ajanı' taramasını başlatın.")
+            elif not (has_warm or has_break):
+                st.info("Sonra 'Breakout Ajanı' taramasını başlatın.")
+            else:
+                st.warning("Şu an hem toplanan hem de harekete geçen ORTAK bir hisse yok.")
 
     st.divider()
 
@@ -2735,6 +2796,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
