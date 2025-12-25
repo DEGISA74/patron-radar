@@ -2711,10 +2711,6 @@ with col_left:
     if st.session_state.harsi_data is not None:
         if not st.session_state.harsi_data.empty:
             
-            # RSI Sıralaması
-            if "RSI_Raw" in st.session_state.harsi_data.columns:
-                st.session_state.harsi_data = st.session_state.harsi_data.sort_values(by="RSI_Raw", ascending=False)
-
             st.success(f"🎯 Kriterlere uyan {len(st.session_state.harsi_data)} hisse bulundu!")
             
             with st.container(height=300):
@@ -2808,6 +2804,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
