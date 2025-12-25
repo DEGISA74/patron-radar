@@ -2702,8 +2702,8 @@ with col_left:
     """, unsafe_allow_html=True)
     
     # Tarama Butonu
-    if st.button(f"🌊 3H TREND TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
-        with st.spinner("3. Ajan sahada: Trend süreleri hesaplanıyor..."):
+    if st.button(f"🌊 3SAAT KIRILIM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
+        with st.spinner("3. Erken Kırılım Ajanı sahada: Kısa Vadeli Kırılımlar taranıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.harsi_data = scan_agent3_harsi(current_assets)
     
@@ -2804,6 +2804,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
