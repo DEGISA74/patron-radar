@@ -2714,7 +2714,7 @@ with col_left:
             # Özel İnce Bilgi Kutusu
             count = len(st.session_state.harsi_data)
             st.markdown(f"""
-            <div style="background-color: #dcfce7; color: #14532d; padding: 4px 6px; border-radius: 4px; border: 1px solid #86efac; font-size: 1.0rem; margin-bottom: 10px; display: flex; align-items: center;">
+            <div style="background-color: #dcfce7; color: #14532d; padding: 4px 6px; border-radius: 2px; border: 0.9px solid #86efac; font-size: 1.0rem; margin-bottom: 4px; display: flex; align-items: center;">
                 <span style="font-size: 1.1rem; margin-right: 8px;">🎯</span>
                 <b>{count}</b>&nbsp;hisse kriterlere uydu!
             </div>
@@ -2811,6 +2811,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
