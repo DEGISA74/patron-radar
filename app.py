@@ -2693,10 +2693,8 @@ with col_left:
         <div class="info-header" style="color:#5b21b6;">🕵️ 3. Ajan: 3 Saatlik Trend Avcısı</div>
         <div class="edu-note">
             Bu ajan hisseleri <b>3 saatlik</b> periyotlarda tarar ve şu şartları arar:<br>
-            1. Fiyat son 2 mumda <b>EMA9</b> ve <b>KAMA(20-2-30)</b> üzerinde.<br>
-            2. <b>RSI</b> kendi 50 ortalamasının üzerinde.<br>
-            3. <b>HARSI (Heikin Ashi RSI)</b> son 3 mumda 🟢 YEŞİL yaktı.<br>
-            4. RSI çizgisi mumların üzerinde (Momentum güçlü).
+            1. Fiyat son 2 mumda <b>EMA9</b> ve <b>KAMA(20-2-30)</b> üzerinde.<br>   2. <b>RSI</b> kendi 50 ortalamasının üzerinde.<br>
+            3. <b>HARSI (Heikin Ashi RSI)</b> son 3 mumda 🟢 YEŞİL yaktı.<br>        4. RSI çizgisi mumların üzerinde (Momentum güçlü).
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2811,3 +2809,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
