@@ -2564,94 +2564,47 @@ with col_left:
                 st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
                 st.rerun()
 
-        # 2 Sütunlu Yapı
+       # 2 Sütunlu Sade Yapı (YENİ TASARIM)
         c_left, c_right = st.columns(2)
         
-        # --- SOL SÜTUN: ISINANLAR ---
+        # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
         with c_left:
-            st.markdown("<div style='text-align:center; color:#d97706; font-weight:500; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+            
             with st.container(height=300): # Scroll Alanı
                 if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
                     df_left = st.session_state.breakout_left.head(20)
                     for i, (index, row) in enumerate(df_left.iterrows()):
                         sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
                         
-                        # Isınanlar Kartı (Mevcut Tasarım)
-                        card_html = f"""
-                        <div class="info-card" style="margin-bottom:6px; border-left:3px solid #f59e0b;">
-                            <div style="display:flex; justify-content:space-between; font-weight:700; color:#0f172a; font-size:0.85rem; border-bottom:1px solid #e2e8f0; padding-bottom:2px;">
-                                <span>{sym_raw}</span>
-                                <span>{row['Fiyat']}</span>
-                            </div>
-                            <div class="info-row" style="margin-top:4px;"><div class="label-short">Zirve:</div><div class="info-val">{row['Zirveye Yakınlık']}</div></div>
-                            <div class="info-row"><div class="label-short">Hacim:</div><div class="info-val" style="color:#15803d;">{row['Hacim Durumu']}</div></div>
-                            <div class="info-row"><div class="label-short">Trend:</div><div class="info-val">{row['Trend Durumu']}</div></div>
-                            <div style="text-align:right; font-size:0.75rem; color:#64748B; margin-top:2px;">RSI: <strong>{row['RSI']}</strong></div>
-                        </div>
-                        """
+                        # HTML etiketlerini temizle (Sadece oranı al: %98 gibi)
+                        prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
                         
-                        # YAN YANA YERLEŞİM (SÜTUN SİSTEMİ)
-                        c_card, c_btn = st.columns([0.75, 0.25])
+                        # Buton Metni: 🔥 AAPL (150.20) | %98
+                        btn_label = f"🔥 {sym_raw} ({row['Fiyat']}) | {prox_clean}"
                         
-                        with c_card:
-                            st.markdown(card_html, unsafe_allow_html=True)
-                            
-                        with c_btn:
-                            st.markdown("<div style='height:35px'></div>", unsafe_allow_html=True)
-                            if st.button("🔍", key=f"L_btn_{sym_raw}_{i}", help=f"İncele: {sym_raw}", use_container_width=True):
-                                on_scan_result_click(sym_raw)
-                                st.rerun()
-
+                        if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
+                            on_scan_result_click(sym_raw)
+                            st.rerun()
                 else:
                     st.info("Isınan hisse bulunamadı.")
 
-        # --- SAĞ SÜTUN: KIRANLAR (YENİ - DÜZELTİLMİŞ) ---
+        # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
         with c_right:
-            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:500; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+            
             with st.container(height=300): # Scroll Alanı
                 if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
                     df_right = st.session_state.breakout_right.head(20)
                     for i, (index, row) in enumerate(df_right.iterrows()):
                         sym = row['Sembol']
                         
-                        # Kıranlar Kartı
-                        vol_val = float(row['Hacim_Kati'].replace('x',''))
-                        vol_color = "#dc2626" if vol_val < 1.0 else "#16a34a" if vol_val > 1.5 else "#d97706"
+                        # Buton Metni: 🚀 TSLA (200.50) | Hacim: 2.5x
+                        btn_label = f"🚀 {sym} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
                         
-                        # HTML String - GİRİNTİLER (BOŞLUKLAR) TEMİZLENDİ
-                        # Markdown'ın bunu "kod bloğu" sanmaması için sola yaslıyoruz.
-                        card_html_right = f"""
-<div class="info-card" style="margin-bottom:6px; border-left:3px solid #16a34a; background:#ffffff;">
-<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">
-<div style="font-weight:800; color:#15803d; font-size:0.9rem;">🚀 {sym}</div>
-<div style="font-family:'JetBrains Mono'; font-weight:700;">{row['Fiyat']}</div>
-</div>
-<div class="info-row">
-<div class="label-long" style="width:90px;">Kırılım:</div>
-<div class="info-val" style="font-weight:700; color:#1e3a8a;">{row['Kirim_Turu']}</div>
-</div>
-<div class="info-row">
-<div class="label-long" style="width:90px;">Hacim Artışı:</div>
-<div class="info-val" style="font-weight:800; color:{vol_color};">{row['Hacim_Kati']} <span style="font-size:0.7rem; color:#64748B; font-weight:400;">(Ort. Katı)</span></div>
-</div>
-<div class="info-row">
-<div class="label-long" style="width:90px;">RSI Gücü:</div>
-<div class="info-val">{row['RSI']}</div>
-</div>
-</div>
-"""
-                        # YAN YANA YERLEŞİM (SÜTUN SİSTEMİ)
-                        c_card_r, c_btn_r = st.columns([0.75, 0.25])
-                        
-                        with c_card_r:
-                            st.markdown(card_html_right, unsafe_allow_html=True)
-                        
-                        with c_btn_r:
-                            st.markdown("<div style='height:35px'></div>", unsafe_allow_html=True)
-                            if st.button("🔍", key=f"R_btn_{sym}_{i}", help=f"İncele: {sym}", use_container_width=True):
-                                on_scan_result_click(sym)
-                                st.rerun()
-
+                        if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
                 else:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
@@ -2782,6 +2735,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
