@@ -2330,7 +2330,7 @@ with st.sidebar:
     stars_found = False
     
     # Scroll Alanı Başlatıyoruz
-    with st.container(height=350):
+    with st.container(height=150):
         
         # Verilerin varlığını kontrol et
         has_accum = st.session_state.accum_data is not None and not st.session_state.accum_data.empty
@@ -2796,6 +2796,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
