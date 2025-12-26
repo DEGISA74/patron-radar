@@ -2479,47 +2479,51 @@ if st.session_state.generate_prompt:
         fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
         fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
 
-    prompt = f"""*** SİSTEM ROLLERİ ***
-Sen Dünya çapında tanınan, borsa portföyü yönetimi uzmanı ve Price Action ustası bir Swing Tradersın.
-Aşağıda {t} varlığı için gelen HAM VERİLER var. Bunları (3-20 gün vadeli trade için) yorumla.
+# Önce verileri temizle
+fiyat_str = f"{info.get('price', 0):.2f}"
+sma50_str = f"{tech_data.get('sma50', 0):.2f}"
+liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data.get('target', 0) > 0 else "Belirsiz / Yok"
 
-*** 1. TREND VE KRİTİK SEVİYELER (YENİ VE ÖNEMLİ) ***
-- SuperTrend Durumu: {st_txt}
+# Candle description (Title yerine Desc kullanıyoruz)
+mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
+
+prompt = f"""*** SİSTEM ROLLERİ ***
+Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
+Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
+
+*** VARLIK KİMLİĞİ ***
+- Sembol: {t}
+- GÜNCEL FİYAT: {fiyat_str}
+- SMA50 (Trend Bazı): {sma50_str}
+
+*** 1. MARKET YAPISI VE TREND ***
+- SuperTrend (Ana Yön): {st_txt}
+- ICT Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
+- Konum (Discount/Premium): {ict_data.get('zone', 'Bilinmiyor')}
+
+*** 2. KRİTİK SEVİYELER (SAVAŞ ALANI) ***
 - En Yakın Direnç (Fib): {fib_res}
 - En Yakın Destek (Fib): {fib_sup}
-- SMA50 Değeri: {tech_data.get('sma50', 'Bilinmiyor')}
+- Hedef Likidite (Mıknatıs): {liq_str}
+- Aktif FVG (Dengesizlik): {ict_data.get('fvg_txt', 'Yok')}
 
-*** 2. ICT / KURUMSAL YAPILAR ***
-- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')}
-- Bölge (PD Array): {ict_data.get('zone', 'Bilinmiyor')} (Discount=Ucuz, Premium=Pahalı)
-- Hedef Likidite: {ict_data.get('target', 'Belirsiz')}
-- Aktif FVG/Gap: {ict_data.get('fvg_txt', 'Yok')}
-
-*** 3. PRICE ACTION DNA (MİKRO ANALİZ) ***
-- Mum & Formasyonlar: {pa_candle}
-- RSI Uyumsuzluğu: {pa_div} (Çok Kritik!)
-- Tuzak Durumu (SFP): {pa_sfp}
-- Hacim & VSA: {pa_vol}
-- Volatilite (Sıkışma): {pa_sq}
-
-*** 4. DUYGU VE MOMENTUM ***
-- Sentiment Puanı: {sent_data.get('total', 0)}/100
+*** 3. PRICE ACTION & GÜÇ (DNA ANALİZİ) ***
+- Mum Formasyonu: {mum_desc}
+- RSI Uyumsuzluğu: {pa_div} (Buna çok dikkat et!)
+- Tuzak (SFP): {pa_sfp}
+- Volatilite: {pa_sq}
 - Momentum Durumu: {mom_clean}
-- Radar Skoru: {radar_val} ({radar_setup})
+- Sentiment Skoru: {sent_data.get('total', 0)}/100
 
 *** GÖREVİN ***
-Bu verileri analiz et ve işlem planı ver. Kısa, net, maddeler halinde yaz. 
-Yatırım tavsiyesi değildir deme, bir Swing Trader analisti gibi konuş.
-SuperTrend yönü ile ICT Yapısı çelişiyorsa riski belirt.
-
-ÇIKTI FORMATI:
-💡 ANALİZ: Bir paragraflık Temel Analiz yap, P/E, PEG, 12 aylık analist beklentilerini ver ve analiz et. 
-🎯 YÖN: [LONG/SHORT/BEKLE]
-💡 STRATEJİ:
-   - Giriş: (Fib destekleri veya FVG'ye göre)
-   - Stop: (SuperTrend veya Son Dip altına)
-   - Hedef: (Fib direnci veya Likidite)
-⚠️ RİSK: (RSI uyumsuzluğu veya Trend tersliği varsa uyar)
+Verileri sentezle ve bir "Sniper" gibi işlem kurgula.
+1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle. Temel analize (bilanço vs.) girme, sadece teknik konuş.
+2. KARAR: [LONG / SHORT / İZLE]
+3. STRATEJİ:
+   - Giriş Bölgesi: (FVG veya Fib desteğini referans al)
+   - Stop Loss: (SuperTrend veya Swing Low altı)
+   - Kar Al (TP): (Likidite veya Fib direnci)
+4. UYARI: Eğer RSI uyumsuzluğu veya Trend tersliği varsa büyük harflerle uyar.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -2809,6 +2813,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
