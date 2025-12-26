@@ -1076,7 +1076,6 @@ def scan_confirmed_breakouts(asset_list):
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA)
 # ==============================================================================
-
 @st.cache_data(ttl=600)
 def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
     try:
@@ -1102,56 +1101,44 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         year_low = float(close.rolling(250).min().iloc[-1])
         
         # 3. TREND ŞABLONU (FİLTRELER)
-        # Fiyat > SMA150 ve SMA200
         c1 = curr_price > sma150 and curr_price > sma200
-        # SMA150 > SMA200
         c2 = sma150 > sma200
-        # SMA200 Yükseliyor mu?
         c3 = sma200 > sma200_prev
-        # SMA50 diğerlerinin üzerinde mi? (Trend Gücü)
         c4 = sma50 > sma150 and sma50 > sma200
-        # Fiyat > SMA50 (Kısa vade trend)
         c5 = curr_price > sma50
-        # Dipten en az %30 yukarıda
         c6 = curr_price >= (year_low * 1.30)
-        # Zirveye %25 yakınlık (Minervini Kuralı)
         c7 = curr_price >= (year_high * 0.75)
         
         trend_score = sum([c1, c2, c3, c4, c5, c6, c7])
         trend_ok = trend_score >= 5 # En az 5 madde geçerli olmalı
         
         # 4. VCP (DARALMA) SİNYALİ
-        # Son 10 günün oynaklığı vs Son 60 gün
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
         std_60 = close.pct_change().rolling(60).std().iloc[-1]
-        is_vcp = std_10 < (std_60 * 0.75) # Volatilite daralıyor
+        is_vcp = std_10 < (std_60 * 0.75)
         
         # 5. ARZ KONTROLÜ (Hacim Kuruması)
         avg_vol = volume.rolling(20).mean().iloc[-1]
-        # Son 10 gündeki düşüş günlerini bul
         last_10 = df.tail(10)
         down_days = last_10[last_10['Close'] < last_10['Open']]
         is_dry = True
         if not down_days.empty:
-            # Düşüş günlerinin hacim ortalaması, genel ortalamanın altında mı?
             is_dry = down_days['Volume'].mean() < (avg_vol * 0.9)
 
         # 6. RS GÜCÜ (Mansfield)
         rs_rating = "Nötr"; rs_val = 0
         if bench_df is not None:
-            # Tarihleri eşle
             common = close.index.intersection(bench_df.index)
             if len(common) > 60:
                 r_s = close.loc[common]; r_b = bench_df['Close'].loc[common]
                 ratio = r_s / r_b
-                # Mansfield RS
                 mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 10
                 rs_val = float(mansfield.iloc[-1])
                 if rs_val > 0: rs_rating = "GÜÇLÜ (RS+)"
                 else: rs_rating = "ZAYIF"
 
         # DURUM BELİRLEME
-        status = "YOK"; det = "-"
+        status = "YOK"; 
         raw_score = trend_score * 10
         if rs_val > 0: raw_score += 15
         if is_vcp: raw_score += 15
@@ -1159,7 +1146,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         if trend_ok and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
         elif trend_ok and rs_val > 0: status = "🔥 GÜÇLÜ TREND"
         elif trend_ok: status = "✅ OLUMLU (İzle)"
-        else: return None # Listeye alma
+        else: return None
 
         return {
             "Sembol": ticker,
@@ -1167,7 +1154,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
             "Durum": status,
             "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else 'Yok'} | Arz: {'Kurudu' if is_dry else 'Normal'}",
             "Raw_Score": raw_score,
-            # GÖRSEL PANEL İÇİN GEREKLİ ANAHTARLAR (HATA ALMAMAK İÇİN):
+            # EKSİK OLAN ANAHTARLAR ARTIK BURADA:
             "trend_ok": trend_ok,
             "is_vcp": is_vcp,
             "is_dry": is_dry,
@@ -1186,11 +1173,9 @@ def scan_minervini_batch(asset_list):
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
     
-    # Önden veri çek (Hızlandırma)
     _ = get_batch_data_cached(asset_list, period="2y")
     
     results = []
-    # Threading ile hızlı tarama
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(calculate_minervini_sepa, sym, bench) for sym in asset_list]
         for future in concurrent.futures.as_completed(futures):
@@ -2284,7 +2269,6 @@ def render_minervini_panel_v2(ticker):
     
     if not data: return # Veri yoksa çizme
 
-    # Hata veren 'trend_ok' artık hesaplama fonksiyonunda var.
     trend_icon = "✅" if data['trend_ok'] else "❌"
     vcp_icon = "✅" if data['is_vcp'] else "❌"
     vol_icon = "✅" if data['is_dry'] else "❌"
@@ -2770,7 +2754,6 @@ with col_left:
             with st.container(height=300, border=True):
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
-                    # Buton Metni: 💎 NVDA (135.20) | SÜPER BOĞA (VCP) | GÜÇLÜ (RS+)
                     icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
                     label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
                     
@@ -2853,6 +2836,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
