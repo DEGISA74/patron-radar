@@ -2479,7 +2479,7 @@ if st.session_state.generate_prompt:
     mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
 
     prompt = f"""*** SİSTEM ROLLERİ ***
-Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
+Sen Dünya çapında tanınan, Price Action ve Smart Money konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
 Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
 
 *** VARLIK KİMLİĞİ ***
@@ -2507,7 +2507,7 @@ Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak st
 - Sentiment Skoru: {sent_data.get('total', 0)}/100
 
 *** GÖREVİN ***
-Verileri sentezle ve bir "Sniper" gibi işlem kurgula.
+Verileri sentezle ve aşağıdaki başlıkları açıp, bir "Sniper" gibi işlem kurgula.
 1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle. Temel analize (bilanço vs.) girme, sadece teknik konuş.
 2. KARAR: [LONG / SHORT / İZLE]
 3. STRATEJİ:
@@ -2806,6 +2806,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
