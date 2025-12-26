@@ -2325,6 +2325,7 @@ def render_minervini_panel_v2(ticker):
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+    
 # ==============================================================================
 # 5. SIDEBAR UI
 # ==============================================================================
@@ -2837,6 +2838,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
