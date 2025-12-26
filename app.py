@@ -1073,86 +1073,93 @@ def scan_confirmed_breakouts(asset_list):
     
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
+# --- MINERVINI SEPA MODÜLÜ (MOTOR VE TARAYICI) ---
+
 @st.cache_data(ttl=600)
-def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"): # BIST icin XU100.IS olmali
+def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
     try:
-        # Minervini analizinde en az 1 yıllık veri şarttır
+        # En az 1 yıllık veri şart
         df = get_safe_historical_data(ticker, period="2y")
         if df is None or len(df) < 260: return None
         
-        # Endeks verisini çek (Kıyaslama için)
+        # Endeks verisi (RS için)
         bench_df = get_safe_historical_data(benchmark_ticker, period="2y")
         
         close = df['Close']; volume = df['Volume']
+        curr_price = close.iloc[-1]
         
-        # --- 1. TREND ŞABLONU (FİLTRE) ---
-        sma50 = close.rolling(50).mean()
-        sma150 = close.rolling(150).mean()
-        sma200 = close.rolling(200).mean()
+        # 1. ORTALAMALAR VE TREND
+        sma50 = close.rolling(50).mean().iloc[-1]
+        sma150 = close.rolling(150).mean().iloc[-1]
+        sma200 = close.rolling(200).mean().iloc[-1]
+        sma200_prev = close.rolling(200).mean().iloc[-22] # 1 ay önceki
         
-        current_price = close.iloc[-1]
         year_high = close.rolling(250).max().iloc[-1]
         year_low = close.rolling(250).min().iloc[-1]
         
-        # Kural: SMA 200 en az 1 aydır (22 iş günü) YÜKSELİYOR olmalı
-        sma200_slope_ok = sma200.iloc[-1] > sma200.iloc[-22]
+        # Trend Şablonu (Kriterler)
+        c1 = curr_price > sma150 and curr_price > sma200
+        c2 = sma150 > sma200
+        c3 = sma200 > sma200_prev # SMA200 Yükseliyor mu?
+        c4 = sma50 > sma150 and sma50 > sma200
+        c5 = curr_price > sma50
+        c6 = curr_price >= (year_low * 1.30) # Dipten %30 yukarıda
+        c7 = curr_price >= (year_high * 0.75) # Zirveye %25 yakınlık
         
-        trend_template = (
-            (current_price > sma150.iloc[-1]) and (current_price > sma200.iloc[-1]) and
-            (sma150.iloc[-1] > sma200.iloc[-1]) and (sma50.iloc[-1] > sma150.iloc[-1]) and
-            (current_price > sma50.iloc[-1]) and 
-            (current_price >= year_low * 1.30) and  # Dipten %30 yukarıda
-            (current_price >= year_high * 0.75) and # Zirveye %25 yakın
-            sma200_slope_ok
-        )
-
-        # --- 2. VCP (DARALMA) SİNYALİ ---
-        # Son 10 günün oynaklığı, son 60 günden düşük mü?
+        trend_score = sum([c1, c2, c3, c4, c5, c6, c7])
+        
+        # 2. VCP (DARALMA) SİNYALİ
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
         std_60 = close.pct_change().rolling(60).std().iloc[-1]
-        is_contracting = std_10 < (std_60 * 0.75) 
+        is_vcp = std_10 < (std_60 * 0.75) # Volatilite daralıyor
         
-        # --- 3. HACİM İMZASI (ARZ KURUMASI) ---
-        avg_vol_20 = volume.rolling(20).mean().iloc[-1]
-        last_10_close = close.tail(10); last_10_vol = volume.tail(10); last_10_open = df['Open'].tail(10)
-        down_days_vol = last_10_vol[last_10_close < last_10_open]
+        # 3. RS GÜCÜ (Mansfield)
+        rs_str = "Zayıf"
+        if bench_df is not None:
+            common = close.index.intersection(bench_df.index)
+            if len(common) > 50:
+                r_stock = close.loc[common]; r_bench = bench_df['Close'].loc[common]
+                ratio = r_stock / r_bench
+                mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 10
+                if mansfield.iloc[-1] > 0: rs_str = "GÜÇLÜ (RS+)"
         
-        supply_drying = False
-        if len(down_days_vol) > 0:
-            supply_drying = down_days_vol.mean() < (avg_vol_20 * 0.8)
-        else: supply_drying = True
-
-        # --- 4. GERÇEK RS (MANSFIELD) ---
-        rs_rating = "Nötr"; rs_val = 0
-        if bench_df is not None and not bench_df.empty:
-            common_idx = close.index.intersection(bench_df.index)
-            c_stock = close.loc[common_idx]; c_bench = bench_df['Close'].loc[common_idx]
-            if len(c_stock) > 60:
-                ratio = c_stock / c_bench
-                mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 100
-                rs_val = mansfield.iloc[-1]
-                if rs_val > 2: rs_rating = "GÜÇLÜ (Lider)"
-                elif rs_val > 0: rs_rating = "POZİTİF"
-                else: rs_rating = "ZAYIF"
+        # FİLTRELEME MANTIĞI (En az 5 trend kriteri + VCP veya RS)
+        status = "YOK"
+        if trend_score >= 7 and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
+        elif trend_score >= 6: status = "🔥 GÜÇLÜ TREND"
+        elif trend_score >= 5: status = "✅ OLUMLU"
+        else: return None # Listeye alma
         
-        # --- SONUÇ ---
-        score = 0; reasons = []
-        if trend_template: score += 40; reasons.append("Trend Şablonu")
-        else: reasons.append("Trend Zayıf")
-        if is_contracting: score += 20; reasons.append("VCP (Daralma)")
-        if supply_drying: score += 20; reasons.append("Arz Kurumuş")
-        if rs_val > 0: score += 20; reasons.append("RS Pozitif")
-        
-        status = "İZLEME DIŞI"; color = "#94a3b8"
-        if score >= 80: status = "💎 MINERVINI SEPA"; color = "#16a34a"
-        elif score >= 60: status = "🔔 ADAY (İzle)"; color = "#d97706"
-        elif score >= 40: status = "⚠️ SADECE TREND"; color = "#f59e0b"
-
-        return { "score": score, "status": status, "color": color, "reasons": reasons, 
-                 "rs_val": rs_val, "rs_rating": rs_rating, "is_vcp": is_contracting, 
-                 "is_dry": supply_drying, "trend_ok": trend_template, 
-                 "sma200": sma200.iloc[-1], "year_high": year_high }
+        return {
+            "Sembol": ticker,
+            "Fiyat": f"{curr_price:.2f}",
+            "Skor": f"{trend_score}/7",
+            "Durum": status,
+            "Detay": f"{rs_str} | VCP: {'Var' if is_vcp else 'Yok'}",
+            "Raw_Score": trend_score + (3 if is_vcp else 0) # Sıralama için
+        }
     except: return None
+
+@st.cache_data(ttl=900)
+def scan_minervini_batch(asset_list):
+    # Kategoriye göre benchmark seç
+    cat = st.session_state.get('category', 'S&P 500')
+    bench = "XU100.IS" if "BIST" in cat else "^GSPC"
+    
+    # Verileri önden çek (Hız için)
+    _ = get_batch_data_cached(asset_list, period="2y")
+    
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(calculate_minervini_sepa, sym, bench) for sym in asset_list]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+            
+    if results:
+        df = pd.DataFrame(results)
+        return df.sort_values(by="Raw_Score", ascending=False)
+    return pd.DataFrame()
     
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
@@ -2680,6 +2687,46 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
+    # 🦁 YENİ: MINERVINI SEPA AJANI (SCROLL BARLI)
+    # ---------------------------------------------------------
+    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı</div>', unsafe_allow_html=True)
+    
+    # 1. TARAMA BUTONU (Kırmızı ve Geniş)
+    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
+        with st.spinner("Aslan avda... 200 günlük ortalamalar, VCP daralmaları ve RS gücü taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.minervini_data = scan_minervini_batch(current_assets)
+            
+    # 2. SONUÇ EKRANI (Scroll Bar - Yükseklik 300)
+    if st.session_state.minervini_data is not None:
+        result_count = len(st.session_state.minervini_data)
+        
+        if result_count > 0:
+            st.success(f"🎯 Kriterlere uyan {result_count} hisse bulundu!")
+            
+            # --- SCROLL BAR ALANI (300px) ---
+            with st.container(height=300, border=True):
+                for i, row in st.session_state.minervini_data.iterrows():
+                    sym = row['Sembol']
+                    price = row['Fiyat']
+                    status = row['Durum'] # Örn: 💎 SÜPER BOĞA (VCP)
+                    detail = row['Detay'] # Örn: GÜÇLÜ (RS+) | VCP: Var
+                    
+                    # İkon seçimi
+                    icon = "💎" if "SÜPER" in status else "🔥"
+                    
+                    # Buton Metni: 💎 NVDA (135.20) | SÜPER BOĞA (VCP)
+                    btn_label = f"{icon} {sym} ({price}) | {status} | {detail}"
+                    
+                    # Buton Stili (Resimdeki gibi)
+                    if st.button(btn_label, key=f"sepa_res_{sym}_{i}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.warning("Bu zorlu kriterlere (Aşama 2 Trendi) uyan hisse bulunamadı.")
+    # ---------------------------------------------------------
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
@@ -2753,5 +2800,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
