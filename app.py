@@ -2263,74 +2263,69 @@ def render_levels_card(ticker):
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_minervini_panel_v2(ticker):
-    # 1. Gerekli verileri al
+    # 1. Verileri al
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
     
     data = calculate_minervini_sepa(ticker, benchmark_ticker=bench)
     
-    # Veri yoksa çizme
     if not data: return 
 
-    # 2. İkonları hazırla
+    # 2. Görsel öğeleri hazırla
     trend_icon = "✅" if data['trend_ok'] else "❌"
     vcp_icon = "✅" if data['is_vcp'] else "❌"
     vol_icon = "✅" if data['is_dry'] else "❌"
     rs_icon = "✅" if data['rs_val'] > 0 else "❌"
     
-    # 3. RS Bar Genişliği
     rs_width = min(max(int(data['rs_val'] * 5 + 50), 0), 100)
     rs_color = "#16a34a" if data['rs_val'] > 0 else "#dc2626"
     
-    # 4. HTML İçeriği (Tek parça string)
+    # 3. HTML KODU (SOLA YAPIŞIK - BOŞLUKSUZ)
+    # Buradaki girintiyi özellikle kaldırdım ki 'Code Block' sanmasın.
     html_content = f"""
-    <div class="info-card" style="border-top: 3px solid {data['color']};">
-        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{data['color']};">
-            <span>🦁 Minervini SEPA Analizi</span>
-            <span style="font-size:0.8rem; font-weight:800; background:{data['color']}15; padding:2px 8px; border-radius:10px;">{data['score']}/100</span>
-        </div>
-        
-        <div style="text-align:center; margin-bottom:10px;">
-            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">{data['Durum']}</div>
-        </div>
-
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:4px; margin-bottom:10px; text-align:center;">
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">TREND</div>
-                <div style="font-size:1rem;">{trend_icon}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">VCP</div>
-                <div style="font-size:1rem;">{vcp_icon}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">ARZ</div>
-                <div style="font-size:1rem;">{vol_icon}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">RS</div>
-                <div style="font-size:1rem;">{rs_icon}</div>
-            </div>
-        </div>
-        
-        <div style="margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px;">
-                <span style="color:#64748B;">Endeks Kıyaslaması (RS)</span>
-                <span style="font-weight:700; color:{rs_color};">{data['rs_rating']}</span>
-            </div>
-            <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
-                <div style="width:{rs_width}%; height:100%; background:{rs_color};"></div>
-            </div>
-        </div>
-        
-        <div style="margin-top:6px; padding-top:4px; border-top:1px dashed #cbd5e1; font-size:0.7rem; color:#475569; display:flex; justify-content:space-between;">
-             <span>SMA200: {data['sma200']:.2f}</span>
-             <span>52H Zirve: {data['year_high']:.2f}</span>
-        </div>
-    </div>
-    """
+<div class="info-card" style="border-top: 3px solid {data['color']};">
+<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{data['color']};">
+<span>🦁 Minervini SEPA Analizi</span>
+<span style="font-size:0.8rem; font-weight:800; background:{data['color']}15; padding:2px 8px; border-radius:10px;">{data['score']}/100</span>
+</div>
+<div style="text-align:center; margin-bottom:10px;">
+<div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">{data['Durum']}</div>
+</div>
+<div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:4px; margin-bottom:10px; text-align:center;">
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.6rem; color:#64748B; font-weight:700;">TREND</div>
+<div style="font-size:1rem;">{trend_icon}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.6rem; color:#64748B; font-weight:700;">VCP</div>
+<div style="font-size:1rem;">{vcp_icon}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.6rem; color:#64748B; font-weight:700;">ARZ</div>
+<div style="font-size:1rem;">{vol_icon}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.6rem; color:#64748B; font-weight:700;">RS</div>
+<div style="font-size:1rem;">{rs_icon}</div>
+</div>
+</div>
+<div style="margin-bottom:8px;">
+<div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px;">
+<span style="color:#64748B;">Endeks Kıyaslaması (RS)</span>
+<span style="font-weight:700; color:{rs_color};">{data['rs_rating']}</span>
+</div>
+<div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+<div style="width:{rs_width}%; height:100%; background:{rs_color};"></div>
+</div>
+</div>
+<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #cbd5e1; font-size:0.7rem; color:#475569; display:flex; justify-content:space-between;">
+<span>SMA200: {data['sma200']:.2f}</span>
+<span>52H Zirve: {data['year_high']:.2f}</span>
+</div>
+</div>
+"""
     
-    # 5. Ekrana Bas (Bu satırın girintisi hayati önem taşıyor)
+    # 4. Ekrana Bas
     st.markdown(html_content, unsafe_allow_html=True)
     
 # ==============================================================================
@@ -2845,6 +2840,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
