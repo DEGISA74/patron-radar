@@ -1152,7 +1152,7 @@ def process_single_minervini(symbol, df, spy_return):
         
         tightness = std_10 / std_60 
         # 0.5'in altı demek, son günler geçmişe göre yarı yarıya sakinleşmiş demek.
-        is_tight = tightness < 0.60 
+        is_tight = tightness < 0.95 
 
         if not is_tight: return None
 
@@ -2862,6 +2862,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
