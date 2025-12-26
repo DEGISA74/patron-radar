@@ -1111,7 +1111,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         c7 = curr_price >= (year_high * 0.75)
         
         trend_score = sum([c1, c2, c3, c4, c5, c6, c7])
-        trend_ok = trend_score >= 5 # BU SATIR ÖNEMLİ (Hatayı çözen değişken)
+        trend_ok = trend_score >= 5 
         
         # 4. VCP (DARALMA) SİNYALİ
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
@@ -2837,6 +2837,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
