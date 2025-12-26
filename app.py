@@ -2282,7 +2282,7 @@ def render_minervini_panel_v2(ticker):
     rs_width = min(max(int(data['rs_val'] * 5 + 50), 0), 100)
     rs_color = "#16a34a" if data['rs_val'] > 0 else "#dc2626"
     
-    # 4. HTML İçeriğini Hazırla (Burası bir f-string metnidir)
+    # 4. HTML İçeriğini Hazırla
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']};">
         <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{data['color']};">
@@ -2845,6 +2845,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
