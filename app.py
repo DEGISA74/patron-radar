@@ -1119,59 +1119,44 @@ def process_single_minervini(symbol, df, spy_return):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        if len(df) < 200: return None # Minervini için 200 gün şart
+        if len(df) < 200: return None 
 
         close = df['Close']; high = df['High']; low = df['Low']
         
-        # --- 1. TREND ŞABLONU (Mark Minervini Trend Template) ---
+        # --- 1. TREND ŞABLONU (GEÇİCİ OLARAK GEVŞETİLDİ) ---
         c = float(close.iloc[-1])
-        sma50 = float(close.rolling(50).mean().iloc[-1])
-        sma150 = float(close.rolling(150).mean().iloc[-1])
+        # sma50 = float(close.rolling(50).mean().iloc[-1])
+        # sma150 = float(close.rolling(150).mean().iloc[-1])
         sma200 = float(close.rolling(200).mean().iloc[-1])
-        low_52 = float(low.rolling(252).min().iloc[-1])
+        # low_52 = float(low.rolling(252).min().iloc[-1])
         high_52 = float(high.rolling(252).max().iloc[-1])
 
-        # Katı Trend Kuralları
-        cond1 = c > sma150 and c > sma200
-        cond2 = sma150 > sma200
-        cond3 = sma50 > sma150
-        cond4 = c > sma50
-        cond5 = c > low_52 * 1.25  # Dipten en az %25 yukarıda olmalı
-        cond6 = c > high_52 * 0.75 # Zirveye %25 yakınlıkta olmalı (Çok düşmüşleri ele)
-
-        if not (cond1 and cond2 and cond3 and cond4 and cond5 and cond6):
+        # Sadece Fiyat > SMA200 olsun yeter (Minervini'nin en temel kuralı)
+        # Diğer katı kuralları (cond2, cond3...) test için kapattık.
+        if c < sma200: 
             return None
 
         # --- 2. VCP (VOLATİLİTE DARALMASI) ---
-        # Son 10 günün oynaklığı vs Son 60 günün oynaklığı
         std_10 = float(close.tail(10).std())
         std_60 = float(close.tail(60).std())
         
-        # Eğer veri çok düzse std 0 gelebilir, koruma ekle
         if std_60 == 0: return None
         
         tightness = std_10 / std_60 
-        # 0.5'in altı demek, son günler geçmişe göre yarı yarıya sakinleşmiş demek.
-        is_tight = tightness < 0.60 
+        
+        # TEST İÇİN: 0.95 (Çok gevşek)
+        is_tight = tightness < 0.95 
 
         if not is_tight: return None
 
-        # --- 3. RS PUANI (GÜÇ SKORU) ---
-        # Hisse 6 ayda ne yaptı?
+        # --- 3. RS PUANI ---
         stock_return = (c - float(close.iloc[-126])) / float(close.iloc[-126]) if len(close) > 126 else 0
-        
-        # RS Skoru: Hisse Getirisi - Endeks Getirisi (Basitleştirilmiş)
-        # Eğer endeks %10 gitmiş, hisse %30 gitmişse RS pozitiftir.
         rs_rating = (stock_return - spy_return) * 100
         
-        if rs_rating < 0: return None # Endeksten zayıf olanı at
+        # RS Filtresini de test için kapatalım veya çok düşürelim
+        # if rs_rating < 0: return None 
 
-        # --- 4. SIRALAMA PUANI ---
-        # RS Puanı yüksek olan ve Sıkışması (Tightness) en dar olan en iyisidir.
-        # Tightness ne kadar küçükse o kadar iyi, o yüzden tersini alıyoruz.
         final_score = rs_rating + (1 / (tightness + 0.01)) * 2
-
-        # Stop Seviyesi (Son 10 günün en düşüğünün biraz altı)
         stop_loss = float(low.tail(10).min() * 0.98)
 
         return {
@@ -2862,6 +2847,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
