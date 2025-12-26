@@ -2433,101 +2433,89 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     
-    # Tüm Verileri Topla
+    # --- 1. EKSİK OLAN TANIMLAMALAR (HATA DÜZELTME) ---
+    info = fetch_stock_info(t)  # Bu satır yoktu, o yüzden hata verdi. Ekledim.
+    
+    # Diğer gerekli verileri çekiyoruz
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
     tech_data = get_tech_card_data(t) or {}
     pa_data = calculate_price_action_dna(t) or {}
-    
-    # YENİ: Kritik Seviyeler (SuperTrend & Fib)
     levels_data = get_advanced_levels_data(t) or {}
     
+    # Radar verisi kontrolü
     radar_val = "Veri Yok"
     radar_setup = "Belirsiz"
     if st.session_state.radar2_data is not None:
         r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
         if not r_row.empty:
-            radar_val = f"{r_row.iloc[0]['Skor']}/8"
+            radar_val = f"{r_row.iloc[0]['Skor']}/7"
             radar_setup = r_row.iloc[0]['Setup']
     
+    # Metin Temizleme Fonksiyonu
     def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
-    
     mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
-    vol_clean = clean_text(sent_data.get('vol', 'Veri Yok'))
-    
-    # Price Action Verilerini Ayrıştır
-    pa_candle = pa_data.get('candle', {}).get('title', 'Bilinmiyor')
-    pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
-    pa_vol = pa_data.get('vol', {}).get('title', 'Bilinmiyor')
-    pa_loc = pa_data.get('loc', {}).get('title', 'Bilinmiyor')
-    pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
-    # YENİ: RSI Uyumsuzluk Metni
-    pa_div = pa_data.get('div', {}).get('title', 'Yok')
 
-    # YENİ: Kritik Seviyeler Metni Hazırlığı
-    st_txt = "Veri Yok"
-    fib_res = "Veri Yok"
-    fib_sup = "Veri Yok"
-    
+    # Kritik Seviyeler ve SuperTrend Metinlerini Hazırla
+    st_txt = "Veri Yok"; fib_res = "Veri Yok"; fib_sup = "Veri Yok"
     if levels_data:
         st_dir_txt = "YÜKSELİŞ (AL)" if levels_data.get('st_dir') == 1 else "DÜŞÜŞ (SAT)"
         st_txt = f"{st_dir_txt} | Seviye: {levels_data.get('st_val', 0):.2f}"
         
-        # Fib Destek/Direnç
         sup_l, sup_v = levels_data.get('nearest_sup', (None, 0))
         res_l, res_v = levels_data.get('nearest_res', (None, 0))
         fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
         fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
 
-    # --- YENİ EKLENECEK KISIM (ESKİSİNİN YERİNE) ---
-    
-    # Önce verileri temizle ve hazırla
-    fiyat_str = f"{info.get('price', 0):.2f}"
+    # Price Action Değişkenleri
+    pa_div = pa_data.get('div', {}).get('title', 'Yok')
+    pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
+    pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
+
+    # --- 2. PROMPT HAZIRLIĞI (YENİ FORMAT) ---
+    fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     sma50_str = f"{tech_data.get('sma50', 0):.2f}"
     liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data.get('target', 0) > 0 else "Belirsiz / Yok"
-
-    # Candle description (Title yerine Desc kullanıyoruz - ÖNEMLİ DÜZELTME)
     mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
 
     prompt = f"""*** SİSTEM ROLLERİ ***
-    Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
-    Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
+Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
+Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
 
-    *** VARLIK KİMLİĞİ ***
-    - Sembol: {t}
-    - GÜNCEL FİYAT: {fiyat_str}
-    - SMA50 (Trend Bazı): {sma50_str}
+*** VARLIK KİMLİĞİ ***
+- Sembol: {t}
+- GÜNCEL FİYAT: {fiyat_str}
+- SMA50 (Trend Bazı): {sma50_str}
 
-    *** 1. MARKET YAPISI VE TREND ***
-    - SuperTrend (Ana Yön): {st_txt}
-    - ICT Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
-    - Konum (Discount/Premium): {ict_data.get('zone', 'Bilinmiyor')}
+*** 1. MARKET YAPISI VE TREND ***
+- SuperTrend (Ana Yön): {st_txt}
+- ICT Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
+- Konum (Discount/Premium): {ict_data.get('zone', 'Bilinmiyor')}
 
-    *** 2. KRİTİK SEVİYELER (SAVAŞ ALANI) ***
-    - En Yakın Direnç (Fib): {fib_res}
-    - En Yakın Destek (Fib): {fib_sup}
-    - Hedef Likidite (Mıknatıs): {liq_str}
-    - Aktif FVG (Dengesizlik): {ict_data.get('fvg_txt', 'Yok')}
+*** 2. KRİTİK SEVİYELER (SAVAŞ ALANI) ***
+- En Yakın Direnç (Fib): {fib_res}
+- En Yakın Destek (Fib): {fib_sup}
+- Hedef Likidite (Mıknatıs): {liq_str}
+- Aktif FVG (Dengesizlik): {ict_data.get('fvg_txt', 'Yok')}
 
-    *** 3. PRICE ACTION & GÜÇ (DNA ANALİZİ) ***
-    - Mum Formasyonu: {mum_desc}
-    - RSI Uyumsuzluğu: {pa_div} (Buna çok dikkat et!)
-    - Tuzak (SFP): {pa_sfp}
-    - Volatilite: {pa_sq}
-    - Momentum Durumu: {mom_clean}
-    - Sentiment Skoru: {sent_data.get('total', 0)}/100
+*** 3. PRICE ACTION & GÜÇ (DNA ANALİZİ) ***
+- Mum Formasyonu: {mum_desc}
+- RSI Uyumsuzluğu: {pa_div} (Buna çok dikkat et!)
+- Tuzak (SFP): {pa_sfp}
+- Volatilite: {pa_sq}
+- Momentum Durumu: {mom_clean}
+- Sentiment Skoru: {sent_data.get('total', 0)}/100
 
-    *** GÖREVİN ***
-    Verileri sentezle ve bir "Sniper" gibi işlem kurgula.
-    1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle. Temel analize (bilanço vs.) girme, sadece teknik konuş.
-    2. KARAR: [LONG / SHORT / İZLE]
-    3. STRATEJİ:
-       - Giriş Bölgesi: (FVG veya Fib desteğini referans al)
-       - Stop Loss: (SuperTrend veya Swing Low altı)
-       - Kar Al (TP): (Likidite veya Fib direnci)
-    4. UYARI: Eğer RSI uyumsuzluğu veya Trend tersliği varsa büyük harflerle uyar.
-    """
-                      
+*** GÖREVİN ***
+Verileri sentezle ve bir "Sniper" gibi işlem kurgula.
+1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle. Temel analize (bilanço vs.) girme, sadece teknik konuş.
+2. KARAR: [LONG / SHORT / İZLE]
+3. STRATEJİ:
+   - Giriş Bölgesi: (FVG veya Fib desteğini referans al)
+   - Stop Loss: (SuperTrend veya Swing Low altı)
+   - Kar Al (TP): (Likidite veya Fib direnci)
+4. UYARI: Eğer RSI uyumsuzluğu veya Trend tersliği varsa büyük harflerle uyar.
+"""
     with st.sidebar:
         st.code(prompt, language="text")
         st.success("Metin kopyalanmaya hazır! 📋")
@@ -2818,5 +2806,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
