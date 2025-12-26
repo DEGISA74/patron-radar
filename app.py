@@ -2728,64 +2728,182 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V6 (HATA KORUMALI)
+    # YENİ EKLENEN 3. AJAN 
     # ---------------------------------------------------------
     
-    if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
-
-    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-    st.markdown("""
-    <div class="info-card" style="border-left: 4px solid #8b5cf6;">
-        <div class="info-header" style="color:#5b21b6;">🕵️ 3. Ajan: 3 Saatlik Trend Avcısı</div>
-        <div class="edu-note">
-            Bu ajan hisseleri <b>3 saatlik</b> periyotlarda tarar ve şu şartları arar:<br>
-            1. Fiyat son 2 mumda <b>EMA9</b> ve <b>KAMA(20-2-30)</b> üzerinde.<br>
-            2. <b>RSI</b> kendi 50 ortalamasının üzerinde.<br>
-            3. <b>HARSI (Heikin Ashi RSI)</b> son 3 mumda 🟢 YEŞİL yaktı.<br>
-            4. RSI çizgisi mumların üzerinde (Momentum güçlü).
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+# --- CSS STİLİ (Scroll Bar ve Kutucuklar İçin) ---
+st.markdown("""
+<style>
+    /* Sonuçların içinde döneceği 200px'lik kaydırma kutusu */
+    .minervini-scroll-box {
+        height: 200px;
+        overflow-y: auto; /* İçerik taşarsa scroll çıkar */
+        border: 1px solid #f0f2f6;
+        padding: 10px;
+        background-color: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
     
-    # Tarama Butonu
-    if st.button(f"🌊 3SAAT KIRILIM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
-        with st.spinner("3. Erken Kırılım Ajanı sahada: Kısa Vadeli Kırılımlar taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.harsi_data = scan_agent3_harsi(current_assets)
-    
-    # Sonuçların Gösterimi
-    if st.session_state.harsi_data is not None:
-        if not st.session_state.harsi_data.empty:
-            
-            # Özel İnce Bilgi Kutusu
-            count = len(st.session_state.harsi_data)
-            st.markdown(f"""
-            <div style="background-color: #dcfce7; color: #14532d; padding: 4px 6px; border-radius: 2px; border: 0.9px solid #86efac; font-size: 1.0rem; margin-bottom: 4px; display: flex; align-items: center;">
-                <span style="font-size: 0.9rem; margin-right: 6px;">🎯</span>
-                <b>{count}</b>&nbsp;hisse kriterlere uydu!
-            </div>
-            """, unsafe_allow_html=True)
-            
-            with st.container(height=150):
-                for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
-                    
-                    # --- HATA KORUMASI ---
-                    # Eski veride 'Trend_Suresi' olmayabilir, .get() ile güvenli çekiyoruz.
-                    trend_info = row.get('Trend_Suresi', 'Yenile...')
-                    raw_trend = row.get('Trend_Raw', 0)
-                    
-                    # 10 mumdan fazlaysa yanına ateş ikonu koy
-                    if raw_trend >= 10: trend_info = f"🔥 {trend_info}"
-                    
-                    button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | Süre: {trend_info}"
-                    
-                    if st.button(button_label, key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
-                        on_scan_result_click(row['Sembol'])
-                        st.rerun()
-        else:
-            st.warning("Bu zorlu kriterlere uyan hisse şu an bulunamadı. Piyasa trend modunda olmayabilir.")
+    /* Her bir hisse kutucuğu (Card) */
+    .stock-card {
+        padding: 10px;
+        margin-bottom: 8px;
+        background-color: #f8f9fa;
+        border-left: 5px solid #28a745; /* Yeşil çizgi (Onaylı) */
+        border-radius: 4px;
+        font-family: sans-serif;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
 
-    st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
+    .stock-card-header {
+        font-weight: bold;
+        color: #333;
+    }
+    
+    .stock-card-details {
+        font-size: 12px;
+        color: #666;
+    }
+    
+    .score-badge {
+        background-color: #e6fffa;
+        color: #00b894;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 11px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- MINERVINI AJANI BAŞLIĞI (Senin 1. Resim Tarzı) ---
+with st.expander("🏆 3. Ajan: Minervini VCP Avcısı (Şampiyonlar)", expanded=True):
+    st.info("Bu ajan; Endeksten güçlü (Yüksek RS), zirvesine yakın ve enerjisi sıkışmış (VCP) hisseleri puanlayarak sıralar.")
+
+    if st.button("🚀 ŞAMPİYONLARI TARA VE SIRALA (Minervini Modu)", key="btn_minervini", use_container_width=True, type="primary"):
+        
+        # --- TARAMA HAVUZU (Örnek Liste - Normalde S&P 500) ---
+        # Demo hızlı çalışsın diye güçlü teknoloji ve popüler hisseleri ekledim.
+        tickers = ["NVDA", "PLTR", "TSLA", "AMD", "META", "MSFT", "AMZN", "GOOGL", "NFLX", "JPM", "KO", "MSTR", "COIN", "APP", "LLY"]
+        spy_ticker = "SPY" # Endeks Karşılaştırması için
+        
+        results = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            # Önce Endeks (SPY) verisini çek (RS Puanı hesabı için)
+            spy_data = yf.download(spy_ticker, period="6mo", progress=False)['Close']
+            spy_return = (spy_data.iloc[-1] - spy_data.iloc[0]) / spy_data.iloc[0] # 6 aylık getiri
+            
+            for i, ticker in enumerate(tickers):
+                status_text.text(f"Analiz ediliyor: {ticker}...")
+                progress_bar.progress((i + 1) / len(tickers))
+                
+                try:
+                    df = yf.download(ticker, period="1y", progress=False)
+                    if df.empty or len(df) < 200: continue
+                    
+                    # Veri temizliği (Series hatasını önlemek için)
+                    if isinstance(df.columns, pd.MultiIndex):
+                        close = df['Close'].squeeze()
+                        high = df['High'].squeeze()
+                        low = df['Low'].squeeze()
+                    else:
+                        close = df['Close']
+                        high = df['High']
+                        low = df['Low']
+
+                    # --- KRİTERLERİN HESAPLANMASI ---
+                    
+                    # 1. Trend ve Fiyat
+                    current_price = float(close.iloc[-1])
+                    sma_50 = float(close.rolling(window=50).mean().iloc[-1])
+                    sma_200 = float(close.rolling(window=200).mean().iloc[-1])
+                    high_52 = float(high.max())
+                    low_52 = float(low.min())
+                    
+                    # 2. VCP (Sıkışma) Hesabı
+                    std_10 = float(close.tail(10).std())
+                    std_60 = float(close.tail(60).std())
+                    # Sıkışma Skoru: Ne kadar küçükse o kadar iyi (0.1 = %10 oynaklık)
+                    tightness_ratio = std_10 / std_60 
+                    
+                    # 3. RS (Göreceli Güç) Hesabı - SIRALAMA İÇİN KRİTİK
+                    stock_return = (close.iloc[-1] - close.iloc[-126]) / close.iloc[-126] # 6 aylık (~126 iş günü)
+                    # RS Puanı: Hisse Getirisi / Endeks Getirisi (1'den büyükse endeksi yeniyor)
+                    rs_score = stock_return / spy_return if spy_return != 0 else 0
+                    
+                    # --- MINERVINI FİLTRELERİ (Eleme Aşaması) ---
+                    trend_ok = (current_price > sma_200) and (current_price > sma_50)
+                    near_high = current_price > (high_52 * 0.75) # Zirvenin %25 yakınında mı?
+                    vcp_ok = tightness_ratio < 0.6 # Son günler geçmişe göre %40 daha sakin mi?
+                    
+                    if trend_ok and near_high and vcp_ok:
+                        # --- SIRALAMA PUANI (RANKING SCORE) ---
+                        # Formül: RS Puanı (%70 Ağırlık) + Sıkışma (%30 Ağırlık)
+                        # Sıkışma ters orantılıdır (daha az oynaklık = daha çok puan)
+                        final_score = (rs_score * 0.7) + ((1 / tightness_ratio) * 0.3)
+                        
+                        # Stop Loss Seviyesi (Son 10 günün en düşüğünün biraz altı)
+                        stop_loss = float(low.tail(10).min() * 0.98) 
+                        
+                        results.append({
+                            "Ticker": ticker,
+                            "Price": current_price,
+                            "Score": final_score, # Sıralama için
+                            "RS_Rating": rs_score,
+                            "Stop_Loss": stop_loss,
+                            "Tightness": tightness_ratio
+                        })
+                        
+                except Exception as e:
+                    continue
+
+            progress_bar.empty()
+            status_text.empty()
+
+            # --- SONUÇLARI SIRALA (En Yüksek Puandan En Düşüğe) ---
+            results = sorted(results, key=lambda x: x['Score'], reverse=True)
+
+            # --- EKRANA BAS (SCROLL BOX İÇİNDE) ---
+            if results:
+                # Scroll Box Başlangıcı
+                html_content = '<div class="minervini-scroll-box">'
+                
+                for res in results:
+                    # Semboller ve Renkler
+                    rs_display = f"RS: {res['RS_Rating']:.2f}"
+                    stop_display = f"Stop: ${res['Stop_Loss']:.2f}"
+                    
+                    # HTML Kart Yapısı
+                    card_html = f"""
+                    <div class="stock-card">
+                        <div>
+                            <span style="font-size:16px;">🏆 <b>{res['Ticker']}</b></span>
+                            <span style="margin-left:10px; color:#333;">${res['Price']:.2f}</span>
+                        </div>
+                        <div style="text-align:right;">
+                            <div class="score-badge">Güç Skoru: {res['Score']:.1f}</div>
+                            <div class="stock-card-details">{rs_display} | {stop_display}</div>
+                        </div>
+                    </div>
+                    """
+                    html_content += card_html
+                
+                html_content += '</div>' # Scroll Box Bitişi
+                
+                st.markdown(html_content, unsafe_allow_html=True)
+                st.success(f"Tarama Tamamlandı: {len(results)} potansiyel şampiyon bulundu.")
+            else:
+                st.warning("Şu an Minervini kriterlerine (VCP + Trend) tam uyan hisse bulunamadı. Piyasa yatay olabilir.")
+                
+        except Exception as e:
+            st.error(f"Bir hata oluştu: {e}")
     # ---------------------------------------------------------
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
@@ -2857,3 +2975,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
