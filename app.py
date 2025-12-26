@@ -1073,83 +1073,124 @@ def scan_confirmed_breakouts(asset_list):
     
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
-# --- MINERVINI SEPA MODÜLÜ (MOTOR VE TARAYICI) ---
+# ==============================================================================
+# MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA)
+# ==============================================================================
 
 @st.cache_data(ttl=600)
 def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
     try:
-        # En az 1 yıllık veri şart
+        # 1. VERİ ÇEKİMİ (En az 1 yıl - 260 iş günü)
         df = get_safe_historical_data(ticker, period="2y")
         if df is None or len(df) < 260: return None
         
-        # Endeks verisi (RS için)
+        # Endeks verisi (RS kıyaslaması için)
         bench_df = get_safe_historical_data(benchmark_ticker, period="2y")
         
         close = df['Close']; volume = df['Volume']
-        curr_price = close.iloc[-1]
+        curr_price = float(close.iloc[-1])
         
-        # 1. ORTALAMALAR VE TREND
-        sma50 = close.rolling(50).mean().iloc[-1]
-        sma150 = close.rolling(150).mean().iloc[-1]
-        sma200 = close.rolling(200).mean().iloc[-1]
-        sma200_prev = close.rolling(200).mean().iloc[-22] # 1 ay önceki
+        # 2. HAREKETLİ ORTALAMALAR
+        sma50 = float(close.rolling(50).mean().iloc[-1])
+        sma150 = float(close.rolling(150).mean().iloc[-1])
+        sma200 = float(close.rolling(200).mean().iloc[-1])
+        # SMA 200'ün 1 ay önceki değeri (Eğim kontrolü)
+        sma200_prev = float(close.rolling(200).mean().iloc[-22])
         
-        year_high = close.rolling(250).max().iloc[-1]
-        year_low = close.rolling(250).min().iloc[-1]
+        # 52 Haftalık Zirve ve Dip
+        year_high = float(close.rolling(250).max().iloc[-1])
+        year_low = float(close.rolling(250).min().iloc[-1])
         
-        # Trend Şablonu (Kriterler)
+        # 3. TREND ŞABLONU (FİLTRELER)
+        # Fiyat > SMA150 ve SMA200
         c1 = curr_price > sma150 and curr_price > sma200
+        # SMA150 > SMA200
         c2 = sma150 > sma200
-        c3 = sma200 > sma200_prev # SMA200 Yükseliyor mu?
+        # SMA200 Yükseliyor mu?
+        c3 = sma200 > sma200_prev
+        # SMA50 diğerlerinin üzerinde mi? (Trend Gücü)
         c4 = sma50 > sma150 and sma50 > sma200
+        # Fiyat > SMA50 (Kısa vade trend)
         c5 = curr_price > sma50
-        c6 = curr_price >= (year_low * 1.30) # Dipten %30 yukarıda
-        c7 = curr_price >= (year_high * 0.75) # Zirveye %25 yakınlık
+        # Dipten en az %30 yukarıda
+        c6 = curr_price >= (year_low * 1.30)
+        # Zirveye %25 yakınlık (Minervini Kuralı)
+        c7 = curr_price >= (year_high * 0.75)
         
         trend_score = sum([c1, c2, c3, c4, c5, c6, c7])
+        trend_ok = trend_score >= 5 # En az 5 madde geçerli olmalı
         
-        # 2. VCP (DARALMA) SİNYALİ
+        # 4. VCP (DARALMA) SİNYALİ
+        # Son 10 günün oynaklığı vs Son 60 gün
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
         std_60 = close.pct_change().rolling(60).std().iloc[-1]
         is_vcp = std_10 < (std_60 * 0.75) # Volatilite daralıyor
         
-        # 3. RS GÜCÜ (Mansfield)
-        rs_str = "Zayıf"
+        # 5. ARZ KONTROLÜ (Hacim Kuruması)
+        avg_vol = volume.rolling(20).mean().iloc[-1]
+        # Son 10 gündeki düşüş günlerini bul
+        last_10 = df.tail(10)
+        down_days = last_10[last_10['Close'] < last_10['Open']]
+        is_dry = True
+        if not down_days.empty:
+            # Düşüş günlerinin hacim ortalaması, genel ortalamanın altında mı?
+            is_dry = down_days['Volume'].mean() < (avg_vol * 0.9)
+
+        # 6. RS GÜCÜ (Mansfield)
+        rs_rating = "Nötr"; rs_val = 0
         if bench_df is not None:
+            # Tarihleri eşle
             common = close.index.intersection(bench_df.index)
-            if len(common) > 50:
-                r_stock = close.loc[common]; r_bench = bench_df['Close'].loc[common]
-                ratio = r_stock / r_bench
+            if len(common) > 60:
+                r_s = close.loc[common]; r_b = bench_df['Close'].loc[common]
+                ratio = r_s / r_b
+                # Mansfield RS
                 mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 10
-                if mansfield.iloc[-1] > 0: rs_str = "GÜÇLÜ (RS+)"
+                rs_val = float(mansfield.iloc[-1])
+                if rs_val > 0: rs_rating = "GÜÇLÜ (RS+)"
+                else: rs_rating = "ZAYIF"
+
+        # DURUM BELİRLEME
+        status = "YOK"; det = "-"
+        raw_score = trend_score * 10
+        if rs_val > 0: raw_score += 15
+        if is_vcp: raw_score += 15
         
-        # FİLTRELEME MANTIĞI (En az 5 trend kriteri + VCP veya RS)
-        status = "YOK"
-        if trend_score >= 7 and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
-        elif trend_score >= 6: status = "🔥 GÜÇLÜ TREND"
-        elif trend_score >= 5: status = "✅ OLUMLU"
+        if trend_ok and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
+        elif trend_ok and rs_val > 0: status = "🔥 GÜÇLÜ TREND"
+        elif trend_ok: status = "✅ OLUMLU (İzle)"
         else: return None # Listeye alma
-        
+
         return {
             "Sembol": ticker,
             "Fiyat": f"{curr_price:.2f}",
-            "Skor": f"{trend_score}/7",
             "Durum": status,
-            "Detay": f"{rs_str} | VCP: {'Var' if is_vcp else 'Yok'}",
-            "Raw_Score": trend_score + (3 if is_vcp else 0) # Sıralama için
+            "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else 'Yok'} | Arz: {'Kurudu' if is_dry else 'Normal'}",
+            "Raw_Score": raw_score,
+            # GÖRSEL PANEL İÇİN GEREKLİ ANAHTARLAR (HATA ALMAMAK İÇİN):
+            "trend_ok": trend_ok,
+            "is_vcp": is_vcp,
+            "is_dry": is_dry,
+            "rs_val": rs_val,
+            "rs_rating": rs_rating,
+            "score": raw_score,
+            "reasons": [f"Trend: {trend_score}/7", f"VCP: {is_vcp}", f"RS: {rs_rating}"],
+            "color": "#16a34a" if raw_score > 70 else "#d97706",
+            "sma200": sma200,
+            "year_high": year_high
         }
     except: return None
 
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
-    # Kategoriye göre benchmark seç
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
     
-    # Verileri önden çek (Hız için)
+    # Önden veri çek (Hızlandırma)
     _ = get_batch_data_cached(asset_list, period="2y")
     
     results = []
+    # Threading ile hızlı tarama
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(calculate_minervini_sepa, sym, bench) for sym in asset_list]
         for future in concurrent.futures.as_completed(futures):
@@ -2238,13 +2279,17 @@ def render_levels_card(ticker):
 def render_minervini_panel_v2(ticker):
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
+    
     data = calculate_minervini_sepa(ticker, benchmark_ticker=bench)
-    if not data: return
+    
+    if not data: return # Veri yoksa çizme
 
+    # Hata veren 'trend_ok' artık hesaplama fonksiyonunda var.
     trend_icon = "✅" if data['trend_ok'] else "❌"
     vcp_icon = "✅" if data['is_vcp'] else "❌"
     vol_icon = "✅" if data['is_dry'] else "❌"
     rs_icon = "✅" if data['rs_val'] > 0 else "❌"
+    
     rs_width = min(max(int(data['rs_val'] * 5 + 50), 0), 100)
     rs_color = "#16a34a" if data['rs_val'] > 0 else "#dc2626"
     
@@ -2254,29 +2299,47 @@ def render_minervini_panel_v2(ticker):
             <span>🦁 Minervini SEPA Analizi</span>
             <span style="font-size:0.8rem; font-weight:800; background:{data['color']}15; padding:2px 8px; border-radius:10px;">{data['score']}/100</span>
         </div>
-        <div style="text-align:center; margin-bottom:6px;">
-            <div style="font-size:0.9rem; font-weight:800; color:{data['color']};">{data['status']}</div>
+        
+        <div style="text-align:center; margin-bottom:10px;">
+            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">{data['Durum']}</div>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:4px; margin-bottom:6px; text-align:center;">
-            <div style="background:#f8fafc; padding:2px; border:1px solid #e2e8f0; border-radius:4px;"><div style="font-size:0.6rem; font-weight:700;">TREND</div><div>{trend_icon}</div></div>
-            <div style="background:#f8fafc; padding:2px; border:1px solid #e2e8f0; border-radius:4px;"><div style="font-size:0.6rem; font-weight:700;">VCP</div><div>{vcp_icon}</div></div>
-            <div style="background:#f8fafc; padding:2px; border:1px solid #e2e8f0; border-radius:4px;"><div style="font-size:0.6rem; font-weight:700;">ARZ</div><div>{vol_icon}</div></div>
-            <div style="background:#f8fafc; padding:2px; border:1px solid #e2e8f0; border-radius:4px;"><div style="font-size:0.6rem; font-weight:700;">RS</div><div>{rs_icon}</div></div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:4px; margin-bottom:10px; text-align:center;">
+            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">TREND</div>
+                <div style="font-size:1rem;">{trend_icon}</div>
+            </div>
+            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">VCP</div>
+                <div style="font-size:1rem;">{vcp_icon}</div>
+            </div>
+            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">ARZ</div>
+                <div style="font-size:1rem;">{vol_icon}</div>
+            </div>
+            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.6rem; color:#64748B; font-weight:700;">RS</div>
+                <div style="font-size:1rem;">{rs_icon}</div>
+            </div>
         </div>
-        <div style="margin-bottom:6px;">
+        
+        <div style="margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px;">
-                <span style="color:#64748B;">Endeks Gücü (RS)</span>
+                <span style="color:#64748B;">Endeks Kıyaslaması (RS)</span>
                 <span style="font-weight:700; color:{rs_color};">{data['rs_rating']}</span>
             </div>
             <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
                 <div style="width:{rs_width}%; height:100%; background:{rs_color};"></div>
             </div>
         </div>
-        <div class="edu-note" style="margin-top:4px;"><b>Not:</b> {', '.join(data['reasons'])}</div>
+        
+        <div style="margin-top:6px; padding-top:4px; border-top:1px dashed #cbd5e1; font-size:0.7rem; color:#475569; display:flex; justify-content:space-between;">
+             <span>SMA200: {data['sma200']:.2f}</span>
+             <span>52H Zirve: {data['year_high']:.2f}</span>
+        </div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
-
 # ==============================================================================
 # 5. SIDEBAR UI
 # ==============================================================================
@@ -2687,56 +2750,46 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # 🦁 YENİ: MINERVINI SEPA AJANI (SCROLL BARLI)
+    # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
     st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı</div>', unsafe_allow_html=True)
     
-    # 1. TARAMA BUTONU (Kırmızı ve Geniş)
+    # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
-        with st.spinner("Aslan avda... 200 günlük ortalamalar, VCP daralmaları ve RS gücü taranıyor..."):
+        with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
             
-    # 2. SONUÇ EKRANI (Scroll Bar - Yükseklik 300)
+    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
     if st.session_state.minervini_data is not None:
-        result_count = len(st.session_state.minervini_data)
-        
-        if result_count > 0:
-            st.success(f"🎯 Kriterlere uyan {result_count} hisse bulundu!")
-            
-            # --- SCROLL BAR ALANI (300px) ---
+        count = len(st.session_state.minervini_data)
+        if count > 0:
+            st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
             with st.container(height=300, border=True):
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
-                    price = row['Fiyat']
-                    status = row['Durum'] # Örn: 💎 SÜPER BOĞA (VCP)
-                    detail = row['Detay'] # Örn: GÜÇLÜ (RS+) | VCP: Var
+                    # Buton Metni: 💎 NVDA (135.20) | SÜPER BOĞA (VCP) | GÜÇLÜ (RS+)
+                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
+                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
                     
-                    # İkon seçimi
-                    icon = "💎" if "SÜPER" in status else "🔥"
-                    
-                    # Buton Metni: 💎 NVDA (135.20) | SÜPER BOĞA (VCP)
-                    btn_label = f"{icon} {sym} ({price}) | {status} | {detail}"
-                    
-                    # Buton Stili (Resimdeki gibi)
-                    if st.button(btn_label, key=f"sepa_res_{sym}_{i}", use_container_width=True):
+                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
                         st.rerun()
         else:
-            st.warning("Bu zorlu kriterlere (Aşama 2 Trendi) uyan hisse bulunamadı.")
+            st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
     # ---------------------------------------------------------
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
 
-# --- SAĞ SÜTUN (Sıralama Güncellendi) ---
+# --- SAĞ SÜTUN ---
 with col_right:
     if not info: info = fetch_stock_info(st.session_state.ticker)
     
-    # 1. Fiyat Kutusu (En Üstte)
+    # 1. Fiyat
     if info and info.get('price'):
         display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
         cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
@@ -2746,19 +2799,19 @@ with col_right:
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
     
-    # 3. YENİ YERİ: Kritik Seviyeler & Trend (Price Action'ın Hemen Altına Aldık)
+    # 3. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
 
-    # ---> BURAYA EKLE: MINERVINI PANELİ <---
+    # 4. YENİ MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
-           
-    # 4. ICT Paneli
+    
+    # 5. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
     
-    # 5. Ortak Fırsatlar Başlığı
+    # 6. Ortak Fırsatlar Başlığı
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     
-    # 6. Ortak Fırsatlar Listesi
+    # 7. Ortak Fırsatlar Listesi
     with st.container(height=250):
         df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
         if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
@@ -2800,6 +2853,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
