@@ -2263,22 +2263,27 @@ def render_levels_card(ticker):
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_minervini_panel_v2(ticker):
+    # 1. Gerekli verileri al
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
     
     data = calculate_minervini_sepa(ticker, benchmark_ticker=bench)
     
-    if not data: return # Veri yoksa çizme
+    # Veri yoksa veya hesaplanamadıysa hiçbir şey yapma
+    if not data: return 
 
+    # 2. İkonları hazırla
     trend_icon = "✅" if data['trend_ok'] else "❌"
     vcp_icon = "✅" if data['is_vcp'] else "❌"
     vol_icon = "✅" if data['is_dry'] else "❌"
     rs_icon = "✅" if data['rs_val'] > 0 else "❌"
     
+    # 3. RS Bar Genişliğini ve Rengini Ayarla
     rs_width = min(max(int(data['rs_val'] * 5 + 50), 0), 100)
     rs_color = "#16a34a" if data['rs_val'] > 0 else "#dc2626"
     
-    html = f"""
+    # 4. HTML İçeriğini Hazırla (Burası bir f-string metnidir)
+    html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']};">
         <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{data['color']};">
             <span>🦁 Minervini SEPA Analizi</span>
@@ -2324,7 +2329,9 @@ def render_minervini_panel_v2(ticker):
         </div>
     </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    
+    # 5. HTML'i Ekrana Bas (BU SATIR ÇOK ÖNEMLİ)
+    st.markdown(html_content, unsafe_allow_html=True)
     
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -2838,6 +2845,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
