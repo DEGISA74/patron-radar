@@ -106,7 +106,7 @@ st.markdown(f"""
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
-    /* --- MINERVINI AJANI İÇİN ÖZEL STİLLER --- */
+    /* --- DÜZELTİLEN KISIM BURASI (ÇİFT PARANTEZLERE DİKKAT) --- */
     .minervini-scroll-box {{
         height: 250px;
         overflow-y: auto;
@@ -119,7 +119,7 @@ st.markdown(f"""
         padding: 8px 12px;
         margin-bottom: 6px;
         background-color: #f8fafc;
-        border-left: 4px solid #16a34a; /* Yeşil Çizgi */
+        border-left: 4px solid #16a34a;
         border-radius: 4px;
         border-top: 1px solid #f1f5f9;
         border-right: 1px solid #f1f5f9;
@@ -2860,5 +2860,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
