@@ -1117,59 +1117,44 @@ def scan_confirmed_breakouts(asset_list):
 
 def process_single_minervini(symbol, df, spy_return):
     try:
+        # 1. TEMEL VERİ KONTROLÜ
         if df.empty or 'Close' not in df.columns: return None
+        # NaN temizliği
         df = df.dropna(subset=['Close'])
+        # Yeterli veri yoksa geç
         if len(df) < 200: return None 
 
-        close = df['Close']; high = df['High']; low = df['Low']
+        # Verileri Hazırla
+        close = df['Close']
+        c_now = float(close.iloc[-1])
         
-        # --- 1. TREND ŞABLONU (GEÇİCİ OLARAK GEVŞETİLDİ) ---
-        c = float(close.iloc[-1])
-        # sma50 = float(close.rolling(50).mean().iloc[-1])
-        # sma150 = float(close.rolling(150).mean().iloc[-1])
+        # 2. TEK VE EN BASİT KURAL: FİYAT > 200 GÜNLÜK ORTALAMA
+        # Minervini'nin "Olmazsa Olmaz" tek kuralı budur. 
+        # Diğer tüm (VCP, RS, 50>150 vb.) filtreleri KAPATTIK.
         sma200 = float(close.rolling(200).mean().iloc[-1])
-        # low_52 = float(low.rolling(252).min().iloc[-1])
-        high_52 = float(high.rolling(252).max().iloc[-1])
-
-        # Sadece Fiyat > SMA200 olsun yeter (Minervini'nin en temel kuralı)
-        # Diğer katı kuralları (cond2, cond3...) test için kapattık.
-        if c < sma200: 
-            return None
-
-        # --- 2. VCP (VOLATİLİTE DARALMASI) ---
-        std_10 = float(close.tail(10).std())
-        std_60 = float(close.tail(60).std())
         
-        if std_60 == 0: return None
+        if c_now < sma200: 
+            return None # Trendi olmayanları ele
+
+        # --- PUANLAMA (Filtre değil, sadece sıralama için) ---
+        # RS Puanı (Basit): Son 6 aydaki değişim
+        c_6m = float(close.iloc[-126]) if len(close) > 126 else c_now
+        rs_score = ((c_now - c_6m) / c_6m) * 100
         
-        tightness = std_10 / std_60 
-        
-        # TEST İÇİN: 0.95 (Çok gevşek)
-        is_tight = tightness < 0.95 
-
-        if not is_tight: return None
-
-        # --- 3. RS PUANI ---
-        stock_return = (c - float(close.iloc[-126])) / float(close.iloc[-126]) if len(close) > 126 else 0
-        rs_rating = (stock_return - spy_return) * 100
-        
-        # RS Filtresini de test için kapatalım veya çok düşürelim
-        # if rs_rating < 0: return None 
-
-        final_score = rs_rating + (1 / (tightness + 0.01)) * 2
-        stop_loss = float(low.tail(10).min() * 0.98)
-
+        # Sonuç Dön
         return {
             "Sembol": symbol,
-            "Fiyat": c,
-            "Score": final_score,
-            "RS_Rating": rs_rating,
-            "Stop_Loss": stop_loss,
-            "Tightness": tightness,
-            "Zirve_Yak": (c / high_52) * 100
+            "Fiyat": c_now,
+            "Score": rs_score, # Skoru direkt performansa eşitledik
+            "RS_Rating": rs_score,
+            "Stop_Loss": sma200, # Stop olarak 200 günlüğü gösterelim
+            "Tightness": 0.0, # Sıkışma önemsiz
+            "Zirve_Yak": 100.0 # Zirve önemsiz
         }
 
-    except Exception: return None
+    except Exception as e: 
+        # Hata olursa görmek için (Opsiyonel print eklenebilir)
+        return None
 
 @st.cache_data(ttl=900)
 def scan_minervini_agent(asset_list, benchmark_ticker="^GSPC"):
@@ -2847,6 +2832,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
