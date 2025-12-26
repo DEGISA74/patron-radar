@@ -107,15 +107,15 @@ st.markdown(f"""
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
     /* --- MINERVINI AJANI İÇİN ÖZEL STİLLER --- */
-    .minervini-scroll-box {
+    .minervini-scroll-box {{
         height: 250px;
         overflow-y: auto;
         border: 1px solid #e5e7eb;
         padding: 5px;
         background-color: #ffffff;
         border-radius: 6px;
-    }
-    .stock-card {
+    }}
+    .stock-card {{
         padding: 8px 12px;
         margin-bottom: 6px;
         background-color: #f8fafc;
@@ -128,9 +128,9 @@ st.markdown(f"""
         align-items: center;
         justify-content: space-between;
         transition: transform 0.1s;
-    }
-    .stock-card:hover { transform: translateX(2px); background-color: #f1f5f9; }
-    .score-badge {
+    }}
+    .stock-card:hover {{ transform: translateX(2px); background-color: #f1f5f9; }}
+    .score-badge {{
         background-color: #dcfce7;
         color: #15803d;
         padding: 2px 8px;
@@ -138,8 +138,7 @@ st.markdown(f"""
         font-weight: 700;
         font-size: 0.75rem;
         border: 1px solid #86efac;
-    }
-
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2861,4 +2860,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
