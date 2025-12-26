@@ -2433,10 +2433,8 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     
-    # --- 1. EKSİK OLAN TANIMLAMALAR (HATA DÜZELTME) ---
-    info = fetch_stock_info(t)  # Bu satır yoktu, o yüzden hata verdi. Ekledim.
-    
-    # Diğer gerekli verileri çekiyoruz
+    # --- 1. VERİLERİ TOPLA ---
+    info = fetch_stock_info(t)
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
     tech_data = get_tech_card_data(t) or {}
@@ -2444,42 +2442,58 @@ if st.session_state.generate_prompt:
     levels_data = get_advanced_levels_data(t) or {}
     
     # Radar verisi kontrolü
-    radar_val = "Veri Yok"
-    radar_setup = "Belirsiz"
+    radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     if st.session_state.radar2_data is not None:
         r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
         if not r_row.empty:
             radar_val = f"{r_row.iloc[0]['Skor']}/7"
             radar_setup = r_row.iloc[0]['Setup']
     
-    # Metin Temizleme Fonksiyonu
+    # --- 2. SENTIMENT DETAYLARINI AYIKLA (YENİ EKLEME) ---
+    # Kodun ürettiği HTML'den parantez içindeki sebepleri (MACD Al, Sıkışma vb.) çekip alıyoruz.
+    def extract_reasons(raw_val):
+        clean = re.sub(r'<[^>]+>', '', str(raw_val)) # HTML temizle
+        # Format genelde şöyledir: "10/25 (HL: Yükselen Dip)" -> Parantez içini al
+        if "(" in clean and ")" in clean:
+            return clean.split('(')[1].split(')')[0]
+        return None
+
+    # Tüm kategorileri tara ve sebepleri topla
+    pozitif_sebepler = []
+    keys_map = {'str': 'Yapı', 'tr': 'Trend', 'vol': 'Hacim', 'mom': 'Momentum', 'vola': 'Volatilite'}
+    for key in keys_map:
+        reason = extract_reasons(sent_data.get(key, ''))
+        if reason:
+            pozitif_sebepler.append(f"{keys_map[key]}: {reason}")
+    
+    # Virgülle birleştir (Örn: "Yapı: Yükselen Dip, Momentum: MACD Al, Volatilite: Sıkışma")
+    sentiment_detay_str = " | ".join(pozitif_sebepler) if pozitif_sebepler else "Belirgin pozitif teknik sinyal yok."
+
+    # --- 3. DİĞER METİNLERİ HAZIRLA ---
     def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
     mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
 
-    # Kritik Seviyeler ve SuperTrend Metinlerini Hazırla
     st_txt = "Veri Yok"; fib_res = "Veri Yok"; fib_sup = "Veri Yok"
     if levels_data:
         st_dir_txt = "YÜKSELİŞ (AL)" if levels_data.get('st_dir') == 1 else "DÜŞÜŞ (SAT)"
         st_txt = f"{st_dir_txt} | Seviye: {levels_data.get('st_val', 0):.2f}"
-        
         sup_l, sup_v = levels_data.get('nearest_sup', (None, 0))
         res_l, res_v = levels_data.get('nearest_res', (None, 0))
         fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
         fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
 
-    # Price Action Değişkenleri
     pa_div = pa_data.get('div', {}).get('title', 'Yok')
     pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
     pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
-
-    # --- 2. PROMPT HAZIRLIĞI (YENİ FORMAT) ---
+    
     fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     sma50_str = f"{tech_data.get('sma50', 0):.2f}"
     liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data.get('target', 0) > 0 else "Belirsiz / Yok"
     mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
 
+    # --- 4. GÜNCELLENMİŞ PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
-Sen Dünya çapında tanınan, Price Action ve Smart Money konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
+Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
 Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
 
 *** VARLIK KİMLİĞİ ***
@@ -2504,11 +2518,15 @@ Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak st
 - Tuzak (SFP): {pa_sfp}
 - Volatilite: {pa_sq}
 - Momentum Durumu: {mom_clean}
-- Sentiment Skoru: {sent_data.get('total', 0)}/100
+
+*** 4. SENTIMENT PUAN DETAYI (ÖNEMLİ) ***
+- Toplam Puan: {sent_data.get('total', 0)}/100
+- PUANI OLUŞTURAN POZİTİF ETKENLER: {sentiment_detay_str}
+(Not: Düşük puan olsa bile, yukarıdaki "Etkenler" potansiyel dönüş sinyalleri olabilir, analizine kat.)
 
 *** GÖREVİN ***
-Verileri sentezle ve aşağıdaki başlıkları açıp, bir "Sniper" gibi işlem kurgula.
-1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle. Temel analize (bilanço vs.) girme, sadece teknik konuş.
+Verileri sentezle ve aşağıdaki başlıklarla bir "Sniper" gibi işlem kurgula.
+1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin ne yapmaya çalıştığını (Tuzak mı, toplama mı?) 2 cümleyle özetle.
 2. KARAR: [LONG / SHORT / İZLE]
 3. STRATEJİ:
    - Giriş Bölgesi: (FVG veya Fib desteğini referans al)
@@ -2518,7 +2536,7 @@ Verileri sentezle ve aşağıdaki başlıkları açıp, bir "Sniper" gibi işlem
 """
     with st.sidebar:
         st.code(prompt, language="text")
-        st.success("Metin kopyalanmaya hazır! 📋")
+        st.success("Analiz metni detaylarla güçlendirildi! 📋")
     
     st.session_state.generate_prompt = False
 
@@ -2806,6 +2824,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
