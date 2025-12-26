@@ -1074,8 +1074,9 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 # ==============================================================================
-# MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA)
+# MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
+
 @st.cache_data(ttl=600)
 def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
     try:
@@ -1110,7 +1111,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         c7 = curr_price >= (year_high * 0.75)
         
         trend_score = sum([c1, c2, c3, c4, c5, c6, c7])
-        trend_ok = trend_score >= 5 # En az 5 madde geçerli olmalı
+        trend_ok = trend_score >= 5 # BU SATIR ÖNEMLİ (Hatayı çözen değişken)
         
         # 4. VCP (DARALMA) SİNYALİ
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
@@ -1138,7 +1139,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
                 else: rs_rating = "ZAYIF"
 
         # DURUM BELİRLEME
-        status = "YOK"; 
+        status = "YOK"
         raw_score = trend_score * 10
         if rs_val > 0: raw_score += 15
         if is_vcp: raw_score += 15
@@ -1146,7 +1147,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         if trend_ok and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
         elif trend_ok and rs_val > 0: status = "🔥 GÜÇLÜ TREND"
         elif trend_ok: status = "✅ OLUMLU (İzle)"
-        else: return None
+        else: return None 
 
         return {
             "Sembol": ticker,
@@ -1154,7 +1155,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
             "Durum": status,
             "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else 'Yok'} | Arz: {'Kurudu' if is_dry else 'Normal'}",
             "Raw_Score": raw_score,
-            # EKSİK OLAN ANAHTARLAR ARTIK BURADA:
+            # EKSİK OLAN ANAHTARLAR ARTIK EKLENDİ:
             "trend_ok": trend_ok,
             "is_vcp": is_vcp,
             "is_dry": is_dry,
@@ -2836,6 +2837,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
