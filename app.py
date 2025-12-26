@@ -2407,38 +2407,36 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
             st.session_state.generate_prompt = True
 
-    # --- MENZİL VE VADE BİLGİ KARTI (SIDEBAR EN ALT) ---
-    st.sidebar.markdown("---")  # Ayırıcı çizgi
+# --- MENZİL VE VADE BİLGİ KARTI (SIDEBAR EN ALT) ---
+st.sidebar.markdown("---")  # Ayırıcı çizgi
 
-    st.sidebar.markdown("""
-    <div style="border-left: 4px solid #3b82f6; background-color: #f8fafc; padding: 10px; border-radius: 5px;">
-        <div style="color: #1e40af; border-bottom: 1px solid #e2e8f0; font-weight: bold; margin-bottom: 10px; padding-bottom: 5px;">
-            📡 Radar Strateji Rehberi
-        </div>
-
-        <div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
-            <div style="font-size: 1.2rem; margin-right: 10px;">🧠</div>
-            <div>
-                <div style="font-weight: 700; font-size: 0.85rem; color: #0369a1;">RADAR 1 (KISA VADE)</div>
-                <div style="font-size: 0.75rem; color: #475569; line-height: 1.3;">
-                    <b>Süre:</b> 3 - 12 Gün<br>
-                    <b>Strateji:</b> Vur-Kaç. Momentum ve Hacim patlamalarını yakalar.
-                </div>
-            </div>
-        </div>
-
-        <div style="display: flex; align-items: flex-start;">
-            <div style="font-size: 1.2rem; margin-right: 10px;">🚀</div>
-            <div>
-                <div style="font-weight: 700; font-size: 0.85rem; color: #15803d;">RADAR 2 (ORTA VADE)</div>
-                <div style="font-size: 0.75rem; color: #475569; line-height: 1.3;">
-                    <b>Süre:</b> 2 - 8 Hafta<br>
-                    <b>Strateji:</b> Trend Sür. Oturmuş boğa trendlerini (SMA) takip eder.
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+st.sidebar.markdown("""
+<div style="border-left: 4px solid #3b82f6; background-color: #f8fafc; padding: 10px; border-radius: 5px;">
+<div style="color: #1e40af; border-bottom: 1px solid #e2e8f0; font-weight: bold; margin-bottom: 10px; padding-bottom: 5px;">
+📡 Radar Strateji Rehberi
+</div>
+<div style="display: flex; align-items: flex-start; margin-bottom: 12px;">
+<div style="font-size: 1.2rem; margin-right: 10px;">🧠</div>
+<div>
+<div style="font-weight: 700; font-size: 0.85rem; color: #0369a1;">RADAR 1 (KISA VADE)</div>
+<div style="font-size: 0.75rem; color: #475569; line-height: 1.3;">
+<b>Süre:</b> 3 - 12 Gün<br>
+<b>Strateji:</b> Vur-Kaç. Momentum ve Hacim patlamalarını yakalar.
+</div>
+</div>
+</div>
+<div style="display: flex; align-items: flex-start;">
+<div style="font-size: 1.2rem; margin-right: 10px;">🚀</div>
+<div>
+<div style="font-weight: 700; font-size: 0.85rem; color: #15803d;">RADAR 2 (ORTA VADE)</div>
+<div style="font-size: 0.75rem; color: #475569; line-height: 1.3;">
+<b>Süre:</b> 2 - 8 Hafta<br>
+<b>Strateji:</b> Trend Sür. Oturmuş boğa trendlerini (SMA) takip eder.
+</div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==============================================================================
 # 6. ANA SAYFA (MAIN UI)
@@ -2890,6 +2888,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
