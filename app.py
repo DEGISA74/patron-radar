@@ -34,7 +34,7 @@ THEMES = {
 current_theme = THEMES[st.session_state.theme]
 
 # ==============================================================================
-# 1. AYARLAR VE STİL (DÜZELTİLMİŞ VERSİYON)
+# 1. AYARLAR VE STİL (DÜZELTİLMİŞ HALİ)
 # ==============================================================================
 st.markdown(f"""
 <style>
@@ -108,7 +108,7 @@ st.markdown(f"""
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
-    /* --- MINERVINI AJANI İÇİN ÖZEL STİLLER (KRİTİK BÖLÜM) --- */
+    /* --- MINERVINI AJANI İÇİN ÖZEL STİLLER (DÜZELTİLDİ) --- */
     .minervini-scroll-box {{
         height: 250px;
         overflow-y: auto;
@@ -143,6 +143,7 @@ st.markdown(f"""
     }}
 </style>
 """, unsafe_allow_html=True)
+
 # ==============================================================================
 # 2. VERİTABANI VE LİSTELER
 # ==============================================================================
@@ -2861,6 +2862,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
