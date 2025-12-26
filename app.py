@@ -2536,17 +2536,17 @@ Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak st
 - ICT Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
 - Konum (Discount/Premium): {ict_data.get('zone', 'Bilinmiyor')}
 
-*** 2. GİZLİ PARA AKIŞI (FORCE INDEX - 10 GÜNLÜK AĞIRLIKLI) ***
+*** 2. GİZLİ PARA AKIŞI (Momentum Index - 10 Günlük) ***
 - Durum: {para_akisi_txt}
 (ÇOK KRİTİK NOT: Eğer Kırmızı renkte ama "Zayıflıyor/Satışlar Kuruyor" diyorsa, bu potansiyel bir DİP dönüşü sinyalidir. Mavi renkte "Güçleniyor" diyorsa trend sağlamdır.)
 
-*** 3. KRİTİK SEVİYELER (SAVAŞ ALANI) ***
+*** 3. KRİTİK SEVİYELER (Trade Alanı) ***
 - En Yakın Direnç (Fib): {fib_res}
 - En Yakın Destek (Fib): {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
 - Aktif FVG (Dengesizlik): {ict_data.get('fvg_txt', 'Yok')}
 
-*** 4. PRICE ACTION & GÜÇ (DNA ANALİZİ) ***
+*** 4. PRICE ACTION & GÜÇ (Derin Analiz) ***
 - Mum Formasyonu: {mum_desc}
 - RSI Uyumsuzluğu: {pa_div} (Buna çok dikkat et!)
 - Tuzak (SFP): {pa_sfp}
@@ -2558,9 +2558,9 @@ Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak st
 - Pozitif Etkenler: {sentiment_detay_str}
 
 *** GÖREVİN ***
-Verileri sentezle ve bir "Sniper" gibi işlem kurgula.
+Verileri sentezle ve aşağıdaki başlıkları açıp bir "Sniper" gibi işlem kurgula.
 1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin (Özellikle 10 günlük ağırlıklı para akışına bakarak) ne yapmaya çalıştığını yorumla.
-2. KARAR: [LONG / SHORT / İZLE]
+2. KARAR: [Long / Short / İzle]
 3. STRATEJİ:
    - Giriş Bölgesi:
    - Stop Loss:
@@ -2857,6 +2857,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
