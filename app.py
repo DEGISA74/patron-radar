@@ -105,6 +105,41 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+
+    /* --- MINERVINI AJANI İÇİN ÖZEL STİLLER --- */
+    .minervini-scroll-box {
+        height: 250px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        padding: 5px;
+        background-color: #ffffff;
+        border-radius: 6px;
+    }
+    .stock-card {
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        background-color: #f8fafc;
+        border-left: 4px solid #16a34a; /* Yeşil Çizgi */
+        border-radius: 4px;
+        border-top: 1px solid #f1f5f9;
+        border-right: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition: transform 0.1s;
+    }
+    .stock-card:hover { transform: translateX(2px); background-color: #f1f5f9; }
+    .score-badge {
+        background-color: #dcfce7;
+        color: #15803d;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 0.75rem;
+        border: 1px solid #86efac;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1076,139 +1111,95 @@ def scan_confirmed_breakouts(asset_list):
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
 # ==============================================================================
-# 4. GÖREV: KAMA & HARSI 3H AJANI (HESAPLAMA MOTORU) - STREAK (SÜRE) EKLENDİ
+# 4. GÖREV: MINERVINI VCP AJANI (ŞAMPİYON HİSSELER)
 # ==============================================================================
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_hourly_data_agent3(asset_list):
-    if not asset_list: return pd.DataFrame()
+def process_single_minervini(symbol, df, spy_return):
     try:
-        tickers_str = " ".join(asset_list)
-        data = yf.download(
-            tickers_str, period="3mo", interval="1h", group_by='ticker', 
-            threads=True, progress=False, auto_adjust=False
-        )
-        return data
-    except Exception: return pd.DataFrame()
+        if df.empty or 'Close' not in df.columns: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 200: return None # Minervini için 200 gün şart
 
-def calculate_kama_pandas(series, n=20, pow1=2, pow2=30):
-    if len(series) <= n: return pd.Series(np.nan, index=series.index)
-    change = abs(series - series.shift(n))
-    volatility = abs(series - series.shift(1)).rolling(n).sum()
-    er = change / volatility
-    er = er.fillna(0)
-    sc = (er * (2/(pow1+1) - 2/(pow2+1)) + 2/(pow2+1)) ** 2
-    
-    kama = np.zeros_like(series)
-    kama[:] = np.nan
-    start_idx = n
-    kama[start_idx] = series.iloc[start_idx]
-    
-    series_values = series.values
-    sc_values = sc.values
-    for i in range(start_idx + 1, len(series)):
-        val = kama[i-1] + sc_values[i] * (series_values[i] - kama[i-1])
-        if not np.isnan(val): kama[i] = val
-        else: kama[i] = kama[i-1]
-    return pd.Series(kama, index=series.index)
+        close = df['Close']; high = df['High']; low = df['Low']
+        
+        # --- 1. TREND ŞABLONU (Mark Minervini Trend Template) ---
+        c = float(close.iloc[-1])
+        sma50 = float(close.rolling(50).mean().iloc[-1])
+        sma150 = float(close.rolling(150).mean().iloc[-1])
+        sma200 = float(close.rolling(200).mean().iloc[-1])
+        low_52 = float(low.rolling(252).min().iloc[-1])
+        high_52 = float(high.rolling(252).max().iloc[-1])
 
-def process_single_harsi_agent(symbol, df_1h):
-    try:
-        if df_1h.empty: return None
-        if 'Volume' in df_1h.columns: df_1h['Volume'] = df_1h['Volume'].fillna(0)
-        else: df_1h['Volume'] = 0
+        # Katı Trend Kuralları
+        cond1 = c > sma150 and c > sma200
+        cond2 = sma150 > sma200
+        cond3 = sma50 > sma150
+        cond4 = c > sma50
+        cond5 = c > low_52 * 1.25  # Dipten en az %25 yukarıda olmalı
+        cond6 = c > high_52 * 0.75 # Zirveye %25 yakınlıkta olmalı (Çok düşmüşleri ele)
 
-        # 3 Saatlik Mum
-        df_3h = df_1h.resample('3h').agg({
-            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'
-        }).dropna()
-        
-        if len(df_3h) < 40: return None
-        close = df_3h['Close']
-        
-        # --- İNDİKATÖRLER ---
-        ema9 = close.ewm(span=9, adjust=False).mean()
-        kama = calculate_kama_pandas(close, n=20, pow1=2, pow2=30)
-        
-        delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        rsi_sma50 = rsi.rolling(50).mean()
-        
-        # HARSI
-        ha_close = rsi.values
-        ha_open = np.zeros_like(ha_close)
-        valid_idx = 14
-        if len(ha_close) > valid_idx:
-            ha_open[valid_idx] = ha_close[valid_idx] 
-            for i in range(valid_idx + 1, len(ha_close)):
-                ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2
-        
-        ha_open_s = pd.Series(ha_open, index=rsi.index)
-        ha_close_s = pd.Series(ha_close, index=rsi.index)
-        
-        # --- SERİ (VECTORIZED) KONTROLLER ---
-        # Geçmişe dönük tarama yapabilmek için serileri hazırlıyoruz
-        s_ema9 = close > ema9
-        s_kama = close > kama
-        s_rsi_sma = rsi > rsi_sma50
-        s_harsi_green = ha_close_s > ha_open_s
-        s_rsi_mom = rsi > ha_open_s
-        
-        # Hepsini sağlayan mumlar (True/False Serisi)
-        # Not: HARSI 3 mum şartını aşağıda manuel kontrol ediyoruz, burada genel trend uyumuna bakıyoruz
-        trend_ok = s_ema9 & s_kama & s_rsi_sma & s_harsi_green & s_rsi_mom
-        
-        # Son Mum Kontrolleri (Giriş Şartları)
-        c_last = close.iloc[-1]; c_prev = close.iloc[-2]
-        ema9_last = ema9.iloc[-1]; ema9_prev = ema9.iloc[-2]
-        kama_last = kama.iloc[-1]; kama_prev = kama.iloc[-2]
-        
-        if np.isnan(kama_last) or np.isnan(rsi.iloc[-1]): return None
+        if not (cond1 and cond2 and cond3 and cond4 and cond5 and cond6):
+            return None
 
-        # Giriş Kuralları (Kesin Şartlar)
-        cond1 = (c_last > ema9_last) and (c_prev > ema9_prev)
-        cond2 = (c_last > kama_last) and (c_prev > kama_prev)
-        cond3 = rsi.iloc[-1] > rsi_sma50.iloc[-1]
-        cond4 = s_harsi_green.iloc[-1] and s_harsi_green.iloc[-2] and s_harsi_green.iloc[-3]
-        cond5 = rsi.iloc[-1] > ha_open_s.iloc[-1]
+        # --- 2. VCP (VOLATİLİTE DARALMASI) ---
+        # Son 10 günün oynaklığı vs Son 60 günün oynaklığı
+        std_10 = float(close.tail(10).std())
+        std_60 = float(close.tail(60).std())
         
-        if cond1 and cond2 and cond3 and cond4 and cond5:
-            
-            # --- KAÇ MUMDUR DEVAM EDİYOR? (STREAK HESABI) ---
-            streak_count = 0
-            # Sondan geriye doğru say (Maksimum 50 mum geriye bak)
-            # -1 son mum, -2 önceki...
-            # Trend bozulduğu anda döngüyü kır.
-            vals = trend_ok.values
-            for i in range(len(vals)-1, max(0, len(vals)-50), -1):
-                if vals[i]:
-                    streak_count += 1
-                else:
-                    break
-            
-            # En az 3 mumluk (HARSI şartı gereği) bir seri zaten var.
-            trend_str = f"{streak_count} Mum"
+        # Eğer veri çok düzse std 0 gelebilir, koruma ekle
+        if std_60 == 0: return None
+        
+        tightness = std_10 / std_60 
+        # 0.5'in altı demek, son günler geçmişe göre yarı yarıya sakinleşmiş demek.
+        is_tight = tightness < 0.60 
 
-            return {
-                "Sembol": symbol,
-                "Fiyat": f"{c_last:.2f}",
-                "RSI": f"{rsi.iloc[-1]:.1f}",
-                "RSI_Raw": rsi.iloc[-1],
-                "HARSI": "3x🟢",
-                "Trend_Suresi": trend_str, # YENİ VERİ
-                "Trend_Raw": streak_count  # Sıralama istersek diye
-            }
-        return None
+        if not is_tight: return None
+
+        # --- 3. RS PUANI (GÜÇ SKORU) ---
+        # Hisse 6 ayda ne yaptı?
+        stock_return = (c - float(close.iloc[-126])) / float(close.iloc[-126]) if len(close) > 126 else 0
         
+        # RS Skoru: Hisse Getirisi - Endeks Getirisi (Basitleştirilmiş)
+        # Eğer endeks %10 gitmiş, hisse %30 gitmişse RS pozitiftir.
+        rs_rating = (stock_return - spy_return) * 100
+        
+        if rs_rating < 0: return None # Endeksten zayıf olanı at
+
+        # --- 4. SIRALAMA PUANI ---
+        # RS Puanı yüksek olan ve Sıkışması (Tightness) en dar olan en iyisidir.
+        # Tightness ne kadar küçükse o kadar iyi, o yüzden tersini alıyoruz.
+        final_score = rs_rating + (1 / (tightness + 0.01)) * 2
+
+        # Stop Seviyesi (Son 10 günün en düşüğünün biraz altı)
+        stop_loss = float(low.tail(10).min() * 0.98)
+
+        return {
+            "Sembol": symbol,
+            "Fiyat": c,
+            "Score": final_score,
+            "RS_Rating": rs_rating,
+            "Stop_Loss": stop_loss,
+            "Tightness": tightness,
+            "Zirve_Yak": (c / high_52) * 100
+        }
+
     except Exception: return None
 
 @st.cache_data(ttl=900)
-def scan_agent3_harsi(asset_list):
-    data = get_hourly_data_agent3(asset_list)
+def scan_minervini_agent(asset_list, benchmark_ticker="^GSPC"):
+    # 1. Verileri Çek (1 Yıllık lazım)
+    data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
+
+    # 2. Endeks Getirisini Hesapla (SPY veya XU100)
+    try:
+        spy_df = yf.download(benchmark_ticker, period="6mo", progress=False)['Close']
+        if not spy_df.empty:
+            spy_return = (spy_df.iloc[-1] - spy_df.iloc[0]) / spy_df.iloc[0]
+        else:
+            spy_return = 0
+    except:
+        spy_return = 0
 
     results = []
     stock_dfs = []
@@ -1221,27 +1212,16 @@ def scan_agent3_harsi(asset_list):
         except: continue
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        futures = [executor.submit(process_single_harsi_agent, sym, df) for sym, df in stock_dfs]
+        futures = [executor.submit(process_single_minervini, sym, df, spy_return) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res: results.append(res)
             
     df = pd.DataFrame(results)
     if not df.empty:
-        # Eğer hem Trend hem RSI verisi varsa ÇİFTE SIRALAMA yap
-        if "Trend_Raw" in df.columns and "RSI_Raw" in df.columns:
-            # 1. Kural: Trend_Raw -> Küçükten Büyüğe (True) - Yani az mum en üstte
-            # 2. Kural: RSI_Raw -> Büyükten Küçüğe (False) - Eşit mum varsa güçlü olan üstte
-            df = df.sort_values(by=["Trend_Raw", "RSI_Raw"], ascending=[True, False])
-            
-        # Sadece Trend verisi varsa
-        elif "Trend_Raw" in df.columns:
-            df = df.sort_values(by="Trend_Raw", ascending=True)
-            
-        # Sadece RSI verisi varsa (Eski usul)
-        elif "RSI_Raw" in df.columns:
-            df = df.sort_values(by="RSI_Raw", ascending=False)
-            
+        # En yüksek puana göre sırala
+        df = df.sort_values(by="Score", ascending=False)
+        
     return df
 
 @st.cache_data(ttl=600)
@@ -2728,64 +2708,88 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
-    # YENİ EKLENEN 3. AJAN (KAMA & HARSI) ARAYÜZÜ - V6 (HATA KORUMALI)
+    # 3. AJAN: MINERVINI VCP (YENİ TASARIM)
     # ---------------------------------------------------------
     
-    if 'harsi_data' not in st.session_state: st.session_state.harsi_data = None
+    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+    
+    # Uygun benchmark seçimi
+    bench_ticker = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
 
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+    
+    # Başlık Alanı (Senin 1. resimdeki mavi/kırmızı tarz)
     st.markdown("""
-    <div class="info-card" style="border-left: 4px solid #8b5cf6;">
-        <div class="info-header" style="color:#5b21b6;">🕵️ 3. Ajan: 3 Saatlik Trend Avcısı</div>
-        <div class="edu-note">
-            Bu ajan hisseleri <b>3 saatlik</b> periyotlarda tarar ve şu şartları arar:<br>
-            1. Fiyat son 2 mumda <b>EMA9</b> ve <b>KAMA(20-2-30)</b> üzerinde.<br>
-            2. <b>RSI</b> kendi 50 ortalamasının üzerinde.<br>
-            3. <b>HARSI (Heikin Ashi RSI)</b> son 3 mumda 🟢 YEŞİL yaktı.<br>
-            4. RSI çizgisi mumların üzerinde (Momentum güçlü).
+    <div class="info-card" style="border-left: 4px solid #0ea5e9; background-color: #f0f9ff;">
+        <div class="info-header" style="color:#0369a1;">🏆 3. Ajan: Minervini VCP (Şampiyonlar)</div>
+        <div class="edu-note" style="color:#0c4a6e;">
+            Bu ajan, <b>Mark Minervini</b> stratejisini kullanır. Sadece:<br>
+            1. <b>Trendi Güçlü</b> (200G Ort. Üstünde),<br>
+            2. <b>Endeksi Yenen</b> (RS Puanı Yüksek),<br>
+            3. <b>Enerjisi Sıkışmış</b> (VCP - Volatilite Daralması) hisseleri <b>PUANLAYARAK</b> sıralar.
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Tarama Butonu
-    if st.button(f"🌊 3SAAT KIRILIM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="harsi_scan_btn"):
-        with st.spinner("3. Erken Kırılım Ajanı sahada: Kısa Vadeli Kırılımlar taranıyor..."):
+    if st.button(f"🚀 ŞAMPİYONLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="minervini_scan_btn"):
+        with st.spinner("Minervini kriterleri uygulanıyor: Trend + RS + VCP Sıkışması..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.harsi_data = scan_agent3_harsi(current_assets)
-    
-    # Sonuçların Gösterimi
-    if st.session_state.harsi_data is not None:
-        if not st.session_state.harsi_data.empty:
-            
-            # Özel İnce Bilgi Kutusu
-            count = len(st.session_state.harsi_data)
+            st.session_state.minervini_data = scan_minervini_agent(current_assets, benchmark_ticker=bench_ticker)
+
+    # Sonuçların Gösterimi (Scroll Box İçinde)
+    if st.session_state.minervini_data is not None:
+        df_m = st.session_state.minervini_data
+        
+        if not df_m.empty:
+            count = len(df_m)
+            # Bilgi Çubuğu
             st.markdown(f"""
-            <div style="background-color: #dcfce7; color: #14532d; padding: 4px 6px; border-radius: 2px; border: 0.9px solid #86efac; font-size: 1.0rem; margin-bottom: 4px; display: flex; align-items: center;">
-                <span style="font-size: 0.9rem; margin-right: 6px;">🎯</span>
-                <b>{count}</b>&nbsp;hisse kriterlere uydu!
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; margin-top:5px;">
+                <span style="font-size:0.8rem; font-weight:700; color:#334155;">Bulunan: {count} Hisse</span>
+                <span style="font-size:0.7rem; color:#64748B;">Sıralama: Güç Skoru</span>
             </div>
             """, unsafe_allow_html=True)
-            
-            with st.container(height=150):
-                for i, (index, row) in enumerate(st.session_state.harsi_data.iterrows()):
-                    
-                    # --- HATA KORUMASI ---
-                    # Eski veride 'Trend_Suresi' olmayabilir, .get() ile güvenli çekiyoruz.
-                    trend_info = row.get('Trend_Suresi', 'Yenile...')
-                    raw_trend = row.get('Trend_Raw', 0)
-                    
-                    # 10 mumdan fazlaysa yanına ateş ikonu koy
-                    if raw_trend >= 10: trend_info = f"🔥 {trend_info}"
-                    
-                    button_label = f"🚀 {row['Sembol']} | Fiyat: {row['Fiyat']} | RSI: {row['RSI']} | Süre: {trend_info}"
-                    
-                    if st.button(button_label, key=f"btn_harsi_{row['Sembol']}", use_container_width=True):
-                        on_scan_result_click(row['Sembol'])
-                        st.rerun()
-        else:
-            st.warning("Bu zorlu kriterlere uyan hisse şu an bulunamadı. Piyasa trend modunda olmayabilir.")
 
-    st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
+            # --- SCROLL BOX BAŞLANGICI ---
+            # Streamlit içinde HTML scroll alanı oluşturuyoruz. Butonlar bu HTML'in içine gömülemez, 
+            # o yüzden Streamlit'in native container'ını kullanıp CSS ile scroll özelliği kazandırdık.
+            
+            with st.container():
+                # CSS ile tanımladığımız scroll class'ını buraya uyguluyoruz
+                st.markdown('<div class="minervini-scroll-box">', unsafe_allow_html=True)
+                
+                for i, (index, row) in enumerate(df_m.iterrows()):
+                    # Kart İçeriği
+                    symbol = row['Sembol']
+                    price = row['Fiyat']
+                    score = row['Score']
+                    rs = row['RS_Rating']
+                    stop = row['Stop_Loss']
+                    tight = row['Tightness'] # 0.10 çok sıkışık, 0.50 gevşek
+                    
+                    # Sıkışma Durumu Metni
+                    tight_txt = "Çok Sıkışık" if tight < 0.4 else "Normal"
+                    
+                    # Kart HTML'i (Görsel Kısım)
+                    # Not: Tıklanabilir butonları HTML içine gömemeyiz, bu yüzden
+                    # Görseli HTML ile, Tıklamayı görünmez bir butonla veya altına buton koyarak çözeceğiz.
+                    # EN TEMİZ YÖNTEM: Streamlit butonunu kart gibi göstermek zordur.
+                    # O yüzden standart Streamlit butonunu kullanıp içine detayları yazacağız.
+                    
+                    # Buton Etiketi (Senin 2. Resimdeki Detaylar)
+                    # Format: 🏆 NVDA | Skor: 85 | RS: +12% | Stop: 120.5
+                    btn_label = f"🏆 {symbol} ({price:.2f}) | Güç: {int(score)} | RS: %{rs:.1f} | 🛑 {stop:.2f}"
+                    
+                    if st.button(btn_label, key=f"btn_miner_{symbol}", use_container_width=True):
+                        on_scan_result_click(symbol)
+                        st.rerun()
+                
+                st.markdown('</div>', unsafe_allow_html=True) 
+                # --- SCROLL BOX BİTİŞİ ---
+
+        else:
+            st.info("Minervini kriterlerine (Süper Trend + Sıkışma) uyan hisse bulunamadı. Piyasa zayıf olabilir.")
     # ---------------------------------------------------------
     
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
@@ -2857,3 +2861,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
