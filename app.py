@@ -2807,7 +2807,7 @@ with col_left:
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
             
-    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
+    # 2. SONUÇ EKRANI (Scroll Bar - 300px) - GÜNCELLENMİŞ VERSİYON
     if st.session_state.minervini_data is not None:
         count = len(st.session_state.minervini_data)
         if count > 0:
@@ -2815,8 +2815,23 @@ with col_left:
             with st.container(height=300, border=True):
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
-                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
-                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
+                    
+                    # --- DÜZELTME BURADA ---
+                    # Eski kod: row['Durum'] arıyordu.
+                    # Yeni kod: row['Status'] ve row['Score'] kullanıyor.
+                    
+                    # İkon belirleme (Puana göre)
+                    score_val = row.get('Score', 0)
+                    icon = "💎" if score_val >= 90 else "🔥"
+                    
+                    # Etiket metnini yeni sütunlara göre oluşturuyoruz
+                    # row['Durum'] -> row['Status']
+                    # row['Detay'] -> row['Pivot_Desc']
+                    status_text = row.get('Status', 'SEPA')
+                    pivot_text = row.get('Pivot_Desc', '')
+                    
+                    label = f"{icon} {sym} ({row['Fiyat']}) | {status_text} | {pivot_text}"
+                    # -----------------------
                     
                     if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
@@ -2894,6 +2909,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
