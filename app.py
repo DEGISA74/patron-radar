@@ -1077,118 +1077,167 @@ def scan_confirmed_breakouts(asset_list):
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
 
-@st.cache_data(ttl=600)
-def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
+def calculate_minervini_sepa_optimized(symbol, df, benchmark_df):
+    """
+    Acımasız Minervini SEPA Analizi (Sniper Modu).
+    Sadece A+ Kurulumları seçer.
+    """
     try:
-        # 1. VERİ ÇEKİMİ (En az 1 yıl - 260 iş günü)
-        df = get_safe_historical_data(ticker, period="2y")
-        if df is None or len(df) < 260: return None
+        if df is None or df.empty or len(df) < 260: return None
         
-        # Endeks verisi (RS kıyaslaması için)
-        bench_df = get_safe_historical_data(benchmark_ticker, period="2y")
-        
+        # MultiIndex sütun düzeltmesi
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+            
         close = df['Close']; volume = df['Volume']
         curr_price = float(close.iloc[-1])
         
-        # 2. HAREKETLİ ORTALAMALAR
+        # ---------------------------------------------------------
+        # ADIM 1: ACIMASIZ FİLTRELER (TREND ŞABLONU)
+        # ---------------------------------------------------------
         sma50 = float(close.rolling(50).mean().iloc[-1])
         sma150 = float(close.rolling(150).mean().iloc[-1])
         sma200 = float(close.rolling(200).mean().iloc[-1])
-        # SMA 200'ün 1 ay önceki değeri (Eğim kontrolü)
-        sma200_prev = float(close.rolling(200).mean().iloc[-22])
         
-        # 52 Haftalık Zirve ve Dip
+        # KURAL: SMA 200 Yükseliyor olmalı (Min 1 aylık eğim)
+        sma200_20ago = float(close.rolling(200).mean().iloc[-22])
+        sma200_trending_up = sma200 > sma200_20ago
+        
         year_high = float(close.rolling(250).max().iloc[-1])
         year_low = float(close.rolling(250).min().iloc[-1])
         
-        # 3. KATI MINERVINI FİLTRELERİ (Hepsi True olmak zorunda)
-        condition_1 = curr_price > sma150 and curr_price > sma200
-        condition_2 = sma150 > sma200
-        condition_3 = sma200 > sma200_prev
-        condition_4 = sma50 > sma150 and sma50 > sma200
-        condition_5 = curr_price > sma50
-        condition_6 = curr_price >= (year_low * 1.30)
-        condition_7 = curr_price >= (year_high * 0.75)
+        # KURAL: Fiyat 52 haftalık zirvenin en az %85'inde olmalı (Dipçileri eliyoruz)
+        proximity_threshold = 0.85 
+        is_near_high = curr_price >= (year_high * proximity_threshold)
         
-        # Tüm trend şartları sağlanıyor mu?
-        trend_ok = condition_1 and condition_2 and condition_3 and condition_4 and condition_5 and condition_6 and condition_7
+        # KURAL: Fiyat dipten en az %30 yukarıda olmalı
+        is_above_low = curr_price >= (year_low * 1.30)
+
+        # Minervini Trend Şablonu (Hepsi TRUE olmak ZORUNDA)
+        trend_conditions = [
+            curr_price > sma150,
+            curr_price > sma200,
+            sma150 > sma200,
+            sma200_trending_up, # Eğim şart
+            sma50 > sma150,
+            sma50 > sma200,
+            curr_price > sma50,
+            is_near_high, # Zirveye yakınlık şart
+            is_above_low
+        ]
         
-        # RS (Göreceli Güç) Kontrolü
-        rs_rating = "ZAYIF"; rs_val = 0; rs_ok = False
-        if bench_df is not None:
-            common = close.index.intersection(bench_df.index)
-            if len(common) > 60:
-                r_s = close.loc[common]; r_b = bench_df['Close'].loc[common]
-                ratio = r_s / r_b
-                mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 10
+        if not all(trend_conditions): return None
+
+        # ---------------------------------------------------------
+        # ADIM 2: RS KONTROLÜ (Zorunlu Pozitiflik)
+        # ---------------------------------------------------------
+        rs_val = 0; rs_rating = "Zayıf"
+        if benchmark_df is not None:
+            common_idx = close.index.intersection(benchmark_df.index)
+            if len(common_idx) > 50:
+                stock_p = close.loc[common_idx]; bench_p = benchmark_df.loc[common_idx]
+                rs_ratio = stock_p / bench_p
+                rs_base = rs_ratio.rolling(50).mean()
+                mansfield = ((rs_ratio / rs_base) - 1) * 10
                 rs_val = float(mansfield.iloc[-1])
-                if rs_val > 0: 
-                    rs_rating = "GÜÇLÜ (RS+)"
-                    rs_ok = True
-
-        # VCP ve Arz Kontrolü
-        std_10 = close.pct_change().rolling(10).std().iloc[-1]
-        std_60 = close.pct_change().rolling(60).std().iloc[-1]
-        is_vcp = std_10 < (std_60 * 0.75)
         
-        avg_vol = volume.rolling(20).mean().iloc[-1]
-        last_10 = df.tail(10)
-        down_days = last_10[last_10['Close'] < last_10['Open']]
-        is_dry = True
+        # KURAL: RS Negatifse (Endeksten kötüyse) çöpe at.
+        if rs_val <= 0: return None
+        rs_rating = f"GÜÇLÜ ({rs_val:.1f})"
+
+        # ---------------------------------------------------------
+        # ADIM 3: PUANLAMA & TETİKLEYİCİLER
+        # ---------------------------------------------------------
+        score = 50 # Taban puan (Trend + RS geçtiği için)
+        
+        # A. VCP (Oynaklık Daralması) - Puan: +20
+        std_10 = close.pct_change().rolling(10).std().iloc[-1]
+        std_50 = close.pct_change().rolling(50).std().iloc[-1]
+        is_vcp = std_10 < (std_50 * 0.60) # Daha sıkı bir VCP (%60)
+        if is_vcp: score += 20
+        
+        # B. Arz Kuruması (Dry Up) - Puan: +15
+        avg_vol_20 = volume.rolling(20).mean().iloc[-1]
+        last_5 = df.tail(5)
+        down_days = last_5[last_5['Close'] < last_5['Open']]
+        is_dry = True # Varsayılan
         if not down_days.empty:
-            is_dry = down_days['Volume'].mean() < (avg_vol * 0.9)
-
-        # LİSTEYE ALMA KARARI (EN KATI BÖLÜM)
-        # Trend Şartları TAMAM OLMALI + RS Pozitif OLMALI
-        if not (trend_ok and rs_ok):
-            return None 
-
-        # Durum Belirleme
-        status = "🔥 GÜÇLÜ TREND"
-        if is_vcp: status = "💎 SÜPER BOĞA (VCP)"
-
-        # Puanlama (Sıralama için)
-        raw_score = 70 # Taban puan (Çünkü trend_ok)
-        if is_vcp: raw_score += 15
-        if is_dry: raw_score += 10
-        if rs_val > 2: raw_score += 5
+            is_dry = down_days['Volume'].mean() < (avg_vol_20 * 0.75) # Ortalamanın %75 altı
+        if is_dry: score += 15
+        
+        # C. Pivot Zone (Tetikleyici) - Puan: +15
+        # Fiyat zirvenin %95'i ile %102'si arasındaysa "Kırılım Bölgesindedir"
+        dist_to_high = curr_price / year_high
+        in_pivot_zone = 0.95 <= dist_to_high <= 1.02
+        
+        pivot_status = "Beklemede"
+        if in_pivot_zone:
+            score += 15
+            pivot_status = "⚠️ PIVOT BÖLGESİNDE"
+            # Hacim desteği var mı?
+            if volume.iloc[-1] > avg_vol_20:
+                pivot_status = "🚀 KIRILIM BAŞLIYOR (Hacimli)"
+                score += 5 # Ekstra bonus
+        
+        # Durum Metni
+        status_text = "SEPA Adayı"
+        if score >= 90: status_text = "💎 A+ SNIPER SETUP"
+        elif score >= 80: status_text = "🔥 GÜÇLÜ ALICI"
 
         return {
-            "Sembol": ticker,
+            "Sembol": symbol,
             "Fiyat": f"{curr_price:.2f}",
-            "Durum": status,
-            "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else 'Yok'} | Arz: {'Kurudu' if is_dry else 'Normal'}",
-            "Raw_Score": raw_score,
-            "trend_ok": trend_ok,
-            "is_vcp": is_vcp,
-            "is_dry": is_dry,
-            "rs_val": rs_val,
-            "rs_rating": rs_rating,
-            "score": raw_score,
-            "reasons": ["Trend: Mükemmel", f"VCP: {is_vcp}", f"RS: {rs_rating}"],
-            "color": "#16a34a" if raw_score > 80 else "#d97706",
-            "sma200": sma200,
-            "year_high": year_high
+            "Score": score,
+            "Status": status_text,
+            "Pivot_Desc": pivot_status,
+            "RS_Val": rs_val,
+            "VCP": is_vcp,
+            "Dry_Up": is_dry,
+            "SMA200": sma200,
+            "Year_High": year_high,
+            "Vol_Rel": volume.iloc[-1] / avg_vol_20
         }
-    except: return None
+
+    except Exception: return None
         
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
+    # Endeks verisi (RS için)
     cat = st.session_state.get('category', 'S&P 500')
-    bench = "XU100.IS" if "BIST" in cat else "^GSPC"
-    
-    _ = get_batch_data_cached(asset_list, period="2y")
-    
+    bench_ticker = "XU100.IS" if "BIST" in cat else "^GSPC"
+    bench_df = get_safe_historical_data(bench_ticker, period="2y")
+    bench_series = bench_df['Close'] if bench_df is not None else None
+
+    # Toplu Veri Çekimi
+    data = get_batch_data_cached(asset_list, period="2y")
+    if data.empty: return pd.DataFrame()
+
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(calculate_minervini_sepa, sym, bench) for sym in asset_list]
+    stock_dfs = []
+    
+    # Veriyi hazırlama
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            elif len(asset_list) == 1:
+                stock_dfs.append((symbol, data))
+        except: continue
+
+    # Paralel İşleme
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(calculate_minervini_sepa_optimized, sym, df, bench_series) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res: results.append(res)
             
     if results:
         df = pd.DataFrame(results)
-        return df.sort_values(by="Raw_Score", ascending=False)
+        # KRİTİK ADIM: SKORA GÖRE SIRALA VE İLK 30'U AL
+        # Böylece kullanıcı 200 hisse içinde boğulmaz.
+        return df.sort_values(by=["Score", "RS_Val"], ascending=[False, False]).head(30)
+    
     return pd.DataFrame()
     
 @st.cache_data(ttl=600)
@@ -2266,82 +2315,72 @@ def render_levels_card(ticker):
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_minervini_panel_v2(ticker):
-    # 1. Verileri al
+    # Veri Hazırlığı
+    df = get_safe_historical_data(ticker, period="2y")
+    if df is None: return
+
     cat = st.session_state.get('category', 'S&P 500')
-    bench = "XU100.IS" if "BIST" in cat else "^GSPC"
-    
-    data = calculate_minervini_sepa(ticker, benchmark_ticker=bench)
-    
-    if not data: return 
+    bench_ticker = "XU100.IS" if "BIST" in cat else "^GSPC"
+    bench_df = get_safe_historical_data(bench_ticker, period="2y")
+    bench_series = bench_df['Close'] if bench_df is not None else None
 
-    # --- HİSSE ADINI HAZIRLA ---
-    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+    # Analizi Çalıştır
+    data = calculate_minervini_sepa_optimized(ticker, df, bench_series)
+    
+    if not data:
+        st.info("📉 Bu hisse 'Minervini Sniper' kriterlerini (Trend + %85 Zirve + RS>0) karşılamıyor.")
+        return 
 
-    # 2. Görsel öğeleri hazırla
-    trend_icon = "✅" if data['trend_ok'] else "❌"
-    vcp_icon = "✅" if data['is_vcp'] else "❌"
-    vol_icon = "✅" if data['is_dry'] else "❌"
-    rs_icon = "✅" if data['rs_val'] > 0 else "❌"
+    # Renk ve Stil Ayarları
+    score = data['Score']
+    color = "#16a34a" if score >= 90 else "#ea580c" if score >= 75 else "#ca8a04"
     
-    rs_width = min(max(int(data['rs_val'] * 5 + 50), 0), 100)
-    rs_color = "#16a34a" if data['rs_val'] > 0 else "#dc2626"
-    
-    # 3. HTML KODU (HİSSE ADI EKLENDİ)
-    html_content = f"""
-<div class="info-card" style="border-top: 3px solid {data['color']};">
-<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{data['color']};">
-<span>🦁 Minervini SEPA Analizi</span>
-<span style="font-size:0.8rem; font-weight:800; background:{data['color']}15; padding:2px 8px; border-radius:10px;">{data['score']}/100</span>
+    pivot_bg = "#fef2f2"
+    pivot_fg = "#991b1b"
+    if "KIRILIM" in data['Pivot_Desc']:
+        pivot_bg = "#f0fdf4"; pivot_fg = "#15803d"
+    elif "PIVOT" in data['Pivot_Desc']:
+        pivot_bg = "#fffbeb"; pivot_fg = "#b45309"
+
+    # HTML Çıktısı
+    html = f"""
+<div class="info-card" style="border-top: 4px solid {color}; margin-top:10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:none; margin-bottom:5px;">
+<span style="font-weight:800; color:{color}; letter-spacing:0.5px;">🦁 SEPA SNIPER</span>
+<span style="background:{color}; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700;">PUAN: {score}</span>
 </div>
-<div style="text-align:center; margin-bottom:5px;">
-<div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">{display_ticker} | {data['Durum']}</div>
+        
+<div style="text-align:center; margin-bottom:10px;">
+<div style="font-size:1.1rem; font-weight:800; color:#1e293b;">{data['Status']}</div>
+<div style="font-size:0.75rem; color:#64748B;">Zirveye Uzaklık: %{((data['Year_High']/float(data['Fiyat']))-1)*100:.1f}</div>
 </div>
-<div class="edu-note" style="text-align:center; margin-bottom:10px;">
-"Aşama 2" yükseliş trendi ve düşük oynaklık (VCP) aranıyor.
+
+<div style="background:{pivot_bg}; border:1px solid {pivot_fg}30; padding:8px; border-radius:6px; margin-bottom:10px; text-align:center;">
+<div style="font-size:0.7rem; color:{pivot_fg}; font-weight:600; text-transform:uppercase;">TETİKLEYİCİ DURUMU</div>
+<div style="font-size:0.9rem; font-weight:800; color:{pivot_fg};">{data['Pivot_Desc']}</div>
 </div>
-<div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:4px; margin-bottom:5px; text-align:center;">
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.6rem; color:#64748B; font-weight:700;">TREND</div>
-<div style="font-size:1rem;">{trend_icon}</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:5px; margin-bottom:8px;">
+<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">RS GÜCÜ</div>
+<div style="font-size:0.9rem; font-weight:700; color:#0f172a;">{data['RS_Val']:.1f}</div>
 </div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.6rem; color:#64748B; font-weight:700;">VCP</div>
-<div style="font-size:1rem;">{vcp_icon}</div>
+<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">VCP</div>
+<div style="font-size:0.9rem;">{'✅' if data['VCP'] else '❌'}</div>
 </div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.6rem; color:#64748B; font-weight:700;">ARZ</div>
-<div style="font-size:1rem;">{vol_icon}</div>
-</div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.6rem; color:#64748B; font-weight:700;">RS</div>
-<div style="font-size:1rem;">{rs_icon}</div>
-</div>
-</div>
-<div class="edu-note">
-1. <b>Trend:</b> Fiyat > SMA200 (Yükseliş Trendinde vs Yatayda-Düşüşte)<br>
-2. <b>VCP:</b> Fiyat sıkışıyor mu? (Düşük Oynaklık vs Dalgalı-Dengesiz Yapı)<br>
-3. <b>Arz:</b> Düşüş günlerinde hacim daralıyor mu? (Satıcılar yoruldu vs Düşüşlerde hacim yüksek)<br>
-4. <b>RS:</b> Endeksten daha mı güçlü? (Endeks düşerken bu hisse duruyor veya yükseliyor vs Endeksle veya daha çok düşüyor)
-</div>
-<div style="margin-bottom:2px; margin-top:8px;">
-<div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px;">
-<span style="color:#64748B; font-weight:600;">Endeks Gücü (Mansfield RS)</span>
-<span style="font-weight:700; color:{rs_color};">{data['rs_rating']}</span>
-</div>
-<div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
-<div style="width:{rs_width}%; height:100%; background:{rs_color};"></div>
+<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">ARZ KURUMASI</div>
+<div style="font-size:0.9rem;">{'✅' if data['Dry_Up'] else '❌'}</div>
 </div>
 </div>
-<div class="edu-note">Bar yeşil ve doluysa hisse endeksi yeniyor (Lider).</div>
-<div style="margin-top:6px; padding-top:4px; border-top:1px dashed #cbd5e1; font-size:0.7rem; color:#475569; display:flex; justify-content:space-between;">
-<span>SMA200: {data['sma200']:.2f}</span>
-<span>52H Zirve: {data['year_high']:.2f}</span>
+        
+<div style="font-size:0.7rem; color:#475569; padding-top:5px; border-top:1px dashed #e2e8f0;">
+<span style="font-weight:700;">Strateji:</span> Pivot bölgesinde hacim artışı bekle. %5 stoploss koy.
 </div>
-<div class="edu-note">Minervini Kuralı: Fiyat 52 haftalık zirveye %25'ten fazla uzak olmamalı.</div>
 </div>
-"""
-    
-    st.markdown(html_content, unsafe_allow_html=True)
+    """
+    st.markdown(html, unsafe_allow_html=True)
     
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -2855,6 +2894,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
