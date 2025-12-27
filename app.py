@@ -1117,7 +1117,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
         year_low = float(close.rolling(250).min().iloc[-1])
         
         # Zirveye Yakınlık: Minervini %25 der ama biz sertleşip %15 (0.85) yapıyoruz
-        near_high = curr_price >= (year_high * 0.85)
+        near_high = curr_price >= (year_high * 0.9)
         above_low = curr_price >= (year_low * 1.30)
         
         # HEPSİ DOĞRU OLMALI
@@ -1142,7 +1142,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
                 rs_val = float(((ratio / ratio.rolling(50).mean()) - 1).iloc[-1] * 10)
         
         # Endeksten Zayıfsa ELE (0 altı kabul edilmez)
-        if rs_val <= 0: return None
+        if rs_val <= 1: return None
         
         rs_rating = f"GÜÇLÜ (RS: {rs_val:.1f})"
 
@@ -2905,6 +2905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
