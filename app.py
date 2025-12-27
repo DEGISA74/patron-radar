@@ -2315,7 +2315,7 @@ def render_levels_card(ticker):
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_minervini_panel_v2(ticker):
-    # Veri Hazırlığı
+    # 1. Veri Hazırlığı
     df = get_safe_historical_data(ticker, period="2y")
     if df is None: return
 
@@ -2324,61 +2324,90 @@ def render_minervini_panel_v2(ticker):
     bench_df = get_safe_historical_data(bench_ticker, period="2y")
     bench_series = bench_df['Close'] if bench_df is not None else None
 
-    # Analizi Çalıştır
+    # 2. Analizi Çalıştır (Optimize Fonksiyon)
     data = calculate_minervini_sepa_optimized(ticker, df, bench_series)
     
+    # Kriterleri sağlamıyorsa uyarı verip çık
     if not data:
-        st.info("📉 Bu hisse 'Minervini Sniper' kriterlerini (Trend + %85 Zirve + RS>0) karşılamıyor.")
+        st.info("📉 Bu hisse Minervini 'Trend Şablonu' kriterlerini karşılamıyor (Trend düşüşte veya zirveden çok uzak).")
         return 
 
-    # Renk ve Stil Ayarları
+    # 3. Görsel Ayarlar
     score = data['Score']
-    color = "#16a34a" if score >= 90 else "#ea580c" if score >= 75 else "#ca8a04"
+    # Renk Skalası
+    if score >= 90:
+        color = "#16a34a"; icon = "💎"; grade = "A+ (Kusursuz)"
+    elif score >= 70:
+        color = "#ea580c"; icon = "🔥"; grade = "B (Güçlü)"
+    else:
+        color = "#ca8a04"; icon = "⚠️"; grade = "C (İzlenebilir)"
+
+    # İkon Fonksiyonu
+    def get_check(cond): return "✅ TAMAM" if cond else "❌ EKSİK"
     
-    pivot_bg = "#fef2f2"
-    pivot_fg = "#991b1b"
-    if "KIRILIM" in data['Pivot_Desc']:
-        pivot_bg = "#f0fdf4"; pivot_fg = "#15803d"
-    elif "PIVOT" in data['Pivot_Desc']:
-        pivot_bg = "#fffbeb"; pivot_fg = "#b45309"
+    # Detay verileri
+    vcp_desc = "Mevcut" if data['VCP'] else "Yok"
+    dry_desc = "Kurudu" if data['Dry_Up'] else "Yüksek"
+    
+    # Pivot Durumu
+    if "KIRILIM" in data['Pivot_Desc']: pivot_status = "🚀 KIRILIM (AL)"; pivot_detail = "Hacimli geçiş başladı!"
+    elif "PIVOT" in data['Pivot_Desc']: pivot_status = "⚠️ EL TETİKTE"; pivot_detail = "Fiyat sınıra dayandı, kırılım bekleniyor."
+    else: pivot_status = "⏳ HAZIRLANIYOR"; pivot_detail = "Henüz ideal alım bölgesine girmedi."
 
-    # HTML Çıktısı
+    # 4. HTML İÇERİK (Sentiment Kartı Tasarımıyla)
     html = f"""
-<div class="info-card" style="border-top: 4px solid {color}; margin-top:10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:none; margin-bottom:5px;">
-<span style="font-weight:800; color:{color}; letter-spacing:0.5px;">🦁 SEPA SNIPER</span>
-<span style="background:{color}; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700;">PUAN: {score}</span>
-</div>
+    <div class="info-card" style="border-top: 4px solid {color}; margin-top:10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid {color}30; margin-bottom:8px; padding-bottom:5px;">
+            <span style="font-weight:800; color:{color}; letter-spacing:0.5px;">🦁 SEPA KARNESİ</span>
+            <span style="background:{color}; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700;">{score}/100</span>
+        </div>
         
-<div style="text-align:center; margin-bottom:10px;">
-<div style="font-size:1.1rem; font-weight:800; color:#1e293b;">{data['Status']}</div>
-<div style="font-size:0.75rem; color:#64748B;">Zirveye Uzaklık: %{((data['Year_High']/float(data['Fiyat']))-1)*100:.1f}</div>
-</div>
+        <div style="text-align:center; margin-bottom:10px; background:{color}10; padding:6px; border-radius:4px;">
+            <div style="font-size:1rem; font-weight:800; color:{color};">{grade}</div>
+            <div style="font-size:0.7rem; color:#64748B; font-style:italic;">{data['Status']}</div>
+        </div>
 
-<div style="background:{pivot_bg}; border:1px solid {pivot_fg}30; padding:8px; border-radius:6px; margin-bottom:10px; text-align:center;">
-<div style="font-size:0.7rem; color:{pivot_fg}; font-weight:600; text-transform:uppercase;">TETİKLEYİCİ DURUMU</div>
-<div style="font-size:0.9rem; font-weight:800; color:{pivot_fg};">{data['Pivot_Desc']}</div>
-</div>
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">1. TREND GÜCÜ (50p):</div>
+            <div class="info-val" style="color:#15803d;">✅ TAMAM</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Zorunlu.* Fiyat 50/150/200 ortalamaların üzerinde. 200 günlük ortalama yukarı eğimli. Zirveye %85+ yakınlıkta.
+        </div>
 
-<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:5px; margin-bottom:8px;">
-<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">RS GÜCÜ</div>
-<div style="font-size:0.9rem; font-weight:700; color:#0f172a;">{data['RS_Val']:.1f}</div>
-</div>
-<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">VCP</div>
-<div style="font-size:0.9rem;">{'✅' if data['VCP'] else '❌'}</div>
-</div>
-<div style="background:#f8fafc; padding:5px; border-radius:4px; text-align:center; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">ARZ KURUMASI</div>
-<div style="font-size:0.9rem;">{'✅' if data['Dry_Up'] else '❌'}</div>
-</div>
-</div>
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">2. VCP SIKIŞMA (20p):</div>
+            <div class="info-val" style="color:{'#15803d' if data['VCP'] else '#b91c1c'};">{get_check(data['VCP'])}</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Oynaklık Daralması.* Son 10 gün, son 50 güne göre %40 daha sakin. Yay geriliyor mu?
+        </div>
+
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">3. ARZ DURUMU (15p):</div>
+            <div class="info-val" style="color:{'#15803d' if data['Dry_Up'] else '#b91c1c'};">{get_check(data['Dry_Up'])}</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Supply Dry-Up.* Düşüş günlerinde hacim ortalamanın altında kalıyor mu? Satıcılar bitti mi?
+        </div>
+
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">4. TETİKLEYİCİ (15p):</div>
+            <div class="info-val" style="font-weight:700; font-size:0.75rem; color:{color};">{pivot_status}</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Pivot Zone.* {pivot_detail} (Zirvenin %95-%102 aralığı).
+        </div>
         
-<div style="font-size:0.7rem; color:#475569; padding-top:5px; border-top:1px dashed #e2e8f0;">
-<span style="font-weight:700;">Strateji:</span> Pivot bölgesinde hacim artışı bekle. %5 stoploss koy.
-</div>
-</div>
+        <div style="background:#f8fafc; padding:6px; border-radius:4px; border:1px dashed #cbd5e1; margin-top:5px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                <span style="color:#64748B; font-weight:700;">Endeks Gücü (RS):</span>
+                <span style="font-weight:800; color:#0f172a;">{data['RS_Val']:.1f}</span>
+            </div>
+            <div class="edu-note" style="margin-bottom:0;">Pozitif değer hissenin endeksi yendiğini gösterir.</div>
+        </div>
+
+    </div>
     """
     st.markdown(html, unsafe_allow_html=True)
     
@@ -2929,6 +2958,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
