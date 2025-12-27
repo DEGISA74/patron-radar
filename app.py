@@ -2804,8 +2804,9 @@ with col_left:
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
         with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
-            # Önbelleği temizle (Veri yapısı değiştiği için bu önemli)
+            # ÖNEMLİ: Veri yapısı değiştiği için eski cache'i temizliyoruz
             st.cache_data.clear()
+            
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
             st.rerun()
@@ -2820,12 +2821,13 @@ with col_left:
                     sym = row['Sembol']
                     
                     # --- HATA DÜZELTME KISMI BURASI ---
-                    # Eski kod 'Durum' arıyordu, yeni kod 'Status' ve 'Score' üretiyor.
-                    # .get() kullanarak hata almayı engelliyoruz.
+                    # Eski kod row['Durum'] arıyordu, bu yüzden KeyError veriyordu.
+                    # Yeni kodda 'Status', 'Score' ve 'Pivot_Desc' var.
+                    # .get() kullanarak veri yoksa bile hata vermemesini sağlıyoruz.
                     
                     score_val = row.get('Score', 0)
-                    status_val = row.get('Status', 'SEPA Adayı')
-                    pivot_val = row.get('Pivot_Desc', '')
+                    status_val = row.get('Status', 'SEPA Adayı') # 'Durum' yerine 'Status'
+                    pivot_val = row.get('Pivot_Desc', '')        # 'Detay' yerine 'Pivot_Desc'
                     price_val = row.get('Fiyat', '0.00')
 
                     # İkonu puana göre belirle
@@ -2911,6 +2913,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
