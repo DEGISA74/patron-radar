@@ -2485,6 +2485,53 @@ with st.sidebar:
         if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
             st.session_state.generate_prompt = True
 
+# --- 🚦 PİYASA TRAFİK IŞIĞI & KONTROL LİSTESİ ---
+    # 1. Otomatik Piyasa Analizi
+    market_symbol = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
+    market_df = get_safe_historical_data(market_symbol, period="2y")
+    
+    is_market_safe = False
+    market_txt = "Veri Yok"
+    
+    if market_df is not None and not market_df.empty:
+        closes = market_df['Close']
+        if len(closes) > 200:
+            curr_val = closes.iloc[-1]
+            sma200_val = closes.rolling(200).mean().iloc[-1]
+            is_market_safe = curr_val > sma200_val
+            diff_pct = ((curr_val / sma200_val) - 1) * 100
+            market_txt = f"SMA200 Farkı: %{diff_pct:.1f}"
+
+    # 2. Görselleştirme (Yeşil/Kırmızı Kutu)
+    if is_market_safe:
+        st.markdown(f"""
+        <div style="background:#ecfccb; border:2px solid #65a30d; padding:10px; border-radius:8px; text-align:center; margin-bottom:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="color:#3f6212; font-weight:900; font-size:1.1rem; letter-spacing:1px;">✅ PİYASA GÜVENLİ</div>
+            <div style="color:#4d7c0f; font-size:0.75rem; font-weight:600; margin-top:4px;">Trend Yukarı ({market_symbol} > SMA200)</div>
+            <div style="color:#365314; font-size:0.7rem; font-style:italic;">{market_txt} - Ava Çıkabilirsin.</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background:#fef2f2; border:2px solid #dc2626; padding:10px; border-radius:8px; text-align:center; margin-bottom:10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="color:#991b1b; font-weight:900; font-size:1.1rem; letter-spacing:1px;">⛔ PİYASA TEHLİKELİ</div>
+            <div style="color:#b91c1c; font-size:0.75rem; font-weight:600; margin-top:4px;">Trend Düşük ({market_symbol} < SMA200)</div>
+            <div style="color:#7f1d1d; font-size:0.7rem; font-style:italic;">{market_txt} - Nakitte Kal / Short Bak!</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 3. Manuel Pilot Kontrol Listesi
+    with st.expander("👮 PİLOT KONTROL LİSTESİ", expanded=True):
+        st.caption("Disiplin yoksa kazanç yoktur. Tetiği çekmeden önce:")
+        c1 = st.checkbox("⏰ Zamanlama (16:30 sonrası mı?)")
+        c2 = st.checkbox("📰 Haber Akışı (Kritik veri yok?)")
+        c3 = st.checkbox("💰 Risk (Stop & Lot hesabı tamam?)")
+        c4 = st.checkbox("🧠 Psikoloji (Sakin miyim?)")
+        
+        if c1 and c2 and c3 and c4:
+            st.success("🚀 Uçuş İzni Verildi! Başarılar.")
+            
+    st.markdown("<hr style='margin-top:5px; margin-bottom:15px; border-top:1px solid #e2e8f0;'>", unsafe_allow_html=True)
 # ==============================================================================
 # 6. ANA SAYFA (MAIN UI)
 # ==============================================================================
@@ -2905,6 +2952,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
