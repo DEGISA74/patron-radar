@@ -2797,17 +2797,20 @@ with col_left:
     # ---------------------------------------------------------
     # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
     # ---------------------------------------------------------
+    # Eğer session state'de veri yoksa boşalt
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
     st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı</div>', unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
-    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
+    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa_fix"):
         with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
-            # ÖNEMLİ: Veri yapısı değiştiği için eski cache'i temizliyoruz
+            # ÖNEMLİ: Cache ve State temizliği yapıyoruz ki eski veri kalmasın
             st.cache_data.clear()
+            st.session_state.minervini_data = None 
             
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            # Taramayı yap
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
             st.rerun()
             
@@ -2817,17 +2820,30 @@ with col_left:
         if count > 0:
             st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
             with st.container(height=300, border=True):
+                # DataFrame üzerinde döngü
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
                     
-                    # --- HATA DÜZELTME KISMI BURASI ---
-                    # Eski kod row['Durum'] arıyordu, bu yüzden KeyError veriyordu.
-                    # Yeni kodda 'Status', 'Score' ve 'Pivot_Desc' var.
-                    # .get() kullanarak veri yoksa bile hata vermemesini sağlıyoruz.
+                    # --- %100 GÜVENLİ VERİ OKUMA ---
+                    # Hata veren 'Durum' sütunu yerine .get() kullanıyoruz.
+                    # Bu sayede sütun adı ne olursa olsun kod ÇÖKMEZ.
                     
-                    score_val = row.get('Score', 0)
-                    status_val = row.get('Status', 'SEPA Adayı') # 'Durum' yerine 'Status'
-                    pivot_val = row.get('Pivot_Desc', '')        # 'Detay' yerine 'Pivot_Desc'
+                    # 1. Skor Okuma
+                    if 'Score' in row: score_val = row['Score']
+                    elif 'Raw_Score' in row: score_val = row['Raw_Score']
+                    else: score_val = 0
+                    
+                    # 2. Durum/Status Okuma
+                    if 'Status' in row: status_val = row['Status']
+                    elif 'Durum' in row: status_val = row['Durum']
+                    else: status_val = "Trend Uygun"
+
+                    # 3. Detay/Pivot Okuma
+                    if 'Pivot_Desc' in row: pivot_val = row['Pivot_Desc']
+                    elif 'Detay' in row: pivot_val = row['Detay']
+                    else: pivot_val = ""
+
+                    # 4. Fiyat Okuma
                     price_val = row.get('Fiyat', '0.00')
 
                     # İkonu puana göre belirle
@@ -2835,9 +2851,9 @@ with col_left:
                     
                     # Buton üzerindeki yazı
                     label = f"{icon} {sym} ({price_val}) | {status_val} | {pivot_val}"
-                    # ----------------------------------
                     
-                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
+                    # Butonu oluştur
+                    if st.button(label, key=f"sepa_fix_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
                         st.rerun()
         else:
@@ -2913,6 +2929,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
