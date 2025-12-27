@@ -1094,41 +1094,27 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         sma50 = float(close.rolling(50).mean().iloc[-1])
         sma150 = float(close.rolling(150).mean().iloc[-1])
         sma200 = float(close.rolling(200).mean().iloc[-1])
-        
-        # SMA 200'ün 1 ay önceki değeri (Eğim kontrolü için çok önemli)
+        # SMA 200'ün 1 ay önceki değeri (Eğim kontrolü)
         sma200_prev = float(close.rolling(200).mean().iloc[-22])
         
         # 52 Haftalık Zirve ve Dip
         year_high = float(close.rolling(250).max().iloc[-1])
         year_low = float(close.rolling(250).min().iloc[-1])
         
-        # 3. TREND ŞABLONU (MINERVINI'NİN KATI KURALLARI)
-        # Kural 1: Fiyat, hem 150 hem de 200 günlük ortalamanın üzerinde olmalı.
-        c1 = curr_price > sma150 and curr_price > sma200
+        # 3. KATI MINERVINI FİLTRELERİ (Hepsi True olmak zorunda)
+        condition_1 = curr_price > sma150 and curr_price > sma200
+        condition_2 = sma150 > sma200
+        condition_3 = sma200 > sma200_prev
+        condition_4 = sma50 > sma150 and sma50 > sma200
+        condition_5 = curr_price > sma50
+        condition_6 = curr_price >= (year_low * 1.30)
+        condition_7 = curr_price >= (year_high * 0.75)
         
-        # Kural 2: 150 günlük ortalama, 200 günlük ortalamanın üzerinde olmalı.
-        c2 = sma150 > sma200
+        # Tüm trend şartları sağlanıyor mu?
+        trend_ok = condition_1 and condition_2 and condition_3 and condition_4 and condition_5 and condition_6 and condition_7
         
-        # Kural 3: 200 günlük ortalama YÜKSELİYOR olmalı (En az 1 aydır).
-        c3 = sma200 > sma200_prev
-        
-        # Kural 4: 50 günlük ortalama, hem 150 hem 200'ün üzerinde olmalı.
-        c4 = sma50 > sma150 and sma50 > sma200
-        
-        # Kural 5: Fiyat, 50 günlük ortalamanın üzerinde olmalı.
-        c5 = curr_price > sma50
-        
-        # Kural 6: Fiyat, 52 haftalık dibin en az %30 üzerinde olmalı.
-        c6 = curr_price >= (year_low * 1.30)
-        
-        # Kural 7: Fiyat, 52 haftalık zirvenin %25 yakınında olmalı (Zirveye çok uzak olmamalı).
-        c7 = curr_price >= (year_high * 0.75)
-        
-        # Kural 8 (EKSTRA): RS Rasyosu (Mansfield) 0'dan büyük olmalı (Endeksi yenmeli).
-        rs_val = 0
-        rs_ok = False
-        rs_rating = "ZAYIF"
-        
+        # RS (Göreceli Güç) Kontrolü
+        rs_rating = "ZAYIF"; rs_val = 0; rs_ok = False
         if bench_df is not None:
             common = close.index.intersection(bench_df.index)
             if len(common) > 60:
@@ -1139,25 +1125,12 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
                 if rs_val > 0: 
                     rs_rating = "GÜÇLÜ (RS+)"
                     rs_ok = True
-                else: 
-                    rs_rating = "ZAYIF"
 
-        # SKORLAMA VE FİLTRELEME (ARTIK ÇOK DAHA KATI)
-        # Minervini'ye göre bu 7 maddenin HEPSİ (veya çok çok nadiren 1 firesi) kabul edilir.
-        # Biz burada 7'de 7 kuralını uyguluyoruz. RS de artıysa "Süper" olur.
-        
-        conditions = [c1, c2, c3, c4, c5, c6, c7]
-        trend_score = sum(conditions)
-        
-        # trend_ok ARTIK SADECE 7'DE 7 YAPARSA TRUE OLUYOR (Veya en kötü 6)
-        trend_ok = trend_score >= 6 
-        
-        # 4. VCP (DARALMA) SİNYALİ
+        # VCP ve Arz Kontrolü
         std_10 = close.pct_change().rolling(10).std().iloc[-1]
         std_60 = close.pct_change().rolling(60).std().iloc[-1]
         is_vcp = std_10 < (std_60 * 0.75)
         
-        # 5. ARZ KONTROLÜ
         avg_vol = volume.rolling(20).mean().iloc[-1]
         last_10 = df.tail(10)
         down_days = last_10[last_10['Close'] < last_10['Open']]
@@ -1165,20 +1138,20 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
         if not down_days.empty:
             is_dry = down_days['Volume'].mean() < (avg_vol * 0.9)
 
-        # DURUM BELİRLEME
-        status = "YOK"
-        raw_score = trend_score * 10
-        if rs_ok: raw_score += 20 # RS artık puana daha çok etki ediyor
-        if is_vcp: raw_score += 10
-        
-        # Listeye girmek için ARTIK DAHA ZORLU ŞARTLAR:
-        # 1. Trend Şablonu (7/7 veya 6/7) KESİN sağlanmalı.
-        # 2. RS Pozitif olmalı (Endeksi yenmeli).
-        
-        if trend_ok and rs_ok and is_vcp: status = "💎 SÜPER BOĞA (VCP)"
-        elif trend_ok and rs_ok: status = "🔥 GÜÇLÜ TREND (Lider)"
-        elif trend_ok: status = "✅ OLUMLU (İzle)"
-        else: return None # Listeye alma
+        # LİSTEYE ALMA KARARI (EN KATI BÖLÜM)
+        # Trend Şartları TAMAM OLMALI + RS Pozitif OLMALI
+        if not (trend_ok and rs_ok):
+            return None 
+
+        # Durum Belirleme
+        status = "🔥 GÜÇLÜ TREND"
+        if is_vcp: status = "💎 SÜPER BOĞA (VCP)"
+
+        # Puanlama (Sıralama için)
+        raw_score = 70 # Taban puan (Çünkü trend_ok)
+        if is_vcp: raw_score += 15
+        if is_dry: raw_score += 10
+        if rs_val > 2: raw_score += 5
 
         return {
             "Sembol": ticker,
@@ -1192,8 +1165,8 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
             "rs_val": rs_val,
             "rs_rating": rs_rating,
             "score": raw_score,
-            "reasons": [f"Trend: {trend_score}/7", f"VCP: {is_vcp}", f"RS: {rs_rating}"],
-            "color": "#16a34a" if raw_score > 80 else "#d97706", # Puan eşiğini de yükselttim
+            "reasons": ["Trend: Mükemmel", f"VCP: {is_vcp}", f"RS: {rs_rating}"],
+            "color": "#16a34a" if raw_score > 80 else "#d97706",
             "sma200": sma200,
             "year_high": year_high
         }
@@ -2882,6 +2855,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
