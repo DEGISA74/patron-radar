@@ -2315,10 +2315,10 @@ def render_minervini_panel_v2(ticker):
 </div>
 </div>
 <div class="edu-note">
-1. <b>Trend:</b> Fiyat > SMA200 (Yükseliş)<br>
-2. <b>VCP:</b> Fiyat sıkışıyor mu? (Düşük Oynaklık)<br>
-3. <b>Arz:</b> Düşüş günlerinde hacim kuruyor mu?<br>
-4. <b>RS:</b> Endeksten daha mı güçlü?
+1. <b>Trend:</b> Fiyat > SMA200 (Yükseliş Trendinde)<br>
+2. <b>VCP:</b> Fiyat sıkışıyor mu? (Düşük Oynaklık vs Dalgalı Yapı)<br>
+3. <b>Arz:</b> Düşüş günlerinde hacim daralıyor mu?<br>
+4. <b>RS:</b> Endeksten daha mı güçlü: Endeks düşerken bu hisse duruyor veya yükseliyor?
 </div>
 <div style="margin-bottom:2px; margin-top:8px;">
 <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:2px;">
@@ -2852,6 +2852,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
