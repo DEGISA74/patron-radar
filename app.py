@@ -2500,7 +2500,7 @@ with st.sidebar:
             sma200_val = closes.rolling(200).mean().iloc[-1]
             is_market_safe = curr_val > sma200_val
             diff_pct = ((curr_val / sma200_val) - 1) * 100
-            market_txt = f"SMA200 Farkı: %{diff_pct:.1f}"
+            market_txt = f"SMA200'den yüzde kaç yukarıda: %{diff_pct:.1f}"
 
     # 2. Görselleştirme (Yeşil/Kırmızı Kutu)
     if is_market_safe:
@@ -2522,14 +2522,14 @@ with st.sidebar:
 
     # 3. Manuel Pilot Kontrol Listesi
     with st.expander("👮 PİLOT KONTROL LİSTESİ", expanded=True):
-        st.caption("Disiplin yoksa kazanç yoktur. Tetiği çekmeden önce:")
+        st.caption("Disiplin yoksa kazanç yoktur. Borsalara bakmadan önce:")
         c1 = st.checkbox("⏰ Zamanlama (16:30 sonrası mı?)")
         c2 = st.checkbox("📰 Haber Akışı (Kritik veri yok?)")
-        c3 = st.checkbox("💰 Risk (Stop & Lot hesabı tamam?)")
+        c3 = st.checkbox("💰 Risk (Stop & Lot hesabın tamam mı?)")
         c4 = st.checkbox("🧠 Psikoloji (Sakin miyim?)")
         
         if c1 and c2 and c3 and c4:
-            st.success("🚀 Uçuş İzni Verildi! Başarılar.")
+            st.success("🚀 Tarama İzni Verildi! Başarılar.")
             
     st.markdown("<hr style='margin-top:5px; margin-bottom:15px; border-top:1px solid #e2e8f0;'>", unsafe_allow_html=True)
 # ==============================================================================
@@ -2952,6 +2952,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
