@@ -2324,7 +2324,7 @@ def render_minervini_panel_v2(ticker):
     bench_df = get_safe_historical_data(bench_ticker, period="2y")
     bench_series = bench_df['Close'] if bench_df is not None else None
 
-    # 2. Analizi Çalıştır
+    # 2. Analizi Çalıştır (Optimize Fonksiyon)
     data = calculate_minervini_sepa_optimized(ticker, df, bench_series)
     
     # Kriterleri sağlamıyorsa uyarı verip çık
@@ -2332,9 +2332,9 @@ def render_minervini_panel_v2(ticker):
         st.info("📉 Bu hisse Minervini 'Trend Şablonu' kriterlerini karşılamıyor (Trend düşüşte veya zirveden çok uzak).")
         return 
 
-    # 3. Görsel Değişkenler
+    # 3. Görsel Ayarlar
     score = data['Score']
-    
+    # Renk Skalası
     if score >= 90:
         color = "#16a34a"; icon = "💎"; grade = "A+ (Kusursuz)"
     elif score >= 70:
@@ -2342,23 +2342,21 @@ def render_minervini_panel_v2(ticker):
     else:
         color = "#ca8a04"; icon = "⚠️"; grade = "C (İzlenebilir)"
 
-    def get_check_html(cond): 
-        return f"<span style='color:#16a34a; font-weight:bold;'>✅ TAMAM</span>" if cond else f"<span style='color:#dc2626; font-weight:bold;'>❌ EKSİK</span>"
+    # İkon Fonksiyonu
+    def get_check(cond): return "✅ TAMAM" if cond else "❌ EKSİK"
     
-    # Detay Metinleri
-    pivot_status = "⏳ BEKLEMEDE"
-    pivot_desc = "Henüz ideal alım bölgesine (Zirveye %95-%102) girmedi."
-    pivot_color = "#64748B"
+    # Detay verileri
+    vcp_desc = "Mevcut" if data['VCP'] else "Yok"
+    dry_desc = "Kurudu" if data['Dry_Up'] else "Yüksek"
+    
+    # Pivot Durumu
+    if "KIRILIM" in data['Pivot_Desc']: pivot_status = "🚀 KIRILIM (AL)"; pivot_detail = "Hacimli geçiş başladı!"
+    elif "PIVOT" in data['Pivot_Desc']: pivot_status = "⚠️ EL TETİKTE"; pivot_detail = "Fiyat sınıra dayandı, kırılım bekleniyor."
+    else: pivot_status = "⏳ HAZIRLANIYOR"; pivot_detail = "Henüz ideal alım bölgesine girmedi."
 
-    if "KIRILIM" in data['Pivot_Desc']: 
-        pivot_status = "🚀 KIRILIM (AL)"; pivot_desc = "Fiyat direnci kırıyor ve hacim destekliyor!"; pivot_color = "#16a34a"
-    elif "PIVOT" in data['Pivot_Desc']: 
-        pivot_status = "⚠️ EL TETİKTE"; pivot_desc = "Fiyat sınıra dayandı. Kırılım anı kollanmalı."; pivot_color = "#ea580c"
-
-    # 4. HTML TASARIMI (Sentiment Paneli Tarzında)
+    # 4. HTML İÇERİK (Sentiment Kartı Tasarımıyla)
     html = f"""
     <div class="info-card" style="border-top: 4px solid {color}; margin-top:10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-        
         <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid {color}30; margin-bottom:8px; padding-bottom:5px;">
             <span style="font-weight:800; color:{color}; letter-spacing:0.5px;">🦁 SEPA KARNESİ</span>
             <span style="background:{color}; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:700;">{score}/100</span>
@@ -2366,47 +2364,47 @@ def render_minervini_panel_v2(ticker):
         
         <div style="text-align:center; margin-bottom:10px; background:{color}10; padding:6px; border-radius:4px;">
             <div style="font-size:1rem; font-weight:800; color:{color};">{grade}</div>
-            <div style="font-size:0.7rem; color:#475569; font-style:italic;">{data['Status']}</div>
+            <div style="font-size:0.7rem; color:#64748B; font-style:italic;">{data['Status']}</div>
         </div>
 
-        <div class="info-row" style="margin-bottom:2px; align-items:center;">
-            <div class="label-long" style="width:140px; color:#334155;">1. TREND (50p):</div>
-            <div class="info-val">{get_check_html(True)}</div>
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">1. TREND GÜCÜ (50p):</div>
+            <div class="info-val" style="color:#15803d;">✅ TAMAM</div>
         </div>
-        <div class="edu-note" style="margin-bottom:8px; border-left:2px solid #cbd5e1; padding-left:5px;">
-            *Giriş Bileti:* Fiyat 50, 150 ve 200 günlük ortalamaların üzerinde. Ana trend (SMA200) yukarı bakıyor. Zirveye %85+ yakınlıkta.
-        </div>
-
-        <div class="info-row" style="margin-bottom:2px; align-items:center;">
-            <div class="label-long" style="width:140px; color:#334155;">2. VCP SIKIŞMA (20p):</div>
-            <div class="info-val">{get_check_html(data['VCP'])}</div>
-        </div>
-        <div class="edu-note" style="margin-bottom:8px; border-left:2px solid #cbd5e1; padding-left:5px;">
-            *Oynaklık Daralması:* Son 10 gün, son 50 güne göre %40 daha sakin. Fiyat bir yay gibi gerilmiş durumda mı?
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Zorunlu.* Fiyat 50/150/200 ortalamaların üzerinde. 200 günlük ortalama yukarı eğimli. Zirveye %85+ yakınlıkta.
         </div>
 
-        <div class="info-row" style="margin-bottom:2px; align-items:center;">
-            <div class="label-long" style="width:140px; color:#334155;">3. ARZ DURUMU (15p):</div>
-            <div class="info-val">{get_check_html(data['Dry_Up'])}</div>
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">2. VCP SIKIŞMA (20p):</div>
+            <div class="info-val" style="color:{'#15803d' if data['VCP'] else '#b91c1c'};">{get_check(data['VCP'])}</div>
         </div>
-        <div class="edu-note" style="margin-bottom:8px; border-left:2px solid #cbd5e1; padding-left:5px;">
-            *Supply Dry-Up:* Düşüş günlerinde hacim ortalamanın altında kalmalı. Satıcıların gücü tükenmiş mi?
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Oynaklık Daralması.* Son 10 gün, son 50 güne göre %40 daha sakin. Yay geriliyor mu?
         </div>
 
-        <div class="info-row" style="margin-bottom:2px; align-items:center;">
-            <div class="label-long" style="width:140px; color:#334155;">4. TETİKLEYİCİ (15p):</div>
-            <div class="info-val" style="font-weight:800; color:{pivot_color}; font-size:0.75rem;">{pivot_status}</div>
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">3. ARZ DURUMU (15p):</div>
+            <div class="info-val" style="color:{'#15803d' if data['Dry_Up'] else '#b91c1c'};">{get_check(data['Dry_Up'])}</div>
         </div>
-        <div class="edu-note" style="margin-bottom:8px; border-left:2px solid {pivot_color}; padding-left:5px;">
-            *Pivot Bölgesi:* {pivot_desc}
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Supply Dry-Up.* Düşüş günlerinde hacim ortalamanın altında kalıyor mu? Satıcılar bitti mi?
+        </div>
+
+        <div class="info-row" style="margin-bottom:2px;">
+            <div class="label-long" style="width:140px; color:#1e293b;">4. TETİKLEYİCİ (15p):</div>
+            <div class="info-val" style="font-weight:700; font-size:0.75rem; color:{color};">{pivot_status}</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            *Pivot Zone.* {pivot_detail} (Zirvenin %95-%102 aralığı).
         </div>
         
-        <div style="background:#f1f5f9; padding:6px; border-radius:4px; margin-top:5px; display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <span style="font-size:0.75rem; font-weight:700; color:#475569;">Endeks Gücü (RS):</span>
-                <div class="edu-note" style="margin:0;">0 üstü pozitiftir.</div>
+        <div style="background:#f8fafc; padding:6px; border-radius:4px; border:1px dashed #cbd5e1; margin-top:5px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                <span style="color:#64748B; font-weight:700;">Endeks Gücü (RS):</span>
+                <span style="font-weight:800; color:#0f172a;">{data['RS_Val']:.1f}</span>
             </div>
-            <span style="font-family:'JetBrains Mono'; font-weight:800; font-size:0.9rem; color:#0f172a;">{data['RS_Val']:.1f}</span>
+            <div class="edu-note" style="margin-bottom:0;">Pozitif değer hissenin endeksi yendiğini gösterir.</div>
         </div>
 
     </div>
@@ -2961,6 +2959,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
