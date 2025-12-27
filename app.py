@@ -105,6 +105,38 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+    /* --- TOOLTIP (AÇIKLAMA KUTUSU) STİLİ --- */
+    .custom-tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help; /* Fare soru işaretine dönüşsün */
+    }
+    .custom-tooltip .tooltiptext {
+        visibility: hidden;
+        width: 300px;
+        background-color: #1e293b; /* Koyu lacivert arka plan */
+        color: #fff;
+        text-align: left;
+        border-radius: 6px;
+        padding: 10px;
+        position: absolute;
+        z-index: 999;
+        top: 100%; /* Yazının altında çıksın */
+        left: 0;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 0.75rem;
+        font-weight: 400;
+        line-height: 1.4;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        border: 1px solid #475569;
+    }
+    .custom-tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    .tooltip-header { font-weight: 700; color: #fbbf24; margin-bottom: 4px; display:block; border-bottom:1px solid #475569; padding-bottom:2px;}
+    .tooltip-bullet { display: block; margin-bottom: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2793,7 +2825,20 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100 Puan)</span></div>', unsafe_allow_html=True)
+    # Breakout Ajanı Başlığı (Tooltip Eklenmiş Hali)
+    st.markdown("""
+    <div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">
+        <div class="custom-tooltip">
+            🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100 Puan)</span>
+            <span class="tooltiptext">
+                <span class="tooltip-header">⏰ ZAMANLAMA USTASI</span>
+                Bu modül sana "Ne Zaman?" sorusunun cevabını verir.<br><br>
+                <span class="tooltip-bullet">🔥 <b>ISINANLAR (Sol):</b> Fiyat dirence dayandı (%98-99), henüz kırmadı. "Pusuya Yat" listesidir.</span>
+                <span class="tooltip-bullet">🔨 <b>KIRANLAR (Sağ):</b> Direnç hacimli kırıldı. (Onaylı)</span>
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Session State Tanımları (Eğer yoksa)
     if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
@@ -2857,7 +2902,23 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(Lider: 85/100 Puan)</span></div>', unsafe_allow_html=True)
+    # Minervini Başlığı (Tooltip Eklenmiş Hali)
+    st.markdown("""
+    <div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">
+        <div class="custom-tooltip">
+            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100 Puan)</span>
+            <span class="tooltiptext">
+                <span class="tooltip-header">💎 ANA SİLAH (A Kalite 20-30 Hisse)</span>
+                Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir:<br><br>
+                <span class="tooltip-bullet">• <b>Trend Şablonu:</b> Fiyat 50/150/200 ortalamaların üzerinde mi?</span>
+                <span class="tooltip-bullet">• <b>Zirve Yakınlığı:</b> Zirvesinin %90'ına kadar tırmanmış mı? (Diptekiler elenir)</span>
+                <span class="tooltip-bullet">• <b>RS Gücü:</b> Endeksi eziyor mu?</span>
+                <span class="tooltip-bullet">• <b>VCP:</b> Oynaklık azalıp yay gerildi mi?</span>
+                <span class="tooltip-bullet">• <b>Arz Kuruması:</b> Satıcılar piyasadan çekildi mi?</span>
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
@@ -2952,6 +3013,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
