@@ -2340,6 +2340,9 @@ with st.sidebar:
         render_sentiment_card(sentiment_verisi)
 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+    # YENİ MINERVINI PANELİ (Hatasız Versiyon)
+    render_minervini_panel_v2(st.session_state.ticker)
     
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
@@ -2788,17 +2791,14 @@ with col_right:
     
     # 3. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
-
-    # 4. YENİ MINERVINI PANELİ (Hatasız Versiyon)
-    render_minervini_panel_v2(st.session_state.ticker)
     
-    # 5. ICT Paneli
+    # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
     
-    # 6. Ortak Fırsatlar Başlığı
+    # 5. Ortak Fırsatlar Başlığı
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
     
-    # 7. Ortak Fırsatlar Listesi
+    # 6. Ortak Fırsatlar Listesi
     with st.container(height=250):
         df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
         if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
@@ -2840,6 +2840,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
