@@ -2804,10 +2804,13 @@ with col_left:
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
         with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
+            # Önbelleği temizle (Veri yapısı değiştiği için bu önemli)
+            st.cache_data.clear()
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
+            st.rerun()
             
-    # 2. SONUÇ EKRANI (Scroll Bar - 300px) - GÜNCELLENMİŞ VERSİYON
+    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
     if st.session_state.minervini_data is not None:
         count = len(st.session_state.minervini_data)
         if count > 0:
@@ -2816,22 +2819,21 @@ with col_left:
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
                     
-                    # --- DÜZELTME BURADA ---
-                    # Eski kod: row['Durum'] arıyordu.
-                    # Yeni kod: row['Status'] ve row['Score'] kullanıyor.
+                    # --- HATA DÜZELTME KISMI BURASI ---
+                    # Eski kod 'Durum' arıyordu, yeni kod 'Status' ve 'Score' üretiyor.
+                    # .get() kullanarak hata almayı engelliyoruz.
                     
-                    # İkon belirleme (Puana göre)
                     score_val = row.get('Score', 0)
+                    status_val = row.get('Status', 'SEPA Adayı')
+                    pivot_val = row.get('Pivot_Desc', '')
+                    price_val = row.get('Fiyat', '0.00')
+
+                    # İkonu puana göre belirle
                     icon = "💎" if score_val >= 90 else "🔥"
                     
-                    # Etiket metnini yeni sütunlara göre oluşturuyoruz
-                    # row['Durum'] -> row['Status']
-                    # row['Detay'] -> row['Pivot_Desc']
-                    status_text = row.get('Status', 'SEPA')
-                    pivot_text = row.get('Pivot_Desc', '')
-                    
-                    label = f"{icon} {sym} ({row['Fiyat']}) | {status_text} | {pivot_text}"
-                    # -----------------------
+                    # Buton üzerindeki yazı
+                    label = f"{icon} {sym} ({price_val}) | {status_val} | {pivot_val}"
+                    # ----------------------------------
                     
                     if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
@@ -2909,6 +2911,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
