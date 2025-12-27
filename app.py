@@ -1078,117 +1078,167 @@ def scan_confirmed_breakouts(asset_list):
 # ==============================================================================
 
 @st.cache_data(ttl=600)
-def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC"):
+def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None):
+    """
+    GÖRSEL: Eski (Sade)
+    MANTIK: Sniper (Çok Sert)
+    """
     try:
-        # 1. VERİ ÇEKİMİ (En az 1 yıl - 260 iş günü)
-        df = get_safe_historical_data(ticker, period="2y")
+        # 1. VERİ YÖNETİMİ (Batch taramadan geliyorsa provided_df kullan, yoksa indir)
+        if provided_df is not None:
+            df = provided_df
+        else:
+            df = get_safe_historical_data(ticker, period="2y")
+            
         if df is None or len(df) < 260: return None
         
-        # Endeks verisi (RS kıyaslaması için)
+        # MultiIndex Temizliği
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # Endeks verisi (RS için) - Eğer cache'de yoksa indir
         bench_df = get_safe_historical_data(benchmark_ticker, period="2y")
         
         close = df['Close']; volume = df['Volume']
         curr_price = float(close.iloc[-1])
         
-        # 2. HAREKETLİ ORTALAMALAR
+        # ---------------------------------------------------------
+        # KRİTER 1: TREND ŞABLONU (ACIMASIZ FİLTRE)
+        # ---------------------------------------------------------
         sma50 = float(close.rolling(50).mean().iloc[-1])
         sma150 = float(close.rolling(150).mean().iloc[-1])
         sma200 = float(close.rolling(200).mean().iloc[-1])
-        # SMA 200'ün 1 ay önceki değeri (Eğim kontrolü)
-        sma200_prev = float(close.rolling(200).mean().iloc[-22])
         
-        # 52 Haftalık Zirve ve Dip
+        # Eğim Kontrolü: SMA200, 1 ay önceki değerinden yüksek olmalı
+        sma200_prev = float(close.rolling(200).mean().iloc[-22])
+        sma200_up = sma200 > sma200_prev
+        
         year_high = float(close.rolling(250).max().iloc[-1])
         year_low = float(close.rolling(250).min().iloc[-1])
         
-        # 3. KATI MINERVINI FİLTRELERİ (Hepsi True olmak zorunda)
-        condition_1 = curr_price > sma150 and curr_price > sma200
-        condition_2 = sma150 > sma200
-        condition_3 = sma200 > sma200_prev
-        condition_4 = sma50 > sma150 and sma50 > sma200
-        condition_5 = curr_price > sma50
-        condition_6 = curr_price >= (year_low * 1.30)
-        condition_7 = curr_price >= (year_high * 0.75)
+        # Zirveye Yakınlık: Minervini %25 der ama biz sertleşip %15 (0.85) yapıyoruz
+        near_high = curr_price >= (year_high * 0.85)
+        above_low = curr_price >= (year_low * 1.30)
         
-        # Tüm trend şartları sağlanıyor mu?
-        trend_ok = condition_1 and condition_2 and condition_3 and condition_4 and condition_5 and condition_6 and condition_7
-        
-        # RS (Göreceli Güç) Kontrolü
-        rs_rating = "ZAYIF"; rs_val = 0; rs_ok = False
+        # HEPSİ DOĞRU OLMALI
+        trend_ok = (curr_price > sma150 > sma200) and \
+                   (sma50 > sma150) and \
+                   (curr_price > sma50) and \
+                   sma200_up and \
+                   near_high and \
+                   above_low
+                   
+        if not trend_ok: return None # Trend yoksa elendi.
+
+        # ---------------------------------------------------------
+        # KRİTER 2: RS KONTROLÜ (ACIMASIZ)
+        # ---------------------------------------------------------
+        rs_val = 0; rs_rating = "ZAYIF"
         if bench_df is not None:
             common = close.index.intersection(bench_df.index)
-            if len(common) > 60:
-                r_s = close.loc[common]; r_b = bench_df['Close'].loc[common]
-                ratio = r_s / r_b
-                mansfield = ((ratio / ratio.rolling(50).mean()) - 1) * 10
-                rs_val = float(mansfield.iloc[-1])
-                if rs_val > 0: 
-                    rs_rating = "GÜÇLÜ (RS+)"
-                    rs_ok = True
-
-        # VCP ve Arz Kontrolü
-        std_10 = close.pct_change().rolling(10).std().iloc[-1]
-        std_60 = close.pct_change().rolling(60).std().iloc[-1]
-        is_vcp = std_10 < (std_60 * 0.75)
+            if len(common) > 50:
+                s_p = close.loc[common]; b_p = bench_df['Close'].loc[common]
+                ratio = s_p / b_p
+                rs_val = float(((ratio / ratio.rolling(50).mean()) - 1).iloc[-1] * 10)
         
+        # Endeksten Zayıfsa ELE (0 altı kabul edilmez)
+        if rs_val <= 0: return None
+        
+        rs_rating = f"GÜÇLÜ (RS: {rs_val:.1f})"
+
+        # ---------------------------------------------------------
+        # KRİTER 3: PUANLAMA (VCP + ARZ + PIVOT)
+        # ---------------------------------------------------------
+        raw_score = 60 # Başlangıç puanı (Trend ve RS geçtiği için)
+        
+        # VCP (Sertleşmiş Formül: %65 daralma)
+        std_10 = close.pct_change().rolling(10).std().iloc[-1]
+        std_50 = close.pct_change().rolling(50).std().iloc[-1]
+        is_vcp = std_10 < (std_50 * 0.65)
+        if is_vcp: raw_score += 20
+        
+        # Arz Kuruması (Sertleşmiş: %75 altı)
         avg_vol = volume.rolling(20).mean().iloc[-1]
-        last_10 = df.tail(10)
-        down_days = last_10[last_10['Close'] < last_10['Open']]
-        is_dry = True
-        if not down_days.empty:
-            is_dry = down_days['Volume'].mean() < (avg_vol * 0.9)
-
-        # LİSTEYE ALMA KARARI (EN KATI BÖLÜM)
-        # Trend Şartları TAMAM OLMALI + RS Pozitif OLMALI
-        if not (trend_ok and rs_ok):
-            return None 
-
-        # Durum Belirleme
-        status = "🔥 GÜÇLÜ TREND"
-        if is_vcp: status = "💎 SÜPER BOĞA (VCP)"
-
-        # Puanlama (Sıralama için)
-        raw_score = 70 # Taban puan (Çünkü trend_ok)
-        if is_vcp: raw_score += 15
+        last_5 = df.tail(5)
+        down_days = last_5[last_5['Close'] < last_5['Open']]
+        is_dry = True if down_days.empty else (down_days['Volume'].mean() < avg_vol * 0.75)
         if is_dry: raw_score += 10
-        if rs_val > 2: raw_score += 5
+        
+        # Pivot Bölgesi (Zirveye %5 kala)
+        dist_high = curr_price / year_high
+        in_pivot = 0.95 <= dist_high <= 1.02
+        if in_pivot: raw_score += 10
+
+        # ---------------------------------------------------------
+        # ÇIKTI (ESKİ TASARIMIN ANLAYACAĞI FORMAT)
+        # ---------------------------------------------------------
+        # Buradaki key isimleri (Durum, Detay vs.) senin eski kodunla aynı.
+        # Böylece UI bozulmayacak.
+        
+        status = "🔥 GÜÇLÜ TREND"
+        if is_vcp and in_pivot: status = "💎 SÜPER BOĞA (VCP)"
+        elif in_pivot: status = "🚀 KIRILIM EŞİĞİNDE"
+        
+        # Renk (Skor bazlı)
+        color = "#16a34a" if raw_score >= 80 else "#ea580c"
 
         return {
             "Sembol": ticker,
             "Fiyat": f"{curr_price:.2f}",
             "Durum": status,
-            "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else 'Yok'} | Arz: {'Kurudu' if is_dry else 'Normal'}",
+            "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else '-'} | Arz: {'Kurudu' if is_dry else '-'}",
             "Raw_Score": raw_score,
-            "trend_ok": trend_ok,
+            "score": raw_score, # UI bazen bunu arıyor
+            "trend_ok": True,
             "is_vcp": is_vcp,
             "is_dry": is_dry,
             "rs_val": rs_val,
             "rs_rating": rs_rating,
-            "score": raw_score,
-            "reasons": ["Trend: Mükemmel", f"VCP: {is_vcp}", f"RS: {rs_rating}"],
-            "color": "#16a34a" if raw_score > 80 else "#d97706",
+            "reasons": ["Trend: Mükemmel", f"VCP: {is_vcp}", f"RS: {rs_val:.1f}"],
+            "color": color,
             "sma200": sma200,
             "year_high": year_high
         }
-    except: return None
+    except Exception: return None
         
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
+    # 1. Veri İndirme (Hızlı Batch)
+    data = get_batch_data_cached(asset_list, period="2y")
+    if data.empty: return pd.DataFrame()
+    
+    # 2. Endeks Belirleme
     cat = st.session_state.get('category', 'S&P 500')
     bench = "XU100.IS" if "BIST" in cat else "^GSPC"
-    
-    _ = get_batch_data_cached(asset_list, period="2y")
-    
+
     results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(calculate_minervini_sepa, sym, bench) for sym in asset_list]
+    stock_dfs = []
+    
+    # Veriyi hazırlama (Hisselere bölme)
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            elif len(asset_list) == 1:
+                stock_dfs.append((symbol, data))
+        except: continue
+
+    # 3. Paralel Tarama (Yukarıdaki sertleştirilmiş fonksiyonu çağırır)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        # provided_df argümanını kullanarak internetten tekrar indirmeyi engelliyoruz
+        futures = [executor.submit(calculate_minervini_sepa, sym, bench, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res: results.append(res)
             
+    # 4. Sıralama ve Kesme
     if results:
         df = pd.DataFrame(results)
-        return df.sort_values(by="Raw_Score", ascending=False)
+        # En yüksek Puanlı ve en yüksek RS'li olanları üste al
+        # Sadece ilk 30'u göster ki kullanıcı boğulmasın.
+        return df.sort_values(by=["Raw_Score", "rs_val"], ascending=[False, False]).head(30)
+    
     return pd.DataFrame()
     
 @st.cache_data(ttl=600)
@@ -2855,6 +2905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
