@@ -1186,7 +1186,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
             "Sembol": ticker,
             "Fiyat": f"{curr_price:.2f}",
             "Durum": status,
-            "Detay": f"{rs_rating} | VCP: {'Var' if is_vcp else '-'} | Arz: {'Kurudu' if is_dry else '-'}",
+            "Detay": f"{rs_rating} | VCP: {'Sıkışmada düşük oynaklık' if is_vcp else '-'} | Arz: {'Kurudu(satıcılar yoruldu)' if is_dry else '-'}",
             "Raw_Score": raw_score,
             "score": raw_score, # UI bazen bunu arıyor
             "trend_ok": True,
@@ -2905,6 +2905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
