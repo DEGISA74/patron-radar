@@ -2836,10 +2836,11 @@ with col_left:
         <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
             🕵️ Breakout Ajanı <span style="font-size:0.75rem; background:#fffbeb; color:#d97706; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(Isınanlar: 78/100)</span>
         </div>
-        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
-            <span style="font-weight:600; color:#d97706; font-style:normal;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
-            🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 
-            🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
+        # BUNU YAPIŞTIR:
+        <div class="edu-note" style="margin-top:5px;">
+        <span style="font-weight:600; color:#d97706; font-style:normal;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
+        🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat" listesidir. 
+        🔨 <b>KIRANLAR (Sağ):</b> Direnç hacimli kırıldı.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2912,8 +2913,10 @@ with col_left:
         <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
             🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; background:#dcfce7; color:#16a34a; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(LİDER: 85/100)</span>
         </div>
-        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
-            <span style="font-weight:600; color:#16a34a; font-style:normal;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+        # BUNU YAPIŞTIR:
+        <div class="edu-note" style="margin-top:5px;">
+            <span style="font-weight:600; color:#16a34a; font-style:normal;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer.
+            Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -3011,6 +3014,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
