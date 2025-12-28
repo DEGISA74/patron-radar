@@ -2798,8 +2798,8 @@ with col_left:
     <div class="info-header" style="margin-top: 15px; margin-bottom: 4px;">
         🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
     </div>
-    <div style="font-size:0.7rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
-        <span style="font-weight:600; color:#d97706;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
+    <div style="font-size:0.5rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
+        <span style="font-weight:300; color:#d97706;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
     </div>
     """, unsafe_allow_html=True)
     
@@ -2968,6 +2968,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
