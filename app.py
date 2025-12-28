@@ -2830,15 +2830,14 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    # Breakout Ajanı Başlığı (Sadeleştirilmiş)
+    # Breakout Ajanı Başlığı (Düzeltilmiş: Küçük, Gri, İtalik, Yan Yana)
     st.markdown("""
-    <div class="header-container">
-        <div>
-            <span class="header-title">🕵️ Breakout Ajanı</span>
-            <span class="header-subtitle" style="color:#d97706; background:#fffbeb;">(Isınanlar: 78/100)</span>
+    <div style="margin-top: 15px; margin-bottom: 5px;">
+        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
+            🕵️ Breakout Ajanı <span style="font-size:0.75rem; background:#fffbeb; color:#d97706; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(Isınanlar: 78/100)</span>
         </div>
-        <div class="header-desc">
-            <span class="highlight-text">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
+        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
+            <span style="font-weight:600; color:#d97706; font-style:normal;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
             🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 
             🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
         </div>
@@ -2907,16 +2906,14 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    # Minervini Başlığı (Sadeleştirilmiş)
+    # Minervini Başlığı (Düzeltilmiş: Küçük, Gri, İtalik, Yan Yana)
     st.markdown("""
-    <div class="header-container" style="margin-top: 20px;">
-        <div>
-            <span class="header-title">🦁 Minervini SEPA Ajanı</span>
-            <span class="header-subtitle" style="color:#16a34a; background:#dcfce7;">(LİDER: 85/100)</span>
+    <div style="margin-top: 20px; margin-bottom: 5px;">
+        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
+            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; background:#dcfce7; color:#16a34a; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(LİDER: 85/100)</span>
         </div>
-        <div class="header-desc">
-            <span class="highlight-text" style="color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. 
-            Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
+            <span style="font-weight:600; color:#16a34a; font-style:normal;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -3014,6 +3011,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
