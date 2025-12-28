@@ -137,6 +137,42 @@ st.markdown(f"""
     }
     .tooltip-header { font-weight: 700; color: #fbbf24; margin-bottom: 4px; display:block; border-bottom:1px solid #475569; padding-bottom:2px;}
     .tooltip-bullet { display: block; margin-bottom: 3px; }
+    /* --- TOOLTIP (AÇILIR KUTU) MEKANİZMASI --- */
+    .hover-container {
+        position: relative;
+        display: inline-block;
+        cursor: help; /* Fare soru işareti olur */
+    }
+    
+    .hover-container .pop-up-text {
+        visibility: hidden;
+        width: 280px;
+        background-color: #0f172a; /* Koyu Lacivert Arka Plan */
+        color: #f8fafc;
+        text-align: left;
+        border-radius: 8px;
+        padding: 12px;
+        position: absolute;
+        z-index: 9999;
+        top: 100%; /* Başlığın altında çıkar */
+        left: 10px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 0.75rem;
+        font-family: 'Inter', sans-serif;
+        line-height: 1.4;
+        border: 1px solid #475569;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    }
+
+    .hover-container:hover .pop-up-text {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    .pop-header { color: #fbbf24; font-weight: 700; display: block; margin-bottom: 5px; border-bottom: 1px solid #334155; padding-bottom: 3px; }
+    .pop-bullet { display: block; margin-bottom: 4px; }
+    .pop-highlight { color: #38bdf8; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -2825,17 +2861,17 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    # Breakout Ajanı Başlığı (Tooltip Eklenmiş Hali)
+   # Breakout Ajanı Başlığı (Pop-up Özellikli)
     st.markdown("""
     <div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">
-        <div class="custom-tooltip">
-            🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100 Puan)</span>
-            <span class="tooltiptext">
-                <span class="tooltip-header">⏰ ZAMANLAMA USTASI</span>
-                Bu modül sana "Ne Zaman?" sorusunun cevabını verir.<br><br>
-                <span class="tooltip-bullet">🔥 <b>ISINANLAR (Sol):</b> Fiyat dirence dayandı (%98-99), henüz kırmadı. "Pusuya Yat" listesidir.</span>
-                <span class="tooltip-bullet">🔨 <b>KIRANLAR (Sağ):</b> Direnç hacimli kırıldı. (Onaylı)</span>
-            </span>
+        <div class="hover-container">
+            🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
+            <div class="pop-up-text">
+                <span class="pop-header">⏰ ZAMANLAMA USTASI</span>
+                Bu modül sana <b>"Ne Zaman?"</b> sorusunun cevabını verir. İkiye ayrılır:<br><br>
+                <span class="pop-bullet">🔥 <span class="pop-highlight">ISINANLAR (Sol):</span> Fiyat dirence dayandı (%98-99), henüz kırmadı. <b>"Pusuya Yat"</b> listesidir.</span>
+                <span class="pop-bullet">🔨 <span class="pop-highlight">KIRANLAR (Sağ):</span> Direnç hacimli kırıldı. (Onaylı ama biraz geç kalınmış olabilir).</span>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2902,20 +2938,20 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    # Minervini Başlığı (Tooltip Eklenmiş Hali)
+   # Minervini Başlığı (Pop-up Özellikli)
     st.markdown("""
     <div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">
-        <div class="custom-tooltip">
-            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100 Puan)</span>
-            <span class="tooltiptext">
-                <span class="tooltip-header">💎 ANA SİLAH (A Kalite 20-30 Hisse)</span>
-                Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir:<br><br>
-                <span class="tooltip-bullet">• <b>Trend Şablonu:</b> Fiyat 50/150/200 ortalamaların üzerinde mi?</span>
-                <span class="tooltip-bullet">• <b>Zirve Yakınlığı:</b> Zirvesinin %90'ına kadar tırmanmış mı? (Diptekiler elenir)</span>
-                <span class="tooltip-bullet">• <b>RS Gücü:</b> Endeksi eziyor mu?</span>
-                <span class="tooltip-bullet">• <b>VCP:</b> Oynaklık azalıp yay gerildi mi?</span>
-                <span class="tooltip-bullet">• <b>Arz Kuruması:</b> Satıcılar piyasadan çekildi mi?</span>
-            </span>
+        <div class="hover-container">
+            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
+            <div class="pop-up-text">
+                <span class="pop-header">💎 ANA SİLAH (A Kalite)</span>
+                Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir ve önüne sadece <b>en iyi 20-30 hisseyi</b> koyar:<br><br>
+                <span class="pop-bullet">• <b>Trend Şablonu:</b> Fiyat 50, 150 ve 200 günlüğün üzerinde mi?</span>
+                <span class="pop-bullet">• <b>Zirve Yakınlığı:</b> %90 tırmanmış mı? (Diptekiler elenir)</span>
+                <span class="pop-bullet">• <b>RS Gücü:</b> Endeksi eziyor mu?</span>
+                <span class="pop-bullet">• <b>VCP:</b> Oynaklık azalıp yay gerildi mi?</span>
+                <span class="pop-bullet">• <b>Arz Kuruması:</b> Satıcılar piyasadan çekildi mi?</span>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -3013,6 +3049,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
