@@ -42,15 +42,57 @@ st.markdown(f"""
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
     div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    /* ------------------------------------------------ */
-
+    
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
     
-    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
+    /* --- TOOLTIP (AÇILIR KUTU) MEKANİZMASI (HATASIZ) --- */
+    .tooltip {{
+        position: relative;
+        display: inline-block;
+        cursor: help;
+        border-bottom: 1px dotted #fbbf24; /* Altı çizgili belli olsun */
+    }}
+
+    .tooltip .tooltiptext {{
+        visibility: hidden;
+        width: 280px;
+        background-color: #0f172a; /* Koyu Lacivert */
+        color: #e2e8f0;
+        text-align: left;
+        border-radius: 8px;
+        padding: 10px;
+        position: absolute;
+        z-index: 99999; /* En üstte görünsün */
+        top: 100%;
+        left: 50%;
+        margin-left: -140px; /* Ortalamak için */
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 0.75rem;
+        font-weight: 400;
+        line-height: 1.4;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        border: 1px solid #334155;
+    }}
+
+    .tooltip:hover .tooltiptext {{
+        visibility: visible;
+        opacity: 1;
+    }}
     
+    .tt-header {{
+        color: #fbbf24;
+        font-weight: 800;
+        display: block;
+        margin-bottom: 5px;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 3px;
+    }}
+    
+    /* --- DİĞER STİLLER --- */
     .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
     
     .stat-box-small {{
@@ -105,90 +147,6 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
-    /* --- TOOLTIP (AÇIKLAMA KUTUSU) STİLİ --- */
-    .custom-tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help; /* Fare soru işaretine dönüşsün */
-    }
-    .custom-tooltip .tooltiptext {
-        visibility: hidden;
-        width: 300px;
-        background-color: #1e293b; /* Koyu lacivert arka plan */
-        color: #fff;
-        text-align: left;
-        border-radius: 6px;
-        padding: 10px;
-        position: absolute;
-        z-index: 999;
-        top: 100%; /* Yazının altında çıksın */
-        left: 0;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 0.75rem;
-        font-weight: 400;
-        line-height: 1.4;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        border: 1px solid #475569;
-    }
-    .custom-tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
-    }
-    .tooltip-header { font-weight: 700; color: #fbbf24; margin-bottom: 4px; display:block; border-bottom:1px solid #475569; padding-bottom:2px;}
-    .tooltip-bullet { display: block; margin-bottom: 3px; }
-   /* --- TOOLTIP (GÜNCELLENMİŞ - SPAN YAPISI) --- */
-    .hover-container {
-        position: relative;
-        display: inline-block; /* Satır içi blok, yapıyı bozmaz */
-        cursor: help;
-        border-bottom: 1px dotted #fbbf24; /* Altına hafif noktalı çizgi koyar ki belli olsun */
-    }
-    
-    .hover-container .pop-up-text {
-        visibility: hidden;
-        width: 260px;
-        background-color: #0f172a; /* Koyu Lacivert */
-        color: #e2e8f0;
-        text-align: left;
-        border-radius: 8px;
-        padding: 10px;
-        position: absolute;
-        z-index: 999999; /* Diğer her şeyin üstünde */
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%); /* Ortalar */
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 0.75rem;
-        font-family: 'Inter', sans-serif;
-        line-height: 1.4;
-        border: 1px solid #334155;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-        display: block; /* Span olsa bile kutu gibi davran */
-        margin-top: 8px;
-    }
-
-    /* Ok İşareti (Yukarı Bakan Üçgen) */
-    .hover-container .pop-up-text::after {
-        content: "";
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border-width: 5px;
-        border-style: solid;
-        border-color: transparent transparent #0f172a transparent;
-    }
-
-    .hover-container:hover .pop-up-text {
-        visibility: visible;
-        opacity: 1;
-    }
-    
-    .pop-header { color: #fbbf24; font-weight: 700; display: block; margin-bottom: 6px; border-bottom: 1px solid #334155; padding-bottom: 4px; font-size: 0.8rem;}
-    .pop-bullet { display: block; margin-bottom: 4px; }
-    .pop-highlight { color: #38bdf8; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -3065,6 +3023,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
