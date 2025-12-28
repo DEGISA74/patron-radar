@@ -2746,7 +2746,17 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background-color: #fffbeb; border-left: 5px solid #f59e0b; padding: 10px; border-radius: 4px; margin-top: 15px; margin-bottom: 10px;">
+        <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+            🕵️ Breakout Ajanı
+            <span style="background: #fcd34d; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Isınanlar: 75/100</span>
+        </div>
+        <div style="color: #78350f; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
+            Zamanlama Ustası. Bu ajan sana ‘Ne zaman’ sorusunun cevabını verir. Isınanlar (sol) fiyatın dirence dayandığı (%98-99) ama kırmayanları listeler. Kıranlar ise harekete başlayanlrı listeler.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Session State Tanımları (Eğer yoksa)
     if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
@@ -2915,6 +2925,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
