@@ -36,7 +36,7 @@ THEMES = {
 # KRİTİK: Değişkeni ÖNCE tanımlıyoruz
 current_theme = THEMES[st.session_state.theme]
 
-# Sonra CSS içinde kullanıyoruz (Hatasız)
+# 1. AYARLAR VE STİL BÖLÜMÜNDEKİ CSS BLOĞUNU BUNUNLA DEĞİŞTİR:
 st.markdown(f"""
 <style>
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
@@ -97,6 +97,7 @@ st.markdown(f"""
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
     
+    /* İŞTE SENİN SEVDİĞİN SADE YAZI STİLİ BU */
     .edu-note {{
         font-size: 0.75rem;
         color: #64748B;
@@ -110,19 +111,18 @@ st.markdown(f"""
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
-    /* --- SADELEŞTİRİLMİŞ BAŞLIK VE AÇIKLAMA STİLİ --- */
     .header-container {
         margin-top: 15px;
         margin-bottom: 5px;
     }
     .header-title {
-        font-size: 1.1rem; /* Başlık boyutu */
+        font-size: 1.1rem;
         font-weight: 700;
-        color: #1e3a8a; /* Koyu mavi */
+        color: #1e3a8a;
         display: inline-block;
     }
     .header-subtitle {
-        font-size: 0.75rem; /* Puan boyutu */
+        font-size: 0.75rem;
         color: #64748B;
         font-weight: 600;
         margin-left: 8px;
@@ -130,20 +130,6 @@ st.markdown(f"""
         background-color: #f1f5f9;
         padding: 2px 6px;
         border-radius: 4px;
-    }
-    .header-desc {
-        font-size: 0.7rem; /* Açıklama boyutu - KÜÇÜK */
-        color: #64748B; /* Gri renk */
-        font-style: italic; /* İtalik */
-        line-height: 1.3;
-        margin-top: 2px;
-        margin-bottom: 12px;
-        font-weight: 400; /* Normal kalınlık */
-    }
-    .highlight-text {
-        font-weight: 600;
-        color: #d97706; /* Vurgu rengi (Turuncu/Sarı) */
-        font-style: normal;
     }
     
 </style>
@@ -3014,6 +3000,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
