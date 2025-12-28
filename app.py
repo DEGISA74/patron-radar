@@ -109,6 +109,43 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+
+/* --- TOOLTIP (AÇILIR KUTU) MEKANİZMASI (SADELEŞTİRİLMİŞ) --- */
+    .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+        border-bottom: 1px dotted #fbbf24;
+    }
+
+    .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 320px; /* Genişliği artırdık */
+        background-color: #0f172a; 
+        color: #94a3b8; /* Gri renk */
+        text-align: left;
+        border-radius: 6px;
+        padding: 8px;
+        position: absolute;
+        z-index: 99999;
+        top: 100%;
+        left: 0;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 0.7rem; /* Küçük font */
+        font-style: italic; /* İtalik */
+        font-weight: 400;
+        line-height: 1.3;
+        border: 1px solid #334155;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+
+    .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    
+    .tt-strong { color: #fbbf24; font-weight: 600; font-style: normal; }
 </style>
 """, unsafe_allow_html=True)
 DB_FILE = "patron.db"
@@ -2972,6 +3009,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
