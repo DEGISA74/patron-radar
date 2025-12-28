@@ -2871,7 +2871,7 @@ with col_left:
         🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
     </div>
     <div style="font-size:0.7rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
-        <span style="font-weight:600; color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+        <span style="font-weight:300; color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
     </div>
     """, unsafe_allow_html=True)
     
@@ -2968,6 +2968,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
