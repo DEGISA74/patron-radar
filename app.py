@@ -34,119 +34,6 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-st.markdown(f"""
-<style>
-    section[data-testid="stSidebar"] {{ width: 350px !important; }}
-
-    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
-    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
-    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
-    
-    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
-    .stApp {{ background-color: {current_theme['bg']}; }}
-    
-    /* --- TOOLTIP (AÇILIR KUTU) MEKANİZMASI (HATASIZ) --- */
-    .tooltip {{
-        position: relative;
-        display: inline-block;
-        cursor: help;
-        border-bottom: 1px dotted #fbbf24; /* Altı çizgili belli olsun */
-    }}
-
-    .tooltip .tooltiptext {{
-        visibility: hidden;
-        width: 280px;
-        background-color: #0f172a; /* Koyu Lacivert */
-        color: #e2e8f0;
-        text-align: left;
-        border-radius: 8px;
-        padding: 10px;
-        position: absolute;
-        z-index: 99999; /* En üstte görünsün */
-        top: 100%;
-        left: 50%;
-        margin-left: -140px; /* Ortalamak için */
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 0.75rem;
-        font-weight: 400;
-        line-height: 1.4;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-        border: 1px solid #334155;
-    }}
-
-    .tooltip:hover .tooltiptext {{
-        visibility: visible;
-        opacity: 1;
-    }}
-    
-    .tt-header {{
-        color: #fbbf24;
-        font-weight: 800;
-        display: block;
-        margin-bottom: 5px;
-        border-bottom: 1px solid #334155;
-        padding-bottom: 3px;
-    }}
-    
-    /* --- DİĞER STİLLER --- */
-    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
-    
-    .stat-box-small {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }}
-    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
-    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
-    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
-    
-    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
-    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
-    
-    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
-    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
-    
-    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
-    
-    .stButton button {{ 
-        width: 100%; border-radius: 4px;
-        font-size: 0.75rem;
-        padding: 0.1rem 0.4rem;
-    }}
-    
-    .info-card {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; 
-        padding: 6px;
-        margin-top: 5px; 
-        margin-bottom: 5px;
-        font-size: 0.8rem;
-        font-family: 'Inter', sans-serif;
-    }}
-    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
-    
-    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
-    
-    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
-    
-    .edu-note {{
-        font-size: 0.75rem;
-        color: #64748B;
-        font-style: italic;
-        margin-top: 2px;
-        margin-bottom: 6px;
-        line-height: 1.3;
-        padding-left: 0px;
-    }}
-
-    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
-    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -3023,6 +2910,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
