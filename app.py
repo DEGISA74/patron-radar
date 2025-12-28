@@ -109,6 +109,43 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+
+    /* --- SADELEŞTİRİLMİŞ BAŞLIK VE AÇIKLAMA STİLİ --- */
+    .header-container {
+        margin-top: 15px;
+        margin-bottom: 5px;
+    }
+    .header-title {
+        font-size: 1.1rem; /* Başlık boyutu */
+        font-weight: 700;
+        color: #1e3a8a; /* Koyu mavi */
+        display: inline-block;
+    }
+    .header-subtitle {
+        font-size: 0.75rem; /* Puan boyutu */
+        color: #64748B;
+        font-weight: 600;
+        margin-left: 8px;
+        display: inline-block;
+        background-color: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .header-desc {
+        font-size: 0.7rem; /* Açıklama boyutu - KÜÇÜK */
+        color: #64748B; /* Gri renk */
+        font-style: italic; /* İtalik */
+        line-height: 1.3;
+        margin-top: 2px;
+        margin-bottom: 12px;
+        font-weight: 400; /* Normal kalınlık */
+    }
+    .highlight-text {
+        font-weight: 600;
+        color: #d97706; /* Vurgu rengi (Turuncu/Sarı) */
+        font-style: normal;
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 DB_FILE = "patron.db"
@@ -2793,13 +2830,18 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-   # Breakout Ajanı Başlığı (Sadeleştirilmiş)
+    # Breakout Ajanı Başlığı (Sadeleştirilmiş)
     st.markdown("""
-    <div class="info-header" style="margin-top: 15px; margin-bottom: 4px;">
-        🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
-    </div>
-    <div style="font-size:0.5rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
-        <span style="font-weight:300; color:#d97706;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
+    <div class="header-container">
+        <div>
+            <span class="header-title">🕵️ Breakout Ajanı</span>
+            <span class="header-subtitle" style="color:#d97706; background:#fffbeb;">(Isınanlar: 78/100)</span>
+        </div>
+        <div class="header-desc">
+            <span class="highlight-text">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
+            🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 
+            🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -2867,11 +2909,15 @@ with col_left:
 
     # Minervini Başlığı (Sadeleştirilmiş)
     st.markdown("""
-    <div class="info-header" style="margin-top: 20px; margin-bottom: 4px;">
-        🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
-    </div>
-    <div style="font-size:0.7rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
-        <span style="font-weight:300; color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+    <div class="header-container" style="margin-top: 20px;">
+        <div>
+            <span class="header-title">🦁 Minervini SEPA Ajanı</span>
+            <span class="header-subtitle" style="color:#16a34a; background:#dcfce7;">(LİDER: 85/100)</span>
+        </div>
+        <div class="header-desc">
+            <span class="highlight-text" style="color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. 
+            Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -2968,6 +3014,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
