@@ -2810,7 +2810,7 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı <span style="font-size:0.8rem; font-weight:700; color:#16a34a; margin-left:5px;">(LİDER: 85/100)</span> <span style="font-size:0.75rem; color:#64748B; font-style:italic; font-weight:400; margin-left:5px;">— Elit kategorideki hisseleri bulur: Trend Şablonu : Fiyat 50-150-200 günlük ortalamaların üzerinde mi? * Zirveye yakın mı: %90 yakın (diptekiler elenir) * RS Gücü: Endeksi eziyor mu * VCP: Oynaklık azalıp yay gerildi mi? * Arz Kuruması: Satıcılar piyasadan çekildi mi?</span></div>', unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
@@ -2905,5 +2905,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
