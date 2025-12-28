@@ -36,116 +36,102 @@ THEMES = {
 # KRİTİK: Değişkeni ÖNCE tanımlıyoruz
 current_theme = THEMES[st.session_state.theme]
 
-# Sonra CSS içinde kullanıyoruz (Hatasız)
+# 1. AYARLAR VE STİL BÖLÜMÜNDEKİ CSS BLOĞUNU BUNUNLA DEĞİŞTİR:
 st.markdown(f"""
 <style>
-    section[data-testid="stSidebar"] {{ width: 350px !important; }}
+    section[data-testid="stSidebar"] {{ width: 350px !important; }}
 
-    /* Metrik Yazı Tipleri */
-    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
-    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
+    /* Metrik Yazı Tipleri */
+    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
+    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
 
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
-    
-    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
-    .stApp {{ background-color: {current_theme['bg']}; }}
-    
-    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
-    
-    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
-    
-    /* İstatistik Kutuları */
-    .stat-box-small {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }}
-    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
-    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
-    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
-    
-    /* Genel Elementler */
-    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
-    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
-    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
-    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
-    
-    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
-    
-    .stButton button {{ 
-        width: 100%; border-radius: 4px;
-        font-size: 0.75rem;
-        padding: 0.1rem 0.4rem;
-    }}
-    
-    /* Bilgi Kartları (Info Card) */
-    .info-card {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; 
-        padding: 6px;
-        margin-top: 5px; 
-        margin-bottom: 5px;
-        font-size: 0.8rem;
-        font-family: 'Inter', sans-serif;
-    }}
-    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
-    
-    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
-    
-    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
-    
-    .edu-note {{
-        font-size: 0.75rem;
-        color: #64748B;
-        font-style: italic;
-        margin-top: 2px;
-        margin-bottom: 6px;
-        line-height: 1.3;
-        padding-left: 0px;
-    }}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+    
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
+    .stApp {{ background-color: {current_theme['bg']}; }}
+    
+    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
+    
+    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
+    
+    /* İstatistik Kutuları */
+    .stat-box-small {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }}
+    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
+    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
+    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
+    
+    /* Genel Elementler */
+    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
+    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
+    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
+    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
+    
+    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
+    
+    .stButton button {{ 
+        width: 100%; border-radius: 4px;
+        font-size: 0.75rem;
+        padding: 0.1rem 0.4rem;
+    }}
+    
+    /* Bilgi Kartları (Info Card) */
+    .info-card {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 6px; 
+        padding: 6px;
+        margin-top: 5px; 
+        margin-bottom: 5px;
+        font-size: 0.8rem;
+        font-family: 'Inter', sans-serif;
+    }}
+    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
+    
+    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
+    
+    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
+    
+    /* İŞTE SENİN SEVDİĞİN SADE YAZI STİLİ BU */
+    .edu-note {{
+        font-size: 0.75rem;
+        color: #64748B;
+        font-style: italic;
+        margin-top: 2px;
+        margin-bottom: 6px;
+        line-height: 1.3;
+        padding-left: 0px;
+    }}
 
-    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
-    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
-    /* --- SADELEŞTİRİLMİŞ BAŞLIK VE AÇIKLAMA STİLİ --- */
-    .header-container {
-        margin-top: 15px;
-        margin-bottom: 5px;
-    }
-    .header-title {
-        font-size: 1.1rem; /* Başlık boyutu */
-        font-weight: 700;
-        color: #1e3a8a; /* Koyu mavi */
-        display: inline-block;
-    }
-    .header-subtitle {
-        font-size: 0.75rem; /* Puan boyutu */
-        color: #64748B;
-        font-weight: 600;
-        margin-left: 8px;
-        display: inline-block;
-        background-color: #f1f5f9;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .header-desc {
-        font-size: 0.7rem; /* Açıklama boyutu - KÜÇÜK */
-        color: #64748B; /* Gri renk */
-        font-style: italic; /* İtalik */
-        line-height: 1.3;
-        margin-top: 2px;
-        margin-bottom: 12px;
-        font-weight: 400; /* Normal kalınlık */
-    }
-    .highlight-text {
-        font-weight: 600;
-        color: #d97706; /* Vurgu rengi (Turuncu/Sarı) */
-        font-style: normal;
-    }
-    
+    .header-container {
+        margin-top: 15px;
+        margin-bottom: 5px;
+    }
+    .header-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1e3a8a;
+        display: inline-block;
+    }
+    .header-subtitle {
+        font-size: 0.75rem;
+        color: #64748B;
+        font-weight: 600;
+        margin-left: 8px;
+        display: inline-block;
+        background-color: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 DB_FILE = "patron.db"
@@ -2830,19 +2816,19 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    # Breakout Ajanı Başlığı (Düzeltilmiş: Küçük, Gri, İtalik, Yan Yana)
-    st.markdown("""
-    <div style="margin-top: 15px; margin-bottom: 5px;">
-        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
-            🕵️ Breakout Ajanı <span style="font-size:0.75rem; background:#fffbeb; color:#d97706; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(Isınanlar: 78/100)</span>
-        </div>
-        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
-            <span style="font-weight:600; color:#d97706; font-style:normal;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
-            🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 
-            🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Breakout Ajanı Başlığı (Düzeltilmiş: Sade, Edu-Note stilinde)
+    st.markdown("""
+    <div style="margin-top: 15px; margin-bottom: 5px;">
+        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
+            🕵️ Breakout Ajanı <span style="font-size:0.75rem; background:#fffbeb; color:#d97706; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(Isınanlar: 78/100)</span>
+        </div>
+        <div class="edu-note">
+            <span style="font-weight:600; color:#d97706; font-style:normal;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 
+            🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 
+            🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Session State Tanımları (Eğer yoksa)
     if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
@@ -2906,17 +2892,17 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    # Minervini Başlığı (Düzeltilmiş: Küçük, Gri, İtalik, Yan Yana)
-    st.markdown("""
-    <div style="margin-top: 20px; margin-bottom: 5px;">
-        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
-            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; background:#dcfce7; color:#16a34a; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(LİDER: 85/100)</span>
-        </div>
-        <div style="font-size: 0.75rem; color: #64748B; font-style: italic; line-height: 1.4;">
-            <span style="font-weight:600; color:#16a34a; font-style:normal;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Minervini Başlığı (Düzeltilmiş: Sade, Edu-Note stilinde)
+    st.markdown("""
+    <div style="margin-top: 20px; margin-bottom: 5px;">
+        <div style="font-weight: 700; color: #1e3a8a; font-size: 1.1rem; margin-bottom: 2px;">
+            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; background:#dcfce7; color:#16a34a; padding:2px 6px; border-radius:4px; margin-left:5px; vertical-align: middle;">(LİDER: 85/100)</span>
+        </div>
+        <div class="edu-note">
+            <span style="font-weight:600; color:#16a34a; font-style:normal;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
@@ -3011,3 +2997,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
