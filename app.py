@@ -23,7 +23,7 @@ st.set_page_config(
     page_icon="💸"
 )
 
-# Tema seçeneği kaldırıldı, varsayılan "Buz Mavisi" olarak sabitlendi.
+# Tema Ayarları
 if 'theme' not in st.session_state:
     st.session_state.theme = "Buz Mavisi"
 
@@ -32,14 +32,85 @@ THEMES = {
     "Kirli Beyaz": {"bg": "#FAF9F6", "box_bg": "#FFFFFF", "text": "#2C3E50", "border": "#E5E7EB", "news_bg": "#FFFFFF"},
     "Buz Mavisi": {"bg": "#F0F8FF", "box_bg": "#FFFFFF", "text": "#0F172A", "border": "#BFDBFE", "news_bg": "#FFFFFF"}
 }
+
+# KRİTİK: Değişkeni ÖNCE tanımlıyoruz
 current_theme = THEMES[st.session_state.theme]
 
+# Sonra CSS içinde kullanıyoruz (Hatasız)
+st.markdown(f"""
+<style>
+    section[data-testid="stSidebar"] {{ width: 350px !important; }}
+
+    /* Metrik Yazı Tipleri */
+    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
+    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
+    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+    
+    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
+    .stApp {{ background-color: {current_theme['bg']}; }}
+    
+    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
+    
+    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
+    
+    /* İstatistik Kutuları */
+    .stat-box-small {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }}
+    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
+    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
+    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
+    
+    /* Genel Elementler */
+    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
+    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
+    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
+    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
+    
+    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
+    
+    .stButton button {{ 
+        width: 100%; border-radius: 4px;
+        font-size: 0.75rem;
+        padding: 0.1rem 0.4rem;
+    }}
+    
+    /* Bilgi Kartları (Info Card) */
+    .info-card {{
+        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
+        border-radius: 6px; 
+        padding: 6px;
+        margin-top: 5px; 
+        margin-bottom: 5px;
+        font-size: 0.8rem;
+        font-family: 'Inter', sans-serif;
+    }}
+    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
+    
+    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
+    
+    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
+    
+    .edu-note {{
+        font-size: 0.75rem;
+        color: #64748B;
+        font-style: italic;
+        margin-top: 2px;
+        margin-bottom: 6px;
+        line-height: 1.3;
+        padding-left: 0px;
+    }}
+
+    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 </style>
 """, unsafe_allow_html=True)
-
-# ==============================================================================
-# 2. VERİTABANI VE LİSTELER
-# ==============================================================================
 DB_FILE = "patron.db"
 
 def init_db():
@@ -2910,6 +2981,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
