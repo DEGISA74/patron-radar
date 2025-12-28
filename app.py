@@ -25,18 +25,18 @@ st.set_page_config(
 
 # Tema Ayarları
 if 'theme' not in st.session_state:
-    st.session_state.theme = "Buz Mavisi"
+    st.session_state.theme = "Buz Mavisi"
 
 THEMES = {
-    "Beyaz": {"bg": "#FFFFFF", "box_bg": "#F8F9FA", "text": "#000000", "border": "#DEE2E6", "news_bg": "#FFFFFF"},
-    "Kirli Beyaz": {"bg": "#FAF9F6", "box_bg": "#FFFFFF", "text": "#2C3E50", "border": "#E5E7EB", "news_bg": "#FFFFFF"},
-    "Buz Mavisi": {"bg": "#F0F8FF", "box_bg": "#FFFFFF", "text": "#0F172A", "border": "#BFDBFE", "news_bg": "#FFFFFF"}
+    "Beyaz": {"bg": "#FFFFFF", "box_bg": "#F8F9FA", "text": "#000000", "border": "#DEE2E6", "news_bg": "#FFFFFF"},
+    "Kirli Beyaz": {"bg": "#FAF9F6", "box_bg": "#FFFFFF", "text": "#2C3E50", "border": "#E5E7EB", "news_bg": "#FFFFFF"},
+    "Buz Mavisi": {"bg": "#F0F8FF", "box_bg": "#FFFFFF", "text": "#0F172A", "border": "#BFDBFE", "news_bg": "#FFFFFF"}
 }
 
 # KRİTİK: Değişkeni ÖNCE tanımlıyoruz
 current_theme = THEMES[st.session_state.theme]
 
-# 1. AYARLAR VE STİL BÖLÜMÜNDEKİ CSS BLOĞUNU BUNUNLA DEĞİŞTİR:
+# Sonra CSS içinde kullanıyoruz (Hatasız ve Şık Font Ayarlı)
 st.markdown(f"""
 <style>
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
@@ -46,7 +46,7 @@ st.markdown(f"""
     div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
     div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
 
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;700&display=swap');
     
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
     .stApp {{ background-color: {current_theme['bg']}; }}
@@ -97,7 +97,7 @@ st.markdown(f"""
     
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
     
-    /* İŞTE SENİN SEVDİĞİN SADE YAZI STİLİ BU */
+    /* SENİN SEVDİĞİN SADE YAZI STİLİ */
     .edu-note {{
         font-size: 0.75rem;
         color: #64748B;
@@ -111,17 +111,17 @@ st.markdown(f"""
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
-    .header-container {
+    .header-container {{
         margin-top: 15px;
         margin-bottom: 5px;
-    }
-    .header-title {
+    }}
+    .header-title {{
         font-size: 1.1rem;
         font-weight: 700;
         color: #1e3a8a;
         display: inline-block;
-    }
-    .header-subtitle {
+    }}
+    .header-subtitle {{
         font-size: 0.75rem;
         color: #64748B;
         font-weight: 600;
@@ -130,7 +130,7 @@ st.markdown(f"""
         background-color: #f1f5f9;
         padding: 2px 6px;
         border-radius: 4px;
-    }
+    }}
     
 </style>
 """, unsafe_allow_html=True)
@@ -2997,5 +2997,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
