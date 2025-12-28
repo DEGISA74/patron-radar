@@ -2793,16 +2793,13 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-  # Breakout Ajanı Başlığı (Span Yapısı)
+    # Breakout Ajanı Başlığı (Tek Satır, Gri, İtalik)
     st.markdown("""
     <div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">
-        <span class="hover-container">
+        <span class="tooltip">
             🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
-            <span class="pop-up-text">
-                <span class="pop-header">⏰ ZAMANLAMA USTASI</span>
-                Bu modül sana <b>"Ne Zaman?"</b> sorusunun cevabını verir. İkiye ayrılır:<br><br>
-                <span class="pop-bullet">🔥 <span class="pop-highlight">ISINANLAR (Sol):</span> Fiyat dirence dayandı (%98-99), henüz kırmadı. <b>"Pusuya Yat"</b> listesidir.</span>
-                <span class="pop-bullet">🔨 <span class="pop-highlight">KIRANLAR (Sağ):</span> Direnç hacimli kırıldı. (Onaylı ama biraz geç kalınmış olabilir).</span>
+            <span class="tooltiptext">
+                <span class="tt-strong">⏰ ZAMANLAMA USTASI:</span> Bu modül sana "Ne Zaman?" sorusunun cevabını verir. 🔥 <b>ISINANLAR (Sol):</b> Fiyat dirence dayandı (%98-%99), henüz kırmadı. "Pusuya Yat" listesidir. 🔨 <b>KIRANLAR (Sağ):</b> Direnç hacimli kırıldı (Onaylı).
             </span>
         </span>
     </div>
@@ -2870,19 +2867,13 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
- # Minervini Başlığı (Span Yapısı)
+    # Minervini Başlığı (Tek Satır, Gri, İtalik)
     st.markdown("""
     <div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">
-        <span class="hover-container">
+        <span class="tooltip">
             🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
-            <span class="pop-up-text">
-                <span class="pop-header">💎 ANA SİLAH (A Kalite)</span>
-                Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir ve önüne sadece <b>en iyi 20-30 hisseyi</b> koyar:<br><br>
-                <span class="pop-bullet">• <b>Trend Şablonu:</b> Fiyat 50, 150 ve 200 günlüğün üzerinde mi?</span>
-                <span class="pop-bullet">• <b>Zirve Yakınlığı:</b> %90 tırmanmış mı? (Diptekiler elenir)</span>
-                <span class="pop-bullet">• <b>RS Gücü:</b> Endeksi eziyor mu?</span>
-                <span class="pop-bullet">• <b>VCP:</b> Oynaklık azalıp yay gerildi mi?</span>
-                <span class="pop-bullet">• <b>Arz Kuruması:</b> Satıcılar piyasadan çekildi mi?</span>
+            <span class="tooltiptext">
+                <span class="tt-strong">💎 ANA SİLAH (Sniper Modu):</span> Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir ve önüne sadece en iyi 20-30 hisseyi koyar. Kriterler: • Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
             </span>
         </span>
     </div>
@@ -2981,6 +2972,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
