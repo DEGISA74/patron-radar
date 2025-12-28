@@ -25,7 +25,7 @@ st.set_page_config(
 
 # Tema seçeneği kaldırıldı, varsayılan "Buz Mavisi" olarak sabitlendi.
 if 'theme' not in st.session_state:
-st.session_state.theme = "Buz Mavisi"
+    st.session_state.theme = "Buz Mavisi"
 
 THEMES = {
     "Beyaz": {"bg": "#FFFFFF", "box_bg": "#F8F9FA", "text": "#000000", "border": "#DEE2E6", "news_bg": "#FFFFFF"},
@@ -2905,4 +2905,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
