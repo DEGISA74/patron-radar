@@ -2755,120 +2755,120 @@ with st.expander("Ajan Operasyonlarını Yönet", expanded=True):
                 else:
                     st.caption("Tespit edilemedi.")
 
-    # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown("""
-    <div style="background-color: #fffbeb; border-left: 5px solid #f59e0b; padding: 10px; border-radius: 4px; margin-top: 15px; margin-bottom: 10px;">
-        <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
-            🕵️ Breakout Ajanı
-            <span style="background: #fcd34d; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Isınanlar: 75/100</span>
-        </div>
-        <div style="color: #78350f; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
-            Zamanlama Ustası. Bu ajan sana ‘Ne zaman’ sorusunun cevabını verir. Isınanlar (sol) fiyatın dirence dayandığı (%98-99) ama kırmayanları listeler. Kıranlar ise harekete başlayanlrı listeler.
-        </div>
+# --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
+st.markdown("""
+<div style="background-color: #fffbeb; border-left: 5px solid #f59e0b; padding: 10px; border-radius: 4px; margin-top: 15px; margin-bottom: 10px;">
+    <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+        🕵️ Breakout Ajanı
+        <span style="background: #fcd34d; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">Isınanlar: 75/100</span>
     </div>
-    """, unsafe_allow_html=True)
+    <div style="color: #78350f; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
+        Zamanlama Ustası. Bu ajan sana ‘Ne zaman’ sorusunun cevabını verir. Isınanlar (sol) fiyatın dirence dayandığı (%98-99) ama kırmayanları listeler. Kıranlar ise harekete başlayanlrı listeler.
+    </div>
+</div>
+""", unsafe_allow_html=True)
     
-    # Session State Tanımları (Eğer yoksa)
-    if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
-    if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
+# Session State Tanımları (Eğer yoksa)
+if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
+if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
 
-    with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
-        if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
-            with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
-                curr_list = ASSET_GROUPS.get(st.session_state.category, [])
-                # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
-                st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
-                st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
-                st.rerun()
-
-       # 2 Sütunlu Sade Yapı (YENİ TASARIM)
-        c_left, c_right = st.columns(2)
+with st.expander("Taramayı Başlat / Sonuçları Göster", expanded=True):
+    if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
+        with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
+            curr_list = ASSET_GROUPS.get(st.session_state.category, [])
+            # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
+            st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
+            st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
+            st.rerun()
+  
+   # 2 Sütunlu Sade Yapı (YENİ TASARIM)
+    c_left, c_right = st.columns(2)
         
-        # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
-        with c_left:
-            st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+    # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
+    with c_left:
+        st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
             
-            with st.container(height=150): # Scroll Alanı
-                if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
-                    df_left = st.session_state.breakout_left.head(20)
-                    for i, (index, row) in enumerate(df_left.iterrows()):
-                        sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
+        with st.container(height=150): # Scroll Alanı
+            if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
+                df_left = st.session_state.breakout_left.head(20)
+                for i, (index, row) in enumerate(df_left.iterrows()):
+                    sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
                         
-                        # HTML etiketlerini temizle (Sadece oranı al: %98 gibi)
-                        prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
+                    # HTML etiketlerini temizle (Sadece oranı al: %98 gibi)
+                    prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
                         
-                        # Buton Metni: 🔥 AAPL (150.20) | %98
-                        btn_label = f"🔥 {sym_raw} ({row['Fiyat']}) | {prox_clean}"
+                    # Buton Metni: 🔥 AAPL (150.20) | %98
+                    btn_label = f"🔥 {sym_raw} ({row['Fiyat']}) | {prox_clean}"
                         
-                        if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
-                            on_scan_result_click(sym_raw)
-                            st.rerun()
-                else:
-                    st.info("Isınan hisse bulunamadı.")
+                    if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
+                        on_scan_result_click(sym_raw)
+                        st.rerun()
+            else:
+                st.info("Isınan hisse bulunamadı.")
 
-        # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
-        with c_right:
-            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+    # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
+    with c_right:
+        st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
             
-            with st.container(height=150): # Scroll Alanı
-                if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
-                    df_right = st.session_state.breakout_right.head(20)
-                    for i, (index, row) in enumerate(df_right.iterrows()):
-                        sym = row['Sembol']
-                        
-                        # Buton Metni: 🚀 TSLA (200.50) | Hacim: 2.5x
-                        btn_label = f"🚀 {sym} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
-                        
-                        if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
-                else:
-                    st.info("Kırılım yapan hisse bulunamadı.")
-
-    # ---------------------------------------------------------
-    # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
-    # ---------------------------------------------------------
-    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
-
-    st.markdown("""
-    <div style="background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 10px; border-radius: 4px; margin-top: 20px; margin-bottom: 5px;">
-        <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
-            🦁 Minervini SEPA Ajanı
-            <span style="background: #bbf7d0; color: #14532d; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">LİDER: 85/100</span>
-        </div>
-        <div style="color: #14532d; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
-            Elit kategorideki hisseleri bulur: <b>Trend Şablonu:</b> Ortalamaların üzerinde mi? • <b>Zirveye Yakın:</b> %90 (diptekiler elenir) • <b>RS Gücü:</b> Endeksi eziyor mu? • <b>VCP:</b> Yay gerildi mi? • <b>Arz Kuruması:</b> Satıcılar çekildi mi?
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 1. TARAMA BUTONU
-    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
-        with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.minervini_data = scan_minervini_batch(current_assets)
-            
-    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
-    if st.session_state.minervini_data is not None:
-        count = len(st.session_state.minervini_data)
-        if count > 0:
-            st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
-            with st.container(height=300, border=True):
-                for i, row in st.session_state.minervini_data.iterrows():
+        with st.container(height=150): # Scroll Alanı
+            if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
+                df_right = st.session_state.breakout_right.head(20)
+                for i, (index, row) in enumerate(df_right.iterrows()):
                     sym = row['Sembol']
-                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
-                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
-                    
-                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
+                        
+                    # Buton Metni: 🚀 TSLA (200.50) | Hacim: 2.5x
+                    btn_label = f"🚀 {sym} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
+                        
+                    if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
                         st.rerun()
-        else:
-            st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
+            else:
+                st.info("Kırılım yapan hisse bulunamadı.")
+
+# ---------------------------------------------------------
+# 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
+# ---------------------------------------------------------
+if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+
+st.markdown("""
+<div style="background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 10px; border-radius: 4px; margin-top: 20px; margin-bottom: 5px;">
+    <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+        🦁 Minervini SEPA Ajanı
+        <span style="background: #bbf7d0; color: #14532d; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">LİDER: 85/100</span>
+    </div>
+    <div style="color: #14532d; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
+        Elit kategorideki hisseleri bulur: <b>Trend Şablonu:</b> Ortalamaların üzerinde mi? • <b>Zirveye Yakın:</b> %90 (diptekiler elenir) • <b>RS Gücü:</b> Endeksi eziyor mu? • <b>VCP:</b> Yay gerildi mi? • <b>Arz Kuruması:</b> Satıcılar çekildi mi?
+    </div>
+</div>
+""", unsafe_allow_html=True)
+    
+# 1. TARAMA BUTONU
+if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
+    with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
+        current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+        st.session_state.minervini_data = scan_minervini_batch(current_assets)
+            
+# 2. SONUÇ EKRANI (Scroll Bar - 300px)
+if st.session_state.minervini_data is not None:
+    count = len(st.session_state.minervini_data)
+    if count > 0:
+        st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
+        with st.container(height=300, border=True):
+            for i, row in st.session_state.minervini_data.iterrows():
+                sym = row['Sembol']
+                icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
+                label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
+                    
+                if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
+                    on_scan_result_click(sym)
+                    st.rerun()
+    else:
+        st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
     # ---------------------------------------------------------
     
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
-    symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
-    st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
+st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
+symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
+st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
 
 # --- SAĞ SÜTUN ---
 with col_right:
@@ -2935,6 +2935,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
