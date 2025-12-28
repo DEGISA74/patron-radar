@@ -2810,7 +2810,17 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı <span style="font-size:0.8rem; color:#64748B; font-style:italic; font-weight:400; margin-left:10px;">(Yüksek performanslı hisseleri VCP, Trend ve RS kriterlerine göre eler)</span></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background-color: #f0fdf4; border-left: 5px solid #16a34a; padding: 10px; border-radius: 4px; margin-top: 20px; margin-bottom: 5px;">
+        <div style="color: #1e3a8a; font-weight: 800; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+            🦁 Minervini SEPA Ajanı
+            <span style="background: #bbf7d0; color: #14532d; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">LİDER: 85/100</span>
+        </div>
+        <div style="color: #14532d; font-size: 0.8rem; font-style: italic; margin-top: 5px; line-height: 1.4;">
+            Elit kategorideki hisseleri bulur: <b>Trend Şablonu:</b> Ortalamaların üzerinde mi? • <b>Zirveye Yakın:</b> %90 (diptekiler elenir) • <b>RS Gücü:</b> Endeksi eziyor mu? • <b>VCP:</b> Yay gerildi mi? • <b>Arz Kuruması:</b> Satıcılar çekildi mi?
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
     if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
@@ -2905,6 +2915,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
