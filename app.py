@@ -109,43 +109,6 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
-
-/* --- TOOLTIP (AÇILIR KUTU) MEKANİZMASI (SADELEŞTİRİLMİŞ) --- */
-    .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-        border-bottom: 1px dotted #fbbf24;
-    }
-
-    .tooltip .tooltiptext {
-        visibility: hidden;
-        width: 320px; /* Genişliği artırdık */
-        background-color: #0f172a; 
-        color: #94a3b8; /* Gri renk */
-        text-align: left;
-        border-radius: 6px;
-        padding: 8px;
-        position: absolute;
-        z-index: 99999;
-        top: 100%;
-        left: 0;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 0.7rem; /* Küçük font */
-        font-style: italic; /* İtalik */
-        font-weight: 400;
-        line-height: 1.3;
-        border: 1px solid #334155;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-    }
-
-    .tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
-    }
-    
-    .tt-strong { color: #fbbf24; font-weight: 600; font-style: normal; }
 </style>
 """, unsafe_allow_html=True)
 DB_FILE = "patron.db"
@@ -2830,15 +2793,13 @@ with col_left:
                         st.caption("Tespit edilemedi.")
 
     # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    # Breakout Ajanı Başlığı (Tek Satır, Gri, İtalik)
+   # Breakout Ajanı Başlığı (Sadeleştirilmiş)
     st.markdown("""
-    <div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">
-        <span class="tooltip">
-            🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
-            <span class="tooltiptext">
-                <span class="tt-strong">⏰ ZAMANLAMA USTASI:</span> Bu modül sana "Ne Zaman?" sorusunun cevabını verir. 🔥 <b>ISINANLAR (Sol):</b> Fiyat dirence dayandı (%98-%99), henüz kırmadı. "Pusuya Yat" listesidir. 🔨 <b>KIRANLAR (Sağ):</b> Direnç hacimli kırıldı (Onaylı).
-            </span>
-        </span>
+    <div class="info-header" style="margin-top: 15px; margin-bottom: 4px;">
+        🕵️ Breakout Ajanı <span style="font-size:0.7rem; color:#d97706; font-weight:600; margin-left:5px;">(Isınanlar: 78/100)</span>
+    </div>
+    <div style="font-size:0.7rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
+        <span style="font-weight:600; color:#d97706;">ZAMANLAMA USTASI:</span> "Ne Zaman?" sorusunu cevaplar. 🔥 <b>ISINANLAR (Sol):</b> %98-99 dirençte, "Pusuya Yat". 🔨 <b>KIRANLAR (Sağ):</b> Hacimli kırdı (Onaylı).
     </div>
     """, unsafe_allow_html=True)
     
@@ -2904,15 +2865,13 @@ with col_left:
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
 
-    # Minervini Başlığı (Tek Satır, Gri, İtalik)
+    # Minervini Başlığı (Sadeleştirilmiş)
     st.markdown("""
-    <div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">
-        <span class="tooltip">
-            🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
-            <span class="tooltiptext">
-                <span class="tt-strong">💎 ANA SİLAH (Sniper Modu):</span> Piyasadaki 500 hisseyi alır, acımasız filtreden geçirir ve önüne sadece en iyi 20-30 hisseyi koyar. Kriterler: • Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
-            </span>
-        </span>
+    <div class="info-header" style="margin-top: 20px; margin-bottom: 4px;">
+        🦁 Minervini SEPA Ajanı <span style="font-size:0.75rem; color:#16a34a; font-weight:800; margin-left:5px; background:#dcfce7; padding:1px 6px; border-radius:4px;">(LİDER: 85/100)</span>
+    </div>
+    <div style="font-size:0.7rem; color:#64748B; font-style:italic; line-height:1.2; margin-bottom:10px;">
+        <span style="font-weight:600; color:#16a34a;">ANA SİLAH (Sniper):</span> 500 hisseden en iyi 20'yi seçer. Kriterler: Trend Şablonu • %90 Zirve Yakınlığı • RS Gücü • VCP Sıkışması • Arz Kuruması.
     </div>
     """, unsafe_allow_html=True)
     
@@ -3009,6 +2968,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
