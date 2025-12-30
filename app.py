@@ -560,7 +560,6 @@ def process_single_accumulation(symbol, df, benchmark_series):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        # RS hesaplaması için en az 60 gün veri iyi olur (Mansfield ortalaması için)
         if len(df) < 60: return None
 
         close = df['Close']
@@ -569,9 +568,44 @@ def process_single_accumulation(symbol, df, benchmark_series):
         low = df['Low']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df), index=df.index)
         
-        # --- MEVCUT MANTIK (TOPLAMA) ---
+        # --- 1. SAVAŞ'IN GÜVENLİK KALKANI (SON 2 GÜN KURALI) ---
+        price_now = float(close.iloc[-1])
+        if len(close) > 2:
+            price_2_days_ago = float(close.iloc[-3]) 
+            # Son 2 gün toplam %3'ten fazla düştüyse (0.97 altı) ELE.
+            if price_now < (price_2_days_ago * 0.97): 
+                return None 
+
+        # --- 2. ZAMAN AYARLI HACİM HESABI (PRO-RATA) ---
+        # Pocket Pivot (Hacim Patlaması) sabah saatlerinde çalışsın diye
+        # günün biten kısmına göre hacmi "Tam Gün"e tamamlıyoruz (Projection).
+        
+        last_date = df.index[-1].date()
+        today_date = datetime.now().date()
+        is_live = (last_date == today_date)
+        
+        # Varsayılan: Hacim olduğu gibidir (Geçmiş günler için)
+        volume_for_check = float(volume.iloc[-1])
+        
+        if is_live:
+            now = datetime.now() + timedelta(hours=3) # TR Saati
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # BIST (10:00 - 18:00)
+            if current_hour < 10: progress = 0.1
+            elif current_hour >= 18: progress = 1.0
+            else:
+                progress = ((current_hour - 10) * 60 + current_minute) / 480.0
+                progress = max(0.1, min(progress, 1.0))
+            
+            # Yansıtılmış (Tahmini) Gün Sonu Hacmi
+            if progress > 0:
+                volume_for_check = float(volume.iloc[-1]) / progress
+
+        # --- 3. MEVCUT MANTIK (TOPLAMA & FORCE INDEX) ---
         delta = close.diff()
-        force_index = delta * volume
+        force_index = delta * volume # Force Index için orijinal hacmi kullanıyoruz (Trend bozulmasın)
         mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
         last_10_mf = mf_smooth.tail(10)
@@ -580,11 +614,9 @@ def process_single_accumulation(symbol, df, benchmark_series):
         if len(last_10_mf) < 10: return None
         
         pos_days_count = (last_10_mf > 0).sum()
-        if pos_days_count < 7: return None # İstikrar Kuralı
+        if pos_days_count < 7: return None 
 
         price_start = float(last_10_close.iloc[0]) 
-        price_now = float(last_10_close.iloc[-1])
-        
         if price_start == 0: return None
         
         change_pct = (price_now - price_start) / price_start
@@ -593,69 +625,54 @@ def process_single_accumulation(symbol, df, benchmark_series):
         if avg_mf <= 0: return None
         if change_pct > 0.05: return None 
 
-        # --- YENİ EKLENTİ 1: MANSFIELD RELATIVE STRENGTH (RS) ---
+        # --- 4. MANSFIELD RS (GÜÇ) ---
         rs_status = "Zayıf"
         rs_score = 0
-        
         if benchmark_series is not None:
             try:
-                # Tarihleri eşleştir (Reindex)
                 common_idx = close.index.intersection(benchmark_series.index)
-                stock_aligned = close.loc[common_idx]
-                bench_aligned = benchmark_series.loc[common_idx]
-                
-                if len(stock_aligned) > 50:
-                    # 1. Rasyo: Hisse / Endeks
+                if len(common_idx) > 50:
+                    stock_aligned = close.loc[common_idx]
+                    bench_aligned = benchmark_series.loc[common_idx]
                     rs_ratio = stock_aligned / bench_aligned
-                    # 2. Rasyonun 50 günlük ortalaması (Standart Mansfield 52 haftadır ama 50 gün daha reaktif)
                     rs_ma = rs_ratio.rolling(50).mean()
-                    # 3. Mansfield RS Değeri (Normalize)
                     mansfield = ((rs_ratio / rs_ma) - 1) * 10
-                    
                     curr_rs = float(mansfield.iloc[-1])
-                    
                     if curr_rs > 0: 
                         rs_status = "GÜÇLÜ (Endeks Üstü)"
-                        rs_score = 1 # Puana katkı
-                        if curr_rs > float(mansfield.iloc[-5]): # RS Yükseliyor mu?
+                        rs_score = 1 
+                        if curr_rs > float(mansfield.iloc[-5]): 
                             rs_status += " 🚀"
                             rs_score = 2
-                    else:
-                        rs_status = "Zayıf (Endeks Altı)"
-            except:
-                rs_status = "Veri Yok"
+            except: pass
 
-        # --- YENİ EKLENTİ 2: POCKET PIVOT (Hacim Patlaması) ---
-        # Mantık: Bugünkü hacim > Son 10 günün en büyük "Düşüş Günü" hacmi
+        # --- 5. POCKET PIVOT (ZAMAN AYARLI KONTROL) ---
+        # Burada artık "projected" (tamamlanmış) hacmi kullanıyoruz.
         is_pocket_pivot = False
         pp_desc = "-"
         
-        # 1. Düşüş günlerini bul (Kapanış < Açılış)
         is_down_day = close < open_
-        # 2. Sadece düşüş günlerinin hacmini al, diğerlerini 0 yap
         down_volumes = volume.where(is_down_day, 0)
-        # 3. Son 10 günün (bugün hariç) en büyük düşüş hacmi
-        max_down_vol_10 = down_volumes.iloc[-11:-1].max()
+        max_down_vol_10 = down_volumes.iloc[-11:-1].max() # Son 10 günün en büyük düşüş hacmi
         
-        curr_vol = float(volume.iloc[-1])
         is_up_day = float(close.iloc[-1]) > float(open_.iloc[-1])
         
-        # Pivot Kuralı: Bugün yükseliş günü + Hacim > Max Satış Hacmi
-        if is_up_day and (curr_vol > max_down_vol_10):
+        # Kritik Karşılaştırma: Yansıtılmış Hacim > En Büyük Satış Hacmi
+        if is_up_day and (volume_for_check > max_down_vol_10):
             is_pocket_pivot = True
-            pp_desc = "⚡ POCKET PIVOT (Hazır!)"
-            rs_score += 3 # Pivot varsa skoru uçur
+            # Eğer gerçek hacim henüz geçmediyse ama projeksiyon geçiyorsa belirtelim
+            if float(volume.iloc[-1]) < max_down_vol_10:
+                pp_desc = "⚡ PIVOT (Hacim Hızı Yüksek)"
+            else:
+                pp_desc = "⚡ POCKET PIVOT (Onaylı)"
+            rs_score += 3 
 
-        # --- SKORLAMA VE ÇIKTI ---
-        # Eski skor mantığına eklemeler yapıyoruz
+        # --- SKORLAMA ---
         base_score = avg_mf * (10.0 if change_pct < 0 else 5.0)
-        final_score = base_score * (1 + rs_score) # RS ve Pivot varsa puanı katla
-
-        # Hacim Yazısı
+        final_score = base_score * (1 + rs_score) 
         if avg_mf > 1_000_000: mf_str = f"{avg_mf/1_000_000:.1f}M"
         elif avg_mf > 1_000: mf_str = f"{avg_mf/1_000:.0f}K"
         else: mf_str = f"{int(avg_mf)}"
-
         squeeze_score = final_score / (abs(change_pct) + 0.02)
 
         return {
@@ -666,12 +683,11 @@ def process_single_accumulation(symbol, df, benchmark_series):
             "MF_Gucu_Goster": mf_str, 
             "Gun_Sayisi": f"{pos_days_count}/10",
             "Skor": squeeze_score,
-            "RS_Durumu": rs_status,      # YENİ SÜTUN
-            "Pivot_Sinyali": pp_desc,    # YENİ SÜTUN
-            "Pocket_Pivot": is_pocket_pivot # Sıralama/Filtre için
+            "RS_Durumu": rs_status,      
+            "Pivot_Sinyali": pp_desc,    
+            "Pocket_Pivot": is_pocket_pivot 
         }
-    except Exception as e: 
-        return None
+    except Exception: return None
 
 @st.cache_data(ttl=900)
 def scan_hidden_accumulation(asset_list):
@@ -3004,6 +3020,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
