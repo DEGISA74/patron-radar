@@ -1053,43 +1053,99 @@ def agent3_breakout_scan(asset_list):
 def process_single_confirmed(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
-        df = df.dropna(subset=['Close']); 
-        if len(df) < 65: return None
+        df = df.dropna(subset=['Close'])
+        if len(df) < 40: return None 
 
         close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
-        high_60 = high.rolling(window=60).max().shift(1).iloc[-1]
+        # --- 1. ADIM: ZİRVE KONTROLÜ (Son 30 İş Günü) ---
+        # Bugünü (son satırı) hesaba katmadan, düne kadarki 30 günün zirvesi
+        high_val = high.iloc[:-1].tail(30).max()
         curr_close = float(close.iloc[-1])
         
-        if curr_close <= high_60: return None 
+        # Eğer bugünkü fiyat, geçmiş 30 günün zirvesini geçmediyse ELE.
+        if curr_close <= high_val: return None 
 
-        avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
-        curr_vol = float(volume.iloc[-1])
-        vol_factor = curr_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+        # --- 2. ADIM: GÜVENLİ HACİM HESABI (TIME-BASED) ---
         
-        if vol_factor < 1.2: return None 
+        # Önce Tarih Kontrolü: Elimizdeki son veri (df.index[-1]) BUGÜNE mi ait?
+        last_data_date = df.index[-1].date()
+        today_date = datetime.now().date()
+        
+        # Eğer son veri bugüne aitse "Canlı Seans" mantığı çalışsın.
+        # Eğer veri eskiyse (akşam olduysa veya hafta sonuysa), gün bitmiş sayılır (Progress = 1.0)
+        is_live_today = (last_data_date == today_date)
+        
+        day_progress = 1.0 # Varsayılan: Gün bitti (%100)
 
+        if is_live_today:
+            # Sadece veri "Bugün" ise saat hesabına gir.
+            now = datetime.now()
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # BIST Seans: 10:00 - 18:00 (480 dk)
+            if current_hour < 10:
+                day_progress = 0.1 # Seans öncesi veri gelirse sapıtmasın
+            elif current_hour >= 18:
+                day_progress = 1.0 # Seans bitti
+            else:
+                minutes_passed = (current_hour - 10) * 60 + current_minute
+                day_progress = minutes_passed / 480.0
+                day_progress = max(0.1, min(day_progress, 1.0)) # 0.1 ile 1.0 arasına sıkıştır
+
+        # Geçmiş 20 günün ortalama hacmi (Bugün hariç)
+        avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
+        
+        # BEKLENEN HACİM
+        expected_vol_now = avg_vol_20 * day_progress
+        curr_vol = float(volume.iloc[-1])
+        
+        # PERFORMANS ORANI
+        # Eğer günün yarısı bittiyse ve hacim de ortalamanın yarısıysa oran 1.0 olur.
+        # Biz biraz 'hareket' istiyoruz, o yüzden 0.9 (Normalin %90'ı) alt sınır olsun.
+        if avg_vol_20 > 0:
+            performance_ratio = curr_vol / expected_vol_now
+        else:
+            performance_ratio = 0
+            
+        # Filtre: Eğer o saate kadar yapması gereken hacmi yapmadıysa ELE.
+        if performance_ratio < 0.9: return None 
+
+        # --- GÖRSEL ETİKETLEME ---
+        # Kullanıcıya "Günlük ortalamanın kaç katına gidiyor" bilgisini verelim
+        # Bu 'Projected Volume' (Tahmini Gün Sonu Hacmi) mantığıdır.
+        vol_display = f"{performance_ratio:.1f}x (Hız)"
+        
+        if performance_ratio > 1.5: vol_display = f"{performance_ratio:.1f}x (Patlama🔥)"
+        elif performance_ratio >= 1.0: vol_display = f"{performance_ratio:.1f}x (Güçlü✅)"
+        else: vol_display = f"{performance_ratio:.1f}x (Yeterli🆗)"
+
+        # --- 3. DİĞER TEKNİK FİLTRELER ---
         sma20 = close.rolling(20).mean()
         std20 = close.rolling(20).std()
         bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
         bb_width = (bb_upper - bb_lower) / sma20
         avg_width = bb_width.rolling(20).mean().iloc[-1]
-        is_range_breakout = bb_width.iloc[-2] < avg_width * 0.8 
         
-        breakout_type = "📦 RANGE KIRILIMI" if is_range_breakout else "🏔️ ZİRVE KIRILIMI (Fiyat son 60 günün zirvesinde)"
+        is_range_breakout = bb_width.iloc[-2] < avg_width * 0.9 
+        breakout_type = "📦 RANGE" if is_range_breakout else "🏔️ ZİRVE"
         
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+        
+        if rsi > 80: return None
 
         return {
             "Sembol": symbol,
             "Fiyat": f"{curr_close:.2f}",
             "Kirim_Turu": breakout_type,
-            "Hacim_Kati": f"{vol_factor:.1f}x",
+            "Hacim_Kati": vol_display,
             "RSI": int(rsi),
-            "SortKey": vol_factor 
+            # Sıralamayı hacim "hızına" göre yapıyoruz
+            "SortKey": performance_ratio 
         }
     except: return None
 
@@ -2948,6 +3004,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
