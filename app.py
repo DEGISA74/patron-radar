@@ -948,39 +948,82 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
 def process_single_breakout(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
-        df = df.dropna(subset=['Close']); 
-        if len(df) < 60: return None
+        df = df.dropna(subset=['Close'])
+        # DÜZELTME 1: Periyot kısaldığı için minimum veri şartını düşürdük
+        if len(df) < 50: return None 
 
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
-        ema5 = close.ewm(span=5, adjust=False).mean(); ema20 = close.ewm(span=20, adjust=False).mean()
+        
+        # Ortalamalar
+        ema5 = close.ewm(span=5, adjust=False).mean()
+        ema20 = close.ewm(span=20, adjust=False).mean()
         sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
-        std20 = close.rolling(20).std(); bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20); bb_width = (bb_upper - bb_lower) / sma20
-        vol_20 = volume.rolling(20).mean().iloc[-1]; curr_vol = volume.iloc[-1]
+        
+        # Bollinger
+        std20 = close.rolling(20).std()
+        bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
+        bb_width = (bb_upper - bb_lower) / sma20
+        
+        # Hacim
+        vol_20 = volume.rolling(20).mean().iloc[-1]
+        curr_vol = volume.iloc[-1]
         rvol = curr_vol / vol_20 if vol_20 != 0 else 1
-        high_60 = high.rolling(60).max().iloc[-1]; curr_price = close.iloc[-1]
-        delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        
+        # --- KRİTİK DÜZELTME BURADA ---
+        # 1. iloc[:-1] diyerek BUGÜNÜ hesaptan attık.
+        # 2. tail(45) diyerek 60 günden 45 güne indirdik (Daha taze zirveler için).
+        high_val = high.iloc[:-1].tail(45).max()
+        
+        curr_price = close.iloc[-1]
+        
+        # RSI
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
-        cond_ema = ema5.iloc[-1] > ema20.iloc[-1]; cond_vol = rvol > 1.2; cond_prox = curr_price > (high_60 * 0.90); cond_rsi = rsi < 70; sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
+        
+        # Şartlar
+        cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
+        cond_vol = rvol > 1.2
+        # Zirveye %10 yakınlık (0.90)
+        cond_prox = curr_price > (high_val * 0.90)
+        cond_rsi = rsi < 70
+        sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
         
         if cond_ema and cond_vol and cond_prox and cond_rsi:
             is_short_signal = False; short_reason = ""
-            if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): is_short_signal = True; short_reason = "3 Kırmızı Mum (Düşüş)"
-            body_last = abs(close.iloc[-1] - open_.iloc[-1]); body_prev1 = abs(close.iloc[-2] - open_.iloc[-2]); body_prev2 = abs(close.iloc[-3] - open_.iloc[-3])
-            if (close.iloc[-1] < open_.iloc[-1]) and (body_last > (body_prev1 + body_prev2)): is_short_signal = True; short_reason = "Yutan Ayı Mum (Engulfing)"
-            min_bandwidth_60 = bb_width.rolling(60).min().iloc[-1]; is_squeeze = bb_width.iloc[-1] <= min_bandwidth_60 * 1.10
-            prox_pct = (curr_price / high_60) * 100
-            prox_str = f"💣 Bant içinde sıkışma var, patlamaya hazır" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınıra Dayandı)" if prox_pct >= 98 else " (Hazırlanıyor)"))
-            c_open = open_.iloc[-1]; c_close = close.iloc[-1]; c_high = high.iloc[-1]; body_size = abs(c_close - c_open); upper_wick = c_high - max(c_open, c_close)
+            # Mum formasyonları (Basit)
+            if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): 
+                is_short_signal = True; short_reason = "3 Kırmızı Mum"
+            
+            min_bandwidth = bb_width.rolling(45).min().iloc[-1]
+            is_squeeze = bb_width.iloc[-1] <= min_bandwidth * 1.10
+            
+            prox_pct = (curr_price / high_val) * 100
+            prox_str = f"💣 Sıkışma Var" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınırda)" if prox_pct >= 98 else " (Hazırlık)"))
+            
+            # Uzun fitil kontrolü
+            body_size = abs(close.iloc[-1] - open_.iloc[-1])
+            upper_wick = high.iloc[-1] - max(open_.iloc[-1], close.iloc[-1])
             is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
-            wick_warning = " <span style='color:#DC2626; font-weight:700; background:#fef2f2; padding:2px 4px; border-radius:4px;'>⚠️ Satış Baskısı (Uzun Fitil)</span>" if is_wick_rejected else ""
-            rvol_text = "Olağanüstü para girişi 🐳" if rvol > 2.0 else ("İlgi artıyor 📈" if rvol > 1.5 else "İlgi var 👀")
+            wick_warning = " ⚠️ Satış Baskısı" if is_wick_rejected else ""
+            
+            rvol_text = "Olağanüstü 🐳" if rvol > 2.0 else ("İlgi Artıyor 📈" if rvol > 1.5 else "İlgi Var")
+            
             display_symbol = symbol
-            if is_short_signal:
-                display_symbol = f"{symbol} <span style='color:#DC2626; font-weight:800; background:#fef2f2; padding:2px 6px; border-radius:4px; font-size:0.8rem;'>🔻 SHORT FIRSATI</span>"
-                trend_display = f"<span style='color:#DC2626; font-weight:700;'>{short_reason}</span>"
-            else: trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
-            return { "Sembol_Raw": symbol, "Sembol_Display": display_symbol, "Fiyat": f"{curr_price:.2f}", "Zirveye Yakınlık": prox_str + wick_warning, "Hacim Durumu": rvol_text, "Trend Durumu": trend_display, "RSI": f"{rsi:.0f}", "SortKey": rvol }
+            trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
+            
+            return { 
+                "Sembol_Raw": symbol, 
+                "Sembol_Display": display_symbol, 
+                "Fiyat": f"{curr_price:.2f}", 
+                "Zirveye Yakınlık": prox_str + wick_warning, 
+                "Hacim Durumu": rvol_text, 
+                "Trend Durumu": trend_display, 
+                "RSI": f"{rsi:.0f}", 
+                "SortKey": rvol 
+            }
         return None
     except: return None
 
@@ -2905,5 +2948,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
