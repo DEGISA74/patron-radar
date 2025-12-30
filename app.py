@@ -591,7 +591,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
         avg_mf = float(last_10_mf.mean())
         
         if avg_mf <= 0: return None
-        if change_pct > 0.3: return None 
+        if change_pct > 0.05: return None 
 
         # --- YENİ EKLENTİ 1: MANSFIELD RELATIVE STRENGTH (RS) ---
         rs_status = "Zayıf"
@@ -2905,4 +2905,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
