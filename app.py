@@ -2084,6 +2084,9 @@ def render_detail_card_advanced(ticker):
     # RADAR 2 VERİSİ
     r2_res = {}; r2_score = 0
     if st.session_state.radar2_data is not None:
+        if "Sembol" not in st.session_state.radar2_data.columns:
+            st.session_state.radar2_data = st.session_state.radar2_data.reset_index()
+            st.session_state.radar2_data.rename(columns={'index': 'Sembol', 'Symbol': 'Sembol', 'Ticker': 'Sembol'}, inplace=True)
         row = st.session_state.radar2_data[st.session_state.radar2_data["Sembol"] == ticker]
         if not row.empty and "Detaylar" in row.columns: r2_res = row.iloc[0]["Detaylar"]; r2_score = row.iloc[0]["Skor"]
     if not r2_res:
@@ -3026,6 +3029,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
