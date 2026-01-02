@@ -1924,7 +1924,7 @@ def get_advanced_levels_data(ticker):
     curr_price = df['Close'].iloc[-1]
     
     # En yakın destek ve direnci bulma
-    sorted_fibs = sorted(fibs.items(), key=lambda x: x[1].item() if hasattr(x[1], 'item') else x[1])
+    sorted_fibs = sorted(fibs.items(), key=lambda x: float(x[1]))
     support = (None, -999999)
     resistance = (None, 999999)
     
@@ -3029,6 +3029,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
