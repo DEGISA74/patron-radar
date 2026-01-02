@@ -1070,7 +1070,7 @@ def process_single_confirmed(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        if len(df) < 40: return None 
+        if len(df) < 200: return None 
 
         close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
@@ -1127,7 +1127,13 @@ def process_single_confirmed(symbol, df):
             
         # Filtre: Eğer o saate kadar yapması gereken hacmi yapmadıysa ELE.
         if performance_ratio < 0.9: return None 
-
+        
+        # --- GÜVENLİK 3: GAP (BOŞLUK) TUZAĞI ---
+        prev_close = float(close.iloc[-2])
+        curr_open = float(open_.iloc[-1])
+        gap_pct = (curr_open - prev_close) / prev_close
+        if gap_pct > 0.03: return None # %3'ten fazla GAP'li açıldıysa tren kaçmıştır.
+       
         # --- GÖRSEL ETİKETLEME ---
         # Kullanıcıya "Günlük ortalamanın kaç katına gidiyor" bilgisini verelim
         # Bu 'Projected Volume' (Tahmini Gün Sonu Hacmi) mantığıdır.
@@ -1152,7 +1158,7 @@ def process_single_confirmed(symbol, df):
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
         
-        if rsi > 80: return None
+        if rsi > 75: return None
 
         return {
             "Sembol": symbol,
@@ -3020,6 +3026,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
