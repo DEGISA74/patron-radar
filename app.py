@@ -2958,7 +2958,7 @@ with col_left:
     if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
     if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 
-     if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
+    if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
         with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             crosses, trends, filtered = scan_stp_signals(current_assets)
@@ -3227,6 +3227,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
