@@ -436,12 +436,18 @@ def calculate_synthetic_sentiment(ticker):
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        delta = close.diff()
-        force_index = delta * volume
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
-
+        # --- EVRENSEL FORMÜL V2.0 BAŞLANGIÇ ---
+        # 1. Tipik Fiyat
         typical_price = (high + low + close) / 3
-        stp = typical_price.ewm(span=6, adjust=False).mean()
+
+        # 2. DEMA 6 Hesaplama
+        ema1 = typical_price.ewm(span=6, adjust=False).mean()
+        ema2 = ema1.ewm(span=6, adjust=False).mean()
+        dema6 = (2 * ema1) - ema2
+
+        mf_smooth = (typical_price - dema6) / dema6 * 1000
+
+        stp = ema1
         
         df = df.reset_index()
         if 'Date' not in df.columns: df['Date'] = df.index
