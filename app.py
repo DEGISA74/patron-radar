@@ -68,7 +68,19 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
-    button[data-testid="baseButton-primary"] {{ background-color: #1e40af !important; border-color: #1e40af !important; color: white !important; }}
+    /* --- GÜÇLENDİRİLMİŞ MAVİ BUTON (KESİN) --- */
+    /* Araya > koymadık, böylece buton kutunun dibinde de olsa bulur */
+    div.stButton button[data-testid="baseButton-primary"] {{
+        background-color: #2563EB !important;
+        border-color: #2563EB !important;
+        color: white !important;
+    }}
+
+    div.stButton button[data-testid="baseButton-primary"]:hover {{
+        background-color: #1D4ED8 !important;
+        border-color: #1D4ED8 !important;
+        color: white !important;
+    }}
     
     .stButton button {{ 
         width: 100%; border-radius: 4px;
@@ -148,7 +160,7 @@ def remove_watchlist_db(symbol):
 init_db()
 
 # --- VARLIK LİSTELERİ ---
-priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC", "AGNC", "ARCC", "PFE", "JEPI", "MO", "EPD", "JEPQ", "QQQI"]
+priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC","QQQI", "AGNC", "ARCC", "JEPI", "MO", "EPD", "JEPQ", "TSPY"]
 
 # S&P 500'ün Tamamı (503 Hisse - Güncel)
 raw_sp500_rest = [
@@ -366,6 +378,49 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
 
     except Exception: return None
 
+def check_lazybear_squeeze_breakout(df):
+    """
+    Hem BUGÜNÜ hem DÜNÜ kontrol eder.
+    Dönüş: (is_squeeze_now, is_squeeze_yesterday)
+    """
+    try:
+        if df.empty or len(df) < 22: return False, False
+
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+
+        # 1. Bollinger Bantları (20, 2.0)
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        bb_upper = sma20 + (2.0 * std20)
+        bb_lower = sma20 - (2.0 * std20)
+
+        # 2. Keltner Kanalları (20, 1.5 ATR)
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr20 = tr.rolling(20).mean()
+        
+        kc_upper = sma20 + (1.5 * atr20)
+        kc_lower = sma20 - (1.5 * atr20)
+
+        # 3. Kontrol (Son 2 gün)
+        def is_sq(idx):
+            return (bb_upper.iloc[idx] < kc_upper.iloc[idx]) and \
+                   (bb_lower.iloc[idx] > kc_lower.iloc[idx])
+
+        # -1: Bugün, -2: Dün
+        sq_now = is_sq(-1)
+        sq_prev = is_sq(-2)
+
+        return sq_now, sq_prev
+
+    except Exception:
+        return False, False
+
+
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
@@ -427,6 +482,49 @@ def fetch_google_news(ticker):
             news.append({'title': entry.title, 'link': entry.link, 'date': dt.strftime('%d %b'), 'source': entry.source.title, 'color': color})
         return news
     except: return []
+
+def check_lazybear_squeeze(df):
+    """
+    LazyBear Squeeze Momentum Logic:
+    Squeeze = Bollinger Bantları, Keltner Kanalının İÇİNDE mi?
+    """
+    try:
+        if df.empty or len(df) < 20: return False, 0.0
+
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+
+        # 1. Bollinger Bantları (20, 2.0)
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        bb_upper = sma20 + (2.0 * std20)
+        bb_lower = sma20 - (2.0 * std20)
+
+        # 2. Keltner Kanalları (20, 1.5 ATR)
+        # TR Hesaplama
+        tr1 = high - low
+        tr2 = abs(high - close.shift())
+        tr3 = abs(low - close.shift())
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr20 = tr.rolling(20).mean()
+        
+        kc_upper = sma20 + (1.5 * atr20)
+        kc_lower = sma20 - (1.5 * atr20)
+
+        # 3. Squeeze Kontrolü (Son Gün İçin)
+        # BB Üst, KC Üst'ten KÜÇÜK VE BB Alt, KC Alt'tan BÜYÜK olmalı (İçinde olmalı)
+        last_bb_u = float(bb_upper.iloc[-1])
+        last_bb_l = float(bb_lower.iloc[-1])
+        last_kc_u = float(kc_upper.iloc[-1])
+        last_kc_l = float(kc_lower.iloc[-1])
+
+        is_squeeze_on = (last_bb_u < last_kc_u) and (last_bb_l > last_kc_l)
+
+        return is_squeeze_on
+
+    except Exception:
+        return False
 
 @st.cache_data(ttl=600)
 def calculate_synthetic_sentiment(ticker):
@@ -725,14 +823,10 @@ def process_single_accumulation(symbol, df, benchmark_series):
                 return None 
 
         # --- 2. ZAMAN AYARLI HACİM HESABI (PRO-RATA) ---
-        # Pocket Pivot (Hacim Patlaması) sabah saatlerinde çalışsın diye
-        # günün biten kısmına göre hacmi "Tam Gün"e tamamlıyoruz (Projection).
-        
         last_date = df.index[-1].date()
         today_date = datetime.now().date()
         is_live = (last_date == today_date)
         
-        # Varsayılan: Hacim olduğu gibidir (Geçmiş günler için)
         volume_for_check = float(volume.iloc[-1])
         
         if is_live:
@@ -740,20 +834,18 @@ def process_single_accumulation(symbol, df, benchmark_series):
             current_hour = now.hour
             current_minute = now.minute
             
-            # BIST (10:00 - 18:00)
             if current_hour < 10: progress = 0.1
             elif current_hour >= 18: progress = 1.0
             else:
                 progress = ((current_hour - 10) * 60 + current_minute) / 480.0
                 progress = max(0.1, min(progress, 1.0))
             
-            # Yansıtılmış (Tahmini) Gün Sonu Hacmi
             if progress > 0:
                 volume_for_check = float(volume.iloc[-1]) / progress
 
         # --- 3. MEVCUT MANTIK (TOPLAMA & FORCE INDEX) ---
         delta = close.diff()
-        force_index = delta * volume # Force Index için orijinal hacmi kullanıyoruz (Trend bozulmasın)
+        force_index = delta * volume 
         mf_smooth = force_index.ewm(span=5, adjust=False).mean()
 
         last_10_mf = mf_smooth.tail(10)
@@ -795,25 +887,33 @@ def process_single_accumulation(symbol, df, benchmark_series):
             except: pass
 
         # --- 5. POCKET PIVOT (ZAMAN AYARLI KONTROL) ---
-        # Burada artık "projected" (tamamlanmış) hacmi kullanıyoruz.
         is_pocket_pivot = False
         pp_desc = "-"
         
         is_down_day = close < open_
         down_volumes = volume.where(is_down_day, 0)
-        max_down_vol_10 = down_volumes.iloc[-11:-1].max() # Son 10 günün en büyük düşüş hacmi
+        max_down_vol_10 = down_volumes.iloc[-11:-1].max()
         
         is_up_day = float(close.iloc[-1]) > float(open_.iloc[-1])
         
-        # Kritik Karşılaştırma: Yansıtılmış Hacim > En Büyük Satış Hacmi
         if is_up_day and (volume_for_check > max_down_vol_10):
             is_pocket_pivot = True
-            # Eğer gerçek hacim henüz geçmediyse ama projeksiyon geçiyorsa belirtelim
             if float(volume.iloc[-1]) < max_down_vol_10:
                 pp_desc = "⚡ PIVOT (Hacim Hızı Yüksek)"
             else:
                 pp_desc = "⚡ POCKET PIVOT (Onaylı)"
             rs_score += 3 
+
+        # --- YENİ EKLENEN: LAZYBEAR SQUEEZE KONTROLÜ ---
+        is_sq = check_lazybear_squeeze(df)
+        
+        # Kalite Etiketi Belirleme
+        if is_sq:
+            quality_label = "A KALİTE (Sıkışmış)"
+            # Squeeze varsa skoru ödüllendir (Listede üste çıksın)
+            rs_score += 5 
+        else:
+            quality_label = "B KALİTE (Normal)"
 
         # --- SKORLAMA ---
         base_score = avg_mf * (10.0 if change_pct < 0 else 5.0)
@@ -831,9 +931,10 @@ def process_single_accumulation(symbol, df, benchmark_series):
             "MF_Gucu_Goster": mf_str, 
             "Gun_Sayisi": f"{pos_days_count}/10",
             "Skor": squeeze_score,
-            "RS_Durumu": rs_status,      
-            "Pivot_Sinyali": pp_desc,    
-            "Pocket_Pivot": is_pocket_pivot 
+            "RS_Durumu": rs_status,       
+            "Pivot_Sinyali": pp_desc,     
+            "Pocket_Pivot": is_pocket_pivot,
+            "Kalite": quality_label # Yeni alan eklendi
         }
     except Exception: return None
 
@@ -869,7 +970,7 @@ def scan_hidden_accumulation(asset_list):
     if results: 
         df_res = pd.DataFrame(results)
         # Önce Pocket Pivot olanları, sonra Skoru yüksek olanları üste al
-        return df_res.sort_values(by=["Pocket_Pivot", "Skor"], ascending=[False, False])
+        return df_res.sort_values(by=["Pocket_Pivot", "Kalite", "Skor"], ascending=[False, True, False])
     
     return pd.DataFrame()
 
@@ -1113,32 +1214,52 @@ def process_single_breakout(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        # DÜZELTME 1: Periyot kısaldığı için minimum veri şartını düşürdük
+        # Minimum veri şartı (EMA/SMA hesapları için)
         if len(df) < 50: return None 
 
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
+        # --- 1. ZAMAN AYARLI HACİM (SABAH KORUMASI) ---
+        last_date = df.index[-1].date()
+        today_date = datetime.now().date()
+        is_live = (last_date == today_date)
+        
+        # Varsayılan: Gün bitti (%100)
+        progress = 1.0 
+
+        if is_live:
+            now = datetime.now() + timedelta(hours=3) # TR Saati
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # BIST Seans Mantığı (10:00 - 18:00)
+            if current_hour < 10: progress = 0.1
+            elif current_hour >= 18: progress = 1.0
+            else:
+                progress = ((current_hour - 10) * 60 + current_minute) / 480.0
+                progress = max(0.1, min(progress, 1.0))
+
+        # Mevcut Hacim
+        curr_vol_raw = float(volume.iloc[-1])
+        # Yansıtılmış (Projected) Hacim: "Bu hızla giderse gün sonu ne olur?"
+        curr_vol_projected = curr_vol_raw / progress
+        
+        # Hacim Ortalaması (Bugün hariç son 20 gün)
+        vol_20 = volume.iloc[:-1].tail(20).mean()
+        if pd.isna(vol_20) or vol_20 == 0: vol_20 = 1
+
+        # Relative Volume (RVOL) - Projeksiyon kullanılarak hesaplanır
+        rvol = curr_vol_projected / vol_20
+        
+        # --- TEKNİK HESAPLAMALAR ---
         # Ortalamalar
         ema5 = close.ewm(span=5, adjust=False).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
         sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
         
-        # Bollinger
-        std20 = close.rolling(20).std()
-        bb_upper = sma20 + (2 * std20); bb_lower = sma20 - (2 * std20)
-        bb_width = (bb_upper - bb_lower) / sma20
-        
-        # Hacim
-        vol_20 = volume.rolling(20).mean().iloc[-1]
-        curr_vol = volume.iloc[-1]
-        rvol = curr_vol / vol_20 if vol_20 != 0 else 1
-        
-        # --- KRİTİK DÜZELTME BURADA ---
-        # 1. iloc[:-1] diyerek BUGÜNÜ hesaptan attık.
-        # 2. tail(45) diyerek 60 günden 45 güne indirdik (Daha taze zirveler için).
+        # Zirve Hesabı (Bugün hariç son 45 gün - Taze Zirve)
         high_val = high.iloc[:-1].tail(45).max()
-        
         curr_price = close.iloc[-1]
         
         # RSI
@@ -1147,34 +1268,52 @@ def process_single_breakout(symbol, df):
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
         
-        # Şartlar
+        # --- ŞARTLAR (HAVUZ DARALTMAMAK İÇİN MEVCUT KRİTERLER KORUNDU) ---
         cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
-        cond_vol = rvol > 1.2
-        # Zirveye %10 yakınlık (0.90)
-        cond_prox = curr_price > (high_val * 0.90)
+        
+        # DÜZELTME: Artık "Projected" hacme bakıyoruz, sabah da çalışır.
+        cond_vol = rvol > 1.2 
+        
+        cond_prox = curr_price > (high_val * 0.90) # %10 Yakınlık
         cond_rsi = rsi < 70
         sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
         
         if cond_ema and cond_vol and cond_prox and cond_rsi:
-            is_short_signal = False; short_reason = ""
-            # Mum formasyonları (Basit)
-            if (close.iloc[-1] < open_.iloc[-1]) and (close.iloc[-2] < open_.iloc[-2]) and (close.iloc[-3] < open_.iloc[-3]): 
-                is_short_signal = True; short_reason = "3 Kırmızı Mum"
             
-            min_bandwidth = bb_width.rolling(45).min().iloc[-1]
-            is_squeeze = bb_width.iloc[-1] <= min_bandwidth * 1.10
+            # --- 2. LAZYBEAR PATLAMA KONTROLÜ (YENİ) ---
+            sq_now, sq_prev = check_lazybear_squeeze_breakout(df)
             
+            # Patlama Tanımı: Dün Sıkışık (True) VE Bugün Değil (False)
+            is_firing = sq_prev and not sq_now
+            
+            # --- 3. SIRALAMA VE ÇIKTI ---
+            
+            # Sıralama: Tetiklenenler en üste, diğerleri hacim hızına göre
+            # +1000 puan vererek listenin en tepesine çiviliyoruz.
+            sort_score = rvol + (1000 if is_firing else 0)
+
+            # Görsel Metin
             prox_pct = (curr_price / high_val) * 100
-            prox_str = f"💣 Sıkışma Var" if is_squeeze else (f"%{prox_pct:.1f}" + (" (Sınırda)" if prox_pct >= 98 else " (Hazırlık)"))
             
-            # Uzun fitil kontrolü
+            if is_firing:
+                prox_str = f"🚀 TETİKLENDİ (Triggered)"
+            elif sq_now:
+                prox_str = f"💣 Sıkışma Var (Squeeze)"
+            else:
+                prox_str = f"%{prox_pct:.1f}" + (" (Sınırda)" if prox_pct >= 98 else " (Hazırlık)")
+            
+            # Fitil Uyarısı (Satış baskısı var mı?)
             body_size = abs(close.iloc[-1] - open_.iloc[-1])
             upper_wick = high.iloc[-1] - max(open_.iloc[-1], close.iloc[-1])
             is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
             wick_warning = " ⚠️ Satış Baskısı" if is_wick_rejected else ""
             
-            rvol_text = "Olağanüstü 🐳" if rvol > 2.0 else ("İlgi Artıyor 📈" if rvol > 1.5 else "İlgi Var")
-            
+            # Hacim Metni (Eğer gerçek hacim düşükse ama hız yüksekse belirtelim)
+            if (curr_vol_raw < vol_20) and (rvol > 1.2):
+                rvol_text = "Hız Yüksek (Proj.) 📈"
+            else:
+                rvol_text = "Olağanüstü 🐳" if rvol > 2.0 else "İlgi Artıyor 📈"
+
             display_symbol = symbol
             trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
             
@@ -1186,7 +1325,7 @@ def process_single_breakout(symbol, df):
                 "Hacim Durumu": rvol_text, 
                 "Trend Durumu": trend_display, 
                 "RSI": f"{rsi:.0f}", 
-                "SortKey": rvol 
+                "SortKey": sort_score 
             }
         return None
     except: return None
@@ -3007,7 +3146,11 @@ with col_left:
                         rs_short = "RS+" if "GÜÇLÜ" in rs_raw else "Not Yet"
                         
                         # Buton Etiketi
-                        btn_label = f"{icon} {row['Sembol']} ({row['Fiyat']}) | {rs_short}"
+                        # Kaliteye göre kısa etiket
+                        q_tag = "💎 A" if "A KALİTE" in row.get('Kalite', '') else "B"
+
+                        # Buton Etiketi (A ise Elmas koyar, B ise sadece harf)
+                        btn_label = f"{icon} {row['Sembol']} ({row['Fiyat']}) | {q_tag} | {rs_short}"
                         
                         # Basit ve Çalışan Buton Yapısı
                         if st.button(btn_label, key=f"btn_acc_{row['Sembol']}_{index}", use_container_width=True):
