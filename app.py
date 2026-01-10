@@ -1026,8 +1026,14 @@ def process_single_radar1(symbol, df):
         else: details['Squeeze'] = False
         
         # 2. Trend (Kısa Vade Yükseliş)
-        if ((ema5.iloc[-1] > ema20.iloc[-1]) and (ema5.iloc[-2] <= ema20.iloc[-2])) or ((ema5.iloc[-2] > ema20.iloc[-2]) and (ema5.iloc[-3] <= ema20.iloc[-3])): score += 1; reasons.append("⚡ Trend"); details['Trend'] = True
-        else: details['Trend'] = False
+        trend_condition = (ema5.iloc[-1] > ema20.iloc[-1] * 1.01) 
+            
+        if trend_condition: 
+                score += 1
+                reasons.append("⚡ Trend")
+                details['Trend'] = True
+        else: 
+                details['Trend'] = False
         
         # 3. MACD (Momentum Artışı)
         if hist.iloc[-1] > hist.iloc[-2]: score += 1; reasons.append("🟢 MACD"); details['MACD'] = True
