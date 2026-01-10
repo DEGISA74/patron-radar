@@ -2188,6 +2188,8 @@ def calculate_fib_levels(df, period=144):
         diff = max_h - min_l
         
         levels = {
+            "1.618 (Ext)": max_h + (diff * 0.618),
+            "1.272 (Ext)": max_h + (diff * 0.272),
             "0 (Tepe)": max_h,
             "0.236": max_h - (diff * 0.236),
             "0.382": max_h - (diff * 0.382),
@@ -2226,7 +2228,9 @@ def get_advanced_levels_data(ticker):
             support = (label, val)
         if val > curr_price and val < resistance[1]:
             resistance = (label, val)
-            
+    if resistance[1] == 999999:
+        resistance = ("ZİRVE AŞIMI", curr_price * 1.10) # Sembolik %10 yukarı koy veya boş bırak
+
     return {
         "st_val": st_val,
         "st_dir": st_dir,
@@ -2399,7 +2403,18 @@ def render_detail_card_advanced(ticker):
             text = ACIKLAMALAR.get(k, k); is_valid = v
             if isinstance(v, (tuple, list)): 
                 is_valid = v[0]; val_num = v[1]
-                if k == "RSI Güçlü": text = f"⚓ RSI Güçlü: ({int(val_num)})"
+                if k == "RSI Güçlü":
+                    if is_valid:
+                        # 30-65 arası ve yükseliyorsa
+                        text = f"⚓ RSI Güçlü/İvmeli: ({int(val_num)})"
+                    else:
+                        # Eğer çarpı yemişse sebebini yazalım
+                        if val_num >= 65:
+                            text = f"🔥 RSI Şişkin (Riskli Olabilir): ({int(val_num)})"
+                        elif val_num <= 30:
+                            text = f"❄️ RSI Zayıf (Dipte): ({int(val_num)})"
+                        else:
+                            text = f"📉 RSI İvme Kaybı: ({int(val_num)})"
                 elif k == "ADX Durumu": text = f"💪 ADX Güçlü: {int(val_num)}" if is_valid else f"⚠️ ADX Zayıf: {int(val_num)}"
             r1_html += f"<div class='tech-item' style='margin-bottom:2px;'>{get_icon(is_valid)} <span style='margin-left:4px;'>{text}</span></div>"
 
@@ -2411,8 +2426,16 @@ def render_detail_card_advanced(ticker):
             
             if isinstance(v, (tuple, list)): 
                 is_valid = v[0]; val_num = v[1]
-                if k == "RSI Bölgesi": text = f"🎯 RSI Uygun: ({int(val_num)})"
-            
+                if k == "RSI Bölgesi": 
+                    if is_valid:
+                        text = f"🎯 RSI Uygun: ({int(val_num)})"
+                    else:
+                        # Eğer geçerli değilse nedenini yazalım
+                        if val_num > 65:
+                            text = f"🔥 RSI Şişkin/Riskli: ({int(val_num)})"
+                        else:
+                            text = f"❄️ RSI Zayıf: ({int(val_num)})"
+
             # Ichimoku Özel Kontrolü (Gerekirse)
             if k == "Ichimoku":
                 # Eğer özel bir şey yapmak istersen buraya, yoksa standart metin gelir
@@ -2683,6 +2706,14 @@ def render_levels_card(ticker):
     # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
     res_lbl, res_val = data['nearest_res']
+    
+    # --- GÖRSEL DÜZELTME ---
+    if res_lbl == "ZİRVE AŞIMI":
+        res_display = "---"
+        res_desc = "🚀 Fiyat tüm dirençleri kırdı (Price Discovery)."
+    else:
+        res_display = f"{res_val:.2f}"
+        res_desc = "Zorlu tavan. Geçilirse yükseliş hızlanır."
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
