@@ -2452,11 +2452,11 @@ def render_detail_card_advanced(ticker):
         </div>
         <div style="font-size:0.8rem; color:#991b1b; margin-bottom:8px;">🛑 Stop: {stop_vals}</div>
         <div style="background:#f0f9ff; padding:4px; border-radius:4px; margin-bottom:4px;">
-            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 - (3-12 gün): Momentum ve Hacim - Skor: {r1_score}/7{r1_suffix}</div>
+            <div style="font-weight:700; color:#0369a1; font-size:0.75rem; margin-bottom:4px;">🧠 RADAR 1 (3-12 gün): Momentum ve Hacim - SKOR: {r1_score}/7{r1_suffix}</div>
             <div class="tech-grid" style="font-size:0.75rem;">{r1_html}</div>
         </div>
         <div style="background:#f0fdf4; padding:4px; border-radius:4px;">
-            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 - (10-50 gün): Trend Takibi - Skor: {r2_score}/7</div>
+            <div style="font-weight:700; color:#15803d; font-size:0.75rem; margin-bottom:4px;">🚀 RADAR 2 (10-50 gün): Trend Takibi - SKOR: {r2_score}/7</div>
             <div class="tech-grid" style="font-size:0.75rem;">{r2_html}</div>
         </div>
     </div>
