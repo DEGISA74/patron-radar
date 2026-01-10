@@ -2432,7 +2432,7 @@ def render_detail_card_advanced(ticker):
                     else:
                         # Eğer geçerli değilse nedenini yazalım
                         if val_num > 65:
-                            text = f"🔥 RSI Şişkin/Riskli: ({int(val_num)})"
+                            text = f"🔥 RSI Şişkin (Riskli Olabilir): ({int(val_num)})"
                         else:
                             text = f"❄️ RSI Zayıf: ({int(val_num)})"
 
