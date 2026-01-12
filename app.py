@@ -160,7 +160,7 @@ def remove_watchlist_db(symbol):
 init_db()
 
 # --- VARLIK LİSTELERİ ---
-priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC","QQQI", "AGNC", "ARCC", "JEPI", "MO", "EPD", "JEPQ", "TSPY"]
+priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC","QQQI", "AGNC", "ARCC", "TSPY", "JEPI", "MO", "JEPQ"]
 
 # S&P 500'ün Tamamı (503 Hisse - Güncel)
 raw_sp500_rest = [
@@ -3738,6 +3738,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
