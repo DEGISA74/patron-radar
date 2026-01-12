@@ -3136,7 +3136,7 @@ with st.sidebar:
 # --- GLOBAL COMPOSITE SCORECARD (YENİ KOMPAKT TASARIM) ---
     master_score, fund_details = calculate_master_score(st.session_state.ticker)
 
-    # Derecelendirme (Not Sistemi ve Renkler)
+    # Derecelendirme
     if master_score >= 85:   
         grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
     elif master_score >= 70: 
@@ -3146,44 +3146,48 @@ with st.sidebar:
     else:                    
         grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
 
-    # Dinamik Yüzdeler (Endeks mi Hisse mi?)
+    # Dinamik Yüzdeler
     is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker)
     trend_pct = "40" if is_asset_crypto_or_index else "30"
-    fund_pct = "0" if is_asset_crypto_or_index else "25"
+    fund_pct = "0" if is_asset_crypto_or_index else "30" # Hisse için %30 yaptık
     mom_pct = "30" if is_asset_crypto_or_index else "20"
-    smart_pct = "15" # Sabit ağırlık
+    smart_pct = "15" if is_asset_crypto_or_index else "10" # Hissede %10, Endekste %15
 
-    # --- YENİ KOMPAKT HTML KART ---
-    # Sağdaki kartların yapısını (.info-card) kullanıyoruz.
-    st.markdown(f"""
-    <div class="info-card" style="border-top: 3px solid {score_color};">
-        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
-            <span>{icon} ANA SKOR (MASTER)</span>
-            <span style="font-weight:800; font-size:0.85rem; background:{score_color}15; padding:2px 8px; border-radius:10px;">
-                {master_score} - {grade.split(' ')[0]}
-            </span>
-        </div>
-        
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; margin-top:8px; text-align:center;">
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                 <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TREND</div>
-                 <div style="font-size:0.8rem; font-weight:700; color:#334155;">📈 %{trend_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                 <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TEMEL</div>
-                 <div style="font-size:0.8rem; font-weight:700; color:#334155;">📊 %{fund_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                 <div style="font-size:0.65rem; color:#64748B; font-weight:700;">MOMENTUM</div>
-                 <div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-                 <div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART</div>
-                 <div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # HTML KART (TAMAMEN SOLA YASLI - BOŞLUKSUZ)
+    st.markdown(f"""<div class="info-card" style="border-top: 3px solid {score_color};">
+<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
+<span>{icon} ANA SKOR (MASTER)</span>
+<span style="font-weight:800; font-size:0.85rem; background:{score_color}15; padding:2px 8px; border-radius:10px;">
+{master_score} - {grade.split(' ')[0]}
+</span>
+</div>
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; margin-top:8px; text-align:center;">
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">TREND</div>
+<div style="font-size:0.8rem; font-weight:700; color:#334155;">📈 %{trend_pct}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">TEMEL</div>
+<div style="font-size:0.8rem; font-weight:700; color:#334155;">📊 %{fund_pct}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">MOMENTUM</div>
+<div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
+</div>
+<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART</div>
+<div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
+</div>
+</div>
+</div>""", unsafe_allow_html=True)
+
+    # Temel Analiz Detayları (Bu kısım da sola yaslı olmalı)
+    if fund_details:
+        fund_html = "".join([f"<li style='margin-bottom:1px;'>{d}</li>" for d in fund_details]) 
+        st.markdown(f"""<div class="info-card" style="margin-top:-5px; background:#f1f5f9; border:none;">
+<div style="font-size:0.7rem; font-weight:700; color:#475569; margin-bottom:2px;">📊 Şirket Kalite Notları:</div>
+<ul style="margin:0; padding-left:15px; font-size:0.65rem; color:#334155;">{fund_html}</ul>
+</div>""", unsafe_allow_html=True)
 
     # Temel Analiz Detaylarını Göster (Varsa - Kompakt Liste Halinde)
     if fund_details:
@@ -3748,6 +3752,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
