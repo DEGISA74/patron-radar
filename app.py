@@ -1533,28 +1533,64 @@ def get_fundamental_score(ticker):
 
 def calculate_master_score(ticker):
     """
-    Endeks ve Kripto ayrımı yapan, ağırlıklı Master Skor hesaplayıcı.
+    ANLIK HESAPLAMA MOTORU:
+    Eğer toplu tarama verisi varsa onu kullanır.
+    Yoksa, sadece o anki hisse için Radar 1 ve Radar 2'yi anında hesaplar.
     """
-    # 1. Verileri Topla
+    # 1. BAĞIMSIZ MODÜLLERİ ÇEK (Bunlar zaten tekli çalışıyor)
     mini_data = calculate_minervini_sepa(ticker)
     fund_data = get_fundamental_score(ticker)
     sent_data = calculate_sentiment_score(ticker)
     ict_data = calculate_ict_deep_analysis(ticker)
     
-    # Radar Skorlarını Al
-    r1_score = 0; r2_score = 0
-    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
-        if 'Sembol' in st.session_state.scan_data.columns:
-            row = st.session_state.scan_data[st.session_state.scan_data['Sembol'] == ticker]
-            if not row.empty: r1_score = float(row.iloc[0]['Skor'])
+    # 2. RADAR 1 SKORU (MOMENTUM) - AKILLI KONTROL
+    r1_score = 0
+    scan_df = st.session_state.get('scan_data')
+    
+    # A) Önce toplu tarama listesine bak
+    found_in_batch = False
+    if scan_df is not None and not scan_df.empty and 'Sembol' in scan_df.columns:
+        row = scan_df[scan_df['Sembol'] == ticker]
+        if not row.empty: 
+            r1_score = float(row.iloc[0]['Skor'])
+            found_in_batch = True
             
-    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
-        df2 = st.session_state.radar2_data
-        if 'Sembol' in df2.columns:
-            row = df2[df2['Sembol'] == ticker]
-            if not row.empty: r2_score = float(row.iloc[0]['Skor'])
+    # B) Listede yoksa, ANLIK HESAPLA (On-Demand)
+    if not found_in_batch:
+        # 6 aylık veri çek ve tekli işlemciye gönder
+        df_r1 = get_safe_historical_data(ticker, period="6mo")
+        if df_r1 is not None and not df_r1.empty:
+            res_r1 = process_single_radar1(ticker, df_r1)
+            if res_r1: r1_score = res_r1['Skor']
 
-    # 2. Skorları Normalize Et (100 üzerinden)
+    # 3. RADAR 2 SKORU (SETUP) - AKILLI KONTROL
+    r2_score = 0
+    radar2_df = st.session_state.get('radar2_data')
+    
+    # A) Önce toplu tarama listesine bak
+    found_in_batch_r2 = False
+    if radar2_df is not None and not radar2_df.empty and 'Sembol' in radar2_df.columns:
+        row = radar2_df[radar2_df['Sembol'] == ticker]
+        if not row.empty: 
+            r2_score = float(row.iloc[0]['Skor'])
+            found_in_batch_r2 = True
+            
+    # B) Listede yoksa, ANLIK HESAPLA (On-Demand)
+    if not found_in_batch_r2:
+        # 1 yıllık veri çek
+        df_r2 = get_safe_historical_data(ticker, period="1y")
+        if df_r2 is not None and not df_r2.empty:
+            # Endeks verisini belirle (S&P500 veya BIST)
+            cat = st.session_state.get('category', 'S&P 500')
+            idx_sym = "XU100.IS" if "BIST" in cat else "^GSPC"
+            # Endeks verisi önbellekten gelir
+            idx_data = get_benchmark_data(cat)
+            
+            # Tekli işlemciye gönder
+            res_r2 = process_single_radar2(ticker, df_r2, idx_data, 0, 999999, 0) # Fiyat/Hacim filtresini 0 yaparak geçiyoruz
+            if res_r2: r2_score = res_r2['Skor']
+
+    # 4. SKORLARI NORMALIZE ET (100 Üzerinden)
     s_trend = mini_data.get('score', 0) if mini_data else 0
     s_fund  = fund_data.get('score', 0)
     s_mom   = sent_data.get('total', 0) if sent_data else 0
@@ -1568,32 +1604,23 @@ def calculate_master_score(ticker):
         if "bullish" in ict_data.get('bias', ''): s_ict += 10
     s_ict = min(s_ict, 100)
 
-    # --- KRİTİK DÜZELTME: VARLIK TİPİ KONTROLÜ ---
-    is_index = ticker.startswith("^") or "XU" in ticker # Endeks mi?
-    is_crypto = "-USD" in ticker # Kripto mu?
+    # 5. AĞIRLIKLI HESAPLAMA
+    # Varlık Tipi Kontrolü (Endeks/Kripto mu?)
+    is_index = ticker.startswith("^") or "XU" in ticker
+    is_crypto = "-USD" in ticker
     skip_fundamental = is_index or is_crypto
 
     if skip_fundamental:
-        # SENARYO A: Endeks/Kripto (Temel Analiz YOK -> Teknik Ağırlıklı)
-        # Trend %40, Momentum %30, ICT %15, Setup %15
-        final_score = (s_trend * 0.40) + \
-                      (s_mom * 0.30) + \
-                      (s_ict * 0.15) + \
-                      (s_r2 * 0.15)
+        # Temel analiz yok, Teknik ağırlıklı
+        final_score = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2 * 0.15)
     else:
-        # SENARYO B: Hisse Senedi (Tam Analiz)
-        # Trend %30, Temel %25, Momentum %20, ICT %15, Setup %10
-        final_score = (s_trend * 0.30) + \
-                      (s_fund * 0.25) + \
-                      (s_mom * 0.20) + \
-                      (s_ict * 0.15) + \
-                      (s_r2 * 0.10)
+        # Tam analiz
+        final_score = (s_trend * 0.30) + (s_fund * 0.25) + (s_mom * 0.20) + (s_ict * 0.15) + (s_r2 * 0.10)
 
-    # Minervini Trend Cezası (Ayı Piyasası Veto)
+    # Veto: Trend kötüyse puanı kırp
     if s_trend < 40: final_score *= 0.60
     
     return int(final_score), (None if skip_fundamental else fund_data['details'])
-
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -3544,6 +3571,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
