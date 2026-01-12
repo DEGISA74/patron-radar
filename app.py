@@ -1487,6 +1487,110 @@ def scan_confirmed_breakouts(asset_list):
     
     return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
 
+# --- TEMEL VE MASTER SKOR FONKSİYONLARI (YENİ) ---
+
+@st.cache_data(ttl=3600)
+def get_fundamental_score(ticker):
+    """
+    IBD (CANSLIM) ve Stockopedia (Quality) mantığıyla Temel Analiz Puanı üretir.
+    Veri Kaynağı: yfinance
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        if not info: return {"score": 50, "details": []} # Veri yoksa nötr dön
+        
+        score = 0
+        details = []
+        
+        # 1. BÜYÜME (GROWTH) - %40 Pay
+        rev_growth = info.get('revenueGrowth', 0)
+        if rev_growth and rev_growth > 0.25: score += 20; details.append("Ciro Büyümesi > %25 (Müthiş)")
+        elif rev_growth and rev_growth > 0.15: score += 10; details.append("Ciro Büyümesi > %15 (İyi)")
+            
+        earn_growth = info.get('earningsGrowth', 0)
+        if earn_growth and earn_growth > 0.20: score += 20; details.append("Kâr Büyümesi > %20 (Lider)")
+        elif earn_growth and earn_growth > 0.10: score += 10; details.append("Kâr Büyümesi > %10 (İyi)")
+
+        # 2. KALİTE (QUALITY) - %40 Pay
+        roe = info.get('returnOnEquity', 0)
+        if roe and roe > 0.20: score += 20; details.append("ROE > %20 (Yüksek Kalite)")
+        elif roe and roe > 0.15: score += 10
+            
+        margin = info.get('profitMargins', 0)
+        if margin and margin > 0.15: score += 20; details.append("Net Marj > %15 (Kârlı)")
+        elif margin and margin > 0.10: score += 10
+
+        # 3. KURUMSAL SAHİPLİK (SMART MONEY) - %20 Pay
+        inst_own = info.get('heldPercentInstitutions', 0)
+        if inst_own and inst_own > 0.30: score += 20; details.append("Kurumsal Sahiplik > %30 (Fonlar İçeride)")
+        elif inst_own and inst_own > 0.10: score += 10
+            
+        return {"score": min(score, 100), "details": details}
+    except Exception:
+        return {"score": 50, "details": ["Temel veri alınamadı"]}
+
+def calculate_master_score(ticker):
+    """
+    Tüm modülleri (Teknik + Temel) tek bir 'Smart Money Composite Score'da birleştirir.
+    """
+    # 1. Verileri Topla
+    mini_data = calculate_minervini_sepa(ticker)
+    fund_data = get_fundamental_score(ticker)
+    sent_data = calculate_sentiment_score(ticker)
+    ict_data = calculate_ict_deep_analysis(ticker)
+    
+    # Radar Skorlarını Al (Eğer tarama yapıldıysa)
+    r1_score = 0; r2_score = 0
+    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
+        if 'Sembol' in st.session_state.scan_data.columns:
+            row = st.session_state.scan_data[st.session_state.scan_data['Sembol'] == ticker]
+            if not row.empty: r1_score = float(row.iloc[0]['Skor'])
+            
+    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
+        # Radar 2 bazen index sorunu yaşatabilir, kontrol edelim
+        df2 = st.session_state.radar2_data
+        if 'Sembol' in df2.columns:
+            row = df2[df2['Sembol'] == ticker]
+            if not row.empty: r2_score = float(row.iloc[0]['Skor'])
+
+    # 2. Skorları Normalize Et (100 üzerinden)
+    s_trend = mini_data.get('score', 0) if mini_data else 0
+    s_fund  = fund_data.get('score', 0)
+    s_mom   = sent_data.get('total', 0) if sent_data else 0
+    
+    # Radar skorları 7 üzerinden, 100'e çeviriyoruz
+    s_r1    = (r1_score / 7) * 100
+    s_r2    = (r2_score / 7) * 100
+    
+    # ICT Puanı (Manuel mantık)
+    s_ict = 50
+    if ict_data:
+        if "Yükseliş" in ict_data.get('structure', ''): s_ict += 30
+        if "Güçlü" in ict_data.get('displacement', ''): s_ict += 20
+        if "bullish" in ict_data.get('bias', ''): s_ict += 10
+    s_ict = min(s_ict, 100)
+
+    # 3. Ağırlıklı Hesaplama (Smart Money Formülü)
+    # Trend %30, Temel %20, Momentum %20, ICT %15, Setup %15
+    final_score = (s_trend * 0.30) + \
+                  (s_fund * 0.20) + \
+                  (s_mom * 0.20) + \
+                  (s_ict * 0.15) + \
+                  (s_r2 * 0.15)
+
+    # 4. Ceza Mekanizması (Veto)
+    # Eğer Minervini Trend Puanı çok düşükse (Ayı Piyasası), genel skoru %40 düşür.
+    if s_trend < 40: final_score *= 0.60
+    
+    # RSI Cezası (Aşırı ısınma)
+    tech = get_tech_card_data(ticker)
+    # Basit bir RSI kontrolü (veya tech datadan çekebilirsin)
+    # Şimdilik Minervini içindeki SMA kontrolü yeterli
+    
+    return int(final_score), fund_data['details']
+
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -2847,6 +2951,44 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
+    # --- MASTER SKOR KARTI (YENİ) ---
+    master_score, fund_details = calculate_master_score(st.session_state.ticker)
+
+    # Renk ve Derece Belirleme
+    if master_score >= 85: grade="A+ (SÜPER)"; bg_grad="#15803d" # Koyu Yeşil
+    elif master_score >= 70: grade="B (GÜÇLÜ)"; bg_grad="#0369a1" # Mavi
+    elif master_score >= 50: grade="C (NÖTR)"; bg_grad="#d97706" # Turuncu
+    else: grade="D (ZAYIF)"; bg_grad="#b91c1c" # Kırmızı
+
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, {bg_grad} 0%, #0f172a 100%); padding: 15px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.2); margin-bottom: 15px;">
+        <div style="font-size: 0.75rem; opacity: 0.9; letter-spacing: 1px; font-weight:600; text-transform: uppercase;">SMART COMPOSITE SKOR</div>
+        <div style="font-size: 2.8rem; font-weight: 800; line-height: 1; margin: 8px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.3); font-family: 'Inter', sans-serif;">
+            {master_score}
+        </div>
+        <div style="font-size: 0.85rem; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block; margin-bottom: 5px;">
+            {grade}
+        </div>
+        <hr style="opacity:0.2; margin:8px 0;">
+        <div style="text-align:left; font-size:0.7rem; opacity:0.9; display:flex; justify-content:space-between;">
+            <div style="text-align:center;">📈<br>Trend<br>%30</div>
+            <div style="text-align:center;">💰<br>Temel<br>%20</div>
+            <div style="text-align:center;">🚀<br>Mom.<br>%20</div>
+            <div style="text-align:center;">🧠<br>Smart<br>%15</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Temel Analiz Detaylarını Göster (Eğer varsa)
+    if fund_details:
+        fund_html = "".join([f"<li>{d}</li>" for d in fund_details[:3]]) # İlk 3 maddeyi göster
+        st.markdown(f"""
+        <div style="font-size:0.75rem; color:#475569; background:#f1f5f9; padding:8px; border-radius:6px; margin-bottom:15px; border-left:3px solid #64748B;">
+            <div style="font-weight:700; margin-bottom:2px;">📊 Temel Analiz Notları:</div>
+            <ul style="margin:0; padding-left:15px; margin-top:0;">{fund_html}</ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     if sentiment_verisi:
@@ -3390,3 +3532,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
