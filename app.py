@@ -1653,92 +1653,115 @@ def get_fundamental_score(ticker):
 
 def calculate_master_score(ticker):
     """
-    GLOBAL SKORLAMA V3: Cezalar kalktı, Kademeli Puanlama ve Yumuşak Geçişler geldi.
+    GLOBAL SKORLAMA V4 (FİNAL):
+    Dijital (0/1) mantık yerine Analog (Dereceli) puanlama.
+    Apple ve Nvidia gibi devleri teknik düzeltmelerde 'çöp' ilan etmez.
     """
-    # 1. MODÜLLERİ ÇALIŞTIR (Veri Yoksa Anlık Hesapla)
-    mini_data = calculate_minervini_sepa(ticker)
-    fund_data = get_fundamental_score(ticker)
-    sent_data = calculate_sentiment_score(ticker)
-    ict_data = calculate_ict_deep_analysis(ticker)
+    # 1. VERİLERİ TOPLA (Garantili Veri Çekme)
+    mini_data = calculate_minervini_sepa(ticker) # Trend Detayları
+    fund_data = get_fundamental_score(ticker)    # Temel Veriler
+    sent_data = calculate_sentiment_score(ticker)# Duygu/Momentum
+    ict_data = calculate_ict_deep_analysis(ticker) # Smart Money
     
-    # Radar Verilerini Topla (Varsa listeden, yoksa anlık)
-    r1_score = 0; r2_score = 0
+    # Teknik Verileri Çek (Manuel hesaplama için)
+    tech = get_tech_card_data(ticker)
     
-    # Radar 1
-    scan_df = st.session_state.get('scan_data')
-    if scan_df is not None and not scan_df.empty and 'Sembol' in scan_df.columns:
-        row = scan_df[scan_df['Sembol'] == ticker]
-        if not row.empty: r1_score = float(row.iloc[0]['Skor'])
-    else:
-        # Anlık
-        df_r1 = get_safe_historical_data(ticker, period="6mo")
-        if df_r1 is not None:
-            res_r1 = process_single_radar1(ticker, df_r1)
-            if res_r1: r1_score = res_r1['Skor']
+    # --- A. TREND PUANI (30 Puan) - KADEMELİ SİSTEM ---
+    # Eski: SMA200 altı = 0 Puan.
+    # Yeni: 3 Kademeli Trend Kontrolü
+    s_trend = 0
+    if tech:
+        close = tech['close_last']
+        # 1. Uzun Vade (SMA200) - 15 Puan
+        if close > tech['sma200']: s_trend += 15
+        elif close > tech['sma200'] * 0.95: s_trend += 10 # %5 altına kadar tolerans
+        
+        # 2. Orta Vade (SMA50) - 10 Puan
+        if close > tech['sma50']: s_trend += 10
+        elif close > tech['sma50'] * 0.97: s_trend += 5 # %3 tolerans
+        
+        # 3. Kısa Vade (EMA144 veya EMA20) - 5 Puan
+        # (Tech datada ema144 var, onu kullanalım veya EMA20 hesaplayalım)
+        if close > tech['ema144']: s_trend += 5
+    
+    # --- B. MOMENTUM PUANI (20 Puan) - RSI BAZLI ---
+    # Eski: Sentiment Ajanı (Çok katıydı).
+    # Yeni: RSI ve Sentiment Ajanı Ortalaması
+    s_mom = 0
+    sent_score = sent_data.get('total', 0) if sent_data else 50
+    
+    # RSI Doğrudan Etkisi (RSI değerini puana çevir)
+    # RSI 50 ise 10 puan, 70 ise 20 puan, 30 ise 5 puan gibi.
+    rsi_val = 50
+    if sent_data and 'raw_rsi' in sent_data: rsi_val = sent_data['raw_rsi']
+    
+    # Momentum Puanı = (Sentiment Ajanı + (RSI / 5)) / 2
+    # Örn: Sent=20, RSI=40 -> (20 + 40/5*10)/2 = (20+80)/2 = 50 (Daha dengeli)
+    raw_rsi_score = min(rsi_val, 100) # RSI'ı direk skor gibi düşün
+    s_mom = (sent_score * 0.5) + (raw_rsi_score * 0.5)
+    
+    # Ağırlığı 100 üzerinden ayarla (Formülde %20 ile çarpılacak)
+    s_mom = min(s_mom, 100)
 
-    # Radar 2
+    # --- C. TEMEL ANALİZ (30 Puan) ---
+    # Bu zaten iyi çalışıyor (Kademeli yazmıştık)
+    s_fund = fund_data.get('score', 0)
+
+    # --- D. SMART MONEY / ICT (10 Puan) ---
+    s_ict = 50
+    if ict_data:
+        if "Yükseliş" in ict_data.get('structure', ''): s_ict += 30
+        if "Güçlü" in ict_data.get('displacement', ''): s_ict += 20
+        if "bullish" in ict_data.get('bias', ''): s_ict += 10
+    s_ict = min(s_ict, 100)
+
+    # --- E. SETUP / FORMASYON (10 Puan) ---
+    # Radar 2 veya Minervini'den gelen ekstra puan
+    s_setup = 0
+    # Radar 2 listesinde var mı?
     radar2_df = st.session_state.get('radar2_data')
     if radar2_df is not None and not radar2_df.empty and 'Sembol' in radar2_df.columns:
         row = radar2_df[radar2_df['Sembol'] == ticker]
-        if not row.empty: r2_score = float(row.iloc[0]['Skor'])
-    else:
-        # Anlık
-        df_r2 = get_safe_historical_data(ticker, period="1y")
-        idx_data = get_benchmark_data(st.session_state.get('category', 'S&P 500'))
-        if df_r2 is not None:
-            res_r2 = process_single_radar2(ticker, df_r2, idx_data, 0, 9999999, 0)
-            if res_r2: r2_score = res_r2['Skor']
-
-    # 2. PUANLARI NORMALIZE ET (0-100 Skalası)
+        if not row.empty: s_setup = (float(row.iloc[0]['Skor']) / 7) * 100
     
-    # A) TREND (Minervini) - YUMUŞATILMIŞ
-    # Eski: SMA200 altı = 0 puan.
-    # Yeni: SMA200'e yakınlık ve genel trend kalitesi
-    s_trend = 0
-    if mini_data:
-        raw_tr = mini_data.get('score', 0)
-        # Eğer puan düşükse bile, SMA200'e çok uzak değilse (%5) teselli puanı ver
-        tech = get_tech_card_data(ticker)
-        if tech:
-            dist_sma200 = (tech['close_last'] / tech['sma200']) - 1
-            if raw_tr < 20 and dist_sma200 > -0.05: s_trend = 40 # Nötr
-            else: s_trend = raw_tr
-        else:
-            s_trend = raw_tr
-            
-    # B) DİĞERLERİ
-    s_fund = fund_data.get('score', 0)
-    s_mom  = sent_data.get('total', 0) if sent_data else 50 # Veri yoksa 50 (Nötr)
-    s_r1   = (r1_score / 7) * 100
-    s_r2   = (r2_score / 7) * 100
-    
-    # ICT (Metinden Puana)
-    s_ict = 50
-    if ict_data:
-        bias = ict_data.get('bias', '')
-        if "bullish" in bias: s_ict += 20
-        elif "bearish" in bias: s_ict -= 20
-        if "Güçlü" in ict_data.get('displacement', ''): s_ict += 10
-    s_ict = max(0, min(s_ict, 100))
+    # Eğer Radar 2 yoksa Minervini skorunu yedek olarak kullan
+    if s_setup == 0 and mini_data:
+        s_setup = mini_data.get('score', 0)
 
-    # 3. FİNAL AĞIRLIKLANDIRMA (Global Standart)
+    # =========================================================
+    # FİNAL HESAPLAMA (YUMUŞATILMIŞ AĞIRLIKLAR)
+    # =========================================================
+    
     is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
     
     if is_index:
-        # Endeks/Kripto: Trend %40, Mom %30, Smart %15, Setup %15
-        final_score = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2 * 0.15)
+        # ENDEKS/KRİPTO (Temel Yok)
+        # Trend %40, Momentum %30, Smart %15, Setup %15
+        final_score = (s_trend * (100/30) * 0.40) + \
+                      (s_mom * 0.30) + \
+                      (s_ict * 0.15) + \
+                      (s_setup * 0.15)
+        # Not: s_trend max 30 puan alıyordu, onu 100'lük tabana genişlettik (100/30 ile çarparak)
     else:
-        # Hisse: Trend %30, Temel %30, Mom %20, Smart %10, Setup %10
-        # (Temel Analiz Payı Artırıldı)
-        final_score = (s_trend * 0.30) + \
+        # HİSSE SENEDİ (Full Paket)
+        # Trend %30 + Temel %30 + Momentum %20 + Smart %10 + Setup %10
+        # s_trend (max 30) -> 100'lük tabana çevir: s_trend * 3.33
+        normalized_trend = (s_trend / 30) * 100 
+        
+        final_score = (normalized_trend * 0.30) + \
                       (s_fund * 0.30) + \
                       (s_mom * 0.20) + \
                       (s_ict * 0.10) + \
-                      (s_r2 * 0.10)
+                      (s_setup * 0.10)
 
-    # VETO YOK! Sadece yumuşak bir limit.
-    # Skor 100'ü geçemez.
-    return min(int(final_score), 99), (None if is_index else fund_data['details'])
+    # 4. BLUE CHIP KORUMASI (VETO YOK, DESTEK VAR)
+    # Eğer Temel Puan çok yüksekse (>80) ama Trend puanı düşükse,
+    # Genel skoru biraz yukarı itekle (Mean Reversion potansiyeli)
+    if not is_index and s_fund > 80 and normalized_trend < 40:
+        final_score = max(final_score, 50) # Kaliteli şirket asla 50'nin altına düşmesin (Nötr kalsın)
+
+    return int(final_score), (None if is_index else fund_data['details'])
+
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -3704,6 +3727,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
