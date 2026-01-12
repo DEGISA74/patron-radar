@@ -3181,33 +3181,19 @@ with st.sidebar:
 </div>
 </div>""", unsafe_allow_html=True)
 
-    # Temel Analiz Detayları (Bu kısım da sola yaslı olmalı)
+# --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
     if fund_details:
-        fund_html = "".join([f"<li style='margin-bottom:1px;'>{d}</li>" for d in fund_details]) 
+        # Tekrar eden maddeleri temizle (set kullanarak)
+        unique_details = list(set(fund_details))
+        
+        # HTML listesi oluştur
+        fund_html = "".join([f"<li style='margin-bottom:1px;'>{d}</li>" for d in unique_details]) 
+        
+        # Ekrana bas (Sola yaslı - hatasız)
         st.markdown(f"""<div class="info-card" style="margin-top:-5px; background:#f1f5f9; border:none;">
 <div style="font-size:0.7rem; font-weight:700; color:#475569; margin-bottom:2px;">📊 Şirket Kalite Notları:</div>
 <ul style="margin:0; padding-left:15px; font-size:0.65rem; color:#334155;">{fund_html}</ul>
 </div>""", unsafe_allow_html=True)
-
-    # Temel Analiz Detaylarını Göster (Varsa - Kompakt Liste Halinde)
-    if fund_details:
-        fund_html = "".join([f"<li style='margin-bottom:1px;'>{d}</li>" for d in fund_details]) 
-        st.markdown(f"""
-        <div class="info-card" style="margin-top:-5px; background:#f1f5f9; border:none;">
-            <div style="font-size:0.7rem; font-weight:700; color:#475569; margin-bottom:2px;">📊 Şirket Kalite Notları:</div>
-            <ul style="margin:0; padding-left:15px; font-size:0.65rem; color:#334155;">{fund_html}</ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    # Temel Analiz Detaylarını Göster (Varsa)
-    if fund_details:
-        fund_html = "".join([f"<li style='margin-bottom:2px;'>{d}</li>" for d in fund_details]) 
-        st.markdown(f"""
-        <div style="font-size:0.7rem; color:#475569; background:#f8fafc; padding:8px; border-radius:6px; margin-bottom:15px; border:1px solid #e2e8f0;">
-            <div style="font-weight:600; margin-bottom:4px; color:#334155;">📊 Şirket Kalitesi (Global):</div>
-            <ul style="margin:0; padding-left:15px; margin-top:0;">{fund_html}</ul>
-        </div>
-        """, unsafe_allow_html=True)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -3752,6 +3738,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
