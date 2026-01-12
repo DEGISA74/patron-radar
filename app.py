@@ -1533,7 +1533,7 @@ def get_fundamental_score(ticker):
 
 def calculate_master_score(ticker):
     """
-    Tüm modülleri (Teknik + Temel) tek bir 'Smart Money Composite Score'da birleştirir.
+    Endeks ve Kripto ayrımı yapan, ağırlıklı Master Skor hesaplayıcı.
     """
     # 1. Verileri Topla
     mini_data = calculate_minervini_sepa(ticker)
@@ -1541,7 +1541,7 @@ def calculate_master_score(ticker):
     sent_data = calculate_sentiment_score(ticker)
     ict_data = calculate_ict_deep_analysis(ticker)
     
-    # Radar Skorlarını Al (Eğer tarama yapıldıysa)
+    # Radar Skorlarını Al
     r1_score = 0; r2_score = 0
     if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
         if 'Sembol' in st.session_state.scan_data.columns:
@@ -1549,7 +1549,6 @@ def calculate_master_score(ticker):
             if not row.empty: r1_score = float(row.iloc[0]['Skor'])
             
     if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
-        # Radar 2 bazen index sorunu yaşatabilir, kontrol edelim
         df2 = st.session_state.radar2_data
         if 'Sembol' in df2.columns:
             row = df2[df2['Sembol'] == ticker]
@@ -1559,12 +1558,9 @@ def calculate_master_score(ticker):
     s_trend = mini_data.get('score', 0) if mini_data else 0
     s_fund  = fund_data.get('score', 0)
     s_mom   = sent_data.get('total', 0) if sent_data else 0
-    
-    # Radar skorları 7 üzerinden, 100'e çeviriyoruz
     s_r1    = (r1_score / 7) * 100
     s_r2    = (r2_score / 7) * 100
     
-    # ICT Puanı (Manuel mantık)
     s_ict = 50
     if ict_data:
         if "Yükseliş" in ict_data.get('structure', ''): s_ict += 30
@@ -1572,24 +1568,31 @@ def calculate_master_score(ticker):
         if "bullish" in ict_data.get('bias', ''): s_ict += 10
     s_ict = min(s_ict, 100)
 
-    # 3. Ağırlıklı Hesaplama (Smart Money Formülü)
-    # Trend %30, Temel %20, Momentum %20, ICT %15, Setup %15
-    final_score = (s_trend * 0.30) + \
-                  (s_fund * 0.20) + \
-                  (s_mom * 0.20) + \
-                  (s_ict * 0.15) + \
-                  (s_r2 * 0.15)
+    # --- KRİTİK DÜZELTME: VARLIK TİPİ KONTROLÜ ---
+    is_index = ticker.startswith("^") or "XU" in ticker # Endeks mi?
+    is_crypto = "-USD" in ticker # Kripto mu?
+    skip_fundamental = is_index or is_crypto
 
-    # 4. Ceza Mekanizması (Veto)
-    # Eğer Minervini Trend Puanı çok düşükse (Ayı Piyasası), genel skoru %40 düşür.
+    if skip_fundamental:
+        # SENARYO A: Endeks/Kripto (Temel Analiz YOK -> Teknik Ağırlıklı)
+        # Trend %40, Momentum %30, ICT %15, Setup %15
+        final_score = (s_trend * 0.40) + \
+                      (s_mom * 0.30) + \
+                      (s_ict * 0.15) + \
+                      (s_r2 * 0.15)
+    else:
+        # SENARYO B: Hisse Senedi (Tam Analiz)
+        # Trend %30, Temel %25, Momentum %20, ICT %15, Setup %10
+        final_score = (s_trend * 0.30) + \
+                      (s_fund * 0.25) + \
+                      (s_mom * 0.20) + \
+                      (s_ict * 0.15) + \
+                      (s_r2 * 0.10)
+
+    # Minervini Trend Cezası (Ayı Piyasası Veto)
     if s_trend < 40: final_score *= 0.60
     
-    # RSI Cezası (Aşırı ısınma)
-    tech = get_tech_card_data(ticker)
-    # Basit bir RSI kontrolü (veya tech datadan çekebilirsin)
-    # Şimdilik Minervini içindeki SMA kontrolü yeterli
-    
-    return int(final_score), fund_data['details']
+    return int(final_score), (None if skip_fundamental else fund_data['details'])
 
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
@@ -2951,40 +2954,59 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
-    # --- MASTER SKOR KARTI (YENİ) ---
+    # --- MASTER SKOR KARTI (PROFESYONEL & SADE) ---
     master_score, fund_details = calculate_master_score(st.session_state.ticker)
 
-    # Renk ve Derece Belirleme
-    if master_score >= 85: grade="A+ (SÜPER)"; bg_grad="#15803d" # Koyu Yeşil
-    elif master_score >= 70: grade="B (GÜÇLÜ)"; bg_grad="#0369a1" # Mavi
-    elif master_score >= 50: grade="C (NÖTR)"; bg_grad="#d97706" # Turuncu
-    else: grade="D (ZAYIF)"; bg_grad="#b91c1c" # Kırmızı
+    # Renk ve Derece Belirleme (Daha pastel ve kurumsal tonlar)
+    if master_score >= 85: 
+        grade="A+ (MÜKEMMEL)"; score_color="#15803d"; bar_color="#22c55e" # Yeşil
+    elif master_score >= 70: 
+        grade="B (GÜÇLÜ)"; score_color="#0369a1"; bar_color="#0ea5e9" # Mavi
+    elif master_score >= 50: 
+        grade="C (NÖTR)"; score_color="#b45309"; bar_color="#f59e0b" # Turuncu
+    else: 
+        grade="D (ZAYIF)"; score_color="#b91c1c"; bar_color="#ef4444" # Kırmızı
 
+    # Sade Tasarım HTML
     st.markdown(f"""
-    <div style="background: linear-gradient(135deg, {bg_grad} 0%, #0f172a 100%); padding: 15px; border-radius: 12px; color: white; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.2); margin-bottom: 15px;">
-        <div style="font-size: 0.75rem; opacity: 0.9; letter-spacing: 1px; font-weight:600; text-transform: uppercase;">SMART COMPOSITE SKOR</div>
-        <div style="font-size: 2.8rem; font-weight: 800; line-height: 1; margin: 8px 0; text-shadow: 0 2px 4px rgba(0,0,0,0.3); font-family: 'Inter', sans-serif;">
-            {master_score}
+    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 8px;">
+            <span style="font-size:0.75rem; color:#64748B; font-weight:600; letter-spacing:0.5px;">TEKNİK SKOR</span>
+            <span style="font-size:0.75rem; font-weight:700; color:{score_color}; background:{score_color}10; padding:2px 8px; border-radius:12px;">{grade}</span>
         </div>
-        <div style="font-size: 0.85rem; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block; margin-bottom: 5px;">
-            {grade}
+        
+        <div style="display:flex; align-items:baseline; justify-content:center; margin-bottom:5px;">
+            <span style="font-size: 2.2rem; font-weight: 800; color: #0f172a; font-family: 'Inter', sans-serif;">{master_score}</span>
+            <span style="font-size: 1rem; color: #94a3b8; margin-left:2px;">/100</span>
         </div>
-        <hr style="opacity:0.2; margin:8px 0;">
-        <div style="text-align:left; font-size:0.7rem; opacity:0.9; display:flex; justify-content:space-between;">
-            <div style="text-align:center;">📈<br>Trend<br>%30</div>
-            <div style="text-align:center;">💰<br>Temel<br>%20</div>
-            <div style="text-align:center;">🚀<br>Mom.<br>%20</div>
-            <div style="text-align:center;">🧠<br>Smart<br>%15</div>
+
+        <div style="width:100%; height:6px; background:#f1f5f9; border-radius:3px; margin-bottom:10px; overflow:hidden;">
+            <div style="width:{master_score}%; height:100%; background:{bar_color}; border-radius:3px;"></div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; text-align:center; margin-top:5px;">
+            <div style="flex:1; border-right:1px solid #f1f5f9;">
+                <div style="font-size:0.65rem; color:#64748B;">Trend</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{"40" if (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker) else "30"}</div>
+            </div>
+            <div style="flex:1; border-right:1px solid #f1f5f9;">
+                <div style="font-size:0.65rem; color:#64748B;">Mom.</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{"30" if (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker) else "20"}</div>
+            </div>
+            <div style="flex:1;">
+                <div style="font-size:0.65rem; color:#64748B;">Smart</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%15</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Temel Analiz Detaylarını Göster (Eğer varsa)
+    # Temel Analiz Detaylarını Göster (Sadece hisseler için)
     if fund_details:
-        fund_html = "".join([f"<li>{d}</li>" for d in fund_details[:3]]) # İlk 3 maddeyi göster
+        fund_html = "".join([f"<li style='margin-bottom:2px;'>{d}</li>" for d in fund_details[:2]]) 
         st.markdown(f"""
-        <div style="font-size:0.75rem; color:#475569; background:#f1f5f9; padding:8px; border-radius:6px; margin-bottom:15px; border-left:3px solid #64748B;">
-            <div style="font-weight:700; margin-bottom:2px;">📊 Temel Analiz Notları:</div>
+        <div style="font-size:0.7rem; color:#475569; background:#f8fafc; padding:8px; border-radius:6px; margin-bottom:15px; border:1px solid #e2e8f0;">
+            <div style="font-weight:600; margin-bottom:4px; color:#334155;">📊 Temel Veriler:</div>
             <ul style="margin:0; padding-left:15px; margin-top:0;">{fund_html}</ul>
         </div>
         """, unsafe_allow_html=True)
@@ -3532,4 +3554,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
