@@ -2957,7 +2957,7 @@ with st.sidebar:
     # --- MASTER SKOR KARTI (PROFESYONEL & SADE) ---
     master_score, fund_details = calculate_master_score(st.session_state.ticker)
 
-    # Renk ve Derece Belirleme (Daha pastel ve kurumsal tonlar)
+    # Renk ve Derece Belirleme
     if master_score >= 85: 
         grade="A+ (MÜKEMMEL)"; score_color="#15803d"; bar_color="#22c55e" # Yeşil
     elif master_score >= 70: 
@@ -2967,7 +2967,12 @@ with st.sidebar:
     else: 
         grade="D (ZAYIF)"; score_color="#b91c1c"; bar_color="#ef4444" # Kırmızı
 
-    # Sade Tasarım HTML
+    # Varlık tipine göre Trend/Momentum yüzdelerini dinamik ayarla
+    is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker)
+    trend_pct = "40" if is_asset_crypto_or_index else "30"
+    mom_pct = "30" if is_asset_crypto_or_index else "20"
+
+    # HTML BLOK (Düzeltilmiş - Çift Süslü Parantez {{ }} Kullanıldı)
     st.markdown(f"""
     <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 8px;">
@@ -2987,11 +2992,11 @@ with st.sidebar:
         <div style="display:flex; justify-content:space-between; text-align:center; margin-top:5px;">
             <div style="flex:1; border-right:1px solid #f1f5f9;">
                 <div style="font-size:0.65rem; color:#64748B;">Trend</div>
-                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{"40" if (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker) else "30"}</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{trend_pct}</div>
             </div>
             <div style="flex:1; border-right:1px solid #f1f5f9;">
                 <div style="font-size:0.65rem; color:#64748B;">Mom.</div>
-                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{"30" if (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker) else "20"}</div>
+                <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{mom_pct}</div>
             </div>
             <div style="flex:1;">
                 <div style="font-size:0.65rem; color:#64748B;">Smart</div>
@@ -3000,16 +3005,6 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # Temel Analiz Detaylarını Göster (Sadece hisseler için)
-    if fund_details:
-        fund_html = "".join([f"<li style='margin-bottom:2px;'>{d}</li>" for d in fund_details[:2]]) 
-        st.markdown(f"""
-        <div style="font-size:0.7rem; color:#475569; background:#f8fafc; padding:8px; border-radius:6px; margin-bottom:15px; border:1px solid #e2e8f0;">
-            <div style="font-weight:600; margin-bottom:4px; color:#334155;">📊 Temel Veriler:</div>
-            <ul style="margin:0; padding-left:15px; margin-top:0;">{fund_html}</ul>
-        </div>
-        """, unsafe_allow_html=True)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -3554,5 +3549,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
