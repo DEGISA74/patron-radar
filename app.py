@@ -1531,66 +1531,104 @@ def get_fundamental_score(ticker):
     except Exception:
         return {"score": 50, "details": ["Temel veri alınamadı"]}
 
+# ==============================================================================
+# YENİ: TEMEL ANALİZ VE MASTER SKOR MOTORU (GLOBAL STANDART)
+# ==============================================================================
+
+@st.cache_data(ttl=3600)
+def get_fundamental_score(ticker):
+    """
+    GLOBAL STANDART: IBD, Stockopedia ve Buffett Kriterlerine Göre Puanlama.
+    Veri Kaynağı: yfinance
+    """
+    # Endeks veya Kripto ise Temel Analiz Yoktur
+    if ticker.startswith("^") or "XU" in ticker or "-USD" in ticker:
+        return {"score": 0, "details": [], "valid": False}
+
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        if not info: return {"score": 50, "details": ["Veri Yok"], "valid": False}
+        
+        score = 0
+        details = []
+        
+        # 1. KALİTE (QUALITY) - %40 Etki (Warren Buffett Kriterleri)
+        # ROE (Özkaynak Kârlılığı) - Şirketin verimliliği
+        roe = info.get('returnOnEquity', 0)
+        if roe and roe > 0.20: score += 20; details.append(f"Müthiş ROE: %{roe*100:.1f}")
+        elif roe and roe > 0.12: score += 10
+            
+        # Net Kâr Marjı (Profit Margins) - Rekabet gücü
+        margin = info.get('profitMargins', 0)
+        if margin and margin > 0.20: score += 20; details.append(f"Yüksek Marj: %{margin*100:.1f}")
+        elif margin and margin > 0.10: score += 10
+
+        # 2. BÜYÜME (GROWTH) - %40 Etki (IBD / CANSLIM Kriterleri)
+        # Çeyreklik Ciro Büyümesi
+        rev_growth = info.get('revenueGrowth', 0)
+        if rev_growth and rev_growth > 0.25: score += 20; details.append(f"Ciro Patlaması: %{rev_growth*100:.1f}")
+        elif rev_growth and rev_growth > 0.15: score += 10
+            
+        # Çeyreklik Kâr Büyümesi
+        earn_growth = info.get('earningsGrowth', 0)
+        if earn_growth and earn_growth > 0.20: score += 20; details.append(f"Kâr Büyümesi: %{earn_growth*100:.1f}")
+        elif earn_growth and earn_growth > 0.10: score += 10
+
+        # 3. SAHİPLİK (SMART MONEY) - %20 Etki
+        inst_own = info.get('heldPercentInstitutions', 0)
+        if inst_own and inst_own > 0.40: score += 20; details.append("Fonlar Topluyor")
+        elif inst_own and inst_own > 0.20: score += 10
+            
+        return {"score": min(score, 100), "details": details, "valid": True}
+        
+    except Exception:
+        return {"score": 50, "details": ["Veri Hatası"], "valid": False}
+
 def calculate_master_score(ticker):
     """
-    ANLIK HESAPLAMA MOTORU:
-    Eğer toplu tarama verisi varsa onu kullanır.
-    Yoksa, sadece o anki hisse için Radar 1 ve Radar 2'yi anında hesaplar.
+    HIBRIIT SKORLAMA: Teknik + Temel (Global Fon Mantığı)
     """
-    # 1. BAĞIMSIZ MODÜLLERİ ÇEK (Bunlar zaten tekli çalışıyor)
+    # 1. VERİLERİ TOPLA (Anlık Hesaplama Garantisi ile)
     mini_data = calculate_minervini_sepa(ticker)
     fund_data = get_fundamental_score(ticker)
     sent_data = calculate_sentiment_score(ticker)
     ict_data = calculate_ict_deep_analysis(ticker)
     
-    # 2. RADAR 1 SKORU (MOMENTUM) - AKILLI KONTROL
+    # Radar 1 (Momentum) - Anlık Kontrol
     r1_score = 0
     scan_df = st.session_state.get('scan_data')
-    
-    # A) Önce toplu tarama listesine bak
-    found_in_batch = False
+    found_r1 = False
     if scan_df is not None and not scan_df.empty and 'Sembol' in scan_df.columns:
         row = scan_df[scan_df['Sembol'] == ticker]
-        if not row.empty: 
-            r1_score = float(row.iloc[0]['Skor'])
-            found_in_batch = True
-            
-    # B) Listede yoksa, ANLIK HESAPLA (On-Demand)
-    if not found_in_batch:
-        # 6 aylık veri çek ve tekli işlemciye gönder
+        if not row.empty: r1_score = float(row.iloc[0]['Skor']); found_r1 = True
+    
+    if not found_r1: # Listede yoksa şimdi hesapla
         df_r1 = get_safe_historical_data(ticker, period="6mo")
         if df_r1 is not None and not df_r1.empty:
             res_r1 = process_single_radar1(ticker, df_r1)
             if res_r1: r1_score = res_r1['Skor']
 
-    # 3. RADAR 2 SKORU (SETUP) - AKILLI KONTROL
+    # Radar 2 (Setup) - Anlık Kontrol
     r2_score = 0
-    radar2_df = st.session_state.get('radar2_data')
-    
-    # A) Önce toplu tarama listesine bak
-    found_in_batch_r2 = False
-    if radar2_df is not None and not radar2_df.empty and 'Sembol' in radar2_df.columns:
-        row = radar2_df[radar2_df['Sembol'] == ticker]
-        if not row.empty: 
-            r2_score = float(row.iloc[0]['Skor'])
-            found_in_batch_r2 = True
-            
-    # B) Listede yoksa, ANLIK HESAPLA (On-Demand)
-    if not found_in_batch_r2:
-        # 1 yıllık veri çek
+    r2_df = st.session_state.get('radar2_data')
+    found_r2 = False
+    if r2_df is not None and not r2_df.empty and 'Sembol' in r2_df.columns:
+        row = r2_df[r2_df['Sembol'] == ticker]
+        if not row.empty: r2_score = float(row.iloc[0]['Skor']); found_r2 = True
+        
+    if not found_r2: # Listede yoksa şimdi hesapla
         df_r2 = get_safe_historical_data(ticker, period="1y")
+        cat = st.session_state.get('category', 'S&P 500')
+        idx_sym = "XU100.IS" if "BIST" in cat else "^GSPC"
+        try: idx_data = yf.download(idx_sym, period="1y", progress=False)["Close"]
+        except: idx_data = None
         if df_r2 is not None and not df_r2.empty:
-            # Endeks verisini belirle (S&P500 veya BIST)
-            cat = st.session_state.get('category', 'S&P 500')
-            idx_sym = "XU100.IS" if "BIST" in cat else "^GSPC"
-            # Endeks verisi önbellekten gelir
-            idx_data = get_benchmark_data(cat)
-            
-            # Tekli işlemciye gönder
-            res_r2 = process_single_radar2(ticker, df_r2, idx_data, 0, 999999, 0) # Fiyat/Hacim filtresini 0 yaparak geçiyoruz
+            res_r2 = process_single_radar2(ticker, df_r2, idx_data, 0, 9999999, 0)
             if res_r2: r2_score = res_r2['Skor']
 
-    # 4. SKORLARI NORMALIZE ET (100 Üzerinden)
+    # 2. SKORLARI NORMALIZE ET (100'lük Tabana Çek)
     s_trend = mini_data.get('score', 0) if mini_data else 0
     s_fund  = fund_data.get('score', 0)
     s_mom   = sent_data.get('total', 0) if sent_data else 0
@@ -1604,23 +1642,36 @@ def calculate_master_score(ticker):
         if "bullish" in ict_data.get('bias', ''): s_ict += 10
     s_ict = min(s_ict, 100)
 
-    # 5. AĞIRLIKLI HESAPLAMA
-    # Varlık Tipi Kontrolü (Endeks/Kripto mu?)
-    is_index = ticker.startswith("^") or "XU" in ticker
-    is_crypto = "-USD" in ticker
-    skip_fundamental = is_index or is_crypto
+    # 3. AĞIRLIKLI HESAPLAMA (PASTA DİLİMLERİ)
+    # Temel Veri Var mı? (Endeks/Kripto Değilse Vardır)
+    has_fundamental = fund_data.get('valid', False)
 
-    if skip_fundamental:
-        # Temel analiz yok, Teknik ağırlıklı
-        final_score = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2 * 0.15)
+    if not has_fundamental:
+        # SENARYO A: Teknik Ağırlıklı (Endeks/Kripto)
+        # Trend %40, Momentum %30, Smart %15, Setup %15
+        final_score = (s_trend * 0.40) + \
+                      (s_mom * 0.30) + \
+                      (s_ict * 0.15) + \
+                      (s_r2 * 0.15)
     else:
-        # Tam analiz
-        final_score = (s_trend * 0.30) + (s_fund * 0.25) + (s_mom * 0.20) + (s_ict * 0.15) + (s_r2 * 0.10)
+        # SENARYO B: HİBRİT AĞIRLIKLI (Hisse Senedi - IBD Mantığı)
+        # Trend %30, TEMEL %25, Momentum %20, Smart %15, Setup %10
+        final_score = (s_trend * 0.30) + \
+                      (s_fund * 0.25) + \
+                      (s_mom * 0.20) + \
+                      (s_ict * 0.15) + \
+                      (s_r2 * 0.10)
 
-    # Veto: Trend kötüyse puanı kırp
-    if s_trend < 40: final_score *= 0.60
-    
-    return int(final_score), (None if skip_fundamental else fund_data['details'])
+    # 4. BLUE CHIP KORUMASI (Apple Kurtarıcısı)
+    # Eğer Trend Kötüyse (Minervini < 40) ama Şirket sağlamsa (Fund > 70)
+    # Puanı %40 kırmak yerine sadece %10 kırp. (Düşüş fırsattır mantığı)
+    if s_trend < 40:
+        if has_fundamental and s_fund > 70:
+            final_score *= 0.90 # Hafif Ceza (Fırsat)
+        else:
+            final_score *= 0.60 # Ağır Ceza (Düşen Bıçak)
+            
+    return int(final_score), (None if not has_fundamental else fund_data['details'])
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -2981,10 +3032,10 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
-# --- MASTER SKOR KARTI (PROFESYONEL & SADE) ---
+# --- GLOBAL COMPOSITE SCORECARD ---
     master_score, fund_details = calculate_master_score(st.session_state.ticker)
 
-    # Renk ve Derece Belirleme
+    # Derecelendirme (Not Sistemi)
     if master_score >= 85: 
         grade="A+ (MÜKEMMEL)"; score_color="#15803d"; bar_color="#22c55e"
     elif master_score >= 70: 
@@ -2994,15 +3045,16 @@ with st.sidebar:
     else: 
         grade="D (ZAYIF)"; score_color="#b91c1c"; bar_color="#ef4444"
 
-    # Dinamik Yüzdeler
+    # Dinamik Yüzdeler (Endeks mi Hisse mi?)
     is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker)
     trend_pct = "40" if is_asset_crypto_or_index else "30"
+    fund_pct = "0" if is_asset_crypto_or_index else "25"
     mom_pct = "30" if is_asset_crypto_or_index else "20"
 
-    # HTML (DİKKAT: Kodun sola yaslı olması kritiktir!)
+    # HTML KART (Sola Yaslı - Hatasız)
     st.markdown(f"""<div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
 <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 8px;">
-<span style="font-size:0.75rem; color:#64748B; font-weight:600; letter-spacing:0.5px;">TEKNİK SKOR</span>
+<span style="font-size:0.75rem; color:#64748B; font-weight:600; letter-spacing:0.5px;">TEKNİK & TEMEL SKOR</span>
 <span style="font-size:0.75rem; font-weight:700; color:{score_color}; background:{score_color}10; padding:2px 8px; border-radius:12px;">{grade}</span>
 </div>
 <div style="display:flex; align-items:baseline; justify-content:center; margin-bottom:5px;">
@@ -3018,6 +3070,10 @@ with st.sidebar:
 <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{trend_pct}</div>
 </div>
 <div style="flex:1; border-right:1px solid #f1f5f9;">
+<div style="font-size:0.65rem; color:#64748B;">Temel</div>
+<div style="font-size:0.75rem; font-weight:700; color:#334155;">%{fund_pct}</div>
+</div>
+<div style="flex:1; border-right:1px solid #f1f5f9;">
 <div style="font-size:0.65rem; color:#64748B;">Mom.</div>
 <div style="font-size:0.75rem; font-weight:700; color:#334155;">%{mom_pct}</div>
 </div>
@@ -3027,6 +3083,16 @@ with st.sidebar:
 </div>
 </div>
 </div>""", unsafe_allow_html=True)
+
+    # Temel Analiz Detaylarını Göster (Varsa)
+    if fund_details:
+        fund_html = "".join([f"<li style='margin-bottom:2px;'>{d}</li>" for d in fund_details]) 
+        st.markdown(f"""
+        <div style="font-size:0.7rem; color:#475569; background:#f8fafc; padding:8px; border-radius:6px; margin-bottom:15px; border:1px solid #e2e8f0;">
+            <div style="font-weight:600; margin-bottom:4px; color:#334155;">📊 Şirket Kalitesi (Global):</div>
+            <ul style="margin:0; padding-left:15px; margin-top:0;">{fund_html}</ul>
+        </div>
+        """, unsafe_allow_html=True)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -3571,6 +3637,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
