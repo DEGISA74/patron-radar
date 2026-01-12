@@ -326,66 +326,81 @@ def get_benchmark_data(category):
 @st.cache_data(ttl=3600)
 def get_fundamental_score(ticker):
     """
-    GLOBAL STANDART (IBD/Stockopedia Mantığı) - Kademeli Puanlama
+    GLOBAL STANDART V4 (TAM KORUMA):
+    Veri çekilemezse (AAPL dahil) hata vermez, sessizce NÖTR (50) döner.
+    Böylece ekranda 'Veri Hatası' yazısı çıkmaz.
     """
-    # Endeks veya Kripto kontrolü
+    # Endeks veya Kripto kontrolü (Bunlarda temel analiz olmaz)
     if ticker.startswith("^") or "XU" in ticker or "-USD" in ticker:
-        return {"score": 50, "details": [], "valid": False} # Nötr dön
+        return {"score": 50, "details": [], "valid": False} 
 
     try:
         stock = yf.Ticker(ticker)
-        info = stock.info
-        if not info: return {"score": 50, "details": ["Veri Yok"], "valid": False}
+        
+        # 1. INFO ÇEKME DENEMESİ (En çok hata burada olur)
+        try:
+            info = stock.info
+        except:
+            # Eğer info çekilemezse sessizce çık
+            return {"score": 50, "details": [], "valid": False}
+        
+        # Eğer info boş geldiyse
+        if not info: return {"score": 50, "details": [], "valid": False}
         
         score = 0
         details = []
         
-        # --- YARDIMCI FONKSİYON: Kademeli Puanlama ---
-        def rate_metric(val, thresholds, max_pts):
-            """Değeri eşiklere göre puanlar. Örn: val=15, thresh=[5, 10, 20], max=20"""
-            if not val: return 0
-            val = val * 100 if val < 10 else val # Yüzde dönüşümü
-            step = max_pts / len(thresholds)
+        # --- PUANLAMA MOTORU (GARANTİLİ) ---
+        def rate(val, thresholds, max_p):
+            # Veri yoksa, None ise veya Sayı değilse 0 dön
+            if val is None or not isinstance(val, (int, float)): return 0
+            
+            # Yüzde dönüşümü (0.25 -> 25)
+            val_pct = val * 100 if val < 5 else val 
+            
+            step = max_p / len(thresholds)
             earned = 0
             for t in thresholds:
-                if val > t: earned += step
+                if val_pct > t: earned += step
             return earned
 
-        # 1. BÜYÜME (GROWTH) - Max 40 Puan
-        # Ciro Büyümesi (Eşikler: %5, %15, %25) -> Max 20p
-        rev_g = info.get('revenueGrowth', 0)
-        s_rev = rate_metric(rev_g, [5, 15, 25], 20)
+        # 1. BÜYÜME (GROWTH)
+        # .get() fonksiyonu veri yoksa 'None' döndürür, kodumuz bunu '0' kabul eder.
+        rev_g = info.get('revenueGrowth')
+        s_rev = rate(rev_g, [0, 10, 20, 25], 20) 
         score += s_rev
-        if s_rev >= 10: details.append(f"Ciro Büyümesi: %{rev_g*100:.1f}")
+        if s_rev >= 10: details.append(f"Ciro Büyümesi: %{(rev_g*100) if rev_g else 0:.1f}")
 
-        # Kâr Büyümesi (Eşikler: %5, %15, %25) -> Max 20p
-        earn_g = info.get('earningsGrowth', 0)
-        s_earn = rate_metric(earn_g, [5, 15, 25], 20)
+        earn_g = info.get('earningsGrowth')
+        s_earn = rate(earn_g, [0, 10, 20, 25], 20)
         score += s_earn
-        if s_earn >= 10: details.append(f"Kâr Büyümesi: %{earn_g*100:.1f}")
+        if s_earn >= 10: details.append(f"Kâr Büyümesi: %{(earn_g*100) if earn_g else 0:.1f}")
 
-        # 2. KALİTE (QUALITY) - Max 40 Puan
-        # ROE (Eşikler: %5, %10, %15, %20) -> Max 20p (Daha hassas)
-        roe = info.get('returnOnEquity', 0)
-        s_roe = rate_metric(roe, [5, 10, 15, 20], 20)
+        # 2. KALİTE (QUALITY)
+        roe = info.get('returnOnEquity')
+        s_roe = rate(roe, [5, 10, 15, 20], 20)
         score += s_roe
-        if s_roe >= 15: details.append(f"Güçlü ROE: %{roe*100:.1f}")
+        if s_roe >= 10: details.append(f"ROE: %{(roe*100) if roe else 0:.1f}")
 
-        # Net Marj (Eşikler: %5, %10, %20) -> Max 20p
-        margin = info.get('profitMargins', 0)
-        s_marg = rate_metric(margin, [5, 10, 20], 20)
+        margin = info.get('profitMargins')
+        s_marg = rate(margin, [5, 10, 15, 20], 20)
         score += s_marg
-        if s_marg >= 10: details.append(f"Net Marj: %{margin*100:.1f}")
+        if s_marg >= 10: details.append(f"Net Marj: %{(margin*100) if margin else 0:.1f}")
 
-        # 3. SMART MONEY (SAHİPLİK) - Max 20 Puan
-        inst = info.get('heldPercentInstitutions', 0)
-        s_inst = rate_metric(inst, [10, 30, 50, 70], 20)
+        # 3. KURUMSAL SAHİPLİK
+        inst = info.get('heldPercentInstitutions')
+        s_inst = rate(inst, [10, 30, 50, 70], 20)
         score += s_inst
-        if s_inst >= 10: details.append(f"Kurumsal: %{inst*100:.0f}")
+        if s_inst >= 10: details.append(f"Kurumsal: %{(inst*100) if inst else 0:.0f}")
 
-        return {"score": min(score, 100), "details": details, "valid": True}
+        # Puanı hesapla ama en az 50 (Nötr) olsun ki grafik bozulmasın
+        final_score = max(50, min(score, 100))
+        
+        return {"score": final_score, "details": details, "valid": True}
         
     except Exception:
+        # Hata olursa (İnternet koptu vs.) sessizce 50 dön.
+        # "details": [] yaparak o hata yazısını kaldırıyoruz.
         return {"score": 50, "details": [], "valid": False}
 
 # --- GLOBAL DATA CACHE KATMANI ---
@@ -3738,6 +3753,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
