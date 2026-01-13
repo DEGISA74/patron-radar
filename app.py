@@ -3260,7 +3260,7 @@ with st.sidebar:
     with st.expander("📝 Puan Detayları (Neden?)", expanded=True):
         # Artılar
         if score_pros:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER (+):</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER:</div>', unsafe_allow_html=True)
             for p in score_pros:
                 st.markdown(f'<div style="font-size:0.7rem; color:#14532d; margin-left:5px; margin-bottom:2px;">• {p}</div>', unsafe_allow_html=True)
         
@@ -3268,7 +3268,7 @@ with st.sidebar:
         
         # Eksiler
         if score_cons:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF / EKSİKLER (-):</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF ETKENLER:</div>', unsafe_allow_html=True)
             for c in score_cons:
                 st.markdown(f'<div style="font-size:0.7rem; color:#7f1d1d; margin-left:5px; margin-bottom:2px;">• {c}</div>', unsafe_allow_html=True)
         
@@ -3805,6 +3805,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
