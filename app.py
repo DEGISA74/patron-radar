@@ -3218,7 +3218,7 @@ with st.sidebar:
 <div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
 </div>
 <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART</div>
+<div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART MONEY</div>
 <div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
 </div>
 </div>
@@ -3781,6 +3781,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
