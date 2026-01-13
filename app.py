@@ -1758,17 +1758,17 @@ def calculate_master_score(ticker):
         # Ana Trend (SMA200)
         if close > sma200: 
             s_trend += 50
-            pros.append("Fiyat SMA200'ün üzerinde (Ana Trend Boğa)")
+            pros.append("Fiyat SMA200 üzerinde (Ana Trend Boğa)")
         elif close > sma200 * 0.95: 
             s_trend += 30
-            cons.append("Fiyat SMA200'ün altında ama yakın (Tolerans)")
+            cons.append("Fiyat SMA200 altında ama yakın (Tolerans)")
         else:
-            cons.append("Ana Trend Düşüşte (Fiyat < SMA200)")
+            cons.append("Ana Trend Zayıf (Fiyat < SMA200)")
         
         # Orta Vade (SMA50)
         if close > sma50: 
             s_trend += 30
-            pros.append("Fiyat SMA50'nin üzerinde (Orta Vade Güçlü)")
+            pros.append("Fiyat SMA50 üzerinde (Orta Vade Güçlü)")
         else:
             cons.append("Orta Vade Zayıf (Fiyat < SMA50)")
         
@@ -3821,6 +3821,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
