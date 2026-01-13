@@ -3276,7 +3276,7 @@ with st.sidebar:
             st.caption("Yeterli veri yok.")
 
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
-   sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
+        sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -3821,6 +3821,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
