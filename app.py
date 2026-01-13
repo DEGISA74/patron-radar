@@ -1718,103 +1718,134 @@ def get_fundamental_score(ticker):
     except Exception:
         return {"score": 50, "details": ["Veri Hatası"], "valid": False}
 
+@st.cache_data(ttl=3600)
 def calculate_master_score(ticker):
     """
-    FİNAL MASTER SKOR: 
-    - Ceza (Veto) YOK.
-    - Gri alanlar (Tolerans) VAR.
-    - Mavi Çip (Kaliteli Şirket) Koruması VAR.
+    FİNAL MASTER SKOR (Gelişmiş Raporlu):
+    Puanı hesaplarken nedenlerini (Artı/Eksi) kaydeder.
     """
-    # 1. VERİLERİ TOPLA (Anlık Hesaplama Garantisiyle)
+    # 1. VERİLERİ TOPLA
     mini_data = calculate_minervini_sepa(ticker)
     fund_data = get_fundamental_score(ticker)
     sent_data = calculate_sentiment_score(ticker)
     ict_data = calculate_ict_deep_analysis(ticker)
-    tech = get_tech_card_data(ticker) # Teknik veriler
+    tech = get_tech_card_data(ticker)
     
-    # 2. RADAR PUANLARINI AL (Yoksa Arka Planda Hesapla)
+    # Radar Puanlarını Al
     r1_score = 0; r2_score = 0
-    
-    # Radar 1 (Momentum)
     scan_df = st.session_state.get('scan_data')
     if scan_df is not None and not scan_df.empty and 'Sembol' in scan_df.columns:
         row = scan_df[scan_df['Sembol'] == ticker]
         if not row.empty: r1_score = float(row.iloc[0]['Skor'])
-    else: # Veri yoksa anlık hesapla
-        df_r1 = get_safe_historical_data(ticker, period="6mo")
-        if df_r1 is not None:
-            res_r1 = process_single_radar1(ticker, df_r1)
-            if res_r1: r1_score = res_r1['Skor']
-
-    # Radar 2 (Trend/Setup)
+    
     radar2_df = st.session_state.get('radar2_data')
     if radar2_df is not None and not radar2_df.empty and 'Sembol' in radar2_df.columns:
         row = radar2_df[radar2_df['Sembol'] == ticker]
         if not row.empty: r2_score = float(row.iloc[0]['Skor'])
-    else: # Veri yoksa anlık hesapla
-        df_r2 = get_safe_historical_data(ticker, period="1y")
-        cat = st.session_state.get('category', 'S&P 500')
-        idx = get_benchmark_data(cat)
-        if df_r2 is not None:
-            # Fiyat limitlerine takılmasın diye 0-999999 veriyoruz
-            res_r2 = process_single_radar2(ticker, df_r2, idx, 0, 9999999, 0)
-            if res_r2: r2_score = res_r2['Skor']
 
-    # 3. KATEGORİ PUANLARINI HESAPLA (0-100 ARASI)
+    # RAPOR LİSTELERİ
+    pros = [] # Artılar
+    cons = [] # Eksiler (Puan kırılan yerler)
 
-    # A. TREND (%30): Kademeli ve Toleranslı
-    # Fiyat SMA200'ün %5 altındaysa bile puan alır. 0 çekmez.
+    # ---------------------------------------------------
+    # A. TREND (%30)
+    # ---------------------------------------------------
     s_trend = 0
     if tech:
         close = tech['close_last']
         sma200 = tech['sma200']; sma50 = tech['sma50']
         
-        if close > sma200: s_trend += 50       # Ana trend boğa
-        elif close > sma200 * 0.95: s_trend += 30 # Trend zayıf ama kopmamış
+        # Ana Trend (SMA200)
+        if close > sma200: 
+            s_trend += 50
+            pros.append("Fiyat SMA200'ün üzerinde (Ana Trend Boğa)")
+        elif close > sma200 * 0.95: 
+            s_trend += 30
+            cons.append("Fiyat SMA200'ün altında ama yakın (Tolerans)")
+        else:
+            cons.append("Ana Trend Düşüşte (Fiyat < SMA200)")
         
-        if close > sma50: s_trend += 30        # Orta vade iyi
-        elif close > sma50 * 0.97: s_trend += 15  # Orta vade tolerans
+        # Orta Vade (SMA50)
+        if close > sma50: 
+            s_trend += 30
+            pros.append("Fiyat SMA50'nin üzerinde (Orta Vade Güçlü)")
+        else:
+            cons.append("Orta Vade Zayıf (Fiyat < SMA50)")
         
-        if mini_data and mini_data.get('score', 0) > 50: s_trend += 20 # Minervini onayı
-        
-    s_trend = min(s_trend, 100) # Max 100
+        # Minervini Onayı
+        if mini_data and mini_data.get('score', 0) > 50: 
+            s_trend += 20
+            pros.append("Minervini Trend Şablonuna Uygun")
+    
+    s_trend = min(s_trend, 100)
 
-    # B. MOMENTUM (%20): Sentiment + RSI Dengesi
-    # Sentiment 10 olsa bile RSI 45 ise puanı dengeler.
+    # ---------------------------------------------------
+    # B. MOMENTUM (%20)
+    # ---------------------------------------------------
     sent_raw = sent_data.get('total', 50) if sent_data else 50
     rsi_val = sent_data.get('raw_rsi', 50) if sent_data else 50
-    s_mom = (sent_raw * 0.6) + (rsi_val * 0.4) # RSI'a da pay ver
-
-    # C. TEMEL (%25) ve DİĞERLERİ
-    s_fund = fund_data.get('score', 50)
-    s_r1_norm = (r1_score / 7) * 100
-    s_r2_norm = (r2_score / 7) * 100
     
-    # ICT Puanı
-    s_ict = 50
-    if ict_data:
-        if "bullish" in ict_data.get('bias', ''): s_ict += 20
-        if "Güçlü" in ict_data.get('displacement', ''): s_ict += 20
-        if "Ucuz" in ict_data.get('zone', ''): s_ict += 10
-    s_ict = min(s_ict, 100)
+    s_mom = (sent_raw * 0.6) + (rsi_val * 0.4)
+    
+    if sent_raw >= 60: pros.append(f"Genel Duygu Güçlü ({sent_raw}/100)")
+    elif sent_raw <= 40: cons.append(f"Genel Duygu Zayıf ({sent_raw}/100)")
+    
+    if rsi_val > 50: pros.append(f"RSI Pozitif Bölgede ({int(rsi_val)})")
+    else: cons.append(f"RSI Negatif Bölgede ({int(rsi_val)})")
 
-    # 4. FİNAL FORMÜL (Sektörel Ağırlıklandırma)
+    # ---------------------------------------------------
+    # C. TEMEL (%30) - Endeks değilse
+    # ---------------------------------------------------
+    s_fund = fund_data.get('score', 50)
     is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
     
+    if not is_index:
+        if s_fund >= 60: pros.append("Temel Veriler Güçlü (Büyüme/Kalite)")
+        elif s_fund <= 40: cons.append("Temel Veriler Zayıf/Yetersiz")
+        
+        # Detaylardan gelenleri ekle
+        for d in fund_data.get('details', []):
+            pros.append(f"Temel: {d}")
+
+    # ---------------------------------------------------
+    # D. SMART / TEKNİK (%20)
+    # ---------------------------------------------------
+    # ICT (%10)
+    s_ict = 50
+    if ict_data:
+        if "bullish" in ict_data.get('bias', ''): 
+            s_ict += 20; pros.append("ICT Yapısı: Bullish (Boğa)")
+        elif "bearish" in ict_data.get('bias', ''):
+            cons.append("ICT Yapısı: Bearish (Ayı)")
+            
+        if "Güçlü" in ict_data.get('displacement', ''): 
+            s_ict += 20; pros.append("Güçlü Hacim/Enerji (Displacement)")
+        else:
+            cons.append("Hacim/Enerji Zayıf")
+            
+        if "Ucuz" in ict_data.get('zone', ''): 
+            s_ict += 10; pros.append("Fiyat Ucuzluk (Discount) Bölgesinde")
+    s_ict = min(s_ict, 100)
+
+    # Radar 2 (%10)
+    s_r2_norm = (r2_score / 7) * 100
+    if r2_score >= 4: pros.append("Radar-2 Setup Onayı Mevcut")
+    else: cons.append("Net bir Radar-2 Setup Formasyonu Yok")
+
+    # ---------------------------------------------------
+    # FİNAL HESAPLAMA
+    # ---------------------------------------------------
     if is_index:
-        # Endeks/Kripto (Temel Yok)
         final = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2_norm * 0.15)
     else:
-        # Hisse (Full Paket)
         final = (s_trend * 0.30) + (s_fund * 0.30) + (s_mom * 0.20) + (s_ict * 0.10) + (s_r2_norm * 0.10)
 
-    # 5. MAVİ ÇİP KORUMASI (Blue Chip Protection)
-    # Eğer Şirket Temel olarak "Taş Gibi" ise (80+), teknik kötü olsa bile
-    # Puanı "Nötr" (50) seviyesinin altına düşürme.
-    if not is_index and s_fund >= 80:
-        final = max(final, 50)
+    # Mavi Çip Koruması
+    if not is_index and s_fund >= 80 and final < 50:
+        final = 50
+        pros.append("🛡️ Mavi Çip Koruması (Temel çok güçlü olduğu için puan yükseltildi)")
 
-    return int(final), (None if is_index else fund_data['details'])
+    return int(final), pros, cons
     
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
@@ -3176,53 +3207,73 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
-# --- GLOBAL COMPOSITE SCORECARD (YENİ KOMPAKT TASARIM) ---
-    master_score, fund_details = calculate_master_score(st.session_state.ticker)
+# 1. SKORU VE NEDENLERİ HESAPLA (GÜNCELLENDİ)
+    master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-    # Derecelendirme
-    if master_score >= 85:   
+    # 2. DERECELENDİRME VE RENKLER
+    if master_score >= 85:    
         grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
-    elif master_score >= 70: 
+    elif master_score >= 70:  
         grade="B (GÜÇLÜ)"; score_color="#0369a1"; icon="💎"
-    elif master_score >= 50: 
+    elif master_score >= 50:  
         grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
-    else:                    
+    else:                     
         grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
 
-    # Dinamik Yüzdeler
-    is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker)
-    trend_pct = "40" if is_asset_crypto_or_index else "30"
-    fund_pct = "0" if is_asset_crypto_or_index else "30" # Hisse için %30 yaptık
-    mom_pct = "30" if is_asset_crypto_or_index else "20"
-    smart_pct = "30" if is_asset_crypto_or_index else "20" # Hissede %10, Endekste %15
+    # 3. YÜZDELERİ AYARLA
+    is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker or "XU" in st.session_state.ticker)
+    
+    if is_asset_crypto_or_index:
+        trend_pct, fund_pct, mom_pct, smart_pct = "40", "0", "30", "30"
+    else:
+        trend_pct, fund_pct, mom_pct, smart_pct = "30", "30", "20", "20"
 
-    # HTML KART (TAMAMEN SOLA YASLI - BOŞLUKSUZ)
+    # 4. SKOR KARTINI ÇİZ (HTML)
     st.markdown(f"""<div class="info-card" style="border-top: 3px solid {score_color};">
-<div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
-<span>{icon} ANA SKOR (MASTER)</span>
-<span style="font-weight:800; font-size:1.2rem; background:{score_color}15; padding:2px 8px; border-radius:10px;">
-{master_score} - {grade.split(' ')[0]}
-</span>
-</div>
-<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; margin-top:8px; text-align:center;">
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">TREND</div>
-<div style="font-size:0.8rem; font-weight:700; color:#334155;">📈 %{trend_pct}</div>
-</div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">TEMEL</div>
-<div style="font-size:0.8rem; font-weight:700; color:#334155;">📊 %{fund_pct}</div>
-</div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">MOMENTUM</div>
-<div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
-</div>
-<div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-<div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART MONEY</div>
-<div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
-</div>
-</div>
-</div>""", unsafe_allow_html=True)
+    <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
+    <span>{icon} ANA SKOR (MASTER)</span>
+    <span style="font-weight:800; font-size:1.2rem; background:{score_color}15; padding:2px 8px; border-radius:10px;">
+    {master_score} - {grade.split(' ')[0]}
+    </span>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; margin-top:8px; text-align:center;">
+    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TREND</div>
+    <div style="font-size:0.8rem; font-weight:700; color:#334155;">📈 %{trend_pct}</div>
+    </div>
+    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TEMEL</div>
+    <div style="font-size:0.8rem; font-weight:700; color:#334155;">📊 %{fund_pct}</div>
+    </div>
+    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">MOMENTUM</div>
+    <div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
+    </div>
+    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
+    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART</div>
+    <div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
+    </div>
+    </div>
+    </div>""", unsafe_allow_html=True)
+
+    # 5. DETAYLI KARNE (EXPANDER İÇİNDE)
+    with st.expander("📝 Puan Detayları (Neden?)", expanded=True):
+        # Artılar
+        if score_pros:
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER (+):</div>', unsafe_allow_html=True)
+            for p in score_pros:
+                st.markdown(f'<div style="font-size:0.7rem; color:#14532d; margin-left:5px; margin-bottom:2px;">• {p}</div>', unsafe_allow_html=True)
+        
+        st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+        
+        # Eksiler
+        if score_cons:
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF / EKSİKLER (-):</div>', unsafe_allow_html=True)
+            for c in score_cons:
+                st.markdown(f'<div style="font-size:0.7rem; color:#7f1d1d; margin-left:5px; margin-bottom:2px;">• {c}</div>', unsafe_allow_html=True)
+        
+        if not score_pros and not score_cons:
+            st.caption("Yeterli veri yok.")
 
 # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
     if fund_details:
@@ -3781,6 +3832,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
