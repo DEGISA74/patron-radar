@@ -1806,7 +1806,7 @@ def calculate_master_score(ticker):
         final = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2_norm * 0.15)
     else:
         # Hisse (Full Paket)
-        final = (s_trend * 0.30) + (s_fund * 0.25) + (s_mom * 0.20) + (s_ict * 0.15) + (s_r2_norm * 0.10)
+        final = (s_trend * 0.30) + (s_fund * 0.30) + (s_mom * 0.20) + (s_ict * 0.10) + (s_r2_norm * 0.10)
 
     # 5. MAVİ ÇİP KORUMASI (Blue Chip Protection)
     # Eğer Şirket Temel olarak "Taş Gibi" ise (80+), teknik kötü olsa bile
@@ -3194,7 +3194,7 @@ with st.sidebar:
     trend_pct = "40" if is_asset_crypto_or_index else "30"
     fund_pct = "0" if is_asset_crypto_or_index else "30" # Hisse için %30 yaptık
     mom_pct = "30" if is_asset_crypto_or_index else "20"
-    smart_pct = "15" if is_asset_crypto_or_index else "10" # Hissede %10, Endekste %15
+    smart_pct = "30" if is_asset_crypto_or_index else "20" # Hissede %10, Endekste %15
 
     # HTML KART (TAMAMEN SOLA YASLI - BOŞLUKSUZ)
     st.markdown(f"""<div class="info-card" style="border-top: 3px solid {score_color};">
@@ -3781,6 +3781,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
