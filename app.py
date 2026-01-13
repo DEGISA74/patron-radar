@@ -3503,10 +3503,11 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir işlem planı o
 
 *** GÖREVİN ***
 Verileri sentezle ve bir "Sniper" gibi işlem kurgula:
-1. ANALİZ: Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
-2. KARAR: [Long / Short / İzle]
-3. STRATEJİ: Giriş, Stop ve Kar Al seviyelerini net rakamlarla belirt.
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar.
+1. ANALİZ: Momentumu, Hacmi, Price Action verilerini, Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
+2. ÖZET VE SONUÇ: 
+3. KARAR: [Long / Short / İzle]
+4. STRATEJİ: Giriş, Stop ve Kar Al seviyelerini net rakamlarla belirt.
+5. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -3805,6 +3806,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
