@@ -3390,14 +3390,19 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     
-    # --- 1. TÜM VERİLERİ TOPLA ---
+    # --- 1. TÜM VERİLERİ TOPLA (Eksikler Eklendi) ---
     info = fetch_stock_info(t)
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
     tech_data = get_tech_card_data(t) or {}
     pa_data = calculate_price_action_dna(t) or {}
     levels_data = get_advanced_levels_data(t) or {}
-    synth_data = calculate_synthetic_sentiment(t) # Force Index Verisi
+    synth_data = calculate_synthetic_sentiment(t) 
+    
+    # EKLENEN YENİ VERİLER:
+    mini_data = calculate_minervini_sepa(t) or {} # Minervini
+    fund_data = get_fundamental_score(t) or {}    # Temel
+    master_score, pros, cons = calculate_master_score(t) # Master Skor
 
     # Radar verisi kontrolü
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
@@ -3407,60 +3412,47 @@ if st.session_state.generate_prompt:
             radar_val = f"{r_row.iloc[0]['Skor']}/7"
             radar_setup = r_row.iloc[0]['Setup']
     
-    # --- 2. SENTIMENT DETAYLARINI AYIKLA ---
-    def extract_reasons(raw_val):
-        clean = re.sub(r'<[^>]+>', '', str(raw_val))
-        if "(" in clean and ")" in clean:
-            return clean.split('(')[1].split(')')[0]
-        return None
-
-    pozitif_sebepler = []
-    keys_map = {'str': 'Yapı', 'tr': 'Trend', 'vol': 'Hacim', 'mom': 'Momentum', 'vola': 'Volatilite'}
-    for key in keys_map:
-        reason = extract_reasons(sent_data.get(key, ''))
-        if reason:
-            pozitif_sebepler.append(f"{keys_map[key]}: {reason}")
-    sentiment_detay_str = " | ".join(pozitif_sebepler) if pozitif_sebepler else "Belirgin pozitif teknik sinyal yok."
-
-    # --- 3. AKILLI PARA AĞIRLIKLI ANALİZ (SON 10 GÜN - WMA) ---
+    # --- 2. GİZLİ PARA AKIŞI ANALİZİ (WMA) ---
     para_akisi_txt = "Veri Yetersiz"
     if synth_data is not None and len(synth_data) > 15:
-        # Son 10 günü al
         window = 10
-        # Son 10 veriyi numpy array'e çevir
         recent_mf = synth_data['MF_Smooth'].tail(window).values
-        
-        # Ağırlık Dizisi: [1, 2, 3, ..., 10] (Bugüne en yüksek puan)
         weights = np.arange(1, window + 1)
-        
-        # Bugünün Ağırlıklı Ortalaması (WMA)
         wma_now = np.sum(recent_mf * weights) / np.sum(weights)
-        
-        # Dünün Ağırlıklı Ortalaması (Karşılaştırma için bir adım geri kaydırıyoruz)
         prev_mf_slice = synth_data['MF_Smooth'].iloc[-(window+1):-1].values
         wma_prev = np.sum(prev_mf_slice * weights) / np.sum(weights)
         
-        # 1. RENK ANALİZİ (Ana Yön)
         ana_renk = "MAVİ (Pozitif)" if wma_now > 0 else "KIRMIZI (Negatif)"
-        
-        # 2. MOMENTUM ANALİZİ (Eğim)
         momentum_durumu = ""
-        # Pozitif bölgedeysek (Mavi)
         if wma_now > 0:
             if wma_now > wma_prev: momentum_durumu = "GÜÇLENİYOR 🚀 (İştah Artıyor)"
             else: momentum_durumu = "ZAYIFLIYOR ⚠️ (Alıcılar Yoruldu)"
-        # Negatif bölgedeysek (Kırmızı)
         else:
-            if wma_now < wma_prev: momentum_durumu = "DERİNLEŞİYOR 🔻 (Satış Baskısı Artıyor)" # Daha negatif oluyor
-            else: momentum_durumu = "ZAYIFLIYOR ✅ (Satışlar Kuruyor/Dönüş Sinyali)" # Sıfıra yaklaşıyor
+            if wma_now < wma_prev: momentum_durumu = "DERİNLEŞİYOR 🔻 (Satış Baskısı Artıyor)" 
+            else: momentum_durumu = "ZAYIFLIYOR ✅ (Satışlar Kuruyor/Dönüş Sinyali)" 
 
         para_akisi_txt = f"{ana_renk} | Momentum: {momentum_durumu} (10 Günlük Ağırlıklı Analiz)"
 
-    # --- 4. DİĞER METİNLERİ HAZIRLA ---
+    # --- 3. METİN HAZIRLIKLARI ---
     def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
-    mom_clean = clean_text(sent_data.get('mom', 'Veri Yok'))
+    
+    # Minervini Metni
+    mini_txt = "Trend Zayıf / Veri Yok"
+    if mini_data:
+        mini_txt = f"{mini_data.get('Durum', '-')} | RS Rating: {mini_data.get('rs_rating', '-')}"
+        if mini_data.get('is_vcp'): mini_txt += " | ✅ VCP (Sıkışma) Var"
+        if mini_data.get('is_dry'): mini_txt += " | ✅ Arz Kurumuş"
 
-    st_txt = "Veri Yok"; fib_res = "Veri Yok"; fib_sup = "Veri Yok"
+    # Temel Analiz Metni
+    fund_txt = "Veri Yok / Önemsiz"
+    if fund_data and fund_data.get('details'):
+        fund_txt = " | ".join(fund_data['details'])
+
+    # Master Skor Özeti
+    master_txt = f"{master_score}/100"
+    pros_txt = ", ".join(pros[:5]) # İlk 5 artı maddeyi al
+
+    st_txt = "Veri Yok"
     if levels_data:
         st_dir_txt = "YÜKSELİŞ (AL)" if levels_data.get('st_dir') == 1 else "DÜŞÜŞ (SAT)"
         st_txt = f"{st_dir_txt} | Seviye: {levels_data.get('st_val', 0):.2f}"
@@ -3469,64 +3461,56 @@ if st.session_state.generate_prompt:
         fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
         fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
 
-    pa_div = pa_data.get('div', {}).get('title', 'Yok')
-    pa_sfp = pa_data.get('sfp', {}).get('title', 'Bilinmiyor')
-    pa_sq = pa_data.get('sq', {}).get('title', 'Bilinmiyor')
-    
     fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     sma50_str = f"{tech_data.get('sma50', 0):.2f}"
     liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data.get('target', 0) > 0 else "Belirsiz / Yok"
     mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
+    pa_div = pa_data.get('div', {}).get('title', 'Yok')
 
-    # --- 5. FİNAL PROMPT ---
+    # --- 4. FİNAL PROMPT (GÜNCELLENDİ) ---
     prompt = f"""*** SİSTEM ROLLERİ ***
-Sen Dünya çapında tanınan, Price Action ve Smart Money (ICT) konseptlerinde uzmanlaşmış kıdemli bir Swing Trader'sın.
-Yatırım tavsiyesi vermeden, sadece aşağıdaki TEKNİK VERİLERE dayanarak stratejik bir analiz yapacaksın.
+Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
+Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir işlem planı oluştur.
 
 *** VARLIK KİMLİĞİ ***
 - Sembol: {t}
 - GÜNCEL FİYAT: {fiyat_str}
-- SMA50 (Trend Bazı): {sma50_str}
+- ANA SKOR: {master_txt} (Algoritmik Puan)
+- Temel Artılar: {pros_txt}
 
-*** 1. MARKET YAPISI VE TREND ***
-- SuperTrend (Ana Yön): {st_txt}
-- ICT Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
-- Konum (Discount/Premium): {ict_data.get('zone', 'Bilinmiyor')}
+*** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
+- SuperTrend (Yön): {st_txt}
+- Minervini Durumu: {mini_txt}
+- SMA50 Durumu: {sma50_str}
 
-*** 2. GİZLİ PARA AKIŞI (Momentum Index - 10 Günlük) ***
-- Durum: {para_akisi_txt}
-(ÇOK KRİTİK NOT: Eğer Kırmızı renkte ama "Zayıflıyor/Satışlar Kuruyor" diyorsa, bu potansiyel bir DİP dönüşü sinyalidir. Mavi renkte "Güçleniyor" diyorsa trend sağlamdır.)
+*** 2. SMART MONEY & ICT YAPISI ***
+- Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
+- Konum (Zone): {ict_data.get('zone', 'Bilinmiyor')}
+- Gizli Para Akışı (10G WMA): {para_akisi_txt}
+- Aktif FVG: {ict_data.get('fvg_txt', 'Yok')}
 
-*** 3. KRİTİK SEVİYELER (Trade Alanı) ***
-- En Yakın Direnç (Fib): {fib_res}
-- En Yakın Destek (Fib): {fib_sup}
-- Hedef Likidite (Mıknatıs): {liq_str}
-- Aktif FVG (Dengesizlik): {ict_data.get('fvg_txt', 'Yok')}
+*** 3. ŞİRKET TEMEL KALİTESİ ***
+- Öne Çıkanlar: {fund_txt}
 
-*** 4. PRICE ACTION & GÜÇ (Derin Analiz) ***
+*** 4. HEDEFLER VE RİSK ***
+- Direnç (Hedef): {fib_res}
+- Destek (Stop): {fib_sup}
+- Hedef Likidite: {liq_str}
+
+*** 5. PRICE ACTION & UYARILAR ***
 - Mum Formasyonu: {mum_desc}
-- RSI Uyumsuzluğu: {pa_div} (Buna çok dikkat et!)
-- Tuzak (SFP): {pa_sfp}
-- Volatilite: {pa_sq}
-- Momentum Durumu: {mom_clean}
-
-*** 5. SENTIMENT PUAN DETAYI ***
-- Toplam Puan: {sent_data.get('total', 0)}/100
-- Pozitif Etkenler: {sentiment_detay_str}
+- RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 
 *** GÖREVİN ***
-Verileri sentezle ve aşağıdaki başlıkları açıp bir "Sniper" gibi işlem kurgula.
-1. ANALİZ: Fiyatın market yapısına göre nerede olduğunu ve Smart Money'nin (Özellikle 10 günlük ağırlıklı para akışına bakarak) ne yapmaya çalıştığını yorumla.
+Verileri sentezle ve bir "Sniper" gibi işlem kurgula:
+1. ANALİZ: Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. KARAR: [Long / Short / İzle]
-3. STRATEJİ:
-   - Giriş Bölgesi:
-   - Stop Loss:
-   - Kar Al (TP):
-4. UYARI: Eğer RSI uyumsuzluğu veya Trend tersliği varsa büyük harflerle uyar.
+3. STRATEJİ: Giriş, Stop ve Kar Al seviyelerini net rakamlarla belirt.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar.
 """
     with st.sidebar:
         st.code(prompt, language="text")
-        st.success("Prompt Güncellendi: 10 Günlük Ağırlıklı Smart Money Analizi Eklendi! 🧠")
+        st.success("Prompt Güncellendi: Temel Analiz + Minervini + Master Skor eklendi! 🧠")
     
     st.session_state.generate_prompt = False
 
@@ -3821,6 +3805,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
