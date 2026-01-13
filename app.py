@@ -3276,15 +3276,7 @@ with st.sidebar:
             st.caption("Yeterli veri yok.")
 
 # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
-    if fund_details:
-        # Tekrar eden maddeleri temizle (set kullanarak)
-        unique_details = list(set(fund_details))
-        
-        # HTML listesi oluştur
-        fund_html = "".join([f"<li style='margin-bottom:1px;'>{d}</li>" for d in unique_details]) 
-        
-        # Ekrana bas (Sola yaslı - hatasız)
-        st.markdown(f"""<div class="info-card" style="margin-top:-5px; background:#f1f5f9; border:none;">
+   sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
 <div style="font-size:0.7rem; font-weight:700; color:#475569; margin-bottom:2px;">📊 Şirket Kalite Notları:</div>
 <ul style="margin:0; padding-left:15px; font-size:0.65rem; color:#334155;">{fund_html}</ul>
 </div>""", unsafe_allow_html=True)
@@ -3832,6 +3824,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
