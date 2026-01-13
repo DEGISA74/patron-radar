@@ -3275,11 +3275,8 @@ with st.sidebar:
         if not score_pros and not score_cons:
             st.caption("Yeterli veri yok.")
 
-# --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
+    # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
-<div style="font-size:0.7rem; font-weight:700; color:#475569; margin-bottom:2px;">📊 Şirket Kalite Notları:</div>
-<ul style="margin:0; padding-left:15px; font-size:0.65rem; color:#334155;">{fund_html}</ul>
-</div>""", unsafe_allow_html=True)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -3824,6 +3821,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
