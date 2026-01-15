@@ -222,7 +222,7 @@ raw_nasdaq = [
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XU030D1.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XU030D1!.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
 
 # Buraya BIST TUM'deki hisseleri ekliyoruz
 raw_bist_stocks = [
@@ -3776,6 +3776,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
