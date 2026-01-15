@@ -3435,7 +3435,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir işlem planı o
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 
 *** GÖREVİN ***  {t} {fiyat_str}
-Verileri sentezle ve bir "Sniper" gibi analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt:
+Verileri sentezle ve bir "Sniper" gibi analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
+En başa "SMART MONEY RADAR ANALİZİ"  {t} {fiyat_str} başlığı at ve şunları analiz et:
 1. GENEL ANALİZ: Momentumu, Hacmi, Price Action verilerini, Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. 🎒 SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
@@ -3744,4 +3745,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
