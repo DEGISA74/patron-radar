@@ -3560,50 +3560,50 @@ with col_left:
             st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
             st.session_state.breakout_right = scan_confirmed_breakouts(curr_list) # Yeni Kıranlar
             st.rerun()
-
-   # 2 Sütunlu Sade Yapı (YENİ TASARIM)
-    c_left, c_right = st.columns(2)
+    if st.session_state.breakout_left is not None or st.session_state.breakout_right is not None:
+       # 2 Sütunlu Sade Yapı (YENİ TASARIM)
+        c_left, c_right = st.columns(2)
+        
+        # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
+        with c_left:
+            st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
+            
+            with st.container(height=150): # Scroll Alanı
+                if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
+                    df_left = st.session_state.breakout_left.head(20)
+                    for i, (index, row) in enumerate(df_left.iterrows()):
+                        sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
+                        
+                        # HTML etiketlerini temizle (Sadece oranı al: %98 gibi)
+                        prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
+                        
+                        # Buton Metni: 🔥 AAPL (150.20) | %98
+                        btn_label = f"🔥 {sym_raw} ({row['Fiyat']}) | {prox_clean}"
+                        
+                        if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
+                            on_scan_result_click(sym_raw)
+                            st.rerun()
+                else:
+                    st.info("Isınan hisse bulunamadı.")
     
-    # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
-    with c_left:
-        st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
-        
-        with st.container(height=150): # Scroll Alanı
-            if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
-                df_left = st.session_state.breakout_left.head(20)
-                for i, (index, row) in enumerate(df_left.iterrows()):
-                    sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
-                    
-                    # HTML etiketlerini temizle (Sadece oranı al: %98 gibi)
-                    prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
-                    
-                    # Buton Metni: 🔥 AAPL (150.20) | %98
-                    btn_label = f"🔥 {sym_raw} ({row['Fiyat']}) | {prox_clean}"
-                    
-                    if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
-                        on_scan_result_click(sym_raw)
-                        st.rerun()
-            else:
-                st.info("Isınan hisse bulunamadı.")
-
-    # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
-    with c_right:
-        st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
-        
-        with st.container(height=150): # Scroll Alanı
-            if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
-                df_right = st.session_state.breakout_right.head(20)
-                for i, (index, row) in enumerate(df_right.iterrows()):
-                    sym = row['Sembol']
-                    
-                    # Buton Metni: 🚀 TSLA (200.50) | Hacim: 2.5x
-                    btn_label = f"🚀 {sym} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
-                    
-                    if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-            else:
-                st.info("Kırılım yapan hisse bulunamadı.")
+        # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
+        with c_right:
+            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
+            
+            with st.container(height=150): # Scroll Alanı
+                if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
+                    df_right = st.session_state.breakout_right.head(20)
+                    for i, (index, row) in enumerate(df_right.iterrows()):
+                        sym = row['Sembol']
+                        
+                        # Buton Metni: 🚀 TSLA (200.50) | Hacim: 2.5x
+                        btn_label = f"🚀 {sym} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
+                        
+                        if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
+                else:
+                    st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
     # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
@@ -3739,6 +3739,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
