@@ -3261,75 +3261,6 @@ with st.sidebar:
         pass
         
     # -----------------------------------------------------------
-
-# 1. SKORU VE NEDENLERİ HESAPLA (GÜNCELLENDİ)
-    master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
-
-    # 2. DERECELENDİRME VE RENKLER
-    if master_score >= 85:    
-        grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
-    elif master_score >= 70:  
-        grade="B (GÜÇLÜ)"; score_color="#0369a1"; icon="💎"
-    elif master_score >= 50:  
-        grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
-    else:                     
-        grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
-
-    # 3. YÜZDELERİ AYARLA
-    is_asset_crypto_or_index = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker or "XU" in st.session_state.ticker)
-    
-    if is_asset_crypto_or_index:
-        trend_pct, fund_pct, mom_pct, smart_pct = "40", "0", "30", "30"
-    else:
-        trend_pct, fund_pct, mom_pct, smart_pct = "30", "30", "20", "20"
-
-    # 4. SKOR KARTINI ÇİZ (HTML)
-    st.markdown(f"""<div class="info-card" style="border-top: 3px solid {score_color};">
-    <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
-    <span>{icon} ANA SKOR (MASTER)</span>
-    <span style="font-weight:800; font-size:1.2rem; background:{score_color}15; padding:2px 8px; border-radius:10px;">
-    {master_score} - {grade.split(' ')[0]}
-    </span>
-    </div>
-    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; margin-top:8px; text-align:center;">
-    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TREND</div>
-    <div style="font-size:0.8rem; font-weight:700; color:#334155;">📈 %{trend_pct}</div>
-    </div>
-    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">TEMEL</div>
-    <div style="font-size:0.8rem; font-weight:700; color:#334155;">📊 %{fund_pct}</div>
-    </div>
-    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">MOMENTUM</div>
-    <div style="font-size:0.8rem; font-weight:700; color:#334155;">🚀 %{mom_pct}</div>
-    </div>
-    <div style="background:#f8fafc; padding:4px; border-radius:4px; border:1px solid #e2e8f0;">
-    <div style="font-size:0.65rem; color:#64748B; font-weight:700;">SMART</div>
-    <div style="font-size:0.8rem; font-weight:700; color:#334155;">🧠 %{smart_pct}</div>
-    </div>
-    </div>
-    </div>""", unsafe_allow_html=True)
-
-    # 5. DETAYLI KARNE (EXPANDER İÇİNDE)
-    with st.expander("📝 Puan Detayları (Neden?)", expanded=True):
-        # Artılar
-        if score_pros:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER:</div>', unsafe_allow_html=True)
-            for p in score_pros:
-                st.markdown(f'<div style="font-size:0.7rem; color:#14532d; margin-left:5px; margin-bottom:2px;">• {p}</div>', unsafe_allow_html=True)
-        
-        st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
-        
-        # Eksiler
-        if score_cons:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF ETKENLER:</div>', unsafe_allow_html=True)
-            for c in score_cons:
-                st.markdown(f'<div style="font-size:0.7rem; color:#7f1d1d; margin-left:5px; margin-bottom:2px;">• {c}</div>', unsafe_allow_html=True)
-        
-        if not score_pros and not score_cons:
-            st.caption("Yeterli veri yok.")
-
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
         sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     
@@ -3630,6 +3561,69 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
+    # Mevcut kodun burası:
+    # render_detail_card_advanced(st.session_state.ticker)
+    
+    # --- BURAYA YAPIŞTIR (ANA SKOR KARTI - MAIN PANEL VERSİYONU) ---
+    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    
+    # 1. SKOR HESAPLA
+    master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
+
+    # 2. DERECELENDİRME
+    if master_score >= 85: grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
+    elif master_score >= 70: grade="B (GÜÇLÜ)"; score_color="#0369a1"; icon="💎"
+    elif master_score >= 50: grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
+    else: grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
+
+    # 3. YÜZDELER
+    is_idx = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker or "XU" in st.session_state.ticker)
+    trend_pct, fund_pct, mom_pct, smart_pct = ("40", "0", "30", "30") if is_idx else ("30", "30", "20", "20")
+
+    # 4. HTML (GENİŞ EKRAN İÇİN 4 SÜTUNLU GRİD TASARIMI)
+    # Not: grid-template-columns: repeat(4, 1fr) yaptık ki yan yana dizilsinler.
+    st.markdown(f"""
+    <div class="info-card" style="border-top: 4px solid {score_color}; margin-bottom: 5px;">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color}; font-size: 1.1rem;">
+            <span>{icon} ANA SKOR (MASTER)</span>
+            <span style="font-weight:800; font-size:1.3rem; background:{score_color}15; padding:4px 12px; border-radius:8px;">
+            {master_score} - {grade.split(' ')[0]}
+            </span>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:10px; text-align:center;">
+            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">TREND</div>
+                <div style="font-size:0.9rem; font-weight:800; color:#334155;">📈 %{trend_pct}</div>
+            </div>
+            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">TEMEL</div>
+                <div style="font-size:0.9rem; font-weight:800; color:#334155;">📊 %{fund_pct}</div>
+            </div>
+            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">MOMENTUM</div>
+                <div style="font-size:0.9rem; font-weight:800; color:#334155;">🚀 %{mom_pct}</div>
+            </div>
+            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">SMART</div>
+                <div style="font-size:0.9rem; font-weight:800; color:#334155;">🧠 %{smart_pct}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 5. DETAYLAR (EXPANDER - Kapalı gelmesi daha şık durabilir, istersen expanded=True yap)
+    with st.expander("📝 Puan Detayları (Neden?)", expanded=False):
+        if score_pros:
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER:</div>', unsafe_allow_html=True)
+            for p in score_pros: st.markdown(f'<div style="font-size:0.7rem; color:#14532d; margin-left:5px; margin-bottom:1px;">• {p}</div>', unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+        if score_cons:
+            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF ETKENLER:</div>', unsafe_allow_html=True)
+            for c in score_cons: st.markdown(f'<div style="font-size:0.7rem; color:#7f1d1d; margin-left:5px; margin-bottom:1px;">• {c}</div>', unsafe_allow_html=True)
+        if not score_pros and not score_cons: st.caption("Veri yok.")
+    
+    # ---------------------------------------------------------------
+    
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (Akıllı Para Topluyor: 60/100)</div>', unsafe_allow_html=True)
     
     if 'accum_data' not in st.session_state: st.session_state.accum_data = None
@@ -3911,6 +3905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
