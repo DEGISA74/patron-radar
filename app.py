@@ -3476,7 +3476,6 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 - En Yakın Direnç: {fib_res}
 - En Yakın Destek: {fib_sup}
-- ⚜️ GOLDEN POCKET (İdeal Alım Yeri): {golden_txt}
 - Hedef Likidite (Mıknatıs): {liq_str}
 
 *** GÖREVİN ***  
@@ -3790,6 +3789,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
