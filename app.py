@@ -3222,7 +3222,12 @@ with st.sidebar:
         # 4. Minervini SEPA
         if mini_live:
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> Trend Şablonuna Uygun</div>"
+            # Verinin içinden Durum ve Puanı çekiyoruz
+            durum = mini_live.get('Durum', 'Trend?')
+            puan = mini_live.get('Raw_Score', 0)
+            
+            # Ekrana dinamik olarak yazdırıyoruz: "🦁 Minervini: KIRILIM EŞİĞİNDE (70)"
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> {durum} ({puan})</div>"
 
         # 5. Formasyonlar
         if not pat_df.empty:
@@ -3906,6 +3911,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
