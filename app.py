@@ -3411,10 +3411,21 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - ANA SKOR: {master_txt} (Algoritmik Puan)
 - Temel Artılar: {pros_txt}
 
+*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) ***
+(Bu bölüm hissenin içsel gücünü gösterir, analizinde mutlaka kullan!)
+- 🏗️ YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
+- 🌊 HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
+- 📈 TREND: {sent_trend} (Ortalamaların durumu)
+- 🚀 MOMENTUM: {sent_mom} (RSI ve MACD gücü)
+- 💥 VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
+
 *** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
 - SuperTrend (Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 - SMA50 Durumu: {sma50_str}
+- RADAR 1 (Momentum/Hacim): {r1_txt}
+- RADAR 2 (Trend/Setup): {r2_txt}
+(NOT: Radar 2'deki "Setup" tipi [Pullback/Breakout] strateji için çok önemlidir.)
 
 *** 2. SMART MONEY & ICT YAPISI ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
@@ -3430,9 +3441,13 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - Destek (Stop): {fib_sup}
 - Hedef Likidite: {liq_str}
 
-*** 5. PRICE ACTION & UYARILAR ***
+*** 5. PRICE ACTION  ***
 - Mum Formasyonu: {mum_desc}
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
+- En Yakın Direnç: {fib_res}
+- En Yakın Destek: {fib_sup}
+- ⚜️ GOLDEN POCKET (İdeal Alım Yeri): {golden_txt}
+- Hedef Likidite (Mıknatıs): {liq_str}
 
 *** GÖREVİN ***  
 Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
@@ -3446,7 +3461,7 @@ En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve �
    - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" YAZ.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa kalın harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" YAZ.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -3745,6 +3760,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
