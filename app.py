@@ -3142,40 +3142,66 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
-# --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ (ANLIK CANLI ANALİZ) ---
+# --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ (FULL KAPSAM) ---
     active_t = st.session_state.ticker
     scan_results_html = ""
     found_any = False
+    is_star_candidate = False
     
-    # Canlı analiz için veriyi bir kez çekelim (Cache'den gelir, hızlıdır)
+    # 1. VERİYİ ÇEK (Tek Sefer)
     df_live = get_safe_historical_data(active_t)
     
     if df_live is not None and not df_live.empty:
-        # 1. Minervini SEPA Kontrolü (Canlı)
-        # Endeks verisi lazım olabilir
+        
+        # A. ENDEKS VERİLERİ (Gerekli hesaplamalar için)
         cat_for_bench = st.session_state.category
         bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
+        bench_series = get_benchmark_data(cat_for_bench)
+        idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
+
+        # --- B. TÜM HESAPLAMALAR (Sırayla) ---
+        
+        # 1. STP (Smart Trend Pilot) - Kesişim, Momentum, Trend
+        stp_live = process_single_stock_stp(active_t, df_live)
+        
+        # 2. Sentiment Ajanı (Akıllı Para)
+        acc_live = process_single_accumulation(active_t, df_live, bench_series)
+        
+        # 3. Breakout Ajanı (Isınanlar / Kıranlar)
+        bo_live = process_single_breakout(active_t, df_live)
+        
+        # 4. Minervini SEPA
         mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker, provided_df=df_live)
         
-        if mini_live:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> Trend Şablonuna Uygun</div>"
+        # 5. Formasyonlar
+        pat_df = pd.DataFrame()
+        try: pat_df = scan_chart_patterns([active_t])
+        except: pass
+        
+        # 6. Radar 1 & 2
+        r1_live = process_single_radar1(active_t, df_live)
+        r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0)
 
-        # 2. Breakout Ajanı Kontrolü (Canlı)
-        bo_live = process_single_breakout(active_t, df_live)
-        if bo_live:
-            found_any = True
-            # Isınan mı Kıran mı?
-            is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
-            if is_firing:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM / TETİK (Onaylı)</div>"
-            else:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar Listesinde</div>"
+        # --- C. YILDIZ ADAYI KONTROLÜ ---
+        # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
+        if acc_live and bo_live:
+            is_star_candidate = True
 
-        # 3. Sentiment Ajanı (Akıllı Para) Kontrolü (Canlı)
-        # Endeks serisi lazım
-        bench_series = get_benchmark_data(cat_for_bench)
-        acc_live = process_single_accumulation(active_t, df_live, bench_series)
+        # --- D. HTML OLUŞTURMA ---
+
+        # 1. STP Sonuçları
+        if stp_live:
+            found_any = True
+            if stp_live['type'] == 'cross':
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
+                # Momentum Başlangıcı Kontrolü (Filtreli mi?)
+                if stp_live.get('is_filtered', False):
+                    scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#db2777;'>🎯 <b>Momentum:</b> Başlangıç Sinyali (Filtreli)</div>"
+            elif stp_live['type'] == 'trend':
+                gun = stp_live['data'].get('Gun', '?')
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>✅ <b>STP:</b> Trend ({gun} Gündür)</div>"
+
+        # 2. Akıllı Para (Sentiment)
         if acc_live:
             found_any = True
             is_pp = acc_live.get('Pocket_Pivot', False)
@@ -3183,44 +3209,52 @@ with st.sidebar:
             text = "Pocket Pivot (Patlama)" if is_pp else "Sessiz Toplama"
             scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#7c3aed;'>{icon} <b>Akıllı Para:</b> {text}</div>"
 
-        # 4. Formasyon Ajanı Kontrolü (Canlı)
-        # scan_chart_patterns bir liste alır, biz tek elemanlı liste verip sonucu alacağız
-        # Bu fonksiyonun cache süresi olduğu için hızlı çalışır
-        try:
-            pat_df = scan_chart_patterns([active_t])
-            if not pat_df.empty:
-                found_any = True
-                pat_name = pat_df.iloc[0]['Formasyon']
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
-        except: pass
-
-        # 5. Radar 1 & 2 Kontrolü (Canlı)
-        # Radar 1
-        r1_live = process_single_radar1(active_t, df_live)
-        if r1_live and r1_live['Skor'] >= 4: # Eşik değer 4 olsun
+        # 3. Breakout (Isınan / Kıran)
+        if bo_live:
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum Sinyali ({r1_live['Skor']}/7)</div>"
+            is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
+            prox_clean = str(bo_live['Zirveye Yakınlık']).split('<')[0].strip()
+            if is_firing:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM (Onaylı)</div>"
+            else:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar ({prox_clean})</div>"
+
+        # 4. Minervini SEPA
+        if mini_live:
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> Trend Şablonuna Uygun</div>"
+
+        # 5. Formasyonlar
+        if not pat_df.empty:
+            found_any = True
+            pat_name = pat_df.iloc[0]['Formasyon']
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
+
+        # 6. Radarlar
+        if r1_live and r1_live['Skor'] >= 4:
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum ({r1_live['Skor']}/7)</div>"
         
-        # Radar 2 (Trend Setup)
-        idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
-        r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0) # Fiyat limitlerini geniş tutuyoruz
         if r2_live and r2_live['Skor'] >= 4:
             found_any = True
             setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
             scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
 
     # --- HTML ÇIKTISI ---
+    star_title = " ⭐" if is_star_candidate else ""
+    display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
+
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:0.8rem; font-weight:700; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI (CANLI)</div>
+            <div style="font-size:0.8rem; font-weight:700; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
             {scan_results_html}
         </div>
         """, unsafe_allow_html=True)
     else:
-        # Hiçbir şeye uymuyorsa boş geçiyoruz
+        # Hiçbir şey yoksa boş bırak
         pass
-    
+        
     # -----------------------------------------------------------
 
 # 1. SKORU VE NEDENLERİ HESAPLA (GÜNCELLENDİ)
@@ -3872,6 +3906,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
