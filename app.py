@@ -754,6 +754,102 @@ def process_single_bear_trap_live(df):
     except: return None
 
 @st.cache_data(ttl=900)
+def scan_bear_traps(asset_list):
+    """
+    BEAR TRAP TARAYICISI (Toplu)
+    Mantık: 50 periyotluk dibi temizleyip (Sweep), hacimli dönenleri (Rejection) bulur.
+    Pencere: Son 4 mum (0, 1, 2, 3).
+    """
+    # Mevcut önbellekten veriyi çek (İnterneti yormaz)
+    data = get_batch_data_cached(asset_list, period="2y") 
+    if data.empty: return pd.DataFrame()
+
+    results = []
+    stock_dfs = []
+
+    # Veriyi hisselere ayır
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+
+    # -- İÇ FONKSİYON: TEKİL İŞLEM --
+    def _worker_bear_trap(symbol, df):
+        try:
+            if df.empty or len(df) < 60: return None
+            
+            close = df['Close']; low = df['Low']; volume = df['Volume']
+            # Hacim yoksa 1 kabul et (Hata önleyici)
+            if 'Volume' not in df.columns: volume = pd.Series([1]*len(df))
+            
+            curr_price = float(close.iloc[-1])
+
+            # RSI Hesabı
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + (gain / loss)))
+
+            # DÖNGÜ: Son 4 muma bak
+            for i in range(4):
+                idx = -(i + 1) # -1, -2, -3, -4
+
+                # 1. REFERANS DİP (Geriye dönük 50 mum)
+                pivot_slice = low.iloc[idx-50 : idx]
+                if len(pivot_slice) < 50: continue
+                pivot_low = float(pivot_slice.min())
+
+                # 2. TUZAK MUMU VERİLERİ
+                trap_low = float(low.iloc[idx])
+                trap_close = float(close.iloc[idx])
+                trap_vol = float(volume.iloc[idx])
+                
+                # Ortalama Hacim (Önceki 20 mum)
+                avg_vol = float(volume.iloc[idx-20:idx].mean())
+                if avg_vol == 0: avg_vol = 1
+
+                # 3. KRİTERLER (AND)
+                is_sweep = trap_low < pivot_low           # Dibi deldi mi?
+                is_rejection = trap_close > pivot_low     # Üstünde kapattı mı?
+                is_vol_ok = trap_vol > (avg_vol * 1.5)    # Hacim var mı?
+                is_rsi_ok = float(rsi.iloc[idx]) > 30     # RSI aşırı ölü değil mi?
+                is_safe = curr_price > pivot_low          # ŞU AN fiyat güvenli mi?
+
+                if is_sweep and is_rejection and is_vol_ok and is_rsi_ok and is_safe:
+                    time_ago = "🔥 ŞİMDİ" if i == 0 else f"⏰ {i} Mum Önce"
+                    
+                    # Skorlama (Tazelik + Hacim Gücü)
+                    score = 80 + (10 if i == 0 else 0) + (10 if trap_vol > avg_vol * 2.0 else 0)
+                    
+                    return {
+                        "Sembol": symbol,
+                        "Fiyat": curr_price,
+                        "Pivot": pivot_low,
+                        "Zaman": time_ago,
+                        "Hacim_Kat": f"{trap_vol/avg_vol:.1f}x",
+                        "Detay": f"Dip ({pivot_low:.2f}) temizlendi.",
+                        "Skor": score
+                    }
+            return None
+        except: return None
+
+    # -- PARALEL İŞLEM (HIZ İÇİN) --
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(_worker_bear_trap, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+
+    if results:
+        return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+    
+    return pd.DataFrame()
+
+@st.cache_data(ttl=900)
 def scan_chart_patterns(asset_list):
     """
     V4 FİNAL: ERKEN SİNYALLERİ ELEYEN, SADECE 'OLMUŞ' FORMASYONLARI BULAN TARAMA
@@ -3894,7 +3990,37 @@ with col_left:
         else:
             st.info("Şu an belirgin bir 'Kitabi Formasyon' (TOBO, Bayrak vb.) oluşumu bulunamadı.")
     # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # 🐻 BEAR TRAP (AYI TUZAĞI) AJANI - TARAMA PANELİ
+    # ---------------------------------------------------------
+    if 'bear_trap_data' not in st.session_state: st.session_state.bear_trap_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🐻 Bear Trap Ajanı (Dip Avcısı)</div>', unsafe_allow_html=True)
     
+    # 1. TARAMA BUTONU
+    if st.button(f"🐻 TUZAKLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_bear_trap"):
+        with st.spinner("Ayı tuzakları ve likidite temizlikleri taranıyor (50 Mum Pivot)..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.bear_trap_data = scan_bear_traps(current_assets)
+            
+    # 2. SONUÇ EKRANI
+    if st.session_state.bear_trap_data is not None:
+        count = len(st.session_state.bear_trap_data)
+        if count > 0:
+            st.success(f"🎯 {count} adet Bear Trap tespit edildi!")
+            with st.container(height=250, border=True):
+                for i, row in st.session_state.bear_trap_data.iterrows():
+                    sym = row['Sembol']
+                    
+                    # Buton Metni: 🪤 GARAN (112.5) | ⏰ 2 Mum Önce | 2.5x Vol
+                    label = f"🪤 {sym} ({row['Fiyat']}) | {row['Zaman']} | Vol: {row['Hacim_Kat']}"
+                    
+                    if st.button(label, key=f"bt_scan_{sym}_{i}", use_container_width=True, help=row['Detay']):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.info("Kriterlere uyan (50 mumluk dibi süpürüp dönen) hisse bulunamadı.")    
+            
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
@@ -3964,6 +4090,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
