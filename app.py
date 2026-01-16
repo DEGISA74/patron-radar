@@ -3409,6 +3409,26 @@ if st.session_state.generate_prompt:
     sent_hacim = clean_html_val('vol')
     sent_mom = clean_html_val('mom')
     sent_vola = clean_html_val('vola')
+    
+    # 1. Radar 1 Verisini Hazırla
+    r1_txt = "Veri Yok (Henüz Taranmadı)"
+    if st.session_state.scan_data is not None:
+        # Bazen sütun isimleri Sembol/Ticker karışabilir, kontrol edelim
+        col_name = 'Sembol' if 'Sembol' in st.session_state.scan_data.columns else 'Ticker'
+        # Hata almamak için sütun kontrolü
+        if col_name in st.session_state.scan_data.columns:
+            r1_row = st.session_state.scan_data[st.session_state.scan_data[col_name] == t]
+            if not r1_row.empty:
+                r1_txt = f"Skor: {r1_row.iloc[0]['Skor']}/7 | Sinyaller: {r1_row.iloc[0]['Nedenler']}"
+
+    # 2. Radar 2 Verisini Hazırla
+    r2_txt = "Veri Yok (Henüz Taranmadı)"
+    if st.session_state.radar2_data is not None:
+        col_name2 = 'Sembol' if 'Sembol' in st.session_state.radar2_data.columns else 'Ticker'
+        if col_name2 in st.session_state.radar2_data.columns:
+            r2_row = st.session_state.radar2_data[st.session_state.radar2_data[col_name2] == t]
+            if not r2_row.empty:
+                r2_txt = f"Skor: {r2_row.iloc[0]['Skor']}/7 | Setup: {r2_row.iloc[0]['Setup']} | Etiketler: {r2_row.iloc[0]['Etiketler']}"
 
     # --- 4. FİNAL PROMPT (GÜNCELLENDİ) ---
     prompt = f"""*** SİSTEM ROLLERİ ***
@@ -3770,6 +3790,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
