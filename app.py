@@ -3171,7 +3171,7 @@ with st.sidebar:
         bo_live = process_single_breakout(active_t, df_live)
         
         # 4. Minervini SEPA
-        mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker, provided_df=df_live)
+        mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker)
         
         # 5. Formasyonlar
         pat_df = pd.DataFrame()
@@ -3911,6 +3911,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
