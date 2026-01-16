@@ -3142,77 +3142,85 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
-    # --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ ---
+# --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ (ANLIK CANLI ANALİZ) ---
     active_t = st.session_state.ticker
     scan_results_html = ""
     found_any = False
-
-    # 1. Sentiment Ajanı (Akıllı Para) Kontrolü
-    if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
-        # Sembolü bulmaya çalış
-        row = st.session_state.accum_data[st.session_state.accum_data['Sembol'] == active_t]
-        if not row.empty:
+    
+    # Canlı analiz için veriyi bir kez çekelim (Cache'den gelir, hızlıdır)
+    df_live = get_safe_historical_data(active_t)
+    
+    if df_live is not None and not df_live.empty:
+        # 1. Minervini SEPA Kontrolü (Canlı)
+        # Endeks verisi lazım olabilir
+        cat_for_bench = st.session_state.category
+        bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
+        mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker, provided_df=df_live)
+        
+        if mini_live:
             found_any = True
-            is_pp = row.iloc[0].get('Pocket_Pivot', False)
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> Trend Şablonuna Uygun</div>"
+
+        # 2. Breakout Ajanı Kontrolü (Canlı)
+        bo_live = process_single_breakout(active_t, df_live)
+        if bo_live:
+            found_any = True
+            # Isınan mı Kıran mı?
+            is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
+            if is_firing:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM / TETİK (Onaylı)</div>"
+            else:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar Listesinde</div>"
+
+        # 3. Sentiment Ajanı (Akıllı Para) Kontrolü (Canlı)
+        # Endeks serisi lazım
+        bench_series = get_benchmark_data(cat_for_bench)
+        acc_live = process_single_accumulation(active_t, df_live, bench_series)
+        if acc_live:
+            found_any = True
+            is_pp = acc_live.get('Pocket_Pivot', False)
             icon = "⚡" if is_pp else "🤫"
             text = "Pocket Pivot (Patlama)" if is_pp else "Sessiz Toplama"
             scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#7c3aed;'>{icon} <b>Akıllı Para:</b> {text}</div>"
 
-    # 2. Breakout Ajanı (Isınanlar/Kıranlar) Kontrolü
-    # Isınanlar
-    if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
-        # Sütun adı bazen Sembol_Raw bazen Sembol olabiliyor, ikisine de bakalım
-        col_name = 'Sembol_Raw' if 'Sembol_Raw' in st.session_state.breakout_left.columns else 'Sembol'
-        if active_t in st.session_state.breakout_left[col_name].values:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar Listesinde</div>"
-    
-    # Kıranlar
-    if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
-        if active_t in st.session_state.breakout_right['Sembol'].values:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM (Onaylı)</div>"
+        # 4. Formasyon Ajanı Kontrolü (Canlı)
+        # scan_chart_patterns bir liste alır, biz tek elemanlı liste verip sonucu alacağız
+        # Bu fonksiyonun cache süresi olduğu için hızlı çalışır
+        try:
+            pat_df = scan_chart_patterns([active_t])
+            if not pat_df.empty:
+                found_any = True
+                pat_name = pat_df.iloc[0]['Formasyon']
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
+        except: pass
 
-    # 3. Minervini SEPA Kontrolü
-    if st.session_state.minervini_data is not None and not st.session_state.minervini_data.empty:
-        if active_t in st.session_state.minervini_data['Sembol'].values:
+        # 5. Radar 1 & 2 Kontrolü (Canlı)
+        # Radar 1
+        r1_live = process_single_radar1(active_t, df_live)
+        if r1_live and r1_live['Skor'] >= 4: # Eşik değer 4 olsun
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> Trend Şablonuna Uygun</div>"
-
-    # 4. Formasyon Ajanı Kontrolü
-    if st.session_state.pattern_data is not None and not st.session_state.pattern_data.empty:
-        p_row = st.session_state.pattern_data[st.session_state.pattern_data['Sembol'] == active_t]
-        if not p_row.empty:
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum Sinyali ({r1_live['Skor']}/7)</div>"
+        
+        # Radar 2 (Trend Setup)
+        idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
+        r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0) # Fiyat limitlerini geniş tutuyoruz
+        if r2_live and r2_live['Skor'] >= 4:
             found_any = True
-            pat_name = p_row.iloc[0]['Formasyon']
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
-
-    # 5. Radar 1 & 2 Kontrolü
-    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
-        col = 'Sembol' if 'Sembol' in st.session_state.scan_data.columns else 'Ticker'
-        if active_t in st.session_state.scan_data[col].values:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum Sinyali</div>"
-
-    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
-        col = 'Sembol' if 'Sembol' in st.session_state.radar2_data.columns else 'Ticker'
-        if active_t in st.session_state.radar2_data[col].values:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> Setup Mevcut</div>"
+            setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
 
     # --- HTML ÇIKTISI ---
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:0.8rem; font-weight:700; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI</div>
+            <div style="font-size:0.8rem; font-weight:700; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI (CANLI)</div>
             {scan_results_html}
         </div>
         """, unsafe_allow_html=True)
     else:
-        # Eğer hiçbir listede yoksa isteğe bağlı olarak boş da bırakabilirsin veya "Listelerde Yok" yazdırabilirsin.
-        # Şimdilik boş geçiyorum, kalabalık etmesin.
+        # Hiçbir şeye uymuyorsa boş geçiyoruz
         pass
-
+    
     # -----------------------------------------------------------
 
 # 1. SKORU VE NEDENLERİ HESAPLA (GÜNCELLENDİ)
@@ -3864,6 +3872,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
