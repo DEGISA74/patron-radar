@@ -3561,13 +3561,10 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-    # Mevcut kodun burası:
-    # render_detail_card_advanced(st.session_state.ticker)
-    
-    # --- BURAYA YAPIŞTIR (ANA SKOR KARTI - MAIN PANEL VERSİYONU) ---
+    # --- YENİ SADE ANA SKOR KARTI (KUTUSUZ & İKİ SÜTUNLU) ---
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
-    # 1. SKOR HESAPLA
+    # 1. SKOR HESAPLA (Arka planda çalışır, ekrana basılmaz)
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
     # 2. DERECELENDİRME
@@ -3576,52 +3573,55 @@ with col_left:
     elif master_score >= 50: grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
     else: grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
 
-    # 3. YÜZDELER
-    is_idx = (st.session_state.ticker.startswith("^") or "-USD" in st.session_state.ticker or "XU" in st.session_state.ticker)
-    trend_pct, fund_pct, mom_pct, smart_pct = ("40", "0", "30", "30") if is_idx else ("30", "30", "20", "20")
-
-    # 4. HTML (GENİŞ EKRAN İÇİN 4 SÜTUNLU GRİD TASARIMI)
-    # Not: grid-template-columns: repeat(4, 1fr) yaptık ki yan yana dizilsinler.
+    # 3. ANA BAŞLIK KARTI (Sadece Skor)
     st.markdown(f"""
-    <div class="info-card" style="border-top: 4px solid {score_color}; margin-bottom: 5px;">
-        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{score_color}; font-size: 1.1rem;">
-            <span>{icon} ANA SKOR (MASTER)</span>
-            <span style="font-weight:800; font-size:1.3rem; background:{score_color}15; padding:4px 12px; border-radius:8px;">
+    <div class="info-card" style="border-top: 4px solid {score_color}; margin-bottom: 10px; padding: 10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
+            <span style="font-size: 1.1rem; font-weight:700;">{icon} ANA SKOR (MASTER)</span>
+            <span style="font-weight:800; font-size:1.4rem; background:{score_color}15; padding:4px 15px; border-radius:8px;">
             {master_score} - {grade.split(' ')[0]}
             </span>
-        </div>
-        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:10px; text-align:center;">
-            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">TREND</div>
-                <div style="font-size:0.9rem; font-weight:800; color:#334155;">📈 %{trend_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">TEMEL</div>
-                <div style="font-size:0.9rem; font-weight:800; color:#334155;">📊 %{fund_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">MOMENTUM</div>
-                <div style="font-size:0.9rem; font-weight:800; color:#334155;">🚀 %{mom_pct}</div>
-            </div>
-            <div style="background:#f8fafc; padding:6px; border-radius:6px; border:1px solid #e2e8f0;">
-                <div style="font-size:0.7rem; color:#64748B; font-weight:700;">SMART</div>
-                <div style="font-size:0.9rem; font-weight:800; color:#334155;">🧠 %{smart_pct}</div>
-            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 5. DETAYLAR (EXPANDER - Kapalı gelmesi daha şık durabilir, istersen expanded=True yap)
-    with st.expander("📝 Puan Detayları (Neden?)", expanded=False):
+    # 4. NEDENLER (İKİ SÜTUN: SOL POZİTİF / SAĞ NEGATİF)
+    c_pros, c_cons = st.columns(2)
+
+    # Sol Sütun: Pozitifler (Yeşil Kutu)
+    with c_pros:
         if score_pros:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:2px;">✅ POZİTİF ETKENLER:</div>', unsafe_allow_html=True)
-            for p in score_pros: st.markdown(f'<div style="font-size:0.7rem; color:#14532d; margin-left:5px; margin-bottom:1px;">• {p}</div>', unsafe_allow_html=True)
-        st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+            html_pros = ""
+            for p in score_pros:
+                html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px;'>✅ {p}</div>"
+            
+            st.markdown(f"""
+            <div style="background:#f0fdf4; padding:10px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
+                <div style="font-size:0.85rem; font-weight:800; color:#166534; margin-bottom:8px; border-bottom:1px solid #bbf7d0; padding-bottom:4px;">POZİTİF ETKENLER</div>
+                {html_pros}
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Boşsa gri kutu
+            st.info("Belirgin pozitif etken yok.")
+
+    # Sağ Sütun: Negatifler (Kırmızı Kutu)
+    with c_cons:
         if score_cons:
-            st.markdown('<div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:2px;">❌ NEGATİF ETKENLER:</div>', unsafe_allow_html=True)
-            for c in score_cons: st.markdown(f'<div style="font-size:0.7rem; color:#7f1d1d; margin-left:5px; margin-bottom:1px;">• {c}</div>', unsafe_allow_html=True)
-        if not score_pros and not score_cons: st.caption("Veri yok.")
-    
+            html_cons = ""
+            for c in score_cons:
+                html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px;'>❌ {c}</div>"
+            
+            st.markdown(f"""
+            <div style="background:#fef2f2; padding:10px; border-radius:6px; border:1px solid #fecaca; height:100%;">
+                <div style="font-size:0.85rem; font-weight:800; color:#991b1b; margin-bottom:8px; border-bottom:1px solid #fecaca; padding-bottom:4px;">NEGATİF ETKENLER</div>
+                {html_cons}
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.success("Belirgin negatif etken yok.")
+            
+   
     # ---------------------------------------------------------------
     
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (Akıllı Para Topluyor: 60/100)</div>', unsafe_allow_html=True)
@@ -3905,6 +3905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
