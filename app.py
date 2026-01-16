@@ -279,6 +279,8 @@ if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 if 'accum_data' not in st.session_state: st.session_state.accum_data = None
 if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
 if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
+if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+if 'pattern_data' not in st.session_state: st.session_state.pattern_data = None
 
 # --- CALLBACKLER ---
 def on_category_change():
@@ -3862,6 +3864,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
