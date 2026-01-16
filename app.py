@@ -3403,12 +3403,12 @@ if st.session_state.generate_prompt:
             val = sent_data.get(key, '0/0')
             return re.sub(r'<[^>]+>', '', str(val))
     
-        # Değişkenleri burada oluşturuyoruz:
-        sent_yapi = clean_html_val('str')
-        sent_trend = clean_html_val('tr')
-        sent_hacim = clean_html_val('vol')
-        sent_mom = clean_html_val('mom')
-        sent_vola = clean_html_val('vola')
+    # Değişkenleri burada oluşturuyoruz:
+    sent_yapi = clean_html_val('str')
+    sent_trend = clean_html_val('tr')
+    sent_hacim = clean_html_val('vol')
+    sent_mom = clean_html_val('mom')
+    sent_vola = clean_html_val('vola')
 
     # --- 4. FİNAL PROMPT (GÜNCELLENDİ) ---
     prompt = f"""*** SİSTEM ROLLERİ ***
@@ -3770,6 +3770,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
