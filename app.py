@@ -3561,10 +3561,10 @@ with col_left:
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     render_detail_card_advanced(st.session_state.ticker)
 
-    # --- YENİ SADE ANA SKOR KARTI (KUTUSUZ & İKİ SÜTUNLU) ---
+    # --- YENİ SADE ANA SKOR KARTI (ESTETİK & KOMPAKT) ---
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
-    # 1. SKOR HESAPLA (Arka planda çalışır, ekrana basılmaz)
+    # 1. SKOR HESAPLA
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
     # 2. DERECELENDİRME
@@ -3573,12 +3573,14 @@ with col_left:
     elif master_score >= 50: grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
     else: grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
 
-    # 3. ANA BAŞLIK KARTI (Sadece Skor)
+    # 3. BAŞLIK KARTI (Gelişmiş Teknik Kart ile Aynı Stil)
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    
     st.markdown(f"""
-    <div class="info-card" style="border-top: 4px solid {score_color}; margin-bottom: 10px; padding: 10px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; color:{score_color};">
-            <span style="font-size: 1.1rem; font-weight:700;">{icon} ANA SKOR (MASTER)</span>
-            <span style="font-weight:800; font-size:1.4rem; background:{score_color}15; padding:4px 15px; border-radius:8px;">
+    <div class="info-card" style="border-top: 3px solid {score_color}; margin-bottom: 5px;">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:none; margin-bottom:0; padding-bottom:0;">
+            <span style="color:{score_color}; font-size: 0.9rem;">⚖️ ANA SKOR: {display_ticker}</span>
+            <span style="font-weight:700; font-size:0.85rem; background:{score_color}15; color:{score_color}; padding:2px 8px; border-radius:4px;">
             {master_score} - {grade.split(' ')[0]}
             </span>
         </div>
@@ -3596,13 +3598,12 @@ with col_left:
                 html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px;'>✅ {p}</div>"
             
             st.markdown(f"""
-            <div style="background:#f0fdf4; padding:10px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
-                <div style="font-size:0.85rem; font-weight:800; color:#166534; margin-bottom:8px; border-bottom:1px solid #bbf7d0; padding-bottom:4px;">POZİTİF ETKENLER</div>
+            <div style="background:#f0fdf4; padding:8px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
+                <div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:5px; border-bottom:1px solid #bbf7d0; padding-bottom:2px;">POZİTİF ETKENLER</div>
                 {html_pros}
             </div>
             """, unsafe_allow_html=True)
         else:
-            # Boşsa gri kutu
             st.info("Belirgin pozitif etken yok.")
 
     # Sağ Sütun: Negatifler (Kırmızı Kutu)
@@ -3613,15 +3614,14 @@ with col_left:
                 html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px;'>❌ {c}</div>"
             
             st.markdown(f"""
-            <div style="background:#fef2f2; padding:10px; border-radius:6px; border:1px solid #fecaca; height:100%;">
-                <div style="font-size:0.85rem; font-weight:800; color:#991b1b; margin-bottom:8px; border-bottom:1px solid #fecaca; padding-bottom:4px;">NEGATİF ETKENLER</div>
+            <div style="background:#fef2f2; padding:8px; border-radius:6px; border:1px solid #fecaca; height:100%;">
+                <div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:5px; border-bottom:1px solid #fecaca; padding-bottom:2px;">NEGATİF ETKENLER</div>
                 {html_cons}
             </div>
             """, unsafe_allow_html=True)
         else:
             st.success("Belirgin negatif etken yok.")
             
-   
     # ---------------------------------------------------------------
     
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (Akıllı Para Topluyor: 60/100)</div>', unsafe_allow_html=True)
@@ -3905,6 +3905,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
