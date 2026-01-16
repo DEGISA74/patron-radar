@@ -702,6 +702,57 @@ def process_single_stock_stp(symbol, df):
         return result
     except Exception: return None
 
+def process_single_bear_trap_live(df):
+    """
+    Tekil hisse için Bear Trap kontrolü yapar.
+    Canlı durum paneli için optimize edilmiştir.
+    """
+    try:
+        if df.empty or len(df) < 60: return None
+        
+        close = df['Close']; low = df['Low']; volume = df['Volume']
+        if 'Volume' not in df.columns: volume = pd.Series([1]*len(df))
+        
+        curr_price = float(close.iloc[-1])
+
+        # RSI Hesabı
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain / loss)))
+
+        # Son 4 mumu tara
+        for i in range(4):
+            idx = -(i + 1) # -1 (Şimdi), -2 (Önceki)...
+
+            # 1. Referans Dip (50 mumluk)
+            pivot_slice = low.iloc[idx-50 : idx]
+            if len(pivot_slice) < 50: continue
+            pivot_low = float(pivot_slice.min())
+
+            # 2. Tuzak Mumu Verileri
+            trap_low = float(low.iloc[idx])
+            trap_close = float(close.iloc[idx])
+            trap_vol = float(volume.iloc[idx])
+            avg_vol = float(volume.iloc[idx-20:idx].mean())
+            if avg_vol == 0: avg_vol = 1
+
+            # 3. Kriterler
+            is_sweep = trap_low < pivot_low
+            is_rejection = trap_close > pivot_low
+            is_vol_ok = trap_vol > (avg_vol * 1.5)
+            is_safe = curr_price > pivot_low # Fiyat hala güvenli bölgede mi?
+
+            if is_sweep and is_rejection and is_vol_ok and is_safe:
+                time_ago = "Şimdi" if i == 0 else f"{i} bar önce"
+                return {
+                    "Zaman": time_ago,
+                    "Hacim_Kat": f"{trap_vol/avg_vol:.1f}x",
+                    "Pivot": pivot_low
+                }
+        return None
+    except: return None
+
 @st.cache_data(ttl=900)
 def scan_chart_patterns(asset_list):
     """
@@ -3181,6 +3232,9 @@ with st.sidebar:
         # 6. Radar 1 & 2
         r1_live = process_single_radar1(active_t, df_live)
         r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0)
+        
+        # 7. Bear Trap Kontrolü
+        bt_live = process_single_bear_trap_live(df_live)
 
         # --- C. YILDIZ ADAYI KONTROLÜ ---
         # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
@@ -3244,7 +3298,12 @@ with st.sidebar:
             found_any = True
             setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
             scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
-
+        
+        # 7. Bear Trap (Görseli)
+        if bt_live:
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b45309;'>🪤 <b>Bear Trap:</b> {bt_live['Zaman']} (Vol: {bt_live['Hacim_Kat']})</div>"
+            
     # --- HTML ÇIKTISI ---
     star_title = " ⭐" if is_star_candidate else ""
     display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
@@ -3905,6 +3964,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
