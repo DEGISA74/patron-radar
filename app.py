@@ -3531,14 +3531,9 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
     
-    # --- 1. TÜM VERİLERİ TOPLA (Eksikler Eklendi) ---
+    # --- 1. GEREKLİ VERİLERİ TOPLA ---
     info = fetch_stock_info(t)
-    ict_data = calculate_ict_deep_analysis(t) or {}
-    sent_data = calculate_sentiment_score(t) or {}
-    tech_data = get_tech_card_data(t) or {}
-    pa_data = calculate_price_action_dna(t) or {}
-    levels_data = get_advanced_levels_data(t) or {}
-    synth_data = calculate_synthetic_sentiment(t) 
+    df_hist = get_safe_historical_data(t) # Ana veri
     
     # EKSİK OLAN TANIMLAMALAR EKLENDİ (bench_series ve idx_data)
     cat_for_bench = st.session_state.category
@@ -3546,118 +3541,102 @@ if st.session_state.generate_prompt:
     bench_series = get_benchmark_data(cat_for_bench)
     idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
     
-    # EKLENEN YENİ VERİLER:
-    mini_data = calculate_minervini_sepa(t) or {} # Minervini
-    fund_data = get_fundamental_score(t) or {}    # Temel
-    master_score, pros, cons = calculate_master_score(t) # Master Skor
-    df_hist = get_safe_historical_data(t)
-    bt_res = process_single_bear_trap_live(df_hist)
+    # Diğer Hesaplamalar
+    ict_data = calculate_ict_deep_analysis(t) or {}
+    sent_data = calculate_sentiment_score(t) or {}
+    tech_data = get_tech_card_data(t) or {}
+    pa_data = calculate_price_action_dna(t) or {}
+    levels_data = get_advanced_levels_data(t) or {}
+    synth_data = calculate_synthetic_sentiment(t) 
+    mini_data = calculate_minervini_sepa(t) or {} 
+    fund_data = get_fundamental_score(t) or {}
+    master_score, pros, cons = calculate_master_score(t)
+    
+    # --- 2. AJAN HESAPLAMALARI (Sol Üst Kutuyu Oluşturan Veriler) ---
+    stp_res = process_single_stock_stp(t, df_hist)                  
+    acc_res = process_single_accumulation(t, df_hist, bench_series) 
+    bo_res = process_single_breakout(t, df_hist)                    
+    pat_df = scan_chart_patterns([t])                               
+    bt_res = process_single_bear_trap_live(df_hist)                 
+    r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0)
+
+    # --- 3. EKSİK OLAN KISIM: TARAMA SONUÇLARINI METNE DÖK ---
+    # Prompt içinde {scan_summary_str} olarak çağırdığın değişken burada oluşuyor
+    scan_box_txt = []
+    
+    # A. STP
+    if stp_res:
+        if stp_res['type'] == 'cross': scan_box_txt.append("STP: Kesişim (AL Sinyali)")
+        elif stp_res['type'] == 'trend': scan_box_txt.append(f"STP: Trend ({stp_res['data'].get('Gun','?')} Gündür)")
+    else: scan_box_txt.append("STP: Nötr")
+    
+    # B. Akıllı Para
+    if acc_res:
+        acc_txt = "Pocket Pivot" if acc_res.get('Pocket_Pivot') else "Sessiz Toplama"
+        scan_box_txt.append(f"Akıllı Para: {acc_txt}")
+    
+    # C. Formasyon
+    if not pat_df.empty:
+        scan_box_txt.append(f"Formasyon: {pat_df.iloc[0]['Formasyon']}")
+    
+    # D. Radar 2
+    if r2_res and r2_res['Skor'] >= 4:
+        scan_box_txt.append(f"Radar 2: {r2_res['Setup']} ({r2_res['Skor']}/7)")
+
+    # E. Bear Trap
     bt_txt = "Yok / Temiz"
     if bt_res:
-        bt_txt = f"🚨 TESPİT EDİLDİ! {bt_res['Zaman']} oluştu. Hacim: {bt_res['Hacim_Kat']} (Dip: {bt_res['Pivot']})"
-   
-    # --- 2. AJAN HESAPLAMALARI (Sol Üst Kutuyu Oluşturan TÜM Veriler) ---
-    # Burası şimdi EKSİKSİZ hale geldi:
-    stp_res = process_single_stock_stp(t, df_hist)                  # 1. STP
-    acc_res = process_single_accumulation(t, df_hist, bench_series) # 2. Akıllı Para
-    bo_res = process_single_breakout(t, df_hist)                    # 3. Breakout
-    pat_df = scan_chart_patterns([t])                               # 4. Formasyon
-    bt_res = process_single_bear_trap_live(df_hist)                 # 5. Bear Trap (YENİ)
-    r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0) # 6. Radar 2 (EKSİKTİ, EKLENDİ)
-    
-    # Radar verisi kontrolü
+        bt_txt = f"VAR ({bt_res['Zaman']} oluştu, Hacim: {bt_res['Hacim_Kat']})"
+        scan_box_txt.append(f"BEAR TRAP: {bt_txt}")
+
+    # F. Breakout
+    if bo_res:
+        bo_status = "KIRILIM" if ("TETİKLENDİ" in bo_res['Zirveye Yakınlık']) else "Hazırlık"
+        scan_box_txt.append(f"Breakout: {bo_status}")
+
+    # Listeyi Metne Çevir (PROMPT BU DEĞİŞKENİ ARIYOR)
+    scan_summary_str = "\n".join([f"- {s}" for s in scan_box_txt])
+
+    # --- Diğer Metin Hazırlıkları ---
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
+    r1_txt = "Veri Yok"
     if st.session_state.radar2_data is not None:
         r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
         if not r_row.empty:
             radar_val = f"{r_row.iloc[0]['Skor']}/7"
             radar_setup = r_row.iloc[0]['Setup']
     
-    # --- 2. GİZLİ PARA AKIŞI ANALİZİ (WMA) ---
-    para_akisi_txt = "Veri Yetersiz"
+    if st.session_state.scan_data is not None:
+        col_name = 'Sembol' if 'Sembol' in st.session_state.scan_data.columns else 'Ticker'
+        if col_name in st.session_state.scan_data.columns:
+            r_row = st.session_state.scan_data[st.session_state.scan_data[col_name] == t]
+            if not r_row.empty: r1_txt = f"Skor: {r_row.iloc[0]['Skor']}/7"
+            
+    r2_txt = f"Skor: {radar_val} | Setup: {radar_setup}"
+
+    # Gizli Para Akışı
+    para_akisi_txt = "Nötr"
     if synth_data is not None and len(synth_data) > 15:
-        window = 10
-        recent_mf = synth_data['MF_Smooth'].tail(window).values
-        weights = np.arange(1, window + 1)
-        wma_now = np.sum(recent_mf * weights) / np.sum(weights)
-        prev_mf_slice = synth_data['MF_Smooth'].iloc[-(window+1):-1].values
-        wma_prev = np.sum(prev_mf_slice * weights) / np.sum(weights)
-        
-        ana_renk = "MAVİ (Pozitif)" if wma_now > 0 else "KIRMIZI (Negatif)"
-        momentum_durumu = ""
-        if wma_now > 0:
-            if wma_now > wma_prev: momentum_durumu = "GÜÇLENİYOR 🚀 (İştah Artıyor)"
-            else: momentum_durumu = "ZAYIFLIYOR ⚠️ (Alıcılar Yoruldu)"
-        else:
-            if wma_now < wma_prev: momentum_durumu = "DERİNLEŞİYOR 🔻 (Satış Baskısı Artıyor)" 
-            else: momentum_durumu = "ZAYIFLIYOR ✅ (Satışlar Kuruyor/Dönüş Sinyali)" 
+        wma_now = synth_data['MF_Smooth'].tail(10).mean()
+        para_akisi_txt = "Pozitif (Giriş Var)" if wma_now > 0 else "Negatif (Çıkış Var)"
 
-        para_akisi_txt = f"{ana_renk} | Momentum: {momentum_durumu} (10 Günlük Ağırlıklı Analiz)"
-
-    # --- 3. METİN HAZIRLIKLARI ---
-    def clean_text(text): return re.sub(r'<[^>]+>', '', str(text))
-    
-    # Minervini Metni
-    mini_txt = "Trend Zayıf / Veri Yok"
-    if mini_data:
-        mini_txt = f"{mini_data.get('Durum', '-')} | RS Rating: {mini_data.get('rs_rating', '-')}"
-        if mini_data.get('is_vcp'): mini_txt += " | ✅ VCP (Sıkışma) Var"
-        if mini_data.get('is_dry'): mini_txt += " | ✅ Arz Kurumuş"
-
-    # Temel Analiz Metni
-    fund_txt = "Veri Yok / Önemsiz"
-    if fund_data and fund_data.get('details'):
-        fund_txt = " | ".join(fund_data['details'])
-
-    # Master Skor Özeti
-    master_txt = f"{master_score}/100"
-    pros_txt = ", ".join(pros[:5]) # İlk 5 artı maddeyi al
-
-    st_txt = "Veri Yok"
-    if levels_data:
-        st_dir_txt = "YÜKSELİŞ (AL)" if levels_data.get('st_dir') == 1 else "DÜŞÜŞ (SAT)"
-        st_txt = f"{st_dir_txt} | Seviye: {levels_data.get('st_val', 0):.2f}"
-        sup_l, sup_v = levels_data.get('nearest_sup', (None, 0))
-        res_l, res_v = levels_data.get('nearest_res', (None, 0))
-        fib_sup = f"{sup_v:.2f} (Fib {sup_l})" if sup_l else "Bilinmiyor"
-        fib_res = f"{res_v:.2f} (Fib {res_l})" if res_l else "Bilinmiyor"
-
-    fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
-    sma50_str = f"{tech_data.get('sma50', 0):.2f}"
-    liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data.get('target', 0) > 0 else "Belirsiz / Yok"
-    mum_desc = pa_data.get('candle', {}).get('desc', 'Belirgin formasyon yok')
-    pa_div = pa_data.get('div', {}).get('title', 'Yok')
     def clean_html_val(key):
             val = sent_data.get(key, '0/0')
             return re.sub(r'<[^>]+>', '', str(val))
     
-    # Değişkenleri burada oluşturuyoruz:
     sent_yapi = clean_html_val('str')
     sent_trend = clean_html_val('tr')
     sent_hacim = clean_html_val('vol')
     sent_mom = clean_html_val('mom')
     sent_vola = clean_html_val('vola')
     
-    # 1. Radar 1 Verisini Hazırla
-    r1_txt = "Veri Yok (Henüz Taranmadı)"
-    if st.session_state.scan_data is not None:
-        # Bazen sütun isimleri Sembol/Ticker karışabilir, kontrol edelim
-        col_name = 'Sembol' if 'Sembol' in st.session_state.scan_data.columns else 'Ticker'
-        # Hata almamak için sütun kontrolü
-        if col_name in st.session_state.scan_data.columns:
-            r1_row = st.session_state.scan_data[st.session_state.scan_data[col_name] == t]
-            if not r1_row.empty:
-                r1_txt = f"Skor: {r1_row.iloc[0]['Skor']}/7 | Sinyaller: {r1_row.iloc[0]['Nedenler']}"
-
-    # 2. Radar 2 Verisini Hazırla
-    r2_txt = "Veri Yok (Henüz Taranmadı)"
-    if st.session_state.radar2_data is not None:
-        col_name2 = 'Sembol' if 'Sembol' in st.session_state.radar2_data.columns else 'Ticker'
-        if col_name2 in st.session_state.radar2_data.columns:
-            r2_row = st.session_state.radar2_data[st.session_state.radar2_data[col_name2] == t]
-            if not r2_row.empty:
-                r2_txt = f"Skor: {r2_row.iloc[0]['Skor']}/7 | Setup: {r2_row.iloc[0]['Setup']} | Etiketler: {r2_row.iloc[0]['Etiketler']}"
-
+    fund_txt = " | ".join(fund_data.get('details', [])) if fund_data else "-"
+    fiyat_str = f"{info.get('price', 0):.2f}"
+    master_txt = f"{master_score}/100"
+    pros_txt = ", ".join(pros[:5])
+    
+    st_txt = f"{'YÜKSELİŞ' if levels_data.get('st_dir')==1 else 'DÜŞÜŞ'} | {levels_data.get('st_val',0):.2f}" if levels_data else "-"
+    
     # --- 4. FİNAL PROMPT (GÜNCELLENDİ) ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
@@ -4114,6 +4093,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
