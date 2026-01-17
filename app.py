@@ -3707,7 +3707,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 *** GÖREVİN ***  
 Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
 En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et:
-1. GENEL ANALİZ: Momentumu, Hacmi, Price Action verilerini, Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
+1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumlar..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. 🎒 SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi direnç/BOS/Fibonacci/EMA seviyesi beklenebilir?
@@ -4108,4 +4108,5 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
