@@ -68,23 +68,28 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
-    /* --- GÜNCELLENMİŞ MAVİ BUTON (F-String Uyumlu) --- */
+      /* --- YAPAY ZEKA İNDİGOSU (MAT & ŞIK) --- */
     div.stButton > button:first-child {{
-        background-color: #2563EB !important;
-        border-color: #2563EB !important;
+        background-color: #4338CA !important; /* Rengi buradan değiştirebilirsin */
+        border-color: #4338CA !important;
         color: white !important;
         opacity: 1 !important;
+        border-radius: 6px; /* Köşeleri biraz daha yumuşattım */
+        font-weight: 600; /* Yazıyı biraz daha tok yaptım */
+        letter-spacing: 0.5px; /* Harf aralığını açarak şıklık kattım */
     }}
     
     div.stButton > button:hover {{
-        background-color: #1D4ED8 !important;
-        border-color: #1D4ED8 !important;
+        background-color: #3730A3 !important; /* Üzerine gelince koyulaşan ton */
+        border-color: #3730A3 !important;
         color: white !important;
-        transform: scale(1.01);
+        transform: translateY(-1px); /* Hafif yukarı kalkma efekti */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Hafif gölge */
     }}
     
     div.stButton > button:active {{
-        background-color: #1e40af !important;
+        background-color: #312E81 !important;
+        transform: translateY(0px);
     }}
     
     .stButton button {{ 
@@ -4130,6 +4135,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
