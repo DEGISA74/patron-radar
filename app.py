@@ -3675,7 +3675,7 @@ if st.session_state.generate_prompt:
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
 Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur.
 
-*** 🚨 CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
+*** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, analizin merkezine koy!)
 {scan_summary_str}
 
@@ -3687,11 +3687,11 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 
 *** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) ***
 (Bu bölüm hissenin içsel gücünü gösterir, analizinde mutlaka kullan!)
-- 🏗️ YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
-- 🌊 HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
-- 📈 TREND: {sent_trend} (Ortalamaların durumu)
-- 🚀 MOMENTUM: {sent_mom} (RSI ve MACD gücü)
-- 💥 VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
+- YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
+- HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
+- TREND: {sent_trend} (Ortalamaların durumu)
+- MOMENTUM: {sent_mom} (RSI ve MACD gücü)
+- VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
 
 *** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
 - SuperTrend (Yön): {st_txt}
@@ -3724,20 +3724,20 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
 En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et:
-1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumlar..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
-2. 🎒 SENARYO A: ELİNDE OLANLAR İÇİN 
+1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
+2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi direnç/BOS/Fibonacci/EMA seviyesi beklenebilir?
    - Takip Stopu (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
-3. 🛒 SENARYO B: ELİNDE OLMAYANLAR İÇİN 
+3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa kalın harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" YAZ.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" YAZ.
 """
     with st.sidebar:
         st.code(prompt, language="text")
-        st.success("Prompt Güncellendi: Temel Analiz + Minervini + Master Skor eklendi! 🧠")
+        st.success("Prompt Güncellendi: Temel Analiz + Minervini + Master Skor eklendi!")
     
     st.session_state.generate_prompt = False
 
@@ -4125,6 +4125,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
