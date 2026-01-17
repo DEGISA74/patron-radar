@@ -3619,7 +3619,12 @@ if st.session_state.generate_prompt:
     if synth_data is not None and len(synth_data) > 15:
         wma_now = synth_data['MF_Smooth'].tail(10).mean()
         para_akisi_txt = "Pozitif (Giriş Var)" if wma_now > 0 else "Negatif (Çıkış Var)"
-
+    # --- EKSİK OLAN TANIMLAMA (HATA VEREN YER) ---
+    mini_txt = "Veri Yok"
+    if mini_data:
+        mini_txt = f"{mini_data.get('Durum', '-')} | RS Rating: {mini_data.get('rs_rating', '-')}"
+        if mini_data.get('is_vcp'): mini_txt += " | VCP Var"
+            
     def clean_html_val(key):
             val = sent_data.get(key, '0/0')
             return re.sub(r'<[^>]+>', '', str(val))
@@ -4093,6 +4098,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
