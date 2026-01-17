@@ -68,19 +68,24 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
-    /* --- GÜÇLENDİRİLMİŞ MAVİ BUTON (KESİN) --- */
-    /* Araya > koymadık, böylece buton kutunun dibinde de olsa bulur */
-    div.stButton button[data-testid="baseButton-primary"] {{
+    /* --- GÜNCELLENMİŞ MAVİ BUTON (KESİN ÇÖZÜM) --- */
+    div.stButton > button:first-child {
         background-color: #2563EB !important;
         border-color: #2563EB !important;
         color: white !important;
-    }}
-
-    div.stButton button[data-testid="baseButton-primary"]:hover {{
+        opacity: 1 !important;
+    }
+    
+    div.stButton > button:hover {
         background-color: #1D4ED8 !important;
         border-color: #1D4ED8 !important;
         color: white !important;
-    }}
+        transform: scale(1.01);
+    }
+    
+    div.stButton > button:active {
+        background-color: #1e40af !important;
+    }
     
     .stButton button {{ 
         width: 100%; border-radius: 4px;
@@ -4125,6 +4130,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
