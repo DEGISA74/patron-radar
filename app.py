@@ -3540,6 +3540,12 @@ if st.session_state.generate_prompt:
     levels_data = get_advanced_levels_data(t) or {}
     synth_data = calculate_synthetic_sentiment(t) 
     
+    # EKSİK OLAN TANIMLAMALAR EKLENDİ (bench_series ve idx_data)
+    cat_for_bench = st.session_state.category
+    bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
+    bench_series = get_benchmark_data(cat_for_bench)
+    idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
+    
     # EKLENEN YENİ VERİLER:
     mini_data = calculate_minervini_sepa(t) or {} # Minervini
     fund_data = get_fundamental_score(t) or {}    # Temel
@@ -4108,6 +4114,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
