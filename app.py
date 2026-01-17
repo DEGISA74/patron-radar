@@ -3544,7 +3544,21 @@ if st.session_state.generate_prompt:
     mini_data = calculate_minervini_sepa(t) or {} # Minervini
     fund_data = get_fundamental_score(t) or {}    # Temel
     master_score, pros, cons = calculate_master_score(t) # Master Skor
-
+    df_bt = get_safe_historical_data(t)
+    bt_res = process_single_bear_trap_live(df_bt)
+    bt_txt = "Yok / Temiz"
+    if bt_res:
+        bt_txt = f"🚨 TESPİT EDİLDİ! {bt_res['Zaman']} oluştu. Hacim: {bt_res['Hacim_Kat']} (Dip: {bt_res['Pivot']})"
+   
+    # --- 2. AJAN HESAPLAMALARI (Sol Üst Kutuyu Oluşturan TÜM Veriler) ---
+    # Burası şimdi EKSİKSİZ hale geldi:
+    stp_res = process_single_stock_stp(t, df_hist)                  # 1. STP
+    acc_res = process_single_accumulation(t, df_hist, bench_series) # 2. Akıllı Para
+    bo_res = process_single_breakout(t, df_hist)                    # 3. Breakout
+    pat_df = scan_chart_patterns([t])                               # 4. Formasyon
+    bt_res = process_single_bear_trap_live(df_hist)                 # 5. Bear Trap (YENİ)
+    r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0) # 6. Radar 2 (EKSİKTİ, EKLENDİ)
+    
     # Radar verisi kontrolü
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     if st.session_state.radar2_data is not None:
@@ -3642,6 +3656,10 @@ if st.session_state.generate_prompt:
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
 Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur.
+
+*** 🚨 CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
+(Burası sistemin tespit ettiği en sıcak sinyallerdir, analizin merkezine koy!)
+{scan_summary_str}
 
 *** VARLIK KİMLİĞİ ***
 - Sembol: {t}
@@ -4090,3 +4108,4 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
