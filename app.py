@@ -3552,16 +3552,15 @@ if st.session_state.generate_prompt:
     fund_data = get_fundamental_score(t) or {}
     master_score, pros, cons = calculate_master_score(t)
     
-    # --- 2. AJAN HESAPLAMALARI (Sol Üst Kutuyu Oluşturan Veriler) ---
-    stp_res = process_single_stock_stp(t, df_hist)                  
+    # --- 2. AJAN HESAPLAMALARI ---
+    stp_res = process_single_stock_stp(t, df_hist)                   
     acc_res = process_single_accumulation(t, df_hist, bench_series) 
-    bo_res = process_single_breakout(t, df_hist)                    
-    pat_df = scan_chart_patterns([t])                               
-    bt_res = process_single_bear_trap_live(df_hist)                 
+    bo_res = process_single_breakout(t, df_hist)                     
+    pat_df = scan_chart_patterns([t])                                
+    bt_res = process_single_bear_trap_live(df_hist)                  
     r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0)
 
-    # --- 3. EKSİK OLAN KISIM: TARAMA SONUÇLARINI METNE DÖK ---
-    # Prompt içinde {scan_summary_str} olarak çağırdığın değişken burada oluşuyor
+    # --- 3. METİN ÖZETLEME (SCAN SUMMARY) ---
     scan_box_txt = []
     
     # A. STP
@@ -3594,19 +3593,48 @@ if st.session_state.generate_prompt:
         bo_status = "KIRILIM" if ("TETİKLENDİ" in bo_res['Zirveye Yakınlık']) else "Hazırlık"
         scan_box_txt.append(f"Breakout: {bo_status}")
 
-    # Listeyi Metne Çevir (PROMPT BU DEĞİŞKENİ ARIYOR)
     scan_summary_str = "\n".join([f"- {s}" for s in scan_box_txt])
 
-    # --- Diğer Metin Hazırlıkları ---
+    # --- 4. DEĞİŞKEN TANIMLAMA (HATAYI ÇÖZEN KISIM) ---
+    # Kodun eski halinde bu değişkenler tanımlanmadığı için NameError veriyordu.
+    
+    # SMA50 Durumu
+    curr_price = info.get('price', 0) if info else 0
+    sma50_val = tech_data.get('sma50', 0)
+    sma50_str = "ÜZERİNDE (Pozitif)" if curr_price > sma50_val else "ALTINDA (Negatif)"
+
+    # Destek/Direnç (Levels Data'dan çekme)
+    fib_res = "-"
+    fib_sup = "-"
+    if levels_data:
+        # nearest_res bir tuple döner: (Etiket, Fiyat)
+        res_tuple = levels_data.get('nearest_res')
+        sup_tuple = levels_data.get('nearest_sup')
+        if res_tuple: fib_res = f"{res_tuple[1]:.2f} ({res_tuple[0]})"
+        if sup_tuple: fib_sup = f"{sup_tuple[1]:.2f} ({sup_tuple[0]})"
+
+    # Likidite Hedefi
+    liq_str = f"{ict_data.get('target', 0):.2f}" if ict_data else "-"
+
+    # Price Action Tanımları
+    mum_desc = "-"
+    pa_div = "-"
+    if pa_data:
+        mum_desc = pa_data.get('candle', {}).get('title', '-')
+        div_data = pa_data.get('div', {})
+        pa_div = f"{div_data.get('title', '-')} ({div_data.get('type', '-')})"
+
+    # Diğer Metin Hazırlıkları
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     r1_txt = "Veri Yok"
-    if st.session_state.radar2_data is not None:
-        r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
-        if not r_row.empty:
-            radar_val = f"{r_row.iloc[0]['Skor']}/7"
-            radar_setup = r_row.iloc[0]['Setup']
+    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
+        if 'Sembol' in st.session_state.radar2_data.columns:
+            r_row = st.session_state.radar2_data[st.session_state.radar2_data['Sembol'] == t]
+            if not r_row.empty:
+                radar_val = f"{r_row.iloc[0]['Skor']}/7"
+                radar_setup = r_row.iloc[0]['Setup']
     
-    if st.session_state.scan_data is not None:
+    if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
         col_name = 'Sembol' if 'Sembol' in st.session_state.scan_data.columns else 'Ticker'
         if col_name in st.session_state.scan_data.columns:
             r_row = st.session_state.scan_data[st.session_state.scan_data[col_name] == t]
@@ -3619,7 +3647,7 @@ if st.session_state.generate_prompt:
     if synth_data is not None and len(synth_data) > 15:
         wma_now = synth_data['MF_Smooth'].tail(10).mean()
         para_akisi_txt = "Pozitif (Giriş Var)" if wma_now > 0 else "Negatif (Çıkış Var)"
-    # --- EKSİK OLAN TANIMLAMA (HATA VEREN YER) ---
+        
     mini_txt = "Veri Yok"
     if mini_data:
         mini_txt = f"{mini_data.get('Durum', '-')} | RS Rating: {mini_data.get('rs_rating', '-')}"
@@ -3636,13 +3664,13 @@ if st.session_state.generate_prompt:
     sent_vola = clean_html_val('vola')
     
     fund_txt = " | ".join(fund_data.get('details', [])) if fund_data else "-"
-    fiyat_str = f"{info.get('price', 0):.2f}"
+    fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     master_txt = f"{master_score}/100"
     pros_txt = ", ".join(pros[:5])
     
     st_txt = f"{'YÜKSELİŞ' if levels_data.get('st_dir')==1 else 'DÜŞÜŞ'} | {levels_data.get('st_val',0):.2f}" if levels_data else "-"
     
-    # --- 4. FİNAL PROMPT (GÜNCELLENDİ) ---
+    # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
 Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur.
@@ -3694,8 +3722,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - En Yakın Destek: {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
 
-*** GÖREVİN ***  
-Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
+*** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
 En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et:
 1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumlar..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. 🎒 SENARYO A: ELİNDE OLANLAR İÇİN 
@@ -4098,6 +4125,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
