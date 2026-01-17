@@ -80,8 +80,8 @@ st.markdown(f"""
     }}
     
     div.stButton > button:hover {{
-        background-color: #3730A3 !important; /* Üzerine gelince koyulaşan ton */
-        border-color: #3730A3 !important;
+        background-color: #475569 !important; /* Üzerine gelince koyulaşan ton */
+        border-color: #475569 !important;
         color: white !important;
         transform: translateY(-1px); /* Hafif yukarı kalkma efekti */
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Hafif gölge */
@@ -4135,6 +4135,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
