@@ -3544,8 +3544,8 @@ if st.session_state.generate_prompt:
     mini_data = calculate_minervini_sepa(t) or {} # Minervini
     fund_data = get_fundamental_score(t) or {}    # Temel
     master_score, pros, cons = calculate_master_score(t) # Master Skor
-    df_bt = get_safe_historical_data(t)
-    bt_res = process_single_bear_trap_live(df_bt)
+    df_hist = get_safe_historical_data(t)
+    bt_res = process_single_bear_trap_live(df_hist)
     bt_txt = "Yok / Temiz"
     if bt_res:
         bt_txt = f"🚨 TESPİT EDİLDİ! {bt_res['Zaman']} oluştu. Hacim: {bt_res['Hacim_Kat']} (Dip: {bt_res['Pivot']})"
@@ -4108,5 +4108,6 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
