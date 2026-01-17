@@ -70,8 +70,8 @@ st.markdown(f"""
     
       /* --- YAPAY ZEKA İNDİGOSU (MAT & ŞIK) --- */
     div.stButton > button:first-child {{
-        background-color: #475569 !important; /* Rengi buradan değiştirebilirsin */
-        border-color: #475569 !important;
+        background-color: #607D8B !important; /* Rengi buradan değiştirebilirsin */
+        border-color: #607D8B !important;
         color: white !important;
         opacity: 1 !important;
         border-radius: 6px; /* Köşeleri biraz daha yumuşattım */
@@ -4135,6 +4135,7 @@ with col_right:
                     sym = row["Sembol"]
                     with cols[i % 2]:
                         if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+
 
 
 
