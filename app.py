@@ -4188,48 +4188,4 @@ with col_right:
         else:
             st.info("Sonuçlar bekleniyor...")
 
-# ==============================================================================
-# 7. OTOMATİK BOYUTLANDIRMA SCRİPTİ (KESİN ÇÖZÜM - BLOK TARAMA)
-# ==============================================================================
-js_code = """
-<script>
-function makeAgentsResizable() {
-    // 1. Sayfadaki tüm sabit yükseklikli kutuları bul
-    const boxes = window.parent.document.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
 
-    boxes.forEach(box => {
-        // 2. Kutunun içinde bulunduğu geniş bloğu (Sütun veya Ana Blok) bul
-        // Bu komut, kutunun hiyerarşideki 'dedesini' bulur.
-        const parentBlock = box.closest('div[data-testid="column"]') || box.closest('div[data-testid="stVerticalBlock"]');
-
-        if (parentBlock) {
-            // 3. O bloğun tamamının metnini al ve BÜYÜK HARFE çevir
-            const fullText = parentBlock.innerText.toUpperCase();
-
-            // 4. Eğer bloğun içinde bir yerlerde "AJAN" geçiyorsa...
-            if (fullText.includes("AJAN")) {
-                
-                // 5. İçindeki kaydırma alanını hedefle
-                const scroller = box.querySelector('div[data-testid="stScrollingContainer"]');
-                
-                if (scroller) {
-                    // Stilleri uygula
-                    scroller.style.resize = "vertical"; 
-                    scroller.style.overflow = "auto";
-                    scroller.style.minHeight = "150px"; 
-                    
-                    // Görsel ipucu: Sağ alt köşe belirginleşsin
-                    box.style.borderBottomRightRadius = "12px";
-                    box.style.border = "1px solid #cbd5e1"; // Çerçeveyi hafif belirginleştir
-                }
-            }
-        }
-    });
-}
-
-// Streamlit dinamik olduğu için sürekli kontrol et
-setInterval(makeAgentsResizable, 1000);
-</script>
-"""
-
-components.html(js_code, height=0, width=0)
