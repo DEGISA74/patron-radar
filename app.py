@@ -2976,7 +2976,7 @@ def render_synthetic_sentiment_panel(data):
         base = alt.Chart(data).encode(x=x_axis)
         color_condition = alt.condition(
             alt.datum.MF_Smooth > 0,
-            alt.value("#3b82f6"), 
+            alt.value("#2563EB"), 
             alt.value("#ef4444")
         )
         bars = base.mark_bar(size=15, opacity=0.9).encode(
@@ -4177,6 +4177,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
