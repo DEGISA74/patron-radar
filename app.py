@@ -69,16 +69,21 @@ st.markdown(f"""
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
     /* --- TARA VE ANA BUTONLAR (MAVİ-GRİ) --- */
-    div.stButton button[data-testid="baseButton-primary"] {{
-        background-color: #607D8B !important;
+    div.stButton > button:first-child {{
+        background-color: #607D8B !important; /* Rengi buradan değiştirebilirsin */
         border-color: #607D8B !important;
         color: white !important;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        opacity: 1 !important;
+        border-radius: 6px; /* Köşeleri biraz daha yumuşattım */
+        font-weight: 600; /* Yazıyı biraz daha tok yaptım */
+        letter-spacing: 0.5px; /* Harf aralığını açarak şıklık kattım */
     }}
-    div.stButton button[data-testid="baseButton-primary"]:hover {{
-        background-color: #455A64 !important;
-        border-color: #455A64 !important;
+    div.stButton > button:hover {{
+        background-color: #475569 !important; /* Üzerine gelince koyulaşan ton */
+        border-color: #475569 !important;
         color: white !important;
+        transform: translateY(-1px); /* Hafif yukarı kalkma efekti */
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Hafif gölge */
     }}
 
     /* --- LİSTE VE SONUÇ BUTONLARI (BEYAZ/SADE) --- */
@@ -4166,6 +4171,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
