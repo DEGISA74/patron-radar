@@ -4117,7 +4117,7 @@ with col_right:
                 for sym in symbols:
                     row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
                     r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
-                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score})
+                    if combined_score >= 11: commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score})
                 
                 # Puanı yüksek olan en üste
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
@@ -4162,4 +4162,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
