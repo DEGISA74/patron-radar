@@ -4189,43 +4189,46 @@ with col_right:
             st.info("Sonuçlar bekleniyor...")
 
 # ==============================================================================
-# 7. OTOMATİK BOYUTLANDIRMA SCRİPTİ (AJAN KUTULARI İÇİN)
+# 7. OTOMATİK BOYUTLANDIRMA SCRİPTİ (DÜZELTİLMİŞ)
 # ==============================================================================
-# Bu kod, sayfanın içindeki kutuları okur. Eğer içinde "AJAN" veya "AJANI"
-# kelimesi geçiyorsa o kutunun sağ altına tutamaç ekler.
+# Bu kod, kutunun içine değil, ÇEVRESİNE bakar. Eğer bulunduğu bölümde
+# "AJAN" kelimesi geçiyorsa o kutuyu boyutlandırılabilir yapar.
 # ==============================================================================
 
 js_code = """
 <script>
 function makeAgentsResizable() {
-    // 1. Sayfadaki tüm kenarlıklı kutuları bul
+    // 1. Tüm sınırlandırılmış kutuları (height=... olanları) bul
     const boxes = window.parent.document.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
 
     boxes.forEach(box => {
-        // 2. Kutunun içindeki metni kontrol et (BÜYÜK HARFE ÇEVİRİP ARA)
-        const textContent = box.innerText.toUpperCase();
+        // 2. ÖNEMLİ DEĞİŞİKLİK: Kutunun içine değil, EBEVEYNİNE (Parent) bakıyoruz.
+        // Çünkü "Minervini Ajanı" başlığı kutunun içinde değil, hemen üstündedir.
+        // Parent (Ebeveyn) hem başlığı hem kutuyu kapsar.
+        const parentText = box.parentElement ? box.parentElement.innerText.toUpperCase() : "";
         
-        // 3. Eğer içinde "AJAN" kelimesi geçiyorsa...
-        if (textContent.includes("AJAN")) {
+        // 3. Eğer çevrede "AJAN" kelimesi geçiyorsa...
+        if (parentText.includes("AJAN")) {
             
-            // 4. İçindeki kaydırma alanını bul
+            // 4. Kutunun içindeki kaydırma alanını bul
             const scroller = box.querySelector('div[data-testid="stScrollingContainer"]');
             
             if (scroller) {
-                // 5. Boyutlandırma özelliğini aç
-                scroller.style.resize = "vertical";
-                scroller.style.overflow = "auto";
-                scroller.style.minHeight = "150px"; // Çok küçülmesini engelle
+                // 5. Boyutlandırma stilini uygula
+                scroller.style.resize = "vertical";       
+                scroller.style.overflow = "auto";         
+                scroller.style.minHeight = "150px";       
                 
-                // Görsel İpucu: Tutamacın olduğu sağ alt köşeyi hafif belirginleştir
+                // Görsel ipucu: Sağ alt köşe belirginleşsin
                 box.style.borderBottomRightRadius = "10px";
             }
         }
     });
 }
 
-// Streamlit dinamik olduğu için bu kontrolü her saniye yap
+// Her saniye kontrol et (Sayfa yenilenince kaybolmasın)
 setInterval(makeAgentsResizable, 1000);
 </script>
 """
+
 components.html(js_code, height=0, width=0)
