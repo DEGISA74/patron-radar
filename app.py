@@ -3819,7 +3819,7 @@ with col_left:
     with c_pros:
         if score_pros:
             # 1. LİMİTLEME: En fazla 10 madde göster
-            limited_pros = score_pros[:10]
+            limited_pros = score_pros[:12]
             
             html_pros = ""
             for p in limited_pros:
@@ -3841,7 +3841,7 @@ with col_left:
     with c_cons:
         if score_cons:
             # 1. LİMİTLEME: En fazla 10 madde göster
-            limited_cons = score_cons[:10]
+            limited_cons = score_cons[:12]
             
             html_cons = ""
             for c in limited_cons:
@@ -4198,6 +4198,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
