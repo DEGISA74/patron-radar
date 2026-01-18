@@ -68,9 +68,11 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
-    /* --- TARA VE ANA BUTONLAR (SADECE PRIMARY OLANLAR) --- */
-    div.stButton button[data-testid="baseButton-primary"] {{
-        background-color: #607D8B !important; 
+    /* --- TARA VE ANA BUTONLAR (PRIMARY - DÜZELTİLMİŞ) --- */
+    /* Hem kind="primary" özelliğine hem de testid'ye bakar, ıskalamaz */
+    div.stButton > button[kind="primary"],
+    div.stButton > button[data-testid="baseButton-primary"] {{
+        background-color: #607D8B !important; /* İSTEDİĞİN MAVİ-GRİ RENK */
         border-color: #607D8B !important;
         color: white !important;
         opacity: 1 !important;
@@ -79,13 +81,17 @@ st.markdown(f"""
         letter-spacing: 0.5px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }}
-    div.stButton button[data-testid="baseButton-primary"]:hover {{
-        background-color: #455A64 !important;
+
+    /* HOVER (ÜZERİNE GELİNCE) AYARLARI */
+    div.stButton > button[kind="primary"]:hover,
+    div.stButton > button[data-testid="baseButton-primary"]:hover {{
+        background-color: #455A64 !important; /* ÜZERİNE GELİNCE KOYULAŞAN TON */
         border-color: #455A64 !important;
+        color: white !important;
         transform: translateY(-1px);
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }}
-
+    
     /* --- LİSTE VE SONUÇ BUTONLARI (BEYAZ/SADE) --- */
     div.stButton button[data-testid="baseButton-secondary"] {{
         background-color: #FFFFFF !important;
@@ -4171,6 +4177,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
