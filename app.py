@@ -4090,63 +4090,75 @@ with col_right:
     # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
     
+st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
+
+    # --- TEK TUŞLA DEV TARAMA BUTONU ---
+    if st.button(f"🚀 {st.session_state.category} KAPSAMLI TARA (R1 + R2)", type="primary", use_container_width=True, key="master_scan_btn"):
+        with st.spinner("Piyasa Röntgeni Çekiliyor... Hem Momentum (R1) Hem Trend (R2) taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            
+            # Paralel olarak iki taramayı da yapıp hafızaya atıyoruz
+            st.session_state.scan_data = analyze_market_intelligence(current_assets)
+            st.session_state.radar2_data = radar2_scan(current_assets)
+            
+            st.rerun() # Sayfayı yenile ki aşağıdaki listeler dolsun
+
     # 5. Ortak Fırsatlar Başlığı
-    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar (Kesişim)</div>", unsafe_allow_html=True)
     
-    # 6. Ortak Fırsatlar Listesi
-    with st.container(height=250):
+    # 6. Ortak Fırsatlar Listesi (Otomatik Dolacak)
+    with st.container(height=200):
         df1 = st.session_state.scan_data; df2 = st.session_state.radar2_data
+        
+        # Eğer iki veri de varsa hesapla
         if df1 is not None and df2 is not None and not df1.empty and not df2.empty:
             commons = []; symbols = set(df1["Sembol"]).intersection(set(df2["Sembol"]))
             if symbols:
                 for sym in symbols:
                     row1 = df1[df1["Sembol"] == sym].iloc[0]; row2 = df2[df2["Sembol"] == sym].iloc[0]
                     r1_score = float(row1["Skor"]); r2_score = float(row2["Skor"]); combined_score = r1_score + r2_score
-                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score, "r1_max": 7, "r2_max": 7})
+                    commons.append({"symbol": sym, "r1_score": r1_score, "r2_score": r2_score, "combined": combined_score})
+                
+                # Puanı yüksek olan en üste
                 sorted_commons = sorted(commons, key=lambda x: x["combined"], reverse=True)
+                
                 cols = st.columns(2) 
                 for i, item in enumerate(sorted_commons):
                     sym = item["symbol"]
-                    score_text_safe = f"{i+1}. {sym} ({int(item['combined'])})"
+                    # Buton Metni: 1. THYAO (13)
+                    score_text = f"{i+1}. {sym} ({int(item['combined'])})"
                     with cols[i % 2]:
-                        if st.button(f"{score_text_safe} | R1:{int(item['r1_score'])} R2:{int(item['r2_score'])}", key=f"c_select_{sym}", help="Detaylar için seç", use_container_width=True): 
+                        if st.button(f"{score_text}", key=f"common_{sym}", help=f"R1: {int(item['r1_score'])} | R2: {int(item['r2_score'])}", use_container_width=True): 
                             on_scan_result_click(sym); st.rerun()
-            else: st.info("Kesişim yok.")
-        else: st.caption("İki radar da çalıştırılmalı.")
-   
+            else: 
+                st.info("Kesişim yok (İki listede de olan hisse yok).")
+        else: 
+            st.caption("Yukarıdaki butona basarak taramayı başlatın.")
+    
+    # 7. TABLAR (Artık içlerinde buton yok, sadece sonuç var)
     tab1, tab2 = st.tabs(["🧠 RADAR 1", "🚀 RADAR 2"])
+    
     with tab1:
-        if st.button(f"⚡ {st.session_state.category} Tara", type="primary", key="r1_main_scan_btn"):
-            with st.spinner("Taranıyor..."): st.session_state.scan_data = analyze_market_intelligence(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.scan_data is not None:
-            with st.container(height=250):
+        if st.session_state.scan_data is not None and not st.session_state.scan_data.empty:
+            with st.container(height=300):
                 cols = st.columns(2)
                 for i, (index, row) in enumerate(st.session_state.scan_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🔥 {row['Skor']}/7 | {row['Sembol']}", key=f"r1_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
+                        if st.button(f"🔥 {int(row['Skor'])}/7 | {sym}", key=f"r1_res_{i}", use_container_width=True): 
+                            on_scan_result_click(sym); st.rerun()
+        else:
+            st.info("Sonuçlar bekleniyor...")
+
     with tab2:
-        if st.button(f"🚀 RADAR 2 Tara", type="primary", key="r2_main_scan_btn"):
-            with st.spinner("Taranıyor..."): st.session_state.radar2_data = radar2_scan(ASSET_GROUPS.get(st.session_state.category, []))
-        if st.session_state.radar2_data is not None:
-            with st.container(height=250):
+        if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
+            with st.container(height=300):
                 cols = st.columns(2)
                 for i, (index, row) in enumerate(st.session_state.radar2_data.iterrows()):
                     sym = row["Sembol"]
                     with cols[i % 2]:
-                        if st.button(f"🚀 {row['Skor']}/7 | {row['Sembol']} | {row['Setup']}", key=f"r2_b_{i}", use_container_width=True): on_scan_result_click(row['Sembol']); st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                        setup = row['Setup'] if row['Setup'] != "-" else "Trend"
+                        if st.button(f"🚀 {int(row['Skor'])}/7 | {sym}", key=f"r2_res_{i}", use_container_width=True, help=f"Setup: {setup}"): 
+                            on_scan_result_click(sym); st.rerun()
+        else:
+            st.info("Sonuçlar bekleniyor...")
