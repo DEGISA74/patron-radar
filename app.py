@@ -4188,15 +4188,44 @@ with col_right:
         else:
             st.info("Sonuçlar bekleniyor...")
 
+# ==============================================================================
+# 7. OTOMATİK BOYUTLANDIRMA SCRİPTİ (AJAN KUTULARI İÇİN)
+# ==============================================================================
+# Bu kod, sayfanın içindeki kutuları okur. Eğer içinde "AJAN" veya "AJANI"
+# kelimesi geçiyorsa o kutunun sağ altına tutamaç ekler.
+# ==============================================================================
 
+js_code = """
+<script>
+function makeAgentsResizable() {
+    // 1. Sayfadaki tüm kenarlıklı kutuları bul
+    const boxes = window.parent.document.querySelectorAll('div[data-testid="stVerticalBlockBorderWrapper"]');
 
+    boxes.forEach(box => {
+        // 2. Kutunun içindeki metni kontrol et (BÜYÜK HARFE ÇEVİRİP ARA)
+        const textContent = box.innerText.toUpperCase();
+        
+        // 3. Eğer içinde "AJAN" kelimesi geçiyorsa...
+        if (textContent.includes("AJAN")) {
+            
+            // 4. İçindeki kaydırma alanını bul
+            const scroller = box.querySelector('div[data-testid="stScrollingContainer"]');
+            
+            if (scroller) {
+                // 5. Boyutlandırma özelliğini aç
+                scroller.style.resize = "vertical";
+                scroller.style.overflow = "auto";
+                scroller.style.minHeight = "150px"; // Çok küçülmesini engelle
+                
+                // Görsel İpucu: Tutamacın olduğu sağ alt köşeyi hafif belirginleştir
+                box.style.borderBottomRightRadius = "10px";
+            }
+        }
+    });
+}
 
-
-
-
-
-
-
-
-
-
+// Streamlit dinamik olduğu için bu kontrolü her saniye yap
+setInterval(makeAgentsResizable, 1000);
+</script>
+"""
+components.html(js_code, height=0, width=0)
