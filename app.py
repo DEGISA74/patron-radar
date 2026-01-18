@@ -3815,33 +3815,44 @@ with col_left:
     # 4. NEDENLER (İKİ SÜTUN: SOL POZİTİF / SAĞ NEGATİF)
     c_pros, c_cons = st.columns(2)
 
-    # Sol Sütun: Pozitifler (Yeşil Kutu)
+    # --- Sol Sütun: Pozitifler (Yeşil Kutu) ---
     with c_pros:
         if score_pros:
+            # 1. LİMİTLEME: En fazla 10 madde göster
+            limited_pros = score_pros[:10]
+            
             html_pros = ""
-            for p in score_pros:
-                html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px;'>✅ {p}</div>"
+            for p in limited_pros:
+                # 'break-inside: avoid-column' maddelerin sütun arasında bölünmesini engeller
+                html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px; break-inside: avoid-column;'>✅ {p}</div>"
             
             st.markdown(f"""
             <div style="background:#f0fdf4; padding:8px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
-                <div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:5px; border-bottom:1px solid #bbf7d0; padding-bottom:2px;">POZİTİF ETKENLER</div>
-                {html_pros}
+                <div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:5px; border-bottom:1px solid #bbf7d0; padding-bottom:2px;">POZİTİF ETKENLER ({len(limited_pros)})</div>
+                <div style="column-count: 2; column-gap: 15px;">
+                    {html_pros}
+                </div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.info("Belirgin pozitif etken yok.")
 
-    # Sağ Sütun: Negatifler (Kırmızı Kutu)
+    # --- Sağ Sütun: Negatifler (Kırmızı Kutu) ---
     with c_cons:
         if score_cons:
+            # 1. LİMİTLEME: En fazla 10 madde göster
+            limited_cons = score_cons[:10]
+            
             html_cons = ""
-            for c in score_cons:
-                html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px;'>❌ {c}</div>"
+            for c in limited_cons:
+                html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px; break-inside: avoid-column;'>❌ {c}</div>"
             
             st.markdown(f"""
             <div style="background:#fef2f2; padding:8px; border-radius:6px; border:1px solid #fecaca; height:100%;">
-                <div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:5px; border-bottom:1px solid #fecaca; padding-bottom:2px;">NEGATİF ETKENLER</div>
-                {html_cons}
+                <div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:5px; border-bottom:1px solid #fecaca; padding-bottom:2px;">NEGATİF ETKENLER ({len(limited_cons)})</div>
+                <div style="column-count: 2; column-gap: 15px;">
+                    {html_cons}
+                </div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -4187,5 +4198,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
