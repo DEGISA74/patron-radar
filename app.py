@@ -142,6 +142,14 @@ st.markdown(f"""
 
     .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+
+    /* --- KUTULARI (CONTAINER) OYNAK/BOYUTLANDIRILABİLİR YAPMA --- */
+    div[data-testid="stScrollingContainer"] {{
+        resize: vertical !important;   /* Dikey olarak boyutlandırma tutamacını açar */
+        overflow: auto !important;     /* İçerik sığmazsa kaydırma çubuğu çıkarır */
+        min-height: 100px !important;  /* Kutunun tamamen kaybolmasını engeller */
+        padding-bottom: 10px !important; /* Tutamaç (sağ alt köşe) için biraz boşluk bırakır */
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -4177,6 +4185,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
