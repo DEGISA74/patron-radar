@@ -68,35 +68,39 @@ st.markdown(f"""
     .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
     .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
     
-      /* --- YAPAY ZEKA İNDİGOSU (MAT & ŞIK) --- */
-    div.stButton > button:first-child {{
-        background-color: #607D8B !important; /* Rengi buradan değiştirebilirsin */
+     /* --- TARA VE ANA BUTONLAR (MAVİ-GRİ) --- */
+    div.stButton button[data-testid="baseButton-primary"] {
+        background-color: #607D8B !important;
         border-color: #607D8B !important;
         color: white !important;
-        opacity: 1 !important;
-        border-radius: 6px; /* Köşeleri biraz daha yumuşattım */
-        font-weight: 600; /* Yazıyı biraz daha tok yaptım */
-        letter-spacing: 0.5px; /* Harf aralığını açarak şıklık kattım */
-    }}
-    
-    div.stButton > button:hover {{
-        background-color: #475569 !important; /* Üzerine gelince koyulaşan ton */
-        border-color: #475569 !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    div.stButton button[data-testid="baseButton-primary"]:hover {
+        background-color: #455A64 !important;
+        border-color: #455A64 !important;
         color: white !important;
-        transform: translateY(-1px); /* Hafif yukarı kalkma efekti */
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Hafif gölge */
-    }}
+    }
+
+    /* --- LİSTE VE SONUÇ BUTONLARI (BEYAZ/SADE) --- */
+    div.stButton button[data-testid="baseButton-secondary"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        color: #334155 !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    div.stButton button[data-testid="baseButton-secondary"]:hover {
+        background-color: #F8FAFC !important;
+        border-color: #64748B !important;
+        color: #0F172A !important;
+    }
     
-    div.stButton > button:active {{
-        background-color: #312E81 !important;
-        transform: translateY(0px);
-    }}
-    
-    .stButton button {{ 
-        width: 100%; border-radius: 4px;
+    /* --- GENEL BUTON BOYUT AYARI --- */
+    .stButton button {
+        width: 100%;
+        border-radius: 6px;
         font-size: 0.75rem;
         padding: 0.1rem 0.4rem;
-    }}
+    }
     
     .info-card {{
         background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
@@ -4162,5 +4166,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
