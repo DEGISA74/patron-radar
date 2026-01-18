@@ -144,11 +144,13 @@ st.markdown(f"""
     .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
 
     /* --- KUTULARI (CONTAINER) OYNAK/BOYUTLANDIRILABİLİR YAPMA --- */
-    div[data-testid="stScrollingContainer"] {{
-        resize: vertical !important;   /* Dikey olarak boyutlandırma tutamacını açar */
-        overflow: auto !important;     /* İçerik sığmazsa kaydırma çubuğu çıkarır */
-        min-height: 100px !important;  /* Kutunun tamamen kaybolmasını engeller */
-        padding-bottom: 10px !important; /* Tutamaç (sağ alt köşe) için biraz boşluk bırakır */
+    /* st.container(height=...) ile oluşturulan kutuları hedefler */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        resize: vertical !important;    /* Dikey boyutlandırmayı açar */
+        overflow: auto !important;      /* İçerik taşarsa kaydırma çubuğu çıkarır */
+        min-height: 150px !important;   /* Kutunun çok küçülüp kaybolmasını engeller */
+        margin-bottom: 10px !important; /* Altına biraz boşluk bırakır */
+        border-bottom-right-radius: 8px !important; /* Tutamaç köşesini belirginleştirir */
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -4185,6 +4187,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
