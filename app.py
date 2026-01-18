@@ -4090,7 +4090,7 @@ with col_right:
     # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
     
-st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
     # --- TEK TUŞLA DEV TARAMA BUTONU ---
     if st.button(f"🚀 {st.session_state.category} KAPSAMLI TARA (R1 + R2)", type="primary", use_container_width=True, key="master_scan_btn"):
@@ -4162,3 +4162,4 @@ st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_ht
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
