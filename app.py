@@ -298,11 +298,11 @@ ASSET_GROUPS = {
     "BIST 500 ": final_bist100_list,
     "KRİPTO-TOP 25": final_crypto_list
 }
-INITIAL_CATEGORY = "S&P 500"
+INITIAL_CATEGORY = "BIST 500"
 
 # --- STATE YÖNETİMİ ---
 if 'category' not in st.session_state: st.session_state.category = INITIAL_CATEGORY
-if 'ticker' not in st.session_state: st.session_state.ticker = "^GSPC"
+if 'ticker' not in st.session_state: st.session_state.ticker = "XU100"
 if 'scan_data' not in st.session_state: st.session_state.scan_data = None
 if 'generate_prompt' not in st.session_state: st.session_state.generate_prompt = False
 if 'radar2_data' not in st.session_state: st.session_state.radar2_data = None
@@ -4198,6 +4198,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
