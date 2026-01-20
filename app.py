@@ -2179,8 +2179,8 @@ def scan_minervini_batch(asset_list):
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
-        df = get_safe_historical_data(ticker, period="6mo")
-        if df is None: return None
+        df = get_safe_historical_data(ticker, period="1y")
+        if df is None or len(df) < 200: return None
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
@@ -4304,6 +4304,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
