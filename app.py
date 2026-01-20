@@ -1598,7 +1598,8 @@ def process_single_breakout(symbol, df):
                 "Hacim Durumu": rvol_text, 
                 "Trend Durumu": trend_display, 
                 "RSI": f"{rsi:.0f}", 
-                "SortKey": sort_score 
+                "SortKey": sort_score,
+                "Hacim": curr_vol_raw
             }
         return None
     except: return None
@@ -1624,7 +1625,7 @@ def agent3_breakout_scan(asset_list):
             res = future.result()
             if res: results.append(res)
     
-    return pd.DataFrame(results).sort_values(by="SortKey", ascending=False) if results else pd.DataFrame()
+    return pd.DataFrame(results).sort_values(by="Hacim", ascending=False) if results else pd.DataFrame()
 
 def process_single_confirmed(symbol, df):
     try:
@@ -1726,8 +1727,8 @@ def process_single_confirmed(symbol, df):
             "Kirim_Turu": breakout_type,
             "Hacim_Kati": vol_display,
             "RSI": int(rsi),
-            # Sıralamayı hacim "hızına" göre yapıyoruz
-            "SortKey": performance_ratio 
+            "SortKey": performance_ratio,
+            "Hacim": curr_vol
         }
     except: return None
 
@@ -1752,7 +1753,7 @@ def scan_confirmed_breakouts(asset_list):
             res = future.result()
             if res: results.append(res)
     
-    return pd.DataFrame(results).sort_values(by="SortKey", ascending=False).head(20) if results else pd.DataFrame()
+    return pd.DataFrame(results).sort_values(by="Hacim", ascending=False).head(20) if results else pd.DataFrame()
 
 # --- TEMEL VE MASTER SKOR FONKSİYONLARI (YENİ) ---
 @st.cache_data(ttl=3600)
@@ -4203,6 +4204,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
