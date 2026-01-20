@@ -2184,17 +2184,34 @@ def calculate_sentiment_score(ticker):
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        # --- ENDEKS Mİ HİSSE Mİ? ---
-        is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
+        # --- [DÜZELTME] GELİŞMİŞ ENDEKS/VARLIK TANIMA ---
+        # 1. Global Endeksler (Genelde ^ ile başlar: ^GSPC, ^IXIC, ^DJI)
+        is_global_index = ticker.startswith("^")
         
-        # Puan Ağırlıkları (Dinamik)
+        # 2. BIST Endeksleri (XU100, XBANK, XUSIN, XTEKN vb.)
+        # Hisselerle karışmaması için (örn: XOM - Exxon Mobil) spesifik kökleri kontrol ediyoruz.
+        bist_indices_roots = [
+            "XU100", "XU030", "XU050", "XBANK", "XUSIN", "XTEKN", 
+            "XBLSM", "XGMYO", "XTRZM", "XILET", "XKMYA", "XMANA", 
+            "XSPOR", "XILTM", "XINSA", "XHOLD", "XTUMY"
+        ]
+        is_bist_index = any(root in ticker for root in bist_indices_roots)
+        
+        # 3. Kripto Paralar (BTC-USD, ETH-USD vb.)
+        # Kriptoların endeksle RS'i olmaz, kendi dinamikleri vardır.
+        is_crypto = "-USD" in ticker
+        
+        # Hepsini tek çatı altında topluyoruz: "RS HARİÇ PUANLANACAKLAR"
+        is_index = is_global_index or is_bist_index or is_crypto
+        
+        # --- PUAN AĞIRLIKLARI ---
         if is_index:
-            # Endeks ise puanlar diğerlerine dağıtılır (Toplam 100)
+            # Endeks/Kripto ise: RS Yok, diğerleri 25p
             W_STR, W_TR, W_VOL = 25, 25, 25
             W_MOM, W_VOLA = 15, 10
-            W_RS = 0 # RS Puanı Yok
+            W_RS = 0
         else:
-            # Hisse ise standart (Toplam 100)
+            # Hisse ise: Standart (20p + 15p RS)
             W_STR, W_TR, W_VOL = 20, 20, 20
             W_MOM, W_VOLA = 15, 10
             W_RS = 15
@@ -2243,7 +2260,7 @@ def calculate_sentiment_score(ticker):
         macd = ema12 - ema26; signal = macd.ewm(span=9, adjust=False).mean()
         if macd.iloc[-1] > signal.iloc[-1]: score_mom += 5; reasons_mom.append("MACD Al")
 
-        # --- 5. VOLATİLİTE (SIKIŞMA) ---
+        # --- 5. VOLATİLİTE ---
         score_vola = 0; reasons_vola = []
         std = close.rolling(20).std()
         upper = close.rolling(20).mean() + (2 * std)
@@ -2255,6 +2272,8 @@ def calculate_sentiment_score(ticker):
             
         # --- 6. GÜÇ (RS) ---
         score_rs = 0; reasons_rs = []
+        
+        # Sadece HİSSE ise hesapla
         if not is_index:
             bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
             try:
@@ -2287,9 +2306,11 @@ def calculate_sentiment_score(ticker):
             content = " + ".join(lst)
             return f"<span style='font-size:0.7rem; color:#334155; font-style:italic; font-weight:300;'>({content})</span>"
         
-        # GÖRSEL İÇİN HAZIRLIK
-        # Eğer endeks ise RS puanı yerine "Devre Dışı" yazacağız ama satır orada olacak.
-        rs_display = f"{int(score_rs)}/{W_RS} {fmt(reasons_rs)}" if not is_index else "<span style='color:#94a3b8; font-style:italic;'>Endeks için Devre Dışı</span>"
+        # GÖRSEL HAZIRLIĞI
+        if is_index:
+            rs_text = f"<span style='color:#94a3b8; font-style:italic; font-weight:600;'>--- (Endeks/Kripto Analizi) ---</span>"
+        else:
+            rs_text = f"{int(score_rs)}/{W_RS} {fmt(reasons_rs)}"
 
         return {
             "total": total, "bar": bar_str, 
@@ -2298,7 +2319,7 @@ def calculate_sentiment_score(ticker):
             "tr": f"{int(score_tr)}/{W_TR} {fmt(reasons_tr)}",
             "vola": f"{int(score_vola)}/{W_VOLA} {fmt(reasons_vola)}", 
             "str": f"{int(score_str)}/{W_STR} {fmt(reasons_str)}",
-            "rs": rs_display, # Burası artık dinamik metin taşıyor
+            "rs": rs_text, 
             "raw_rsi": rsi.iloc[-1], "raw_macd": (macd-signal).iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": 0,
             "is_index": is_index
         }
@@ -2814,8 +2835,11 @@ def render_sentiment_card(sent):
     elif score >= 30: color = "#b91c1c"; icon = "🐻"; status = "ZAYIF / AYI"
     else: color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"
     
-    # Başlık puanlarını dinamik yapıyoruz (25p veya 20p)
+    # 1. Başlık Puan Etiketi (25p mi 20p mi?)
     p_label = '25p' if sent.get('is_index', False) else '20p'
+    
+    # 2. RS Kutusu Başlığı (Devre Dışı mı 15p mi?)
+    rs_label = 'Devre Dışı' if sent.get('is_index', False) else '15p'
 
     html_content = f"""
     <div class="info-card">
@@ -2858,7 +2882,7 @@ def render_sentiment_card(sent):
         <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)</div>
 
         <div class="info-row">
-            <div class="label-long" style="width:120px;">6. GÜÇ (15p):</div>
+            <div class="label-long" style="width:120px;">6. GÜÇ ({rs_label}):</div>
             <div class="info-val">{sent['rs']}</div>
         </div>
         <div class="edu-note">Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)</div>
@@ -4274,5 +4298,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
