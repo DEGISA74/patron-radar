@@ -1200,7 +1200,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
             "RS_Durumu": rs_status,       
             "Pivot_Sinyali": pp_desc,     
             "Pocket_Pivot": is_pocket_pivot,
-            "Kalite": quality_label # Yeni alan eklendi
+            "Kalite": quality_label # Yeni alan eklendi,
             "Hacim": float(volume.iloc[-1])
         }
     except Exception: return None
@@ -4203,6 +4203,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
