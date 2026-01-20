@@ -3913,8 +3913,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - En Yakın Destek: {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
 
-*** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt.
-En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et:
+*** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
+En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
@@ -4354,4 +4354,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
