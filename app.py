@@ -691,6 +691,7 @@ def process_single_stock_stp(symbol, df):
         close = df['Close']
         high = df['High']
         low = df['Low']
+        volume = float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0
         
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
@@ -710,7 +711,7 @@ def process_single_stock_stp(symbol, df):
         if c_prev <= s_prev and c_last > s_last:
             result = {
                 "type": "cross",
-                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100}
+                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume}
             }
             sma_val = float(sma200.iloc[-1])
             rsi_val = float(rsi.iloc[-1])
@@ -732,6 +733,7 @@ def process_single_stock_stp(symbol, df):
                     "STP": s_last, 
                     "Fark": ((c_last/s_last)-1)*100,
                     "Gun": int(streak_count)
+                    "Hacim": volume
                 }
             }
         return result
@@ -1061,6 +1063,8 @@ def scan_stp_signals(asset_list):
                 elif res["type"] == "trend":
                     trend_signals.append(res["data"])
 
+    cross_signals.sort(key=lambda x: x.get("Hacim", 0), reverse=True)
+    filtered_signals.sort(key=lambda x: x.get("Hacim", 0), reverse=True) # İstersen filtrelenmişleri de sıralayabilirsin
     trend_signals.sort(key=lambda x: x["Gun"], reverse=False)
     return cross_signals, trend_signals, filtered_signals
 
@@ -4198,6 +4202,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
