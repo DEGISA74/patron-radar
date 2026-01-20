@@ -3924,7 +3924,7 @@ En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve �
    - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" YAZ.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" ve altına da "#SmartMoneyRadar" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -4354,3 +4354,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
