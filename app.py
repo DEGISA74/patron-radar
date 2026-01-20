@@ -3799,11 +3799,21 @@ if st.session_state.generate_prompt:
     # Price Action Tanımları
     mum_desc = "-"
     pa_div = "-"
+    sfp_desc = "-"
+    loc_desc = "-"
     if pa_data:
-        mum_desc = pa_data.get('candle', {}).get('title', '-')
+        mum_desc = pa_data.get('candle', {}).get('desc', '-')
+        
+        sfp_info = pa_data.get('sfp', {})
+        sfp_desc = f"{sfp_info.get('title', '-')} ({sfp_info.get('desc', '-')})"
+        
+        # Ekstra: Konum (Structure) bilgisini de ekleyelim, AI sevinir.
+        loc_info = pa_data.get('loc', {})
+        loc_desc = f"{loc_info.get('title', '-')} - {loc_info.get('desc', '-')}"
+
+        # Uyumsuzluk
         div_data = pa_data.get('div', {})
         pa_div = f"{div_data.get('title', '-')} ({div_data.get('type', '-')})"
-
     # Diğer Metin Hazırlıkları
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     r1_txt = "Veri Yok"
@@ -4343,6 +4353,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
