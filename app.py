@@ -2179,13 +2179,13 @@ def scan_minervini_batch(asset_list):
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
-        df = get_safe_historical_data(ticker, period="1y")
+        # Veri Çekme (2y: SMA200 garantisi için)
+        df = get_safe_historical_data(ticker, period="2y")
         if df is None or len(df) < 200: return None
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        # --- TANIMLAMALAR ---
-        # Global ve BIST Endekslerini/Kriptoları Tanıma
+        # --- TANIMLAMALAR (Endeks/Hisse Ayrımı) ---
         bist_indices_roots = [
             "XU100", "XU030", "XU050", "XBANK", "XUSIN", "XTEKN", 
             "XBLSM", "XGMYO", "XTRZM", "XILET", "XKMYA", "XMANA", 
@@ -2194,7 +2194,6 @@ def calculate_sentiment_score(ticker):
         is_global_index = ticker.startswith("^")
         is_bist_index = any(root in ticker for root in bist_indices_roots)
         is_crypto = "-USD" in ticker
-        
         is_index = is_global_index or is_bist_index or is_crypto
         
         # --- PUAN AĞIRLIKLARI ---
@@ -2207,37 +2206,25 @@ def calculate_sentiment_score(ticker):
             W_MOM, W_VOLA = 15, 10
             W_RS = 15
 
-        # ==============================================================================
-        # [GÜNCELLENMİŞ KISIM] 1. YAPI (MARKET STRUCTURE)
-        # ==============================================================================
+        # =========================================================
+        # 1. YAPI (MARKET STRUCTURE)
+        # =========================================================
         score_str = 0; reasons_str = []
-        
-        # Son 20 günün en yükseği ve en düşüğü (Bugün hariç önceki pencere)
         recent_high = high.rolling(20).max().shift(1).iloc[-1]
         recent_low = low.rolling(20).min().shift(1).iloc[-1]
         curr_close = close.iloc[-1]
         
-        # KURAL 1: BOS (Break of Structure) ve ZİRVE GÜCÜ
-        # Eski: Sadece kırarsa puan veriyordu.
-        # Yeni: Zirveyi kırdıysa VEYA Zirvenin %3 yakınındaysa (Tutunuyorsa) puan ver.
-        # Bu, "High Tight Flag" yapanları cezalandırmaz.
-        
         if curr_close > recent_high:
-            score_str += (W_STR * 0.6)
-            reasons_str.append("BOS: Zirve Kırılımı")
-        elif curr_close >= (recent_high * 0.97): # %3 Tolerans
-            score_str += (W_STR * 0.6)
-            reasons_str.append("Zirveye Yakın (Güçlü)")
+            score_str += (W_STR * 0.6); reasons_str.append("BOS: Zirve Kırılımı")
+        elif curr_close >= (recent_high * 0.97):
+            score_str += (W_STR * 0.6); reasons_str.append("Zirveye Yakın (Güçlü)")
             
-        # KURAL 2: HL (Higher Low - Yükselen Dip)
-        # Dip seviyesi, 20 gün önceki dipten yukarıdaysa trend korunuyordur.
         if low.iloc[-1] > recent_low:
-            score_str += (W_STR * 0.4)
-            reasons_str.append("HL: Yükselen Dip")
+            score_str += (W_STR * 0.4); reasons_str.append("HL: Yükselen Dip")
 
-        # ==============================================================================
-
-        # --- 2. TREND ---
+        # =========================================================
+        # 2. TREND
+        # =========================================================
         score_tr = 0; reasons_tr = []
         sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
@@ -2246,17 +2233,66 @@ def calculate_sentiment_score(ticker):
         if close.iloc[-1] > ema20.iloc[-1]: score_tr += (W_TR * 0.4); reasons_tr.append("Kısa Vade+")
         if ema20.iloc[-1] > sma50.iloc[-1]: score_tr += (W_TR * 0.2); reasons_tr.append("Hizalı")
 
-        # --- 3. HACİM ---
+        # =========================================================
+        # [GÜNCELLENMİŞ] 3. HACİM (ZAMAN AYARLI / PROJESİYONLU)
+        # =========================================================
         score_vol = 0; reasons_vol = []
-        vol_ma = volume.rolling(20).mean()
         
-        if volume.iloc[-1] > vol_ma.iloc[-1]: score_vol += (W_VOL * 0.6); reasons_vol.append("Hacim Artışı")
+        # A. Ortalamayı hesapla (Bugünü hariç tutarak son 20 günün ortalaması)
+        # Çünkü bugünün yarım yamalak hacmi ortalamayı bozmasın.
+        avg_vol_20 = volume.iloc[:-1].tail(20).mean()
+        if pd.isna(avg_vol_20) or avg_vol_20 == 0: avg_vol_20 = 1
         
+        # B. Zaman İlerlemesini Hesapla (Progress 0.0 - 1.0)
+        last_date = df.index[-1].date()
+        today_date = datetime.now().date()
+        is_live_today = (last_date == today_date)
+        
+        progress = 1.0 # Varsayılan: Gün bitti
+        
+        if is_live_today:
+            now = datetime.now()
+            # BIST Saati Kontrolü (Global sunucuda TR saati ayarı gerekebilir, 
+            # burası sunucu saatine göre çalışır. Basitlik için 10:00-18:00 varsayıyoruz)
+            # Eğer sunucun UTC ise +3 eklemek gerekebilir: datetime.now() + timedelta(hours=3)
+            # Burayı standart yerel saat varsayıyoruz:
+            current_hour = now.hour
+            current_minute = now.minute
+            
+            # Kripto 7/24'tür ama hisse 10-18 arasıdır. Ayrım yapalım:
+            if is_crypto:
+                progress = (current_hour * 60 + current_minute) / 1440.0
+            else:
+                # Borsa İstanbul (10:00 - 18:00 = 480 dakika)
+                if current_hour < 10: progress = 0.1
+                elif current_hour >= 18: progress = 1.0
+                else:
+                    passed_mins = (current_hour - 10) * 60 + current_minute
+                    progress = passed_mins / 480.0
+            
+            progress = max(0.1, min(progress, 1.0)) # 0'a bölme hatası olmasın
+            
+        # C. Projeksiyonlu Hacim (Bu hızla giderse gün sonu ne olur?)
+        curr_vol_raw = float(volume.iloc[-1])
+        projected_vol = curr_vol_raw / progress
+        
+        # KURAL 1: Hacim Artışı (Ortalamadan Büyük mü?)
+        if projected_vol > avg_vol_20:
+            score_vol += (W_VOL * 0.6)
+            # Eğer saat erkense "Proj." ibaresi ekle ki kullanıcı anlasın
+            suffix = " (Proj.)" if (is_live_today and progress < 0.9) else ""
+            reasons_vol.append(f"Hacim Artışı{suffix}")
+            
+        # KURAL 2: OBV (On Balance Volume)
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         obv_ma = obv.rolling(10).mean()
-        if obv.iloc[-1] > obv_ma.iloc[-1]: score_vol += (W_VOL * 0.4); reasons_vol.append("OBV+")
+        if obv.iloc[-1] > obv_ma.iloc[-1]: 
+            score_vol += (W_VOL * 0.4)
+            reasons_vol.append("OBV+")
 
-        # --- 4. MOMENTUM ---
+        # =========================================================
+        # 4. MOMENTUM
+        # =========================================================
         score_mom = 0; reasons_mom = []
         delta = close.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
@@ -2271,7 +2307,9 @@ def calculate_sentiment_score(ticker):
         macd = ema12 - ema26; signal = macd.ewm(span=9, adjust=False).mean()
         if macd.iloc[-1] > signal.iloc[-1]: score_mom += 5; reasons_mom.append("MACD Al")
 
-        # --- 5. VOLATİLİTE ---
+        # =========================================================
+        # 5. VOLATİLİTE
+        # =========================================================
         score_vola = 0; reasons_vola = []
         std = close.rolling(20).std()
         upper = close.rolling(20).mean() + (2 * std)
@@ -2281,13 +2319,14 @@ def calculate_sentiment_score(ticker):
         if bb_width.iloc[-1] < bb_width.rolling(20).mean().iloc[-1]:
             score_vola += 10; reasons_vola.append("Sıkışma")
             
-        # --- 6. GÜÇ (RS) ---
+        # =========================================================
+        # 6. GÜÇ (RS)
+        # =========================================================
         score_rs = 0; reasons_rs = []
-        
         if not is_index:
             bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
             try:
-                bench_df = get_safe_historical_data(bench_ticker, period="6mo")
+                bench_df = get_safe_historical_data(bench_ticker, period="2y")
                 if bench_df is not None:
                     common_idx = close.index.intersection(bench_df.index)
                     stock_p = close.loc[common_idx]
@@ -4304,6 +4343,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
