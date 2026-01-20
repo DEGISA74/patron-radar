@@ -2184,47 +2184,58 @@ def calculate_sentiment_score(ticker):
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        # --- [DÜZELTME] GELİŞMİŞ ENDEKS/VARLIK TANIMA ---
-        # 1. Global Endeksler (Genelde ^ ile başlar: ^GSPC, ^IXIC, ^DJI)
-        is_global_index = ticker.startswith("^")
-        
-        # 2. BIST Endeksleri (XU100, XBANK, XUSIN, XTEKN vb.)
-        # Hisselerle karışmaması için (örn: XOM - Exxon Mobil) spesifik kökleri kontrol ediyoruz.
+        # --- TANIMLAMALAR ---
+        # Global ve BIST Endekslerini/Kriptoları Tanıma
         bist_indices_roots = [
             "XU100", "XU030", "XU050", "XBANK", "XUSIN", "XTEKN", 
             "XBLSM", "XGMYO", "XTRZM", "XILET", "XKMYA", "XMANA", 
             "XSPOR", "XILTM", "XINSA", "XHOLD", "XTUMY"
         ]
+        is_global_index = ticker.startswith("^")
         is_bist_index = any(root in ticker for root in bist_indices_roots)
-        
-        # 3. Kripto Paralar (BTC-USD, ETH-USD vb.)
-        # Kriptoların endeksle RS'i olmaz, kendi dinamikleri vardır.
         is_crypto = "-USD" in ticker
         
-        # Hepsini tek çatı altında topluyoruz: "RS HARİÇ PUANLANACAKLAR"
         is_index = is_global_index or is_bist_index or is_crypto
         
         # --- PUAN AĞIRLIKLARI ---
         if is_index:
-            # Endeks/Kripto ise: RS Yok, diğerleri 25p
             W_STR, W_TR, W_VOL = 25, 25, 25
             W_MOM, W_VOLA = 15, 10
             W_RS = 0
         else:
-            # Hisse ise: Standart (20p + 15p RS)
             W_STR, W_TR, W_VOL = 20, 20, 20
             W_MOM, W_VOLA = 15, 10
             W_RS = 15
 
-        # --- 1. YAPI (STRUCTURE) ---
+        # ==============================================================================
+        # [GÜNCELLENMİŞ KISIM] 1. YAPI (MARKET STRUCTURE)
+        # ==============================================================================
         score_str = 0; reasons_str = []
+        
+        # Son 20 günün en yükseği ve en düşüğü (Bugün hariç önceki pencere)
         recent_high = high.rolling(20).max().shift(1).iloc[-1]
         recent_low = low.rolling(20).min().shift(1).iloc[-1]
+        curr_close = close.iloc[-1]
         
-        if close.iloc[-1] > recent_high: 
-            score_str += (W_STR * 0.6); reasons_str.append("BOS: Kırılım")
+        # KURAL 1: BOS (Break of Structure) ve ZİRVE GÜCÜ
+        # Eski: Sadece kırarsa puan veriyordu.
+        # Yeni: Zirveyi kırdıysa VEYA Zirvenin %3 yakınındaysa (Tutunuyorsa) puan ver.
+        # Bu, "High Tight Flag" yapanları cezalandırmaz.
+        
+        if curr_close > recent_high:
+            score_str += (W_STR * 0.6)
+            reasons_str.append("BOS: Zirve Kırılımı")
+        elif curr_close >= (recent_high * 0.97): # %3 Tolerans
+            score_str += (W_STR * 0.6)
+            reasons_str.append("Zirveye Yakın (Güçlü)")
+            
+        # KURAL 2: HL (Higher Low - Yükselen Dip)
+        # Dip seviyesi, 20 gün önceki dipten yukarıdaysa trend korunuyordur.
         if low.iloc[-1] > recent_low:
-            score_str += (W_STR * 0.4); reasons_str.append("HL: Yükselen Dip")
+            score_str += (W_STR * 0.4)
+            reasons_str.append("HL: Yükselen Dip")
+
+        # ==============================================================================
 
         # --- 2. TREND ---
         score_tr = 0; reasons_tr = []
@@ -2273,7 +2284,6 @@ def calculate_sentiment_score(ticker):
         # --- 6. GÜÇ (RS) ---
         score_rs = 0; reasons_rs = []
         
-        # Sadece HİSSE ise hesapla
         if not is_index:
             bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
             try:
@@ -2297,18 +2307,14 @@ def calculate_sentiment_score(ticker):
             except: reasons_rs.append("Veri Yok")
 
         total = int(score_str + score_tr + score_vol + score_mom + score_vola + score_rs)
-        
         bars = int(total / 5)
         bar_str = "【" + "█" * bars + "░" * (20 - bars) + "】"
-        
         def fmt(lst): 
             if not lst: return ""
-            content = " + ".join(lst)
-            return f"<span style='font-size:0.7rem; color:#334155; font-style:italic; font-weight:300;'>({content})</span>"
+            return f"<span style='font-size:0.7rem; color:#334155; font-style:italic; font-weight:300;'>({' + '.join(lst)})</span>"
         
-        # GÖRSEL HAZIRLIĞI
         if is_index:
-            rs_text = f"<span style='color:#94a3b8; font-style:italic; font-weight:600;'>devre dışı</span>"
+            rs_text = f"<span style='color:#94a3b8; font-style:italic; font-weight:600;'>--- (Endeks/Kripto Analizi) ---</span>"
         else:
             rs_text = f"{int(score_rs)}/{W_RS} {fmt(reasons_rs)}"
 
@@ -2855,7 +2861,7 @@ def render_sentiment_card(sent):
             <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI ({p_label}):</div>
             <div class="info-val" style="font-weight:700;">{sent['str']}</div>
         </div>
-        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)</div>
+        <div class="edu-note">Market Yapısı- Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)</div>
 
         <div class="info-row">
             <div class="label-long" style="width:120px;">2. TREND ({p_label}):</div>
@@ -4298,6 +4304,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
