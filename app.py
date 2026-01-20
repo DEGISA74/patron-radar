@@ -2353,7 +2353,7 @@ def calculate_sentiment_score(ticker):
             return f"<span style='font-size:0.7rem; color:#334155; font-style:italic; font-weight:300;'>({' + '.join(lst)})</span>"
         
         if is_index:
-            rs_text = f"<span style='color:#94a3b8; font-style:italic; font-weight:600;'>--- (Endeks/Kripto Analizi) ---</span>"
+            rs_text = f"<span style='color:#94a3b8; font-style:italic; font-weight:600;'>Devre Dışı</span>"
         else:
             rs_text = f"{int(score_rs)}/{W_RS} {fmt(reasons_rs)}"
 
@@ -4343,6 +4343,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
