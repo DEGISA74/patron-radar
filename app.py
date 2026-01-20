@@ -732,7 +732,7 @@ def process_single_stock_stp(symbol, df):
                     "Fiyat": c_last, 
                     "STP": s_last, 
                     "Fark": ((c_last/s_last)-1)*100,
-                    "Gun": int(streak_count)
+                    "Gun": int(streak_count),
                     "Hacim": volume
                 }
             }
@@ -4202,6 +4202,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
