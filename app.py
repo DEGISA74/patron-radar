@@ -1017,14 +1017,15 @@ def scan_chart_patterns(asset_list):
                     "Fiyat": curr_price,
                     "Formasyon": pattern_name,
                     "Detay": desc,
-                    "Skor": q_score
+                    "Skor": q_score,
+                    "Hacim": float(volume.iloc[-1])
                 })
 
         except Exception: continue
             
     if results:
         # En yüksek puanlılar en üstte
-        return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+        return pd.DataFrame(results).sort_values(by=["Skor", "Hacim"], ascending=[False, False])
     
     return pd.DataFrame()
 
@@ -4226,6 +4227,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
