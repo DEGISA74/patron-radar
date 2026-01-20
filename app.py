@@ -1201,6 +1201,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
             "Pivot_Sinyali": pp_desc,     
             "Pocket_Pivot": is_pocket_pivot,
             "Kalite": quality_label # Yeni alan eklendi
+            "Hacim": float(volume.iloc[-1])
         }
     except Exception: return None
 
@@ -1236,7 +1237,7 @@ def scan_hidden_accumulation(asset_list):
     if results: 
         df_res = pd.DataFrame(results)
         # Önce Pocket Pivot olanları, sonra Skoru yüksek olanları üste al
-        return df_res.sort_values(by=["Pocket_Pivot", "Kalite", "Skor"], ascending=[False, True, False])
+        return df_res.sort_values(by=["Pocket_Pivot", "Kalite", "Skor", "Hacim"], ascending=[False, True, False, False])
     
     return pd.DataFrame()
 
@@ -4202,6 +4203,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
