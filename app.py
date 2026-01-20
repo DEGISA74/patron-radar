@@ -2184,37 +2184,38 @@ def calculate_sentiment_score(ticker):
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
         
-        # --- VERİ HESAPLAMALARI ---
-        
-        # 1. YAPI (STRUCTURE) - 25 PUAN
+        # --- 1. YAPI (STRUCTURE) - 20 PUAN (DÜŞÜRÜLDÜ: 25->20) ---
         score_str = 0; reasons_str = []
         recent_high = high.rolling(20).max().shift(1).iloc[-1]
         recent_low = low.rolling(20).min().shift(1).iloc[-1]
         
+        # Puanlar 25'ten 20'ye dengelendi (15+10 -> 12+8)
         if close.iloc[-1] > recent_high: 
-            score_str += 15; reasons_str.append("BOS: Kırılım")
+            score_str += 12; reasons_str.append("BOS: Kırılım")
         if low.iloc[-1] > recent_low:
-            score_str += 10; reasons_str.append("HL: Yükselen Dip")
+            score_str += 8; reasons_str.append("HL: Yükselen Dip")
 
-        # 2. TREND - 25 PUAN
+        # --- 2. TREND - 20 PUAN (DÜŞÜRÜLDÜ: 25->20) ---
         score_tr = 0; reasons_tr = []
         sma50 = close.rolling(50).mean(); sma200 = close.rolling(200).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
         
-        if close.iloc[-1] > sma200.iloc[-1]: score_tr += 10; reasons_tr.append("Ana Trend+")
-        if close.iloc[-1] > ema20.iloc[-1]: score_tr += 10; reasons_tr.append("Kısa Vade+")
-        if ema20.iloc[-1] > sma50.iloc[-1]: score_tr += 5; reasons_tr.append("Hizalı")
+        # Puanlar dengelendi (10+10+5 -> 8+8+4)
+        if close.iloc[-1] > sma200.iloc[-1]: score_tr += 8; reasons_tr.append("Ana Trend+")
+        if close.iloc[-1] > ema20.iloc[-1]: score_tr += 8; reasons_tr.append("Kısa Vade+")
+        if ema20.iloc[-1] > sma50.iloc[-1]: score_tr += 4; reasons_tr.append("Hizalı")
 
-        # 3. HACİM - 25 PUAN
+        # --- 3. HACİM - 20 PUAN (DÜŞÜRÜLDÜ: 25->20) ---
         score_vol = 0; reasons_vol = []
         vol_ma = volume.rolling(20).mean()
-        if volume.iloc[-1] > vol_ma.iloc[-1]: score_vol += 15; reasons_vol.append("Hacim Artışı")
+        # Puanlar dengelendi (15+10 -> 12+8)
+        if volume.iloc[-1] > vol_ma.iloc[-1]: score_vol += 12; reasons_vol.append("Hacim Artışı")
         
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         obv_ma = obv.rolling(10).mean()
-        if obv.iloc[-1] > obv_ma.iloc[-1]: score_vol += 10; reasons_vol.append("OBV+")
+        if obv.iloc[-1] > obv_ma.iloc[-1]: score_vol += 8; reasons_vol.append("OBV+")
 
-        # 4. MOMENTUM - 15 PUAN
+        # --- 4. MOMENTUM - 15 PUAN (AYNI) ---
         score_mom = 0; reasons_mom = []
         delta = close.diff()
         gain = delta.clip(lower=0).rolling(14).mean()
@@ -2229,7 +2230,7 @@ def calculate_sentiment_score(ticker):
         macd = ema12 - ema26; signal = macd.ewm(span=9, adjust=False).mean()
         if macd.iloc[-1] > signal.iloc[-1]: score_mom += 5; reasons_mom.append("MACD Al")
 
-        # 5. VOLATİLİTE - 10 PUAN
+        # --- 5. VOLATİLİTE - 10 PUAN (AYNI) ---
         score_vola = 0; reasons_vola = []
         std = close.rolling(20).std()
         upper = close.rolling(20).mean() + (2 * std)
@@ -2238,33 +2239,60 @@ def calculate_sentiment_score(ticker):
         
         if bb_width.iloc[-1] < bb_width.rolling(20).mean().iloc[-1]:
             score_vola += 10; reasons_vola.append("Sıkışma")
+            
+        # --- 6. GÜÇ (RS) - 15 PUAN (YENİ EKLENDİ) ---
+        score_rs = 0; reasons_rs = []
         
-        total = score_str + score_tr + score_vol + score_mom + score_vola
+        # Endeks Verisini Çek (BIST veya SP500)
+        bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
+        try:
+            bench_df = get_safe_historical_data(bench_ticker, period="6mo")
+            if bench_df is not None:
+                # Tarihleri eşle
+                common_idx = close.index.intersection(bench_df.index)
+                stock_p = close.loc[common_idx]
+                bench_p = bench_df['Close'].loc[common_idx]
+                
+                # 1. Mansfield RS (5 Puan)
+                rs_ratio = stock_p / bench_p
+                rs_ma = rs_ratio.rolling(50).mean()
+                mansfield = ((rs_ratio / rs_ma) - 1) * 10
+                if mansfield.iloc[-1] > 0: score_rs += 5; reasons_rs.append("Mansfield+")
+                
+                # 2. RS Trendi (5 Puan)
+                if mansfield.iloc[-1] > mansfield.iloc[-5]: score_rs += 5; reasons_rs.append("RS İvme")
+                
+                # 3. Alpha / Liderlik (5 Puan)
+                stock_chg = (stock_p.iloc[-1] - stock_p.iloc[-2]) / stock_p.iloc[-2]
+                bench_chg = (bench_p.iloc[-1] - bench_p.iloc[-2]) / bench_p.iloc[-2]
+                if bench_chg < 0 and stock_chg > 0: score_rs += 5; reasons_rs.append("Alpha (Lider)")
+                elif stock_chg > bench_chg: score_rs += 3; reasons_rs.append("Endeks Üstü") # Teselli puanı
+        except:
+            reasons_rs.append("Veri Yok")
+
+        total = score_str + score_tr + score_vol + score_mom + score_vola + score_rs
         
-        # --- GÖRSEL AYARLAR (BAR VE YAZI TİPİ DÜZELTİLDİ) ---
+        # Görsel Formatlama
         bars = int(total / 5)
-        # Bar: Kare bloklar
         bar_str = "【" + "█" * bars + "░" * (20 - bars) + "】"
         
         def fmt(lst): 
             if not lst: return ""
-            # Her bir sebebin arasına ' + ' koyup birleştiriyoruz
             content = " + ".join(lst)
-            # HTML string olarak döndürüyoruz. CSS stillerine dikkat et.
             return f"<span style='font-size:0.7rem; color:#334155; font-style:italic; font-weight:300;'>({content})</span>"
         
         return {
             "total": total, "bar": bar_str, 
-            # fmt() fonksiyonunu çağırarak formatlanmış HTML stringi alıyoruz
             "mom": f"{score_mom}/15 {fmt(reasons_mom)}",
-            "vol": f"{score_vol}/25 {fmt(reasons_vol)}", 
-            "tr": f"{score_tr}/25 {fmt(reasons_tr)}",
+            "vol": f"{score_vol}/20 {fmt(reasons_vol)}", 
+            "tr": f"{score_tr}/20 {fmt(reasons_tr)}",
             "vola": f"{score_vola}/10 {fmt(reasons_vola)}", 
-            "str": f"{score_str}/25 {fmt(reasons_str)}",
+            "str": f"{score_str}/20 {fmt(reasons_str)}",
+            "rs": f"{score_rs}/15 {fmt(reasons_rs)}", # Yeni Alan
             "raw_rsi": rsi.iloc[-1], "raw_macd": (macd-signal).iloc[-1], "raw_obv": obv.iloc[-1], "raw_atr": 0
         }
     except: return None
-
+        
 def get_deep_xray_data(ticker):
     sent = calculate_sentiment_score(ticker)
     if not sent: return None
@@ -2769,10 +2797,9 @@ def render_sentiment_card(sent):
     if not sent: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     
-    # 1. SKOR RENKLERİ VE İKONLARI
     score = sent['total']
     if score >= 70: color = "#16a34a"; icon = "🔥"; status = "GÜÇLÜ BOĞA"
-    elif score >= 50: color = "#d97706"; icon = "↔️"; status = "NÖTR / POZİTİF" # Tahteravalli (Denge)
+    elif score >= 50: color = "#d97706"; icon = "↔️"; status = "NÖTR / POZİTİF"
     elif score >= 30: color = "#b91c1c"; icon = "🐻"; status = "ZAYIF / AYI"
     else: color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"
     
@@ -2787,22 +2814,22 @@ def render_sentiment_card(sent):
         <div style="font-family:'Arial', sans-serif; font-size:0.8rem; color:#1e3a8a; margin-bottom:8px; text-align:center; letter-spacing:1px;">{sent['bar']}</div>
         
         <div class="info-row" style="background:#f0f9ff; padding:2px; border-radius:4px;">
-            <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI (25p):</div>
+            <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI (20p):</div>
             <div class="info-val" style="font-weight:700;">{sent['str']}</div>
         </div>
-        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (15). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (10)</div>
+        <div class="edu-note">Market Yapısı- Son 20 günün zirvesini yukarı kırarsa (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)</div>
 
         <div class="info-row">
-            <div class="label-long" style="width:120px;">2. TREND (25p):</div>
+            <div class="label-long" style="width:120px;">2. TREND (20p):</div>
             <div class="info-val">{sent['tr']}</div>
         </div>
-        <div class="edu-note">Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (10). EMA20 üstünde (10). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (5)</div>
+        <div class="edu-note">Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4)</div>
         
         <div class="info-row">
-            <div class="label-long" style="width:120px;">3. HACİM (25p):</div>
+            <div class="label-long" style="width:120px;">3. HACİM (20p):</div>
             <div class="info-val">{sent['vol']}</div>
         </div>
-        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (15) Para girişi var: 10G ortalamanın üstünde (10)</div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8)</div>
 
         <div class="info-row">
             <div class="label-long" style="width:120px;">4. MOMENTUM (15p):</div>
@@ -2815,6 +2842,12 @@ def render_sentiment_card(sent):
             <div class="info-val">{sent['vola']}</div>
         </div>
         <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)</div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">6. GÜÇ (15p):</div>
+            <div class="info-val">{sent['rs']}</div>
+        </div>
+        <div class="edu-note">Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)</div>
     </div>
     """.replace("\n", "")
     
@@ -4227,3 +4260,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
