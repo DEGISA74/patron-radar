@@ -3908,6 +3908,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 *** 5. PRICE ACTION  ***
 - Mum Formasyonu: {mum_desc}
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
+- TUZAK DURUMU (SFP): {sfp_desc}
 - En Yakın Direnç: {fib_res}
 - En Yakın Destek: {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
@@ -4353,6 +4354,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
