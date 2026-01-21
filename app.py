@@ -13,6 +13,7 @@ import concurrent.futures
 import re
 import altair as alt
 import random
+import requests
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -466,32 +467,83 @@ def get_batch_data_cached(asset_list, period="1y"):
         return pd.DataFrame()
 
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
+import requests
+
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
-        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
-        if "BIST" in ticker or ".IS" in ticker:
-            clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
+        # 1. KİMLİK GİZLEME (Yahoo Engeli Aşmak İçin)
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        })
+
+        # 2. Temizlik ve Kategori Kontrolü
+        clean_ticker = ticker.strip().upper().replace("=F", "")
+        current_cat = st.session_state.get('category', '')
+
+        # 3. Uzantı Mantığı (Suffix Fix)
+        final_ticker = clean_ticker
         
-        df = yf.download(clean_ticker, period=period, interval=interval, progress=False)
+        # Eğer zaten doğru uzantı varsa (.IS veya -USD) dokunma, temizle.
+        # Örneğin kullanıcı EREGL.IS girdiyse, clean_ticker EREGL.IS olur.
         
+        # BIST Kontrolü: Kategori BIST ise veya XU/XB ile başlıyorsa ve .IS yoksa ekle
+        is_bist = "BIST" in current_cat or any(clean_ticker.startswith(x) for x in ["XU", "XB", "XS", "XK"])
+        if is_bist and not clean_ticker.endswith(".IS") and not clean_ticker.startswith("^"):
+            final_ticker = f"{clean_ticker}.IS"
+            
+        # KRİPTO Kontrolü
+        elif "KRİPTO" in current_cat and not final_ticker.endswith("-USD"):
+             final_ticker = f"{clean_ticker}-USD"
+             
+        # GLOBAL Kontrolü: .IS varsa sil (Yanlışlıkla gelmişse)
+        elif "S&P" in current_cat or "NASDAQ" in current_cat:
+             final_ticker = clean_ticker.replace(".IS", "")
+
+        # 4. İndirme (Session Kullanarak)
+        # threads=False yaparak Yahoo'yu daha az kızdırıyoruz.
+        df = yf.download(
+            final_ticker, 
+            period=period, 
+            interval=interval, 
+            progress=False, 
+            threads=False,
+            session=session  # <--- SİHİRLİ KISIM BURASI
+        )
+        
+        # 5. Boş geldiyse B planı (Uzantıyı değiştirip dene)
+        if df.empty:
+            retry_ticker = None
+            if final_ticker.endswith(".IS"): 
+                retry_ticker = final_ticker.replace(".IS", "") # Belki globaldir
+            else:
+                retry_ticker = f"{final_ticker}.IS" # Belki BIST'tir
+            
+            if retry_ticker:
+                df = yf.download(retry_ticker, period=period, interval=interval, progress=False, session=session)
+
         if df.empty: return None
             
+        # 6. Veri Temizliği
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                if clean_ticker in df.columns.levels[1]: df = df.xs(clean_ticker, axis=1, level=1)
-                else: df.columns = df.columns.get_level_values(0)
-            except: df.columns = df.columns.get_level_values(0)
+                df.columns = df.columns.get_level_values(0)
+            except: pass
                 
         df.columns = [c.capitalize() for c in df.columns]
+        
         required = ['Close', 'High', 'Low', 'Open']
         if not all(col in df.columns for col in required): return None
 
         if 'Volume' not in df.columns: df['Volume'] = 1
-        df['Volume'] = df['Volume'].replace(0, 1)
+        df['Volume'] = df['Volume'].replace(0, 1).fillna(1)
+        
         return df
 
-    except Exception: return None
+    except Exception as e:
+        return None
+
 
 def check_lazybear_squeeze_breakout(df):
     """
@@ -4354,6 +4406,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
