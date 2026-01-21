@@ -1,6 +1,7 @@
 streamlit
-yfinance
+yfinance>=0.2.54
 pandas
 feedparser
 textblob
 google-generativeai
+
