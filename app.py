@@ -13,7 +13,6 @@ import concurrent.futures
 import re
 import altair as alt
 import random
-import requests
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -467,83 +466,32 @@ def get_batch_data_cached(asset_list, period="1y"):
         return pd.DataFrame()
 
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
-import requests
-
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
-        # 1. KİMLİK GİZLEME (Yahoo Engeli Aşmak İçin)
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        })
-
-        # 2. Temizlik ve Kategori Kontrolü
-        clean_ticker = ticker.strip().upper().replace("=F", "")
-        current_cat = st.session_state.get('category', '')
-
-        # 3. Uzantı Mantığı (Suffix Fix)
-        final_ticker = clean_ticker
+        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
+        if "BIST" in ticker or ".IS" in ticker:
+            clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
         
-        # Eğer zaten doğru uzantı varsa (.IS veya -USD) dokunma, temizle.
-        # Örneğin kullanıcı EREGL.IS girdiyse, clean_ticker EREGL.IS olur.
+        df = yf.download(clean_ticker, period=period, interval=interval, progress=False)
         
-        # BIST Kontrolü: Kategori BIST ise veya XU/XB ile başlıyorsa ve .IS yoksa ekle
-        is_bist = "BIST" in current_cat or any(clean_ticker.startswith(x) for x in ["XU", "XB", "XS", "XK"])
-        if is_bist and not clean_ticker.endswith(".IS") and not clean_ticker.startswith("^"):
-            final_ticker = f"{clean_ticker}.IS"
-            
-        # KRİPTO Kontrolü
-        elif "KRİPTO" in current_cat and not final_ticker.endswith("-USD"):
-             final_ticker = f"{clean_ticker}-USD"
-             
-        # GLOBAL Kontrolü: .IS varsa sil (Yanlışlıkla gelmişse)
-        elif "S&P" in current_cat or "NASDAQ" in current_cat:
-             final_ticker = clean_ticker.replace(".IS", "")
-
-        # 4. İndirme (Session Kullanarak)
-        # threads=False yaparak Yahoo'yu daha az kızdırıyoruz.
-        df = yf.download(
-            final_ticker, 
-            period=period, 
-            interval=interval, 
-            progress=False, 
-            threads=False,
-            session=session  # <--- SİHİRLİ KISIM BURASI
-        )
-        
-        # 5. Boş geldiyse B planı (Uzantıyı değiştirip dene)
-        if df.empty:
-            retry_ticker = None
-            if final_ticker.endswith(".IS"): 
-                retry_ticker = final_ticker.replace(".IS", "") # Belki globaldir
-            else:
-                retry_ticker = f"{final_ticker}.IS" # Belki BIST'tir
-            
-            if retry_ticker:
-                df = yf.download(retry_ticker, period=period, interval=interval, progress=False, session=session)
-
         if df.empty: return None
             
-        # 6. Veri Temizliği
         if isinstance(df.columns, pd.MultiIndex):
             try:
-                df.columns = df.columns.get_level_values(0)
-            except: pass
+                if clean_ticker in df.columns.levels[1]: df = df.xs(clean_ticker, axis=1, level=1)
+                else: df.columns = df.columns.get_level_values(0)
+            except: df.columns = df.columns.get_level_values(0)
                 
         df.columns = [c.capitalize() for c in df.columns]
-        
         required = ['Close', 'High', 'Low', 'Open']
         if not all(col in df.columns for col in required): return None
 
         if 'Volume' not in df.columns: df['Volume'] = 1
-        df['Volume'] = df['Volume'].replace(0, 1).fillna(1)
-        
+        df['Volume'] = df['Volume'].replace(0, 1)
         return df
 
-    except Exception as e:
-        return None
-
+    except Exception: return None
 
 def check_lazybear_squeeze_breakout(df):
     """
@@ -1080,6 +1028,98 @@ def scan_chart_patterns(asset_list):
         return pd.DataFrame(results).sort_values(by=["Skor", "Hacim"], ascending=[False, False])
     
     return pd.DataFrame()
+
+@st.cache_data(ttl=900)
+def scan_rsi_divergence_batch(asset_list):
+    """
+    RSI UYUMSUZLUK TARAMASI (TEYİTLİ)
+    Sol: Negatif Uyumsuzluk (Ayı) - Teyit: Son Mum Kırmızı
+    Sağ: Pozitif Uyumsuzluk (Boğa) - Teyit: Son Mum Yeşil
+    """
+    data = get_batch_data_cached(asset_list, period="6mo")
+    if data.empty: return pd.DataFrame(), pd.DataFrame()
+
+    bull_results = []
+    bear_results = []
+    stock_dfs = []
+
+    # Veriyi hazırlama
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            elif len(asset_list) == 1:
+                stock_dfs.append((symbol, data))
+        except: continue
+
+    # İşçi Fonksiyon
+    def _worker_div(symbol, df):
+        try:
+            if df.empty or len(df) < 50: return None
+            
+            close = df['Close']; open_ = df['Open']; volume = df['Volume']
+            if 'Volume' not in df.columns: volume = pd.Series([1]*len(df))
+            
+            # RSI Hesapla
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi_series = 100 - (100 / (1 + gain/loss))
+            
+            # Pencereler (Son 5 gün vs Önceki 15 gün)
+            curr_p = close.iloc[-5:]; prev_p = close.iloc[-20:-5]
+            curr_r = rsi_series.iloc[-5:]; prev_r = rsi_series.iloc[-20:-5]
+            
+            curr_price = float(close.iloc[-1])
+            curr_vol = float(volume.iloc[-1])
+            
+            # 1. POZİTİF UYUMSUZLUK (BOĞA)
+            # Kriterler: Fiyat yeni dip, RSI yükselen dip, RSI < 45 VE Son Mum Yeşil
+            is_bull = (curr_p.min() < prev_p.min()) and \
+                      (curr_r.min() > prev_r.min()) and \
+                      (prev_r.min() < 45) and \
+                      (close.iloc[-1] > open_.iloc[-1]) # TEYİT: YEŞİL MUM
+            
+            if is_bull:
+                return {
+                    "type": "bull",
+                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI_Dip": int(curr_r.min())}
+                }
+
+            # 2. NEGATİF UYUMSUZLUK (AYI)
+            # Kriterler: Fiyat yeni tepe, RSI alçalan tepe, RSI > 60 VE Son Mum Kırmızı
+            is_bear = (curr_p.max() > prev_p.max()) and \
+                      (curr_r.max() < prev_r.max()) and \
+                      (prev_r.max() > 60) and \
+                      (close.iloc[-1] < open_.iloc[-1]) # TEYİT: KIRMIZI MUM
+
+            if is_bear:
+                return {
+                    "type": "bear",
+                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI_Tepe": int(curr_r.max())}
+                }
+                
+            return None
+        except: return None
+
+    # Paralel Çalıştırma
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = [executor.submit(_worker_div, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res:
+                if res['type'] == 'bull': bull_results.append(res['data'])
+                elif res['type'] == 'bear': bear_results.append(res['data'])
+
+    # DataFrame'e çevir ve Hacme göre sırala
+    df_bull = pd.DataFrame(bull_results)
+    if not df_bull.empty: df_bull = df_bull.sort_values(by="Hacim", ascending=False)
+    
+    df_bear = pd.DataFrame(bear_results)
+    if not df_bear.empty: df_bear = df_bear.sort_values(by="Hacim", ascending=False)
+
+    return df_bull, df_bear
 
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
@@ -2759,7 +2799,7 @@ def calculate_price_action_dna(ticker):
         if range_5 < (1.5 * atr): sq_txt, sq_desc = "⏳ SÜPER SIKIŞMA (Coil)", "Fiyat yay gibi gerildi. Patlama yakın."
 
         # ======================================================
-        # RSI UYUMSUZLUK (DIVERGENCE)
+        # 6. RSI UYUMSUZLUK (DIVERGENCE) - GÜNCELLENMİŞ HASSASİYET
         # ======================================================
         div_txt, div_desc, div_type = "Uyumlu", "RSI ve Fiyat paralel.", "neutral"
         try:
@@ -2767,23 +2807,26 @@ def calculate_price_action_dna(ticker):
             current_window = c.iloc[-5:]
             prev_window = c.iloc[-20:-5]
             
-            # Negatif Uyumsuzluk (Fiyat Tepe, RSI Düşük)
+            # Negatif Uyumsuzluk (Ayı)
             p_curr_max = current_window.max(); p_prev_max = prev_window.max()
             r_curr_max = rsi_series.iloc[-5:].max(); r_prev_max = rsi_series.iloc[-20:-5].max()
             
-            if (p_curr_max > p_prev_max) and (r_curr_max < r_prev_max) and (r_prev_max > 60):
+            # DÜZELTME: ">" yerine ">=" kullanarak İkili Tepeleri de dahil ettik.
+            # Fiyat Eşit veya Yüksekse VE RSI Düşükse -> Uyumsuzluktur.
+            if (p_curr_max >= p_prev_max) and (r_curr_max < r_prev_max) and (r_prev_max > 60):
                 div_txt = "🐻 NEGATİF UYUMSUZLUK (Tepe Zayıflığı)"
-                div_desc = "Fiyat yeni tepe yaptı ama RSI desteklemiyor. Düşüş riski!"
+                div_desc = "Fiyat zirveyi zorluyor ama RSI güç kaybediyor. Düşüş riski!"
                 div_type = "bearish"
                 
-            # Pozitif Uyumsuzluk (Fiyat Dip, RSI Yüksek)
+            # Pozitif Uyumsuzluk (Boğa)
             p_curr_min = current_window.min(); p_prev_min = prev_window.min()
             r_curr_min = rsi_series.iloc[-5:].min(); r_prev_min = rsi_series.iloc[-20:-5].min()
             
-            if (p_curr_min < p_prev_min) and (r_curr_min > r_prev_min) and (r_prev_min < 45):
+            # DÜZELTME: "<" yerine "<=" kullanarak İkili Dipleri de dahil ettik.
+            if (p_curr_min <= p_prev_min) and (r_curr_min > r_prev_min) and (r_prev_min < 45):
                 div_txt = "💎 POZİTİF UYUMSUZLUK (Gizli Güç)"
-                div_desc = "Fiyat yeni dip yaptı ama RSI yükseliyor. Toplama sinyali!"
-                div_type = "bullish"     
+                div_desc = "Fiyat dipte tutunuyor ve RSI yükseliyor. Toplama sinyali!"
+                div_type = "bullish"      
         except: pass
 
         return {
@@ -3915,7 +3958,7 @@ if st.session_state.generate_prompt:
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
-Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur.
+Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur. Basit bir dille anlat.
 
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, analizin merkezine koy!)
@@ -3966,7 +4009,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - Hedef Likidite (Mıknatıs): {liq_str}
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
-En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
+En başa "SMART MONEY RADAR   {t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
@@ -3976,11 +4019,11 @@ En başa "SMART MONEY RADAR ANALİZİ" -  {t} -  {fiyat_str} başlığı at ve �
    - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" ve altına da "#SmartMoneyRadar" yaz.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" ve altına da "#SmartMoneyRadar ve #{t}" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
-        st.success("Prompt Güncellendi: Temel Analiz + Minervini + Master Skor eklendi!")
+        st.success("Prompt Güncellendi")
     
     st.session_state.generate_prompt = False
 
@@ -4216,6 +4259,58 @@ with col_left:
                     st.info("Kırılım yapan hisse bulunamadı.")
 
     # ---------------------------------------------------------
+    # ⚖️ YENİ: RSI UYUMSUZLUK TARAMASI (SOL: AYI | SAĞ: BOĞA)
+    # ---------------------------------------------------------
+    if 'rsi_div_bull' not in st.session_state: st.session_state.rsi_div_bull = None
+    if 'rsi_div_bear' not in st.session_state: st.session_state.rsi_div_bear = None
+
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">⚖️ RSI Uyumsuzluk Ajanı (Teyitli)</div>', unsafe_allow_html=True)
+
+    if st.button(f"⚖️ UYUMSUZLUKLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_div"):
+        with st.spinner("RSI ile Fiyat arasındaki yalanlar tespit ediliyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            # Tarama Fonksiyonunu Çağır
+            bull_df, bear_df = scan_rsi_divergence_batch(current_assets)
+            st.session_state.rsi_div_bull = bull_df
+            st.session_state.rsi_div_bear = bear_df
+            st.rerun()
+
+    if st.session_state.rsi_div_bull is not None or st.session_state.rsi_div_bear is not None:
+        c_div_left, c_div_right = st.columns(2)
+
+        # --- SOL SÜTUN: NEGATİF (AYI) ---
+        with c_div_left:
+            st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#fef2f2; padding:5px; border-radius:4px; border:1px solid #fecaca;'>🐻 NEGATİF (Satış?)</div>", unsafe_allow_html=True)
+            with st.container(height=150):
+                if st.session_state.rsi_div_bear is not None and not st.session_state.rsi_div_bear.empty:
+                    # Hacme göre sıralı geliyor zaten, ilk 20'yi al
+                    for i, row in st.session_state.rsi_div_bear.head(20).iterrows():
+                        sym = row['Sembol']
+                        # Buton Metni: 🔻 THYAO (250.0) | RSI: 68
+                        btn_label = f"🔻 {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI_Tepe']}"
+                        if st.button(btn_label, key=f"div_bear_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
+                else:
+                    st.caption("Negatif uyumsuzluk yok.")
+
+        # --- SAĞ SÜTUN: POZİTİF (BOĞA) ---
+        with c_div_right:
+            st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #bbf7d0;'>💎 POZİTİF (Alış?)</div>", unsafe_allow_html=True)
+            with st.container(height=150):
+                if st.session_state.rsi_div_bull is not None and not st.session_state.rsi_div_bull.empty:
+                    # Hacme göre sıralı
+                    for i, row in st.session_state.rsi_div_bull.head(20).iterrows():
+                        sym = row['Sembol']
+                        # Buton Metni: ✅ ASELS (45.0) | RSI: 32
+                        btn_label = f"✅ {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI_Dip']}"
+                        if st.button(btn_label, key=f"div_bull_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
+                else:
+                    st.caption("Pozitif uyumsuzluk yok.")
+
+    # ---------------------------------------------------------
     # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
     # ---------------------------------------------------------
     if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
@@ -4302,7 +4397,7 @@ with col_left:
                     sym = row['Sembol']
                     
                     # Buton Metni: 🪤 GARAN (112.5) | ⏰ 2 Mum Önce | 2.5x Vol
-                    label = f"🪤 {sym} ({row['Fiyat']}) | {row['Zaman']} | Vol: {row['Hacim_Kat']}"
+                    label = f"🪤 {sym} ({row['Fiyat']:.2f}) | {row['Zaman']} | Vol: {row['Hacim_Kat']}"
                     
                     if st.button(label, key=f"bt_scan_{sym}_{i}", use_container_width=True, help=row['Detay']):
                         on_scan_result_click(sym)
@@ -4406,7 +4501,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
-
-
-
