@@ -284,7 +284,7 @@ raw_bist_stocks = [
     "UFUK.IS", "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "UZERB.IS",
     "VAKBN.IS", "VAKFN.IS", "VAKKO.IS", "VANGD.IS", "VBTYZ.IS", "VERUS.IS", "VESBE.IS", "VESTL.IS", "VKFYO.IS", "VKGYO.IS", "VKING.IS", "VRGYO.IS",
     "YAPRK.IS", "YATAS.IS", "YAYLA.IS", "YBTAS.IS", "YEOTK.IS", "YESIL.IS", "YGGYO.IS", "YGYO.IS", "YKBNK.IS", "YKSLN.IS", "YONGA.IS", "YUNSA.IS", "YYAPI.IS", "YYLGD.IS",
-    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS"
+    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS"
 ]
 
 # Kopyaları Temizle ve Birleştir
@@ -2898,7 +2898,7 @@ def calculate_supertrend(df, period=10, multiplier=3.0):
 
 def calculate_fib_levels(df, period=144):
     """
-    Son N periyodun en yüksek ve en düşüğüne göre Fibonacci seviyelerini hesaplar.
+    Trend yönüne göre Dinamik Fibonacci Hesaplama
     """
     try:
         if len(df) < period: period = len(df)
@@ -2908,20 +2908,64 @@ def calculate_fib_levels(df, period=144):
         min_l = recent_data['Low'].min()
         diff = max_h - min_l
         
-        levels = {
-            "1.618 (Ext)": max_h + (diff * 0.618),
-            "1.272 (Ext)": max_h + (diff * 0.272),
-            "0 (Tepe)": max_h,
-            "0.236": max_h - (diff * 0.236),
-            "0.382": max_h - (diff * 0.382),
-            "0.5 (Orta)": max_h - (diff * 0.5),
-            "0.618 (Golden)": max_h - (diff * 0.618),
-            "0.786": max_h - (diff * 0.786),
-            "1 (Dip)": min_l
-        }
+        # Trend Yönünü Basitçe Bulalım (Son fiyat ortalamanın üstünde mi?)
+        close = df['Close'].iloc[-1]
+        sma50 = df['Close'].rolling(50).mean().iloc[-1]
+        is_uptrend = close > sma50 
+        
+        levels = {}
+        
+        if is_uptrend:
+            # YÜKSELİŞ TRENDİ (Dipten Tepeye Referans)
+            # Golden Pocket AŞAĞIDA (Destek) olmalı
+            levels = {
+                "1.618 (Hedef)": max_h + (diff * 0.618),
+                "0 (Tepe)": max_h,
+                "0.236": max_h - (diff * 0.236),
+                "0.382": max_h - (diff * 0.382),
+                "0.5 (Orta)": max_h - (diff * 0.5),
+                "0.618 (Golden - Alım)": max_h - (diff * 0.618), # Fiyatın altında kalır
+                "1 (Dip)": min_l
+            }
+        else:
+            # DÜŞÜŞ TRENDİ (Tepeden Dibe Referans)
+            # Golden Pocket YUKARIDA (Direnç/Short) olmalı
+            levels = {
+                "1 (Tepe)": max_h,
+                "0.618 (Golden - Satış)": min_l + (diff * 0.618), # Fiyatın üstünde kalır
+                "0.5 (Orta)": min_l + (diff * 0.5),
+                "0.382": min_l + (diff * 0.382),
+                "0.236": min_l + (diff * 0.236),
+                "0 (Dip)": min_l,
+                "-0.618 (Hedef)": min_l - (diff * 0.618)
+            }
+            
         return levels
     except:
         return {}
+
+def calculate_z_score_live(df, period=20):
+    try:
+        if len(df) < period: return 0
+        
+        # Son 20 barı al
+        recent = df.tail(period)
+        
+        # Ortalama ve Standart Sapma
+        mean = recent['Close'].mean()
+        std = recent['Close'].std()
+        
+        if std == 0: return 0
+        
+        # Son fiyat
+        last_close = df['Close'].iloc[-1]
+        
+        # Z-Score Formülü
+        z_score = (last_close - mean) / std
+        
+        return z_score
+    except:
+        return 0
 
 @st.cache_data(ttl=600)
 def get_advanced_levels_data(ticker):
@@ -3387,16 +3431,23 @@ def render_levels_card(ticker):
     st_text = "YÜKSELİŞ (AL)" if is_bullish else "DÜŞÜŞ (SAT)"
     st_icon = "🐂" if is_bullish else "🐻"
     
-    # --- DİNAMİK METİN AYARLARI (YENİ KISIM) ---
+    # --- DİNAMİK METİN AYARLARI ---
     if is_bullish:
         # Yükseliş Senaryosu
         st_label = "Takip Eden Stop (Stop-Loss)"
         st_desc = "⚠️ Fiyat bu seviyenin <b>altına inerse</b> trend bozulur, stop olunmalıdır."
+        
+        # Golden Pocket Metni (Yükseliş)
+        gp_desc_text = "Kurumsal alım bölgesi (İdeal Giriş/Destek)."
+        gp_desc_color = "#92400e" # Amber/Kahve
     else:
         # Düşüş Senaryosu
         st_label = "Trend Dönüşü (Direnç)"
         st_desc = "🚀 Fiyat bu seviyenin <b>üstüne çıkarsa</b> düşüş biter, yükseliş başlar."
-    # -------------------------------------------
+        
+        # Golden Pocket Metni (Düşüş)
+        gp_desc_text = "⚠️ Güçlü Direnç / Tepki Satış Bölgesi (Short)."
+        gp_desc_color = "#b91c1c" # Kırmızı
     
     # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
@@ -3409,6 +3460,10 @@ def render_levels_card(ticker):
     else:
         res_display = f"{res_val:.2f}"
         res_desc = "Zorlu tavan. Geçilirse yükseliş hızlanır."
+
+    # --- GOLDEN POCKET DEĞERİ ---
+    gp_key = next((k for k in data['fibs'].keys() if "Golden" in k), "0.618 (Golden)")
+    gp_val = data['fibs'].get(gp_key, 0)
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
@@ -3430,9 +3485,9 @@ def render_levels_card(ticker):
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
             <div style="background:#f0fdf4; padding:6px; border-radius:4px; border:1px solid #bbf7d0;">
                 <div style="font-size:0.65rem; color:#166534; font-weight:700;">EN YAKIN DİRENÇ 🚧</div>
-                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_val:.2f}</div>
+                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_display}</div>
                 <div style="font-size:0.6rem; color:#166534; margin-bottom:2px;">Fib {res_lbl}</div>
-                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">Zorlu tavan. Geçilirse yükseliş hızlanır.</div>
+                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{res_desc}</div>
             </div>
             
             <div style="background:#fef2f2; padding:6px; border-radius:4px; border:1px solid #fecaca;">
@@ -3447,10 +3502,10 @@ def render_levels_card(ticker):
             <div style="font-size:0.7rem; font-weight:700; color:#6b7280; margin-bottom:2px;">⚜️ Golden Pocket (0.618 - 0.65):</div>
             <div style="display:flex; align-items:center; gap:6px;">
                 <div style="font-family:'JetBrains Mono'; font-size:0.8rem; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px dashed #f59e0b;">
-                    {data['fibs'].get('0.618 (Golden)', 0):.2f}
+                    {gp_val:.2f}
                 </div>
-                <div style="font-size:0.65rem; color:#92400e; font-style:italic;">
-                    Kurumsal alım bölgesi (İdeal Giriş).
+                <div style="font-size:0.65rem; color:{gp_desc_color}; font-style:italic;">
+                    {gp_desc_text}
                 </div>
             </div>
         </div>
@@ -3584,6 +3639,7 @@ with st.sidebar:
         
         # 7. Bear Trap Kontrolü
         bt_live = process_single_bear_trap_live(df_live)
+        pa_data = calculate_price_action_dna(active_t)
 
         # --- C. YILDIZ ADAYI KONTROLÜ ---
         # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
@@ -3657,6 +3713,82 @@ with st.sidebar:
     star_title = " ⭐" if is_star_candidate else ""
     display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
 
+    # 8. RSI UYUMSUZLUKLARI (YENİ EKLENEN KISIM)
+    # Detay panelindeki veriyi (pa_data) kullanalım
+    if pa_data:
+        div_info = pa_data.get('div', {})
+        div_type = div_info.get('type', 'neutral')
+        
+        if div_type == 'bullish':
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>💎 <b>RSI Uyumsuzluk:</b> POZİTİF (Alış?)</div>"
+        elif div_type == 'bearish':
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>🐻 <b>RSI Uyumsuzluk:</b> NEGATİF (Satış?)</div>"
+
+    # 9. DİPTEN DÖNÜŞ (KUTSAL KASE) KONTROLÜ (YENİ EKLENEN KISIM)
+    # Eğer hem Bear Trap hem de Pozitif Uyumsuzluk varsa
+    if bt_live and pa_data and pa_data.get('div', {}).get('type') == 'bullish':
+        found_any = True
+        is_star_candidate = True # Yıldız da ekleyelim
+        scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#059669; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ?</div>"
+
+    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI VE EDU NOTU
+        z_score_val = round(calculate_z_score_live(df_live), 2)
+        
+        # --- KADEMELİ Z-SCORE SİSTEMİ (Profesyonel) ---
+        
+        # 1. AŞIRI DÜŞÜŞ SENARYOLARI (UCUZLAMA)
+        if z_score_val <= -2.0: # KRİTİK SEVİYE (Güvenilir)
+            found_any = True
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z: {z_score_val:.2f})</div>"
+            # EDU NOTE: Güçlü
+            scan_results_html += f"""
+            <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+                <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ SİNYAL: Mean Reversion</div>
+                <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>
+                    Fiyat -2 standart sapmayı kırdı. İstatistiksel olarak bu bir "Anomali"dir. Tepki yükselişi ihtimali %95'tir.
+                </div>
+            </div>
+            """
+        elif z_score_val <= -1.5: # ERKEN UYARI (Takip)
+            found_any = True
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z: {z_score_val:.2f})</div>"
+            # EDU NOTE: Hafif
+            scan_results_html += f"""
+            <div style='background:#fffbeb; border-left:3px solid #f59e0b; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+                <div style='font-size:0.65rem; color:#b45309; font-weight:bold;'>🎓 DİKKAT: İzleme Modu</div>
+                <div style='font-size:0.65rem; color:#92400e; line-height:1.2;'>
+                    Fiyat ortalamadan uzaklaştı (-1.5). Henüz tam dip değil ama "Alım Bölgesine" giriyor. Dönüş emareleri aranmalı.
+                </div>
+            </div>
+            """
+
+        # 2. AŞIRI YÜKSELİŞ SENARYOLARI (ŞİŞME)
+        elif z_score_val >= 2.0: # KRİTİK SEVİYE (Güvenilir)
+            found_any = True
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z: {z_score_val:.2f})</div>"
+            # EDU NOTE: Güçlü
+            scan_results_html += f"""
+            <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+                <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ SİNYAL: Aşırıalım</div>
+                <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>
+                    Fiyat +2 standart sapmayı aştı. Yakıt tükeniyor. Sert bir düzeltme veya kâr satışı riski çok yüksek.
+                </div>
+            </div>
+            """
+        elif z_score_val >= 1.5: # ERKEN UYARI (Takip)
+            found_any = True
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z: {z_score_val:.2f})</div>"
+            # EDU NOTE: Hafif
+            scan_results_html += f"""
+            <div style='background:#fff7ed; border-left:3px solid #f97316; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+                <div style='font-size:0.65rem; color:#c2410c; font-weight:bold;'>🎓 DİKKAT: Risk Artıyor</div>
+                <div style='font-size:0.65rem; color:#9a3412; line-height:1.2;'>
+                    Fiyat ortalamadan saptı (+1.5). Henüz zirve olmayabilir ama riskli bölgeye giriliyor. Stop-loss yakın tutulmalı.
+                </div>
+            </div>
+            """
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
@@ -3684,7 +3816,7 @@ with st.sidebar:
     
 # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
-    <div style="background: linear-gradient(45deg, #4f46e5, #7c3aed); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         🌟 YILDIZ ADAYLARI
     </div>
     """, unsafe_allow_html=True)
@@ -4428,7 +4560,66 @@ with col_right:
     
     # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
+   
+    # ==============================================================================
+    # YENİ: DİPTEN DÖNÜŞ PANELİ (AYI TUZAĞI + POZİTİF UYUMSUZLUK KESİŞİMİ)
+    # ==============================================================================
     
+    # 1. Veri Kontrolü
+    has_bt = st.session_state.bear_trap_data is not None and not st.session_state.bear_trap_data.empty
+    has_div = st.session_state.rsi_div_bull is not None and not st.session_state.rsi_div_bull.empty
+    
+    reversal_list = []
+    
+    # 2. Kesişim Mantığı
+    if has_bt and has_div:
+        bt_df = st.session_state.bear_trap_data
+        div_df = st.session_state.rsi_div_bull
+        
+        # Sembol Kümeleri
+        bt_syms = set(bt_df['Sembol'].values)
+        div_syms = set(div_df['Sembol'].values)
+        
+        # Ortak Olanlar (Kesişim)
+        common_syms = bt_syms.intersection(div_syms)
+        
+        for sym in common_syms:
+            # Verileri al
+            row_bt = bt_df[bt_df['Sembol'] == sym].iloc[0]
+            row_div = div_df[div_df['Sembol'] == sym].iloc[0]
+            
+            reversal_list.append({
+                'Sembol': sym,
+                'Fiyat': row_bt['Fiyat'],
+                'Zaman': row_bt['Zaman'],      # Örn: 2 Mum Önce
+                'RSI': int(row_div['RSI_Dip']) # Örn: 28
+            })
+            
+    # 3. UI Çizimi (Turkuaz/Cyan Tasarım)
+    st.markdown(f"""
+    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        ⚓ DİPTEN DÖNÜŞ?
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container(height=150):
+        if reversal_list:
+            # Fiyata göre sıralayalım (veya istersen RSI'a göre)
+            reversal_list.sort(key=lambda x: x['RSI']) 
+            
+            for item in reversal_list:
+                # Buton Etiketi: 💎 GARAN (150.20) | RSI:28 | 2 Mum Önce
+                label = f"💎 {item['Sembol']} ({item['Fiyat']:.2f}) | RSI:{item['RSI']} | {item['Zaman']}"
+                
+                if st.button(label, key=f"rev_btn_{item['Sembol']}", use_container_width=True):
+                    on_scan_result_click(item['Sembol'])
+                    st.rerun()
+        else:
+            if not (has_bt and has_div):
+                st.caption("'Ayı Tuzağı' ve 'RSI Uyumsuzluk' taramalarının ortak sonuçları burada gösterilir.")
+            else:
+                st.info("Şu an hem tuzağa düşürüp hem uyumsuzluk veren (Kesişim) hisse yok.")
+ 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
     # --- TEK TUŞLA DEV TARAMA BUTONU ---
