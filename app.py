@@ -3741,7 +3741,7 @@ with st.sidebar:
         # 1. AŞIRI DÜŞÜŞ SENARYOLARI (UCUZLAMA)
         if z_score_val <= -2.0: # KRİTİK SEVİYE (Güvenilir)
             found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z: {z_score_val:.2f})</div>"
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
             # EDU NOTE: Güçlü
             scan_results_html += f"""
             <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
@@ -3753,7 +3753,7 @@ with st.sidebar:
             """
         elif z_score_val <= -1.5: # ERKEN UYARI (Takip)
             found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z: {z_score_val:.2f})</div>"
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
             # EDU NOTE: Hafif
             scan_results_html += f"""
             <div style='background:#fffbeb; border-left:3px solid #f59e0b; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
@@ -3767,7 +3767,7 @@ with st.sidebar:
         # 2. AŞIRI YÜKSELİŞ SENARYOLARI (ŞİŞME)
         elif z_score_val >= 2.0: # KRİTİK SEVİYE (Güvenilir)
             found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z: {z_score_val:.2f})</div>"
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
             # EDU NOTE: Güçlü
             scan_results_html += f"""
             <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
@@ -3779,7 +3779,7 @@ with st.sidebar:
             """
         elif z_score_val >= 1.5: # ERKEN UYARI (Takip)
             found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z: {z_score_val:.2f})</div>"
+            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
             # EDU NOTE: Hafif
             scan_results_html += f"""
             <div style='background:#fff7ed; border-left:3px solid #f97316; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
@@ -3913,13 +3913,19 @@ with st.sidebar:
             st.session_state.generate_prompt = True
 
 # ==============================================================================
-# 6. ANA SAYFA (MAIN UI)
+# 6. ANA SAYFA (MAIN UI) - GÜNCELLENMİŞ MASTER SCAN VERSİYONU
 # ==============================================================================
-col_cat, col_ass, col_search_in, col_search_btn = st.columns([1.5, 2, 2, 0.7])
+
+# Üst Menü Düzeni: Kategori | Varlık Listesi | DEV TARAMA BUTONU
+col_cat, col_ass, col_btn = st.columns([1.5, 2, 1.5])
+
+# 1. Kategori Seçimi
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError: cat_index = 0
-with col_cat: st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
+with col_cat:
+    st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
 
+# 2. Varlık Listesi (Dropdown)
 with col_ass:
     current_opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY]).copy()
     active_ticker = st.session_state.ticker
@@ -3931,8 +3937,69 @@ with col_ass:
         except ValueError: asset_idx = 0
     st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
 
-with col_search_in: st.text_input("Manuel", placeholder="Kod", key="manual_input_key", label_visibility="collapsed")
-with col_search_btn: st.button("Ara", on_click=on_manual_button_click)
+# 3. MASTER SCAN BUTONU (Eski arama kutusu yerine geldi)
+with col_btn:
+    # Butona basıldığında çalışacak sihirli kod
+    if st.button("🕵️ TÜM PİYASAYI TARA (MASTER SCAN)", type="primary", use_container_width=True):
+        
+        # --- A. HAZIRLIK ---
+        st.toast("Ajanlar göreve çağrılıyor...", icon="🕵️")
+        scan_list = ASSET_GROUPS.get(st.session_state.category, [])
+        
+        # İlerleme Çubuğu ve Bilgi Mesajı
+        progress_text = "Operasyon Başlıyor..."
+        my_bar = st.progress(0, text=progress_text)
+        
+        try:
+            # 1. ÖNCE VERİYİ ÇEK (Yahoo Koruması) - %10
+            # En geniş veriyi (2y) bir kez çağırıyoruz ki önbelleğe (cache) girsin.
+            # Diğer ajanlar cache'den okuyacağı için Yahoo'ya tekrar gitmeyecekler.
+            my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...")
+            get_batch_data_cached(scan_list, period="2y")
+            
+            # 2. STP & MOMENTUM AJANI - %25
+            my_bar.progress(25, text="⚡ STP ve Momentum Taranıyor...")
+            crosses, trends, filtered = scan_stp_signals(scan_list)
+            st.session_state.stp_crosses = crosses
+            st.session_state.stp_trends = trends
+            st.session_state.stp_filtered = filtered
+            st.session_state.stp_scanned = True
+            
+            # 3. SENTIMENT (AKILLI PARA) AJANI - %40
+            my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...")
+            st.session_state.accum_data = scan_hidden_accumulation(scan_list)
+            
+            # 4. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
+            my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...")
+            st.session_state.breakout_left = agent3_breakout_scan(scan_list)      # Isınanlar
+            st.session_state.breakout_right = scan_confirmed_breakouts(scan_list) # Kıranlar
+            
+            # 5. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %70
+            my_bar.progress(70, text="🧠 Radar Sinyalleri İşleniyor...")
+            st.session_state.scan_data = analyze_market_intelligence(scan_list)
+            st.session_state.radar2_data = radar2_scan(scan_list)
+            
+            # 6. MINERVINI & FORMASYON & TUZAKLAR - %85
+            my_bar.progress(85, text="🦁 Minervini, Formasyon ve Tuzaklar Taranıyor...")
+            st.session_state.minervini_data = scan_minervini_batch(scan_list)
+            st.session_state.pattern_data = scan_chart_patterns(scan_list)
+            st.session_state.bear_trap_data = scan_bear_traps(scan_list)
+            
+            # 7. RSI UYUMSUZLUKLARI - %95
+            my_bar.progress(95, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...")
+            bull_df, bear_df = scan_rsi_divergence_batch(scan_list)
+            st.session_state.rsi_div_bull = bull_df
+            st.session_state.rsi_div_bear = bear_df
+            
+            # --- BİTİŞ ---
+            my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...")
+            st.session_state.generate_prompt = False # Eski prompt varsa temizle
+            st.rerun() # Sayfayı yenile ki tablolar dolsun
+            
+        except Exception as e:
+            st.error(f"Tarama sırasında bir hata oluştu: {str(e)}")
+            st.stop()
+
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
 if st.session_state.generate_prompt:
@@ -4441,37 +4508,6 @@ with col_left:
                             st.rerun()
                 else:
                     st.caption("Pozitif uyumsuzluk yok.")
-
-    # ---------------------------------------------------------
-    # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
-    # ---------------------------------------------------------
-    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
-
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı (85/100)</div>', unsafe_allow_html=True)
-    
-    # 1. TARAMA BUTONU
-    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
-        with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.minervini_data = scan_minervini_batch(current_assets)
-            
-    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
-    if st.session_state.minervini_data is not None:
-        count = len(st.session_state.minervini_data)
-        if count > 0:
-            st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
-            with st.container(height=300, border=True):
-                for i, row in st.session_state.minervini_data.iterrows():
-                    sym = row['Sembol']
-                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
-                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
-                    
-                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
-
     # ---------------------------------------------------------
     # 📐 YENİ: FORMASYON AJANI (TOBO, BAYRAK, RANGE)
     # ---------------------------------------------------------
@@ -4506,7 +4542,6 @@ with col_left:
         else:
             st.info("Şu an belirgin bir 'Kitabi Formasyon' (TOBO, Bayrak vb.) oluşumu bulunamadı.")
     # ---------------------------------------------------------
-    # ---------------------------------------------------------
     # 🐻 BEAR TRAP (AYI TUZAĞI) AJANI - TARAMA PANELİ
     # ---------------------------------------------------------
     if 'bear_trap_data' not in st.session_state: st.session_state.bear_trap_data = None
@@ -4536,7 +4571,38 @@ with col_left:
                         st.rerun()
         else:
             st.info("Kriterlere uyan (50 mumluk dibi süpürüp dönen) hisse bulunamadı.")    
+
+    # ---------------------------------------------------------
+    # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
+    # ---------------------------------------------------------
+    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı (85/100)</div>', unsafe_allow_html=True)
+    
+    # 1. TARAMA BUTONU
+    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
+        with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.minervini_data = scan_minervini_batch(current_assets)
             
+    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
+    if st.session_state.minervini_data is not None:
+        count = len(st.session_state.minervini_data)
+        if count > 0:
+            st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
+            with st.container(height=300, border=True):
+                for i, row in st.session_state.minervini_data.iterrows():
+                    sym = row['Sembol']
+                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
+                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
+                    
+                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
+
+
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
