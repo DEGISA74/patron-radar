@@ -92,17 +92,21 @@ st.markdown(f"""
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
     }}
     
-    /* --- LİSTE VE SONUÇ BUTONLARI (BEYAZ/SADE) --- */
+    /* --- BİREYSEL TARAMA BUTONLARI (SECONDARY - SU YEŞİLİ) --- */
     div.stButton button[data-testid="baseButton-secondary"] {{
-        background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
-        color: #334155 !important;
+        background-color: #E0F7FA !important; /* SU YEŞİLİ ARKA PLAN */
+        border: 1px solid #4DD0E1 !important; /* İnce Turkuaz Çerçeve */
+        color: #1F2937 !important; /* KOYU GRİ YAZI */
+        font-weight: 700 !important;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.2s ease-in-out;
     }}
+    
     div.stButton button[data-testid="baseButton-secondary"]:hover {{
-        background-color: #F8FAFC !important;
-        border-color: #64748B !important;
-        color: #0F172A !important;
+        background-color: #B2EBF2 !important; /* Üzerine gelince biraz koyulaşsın */
+        border-color: #00BCD4 !important;
+        color: #000000 !important;
+        transform: translateY(-1px);
     }}
     
     /* --- GENEL BUTON BOYUT AYARI --- */
@@ -4318,7 +4322,7 @@ with col_left:
     if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
     if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
 
-    if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True):
+    if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="secondary", use_container_width=True):
         with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             crosses, trends, filtered = scan_stp_signals(current_assets)
@@ -4405,7 +4409,7 @@ with col_left:
     if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
 
     
-    if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="primary", key="dual_breakout_btn", use_container_width=True):
+    if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="secondary", key="dual_breakout_btn", use_container_width=True):
         with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
             curr_list = ASSET_GROUPS.get(st.session_state.category, [])
             # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
@@ -4465,7 +4469,7 @@ with col_left:
 
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">⚖️ RSI Uyumsuzluk Ajanı (Teyitli)</div>', unsafe_allow_html=True)
 
-    if st.button(f"⚖️ UYUMSUZLUKLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_div"):
+    if st.button(f"⚖️ UYUMSUZLUKLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_div"):
         with st.spinner("RSI ile Fiyat arasındaki yalanlar tespit ediliyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             # Tarama Fonksiyonunu Çağır
@@ -4516,7 +4520,7 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">📐 Formasyon Ajanı (TOBO, Bayrak, Range, Fincan-Kulp, Yükselen Üçgen)</div>', unsafe_allow_html=True)
     
     # TARAMA BUTONU
-    if st.button(f"📐 FORMASYONLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_pattern"):
+    if st.button(f"📐 FORMASYONLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_pattern"):
         with st.spinner("Cetveller çekiliyor... Bayraklar ve TOBO'lar aranıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.pattern_data = scan_chart_patterns(current_assets)
@@ -4549,7 +4553,7 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🐻 Bear Trap Ajanı (Dip Avcısı)</div>', unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
-    if st.button(f"🐻 TUZAKLARI TARA ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_bear_trap"):
+    if st.button(f"🐻 TUZAKLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_bear_trap"):
         with st.spinner("Ayı tuzakları ve likidite temizlikleri taranıyor (50 Mum Pivot)..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.bear_trap_data = scan_bear_traps(current_assets)
@@ -4580,7 +4584,7 @@ with col_left:
     st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı (85/100)</div>', unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
-    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="primary", use_container_width=True, key="btn_scan_sepa"):
+    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa"):
         with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
             st.session_state.minervini_data = scan_minervini_batch(current_assets)
