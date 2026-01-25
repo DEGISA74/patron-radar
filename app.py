@@ -3962,7 +3962,7 @@ with col_btn:
             get_batch_data_cached(scan_list, period="2y")
             
             # 2. STP & MOMENTUM AJANI - %25
-            my_bar.progress(25, text="⚡ STP ve Momentum Taranıyor...")
+            my_bar.progress(25, text="⚡ STP ve Momentum Taranıyor...%25")
             crosses, trends, filtered = scan_stp_signals(scan_list)
             st.session_state.stp_crosses = crosses
             st.session_state.stp_trends = trends
@@ -3970,32 +3970,32 @@ with col_btn:
             st.session_state.stp_scanned = True
             
             # 3. SENTIMENT (AKILLI PARA) AJANI - %40
-            my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...")
+            my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...%40")
             st.session_state.accum_data = scan_hidden_accumulation(scan_list)
             
             # 4. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
-            my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...")
+            my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...%55")
             st.session_state.breakout_left = agent3_breakout_scan(scan_list)      # Isınanlar
             st.session_state.breakout_right = scan_confirmed_breakouts(scan_list) # Kıranlar
             
             # 5. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %70
-            my_bar.progress(70, text="🧠 Radar Sinyalleri İşleniyor...")
+            my_bar.progress(70, text="🧠 Radar Sinyalleri İşleniyor...%70")
             st.session_state.scan_data = analyze_market_intelligence(scan_list)
             st.session_state.radar2_data = radar2_scan(scan_list)
             
             # 6. FORMASYON & TUZAKLAR - %85
-            my_bar.progress(85, text="🦁 Formasyon ve Tuzaklar Taranıyor...")
+            my_bar.progress(85, text="🦁 Formasyon ve Tuzaklar Taranıyor...%85")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
             
             # 7. RSI UYUMSUZLUKLARI - %95
-            my_bar.progress(95, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...")
+            my_bar.progress(95, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...%95")
             bull_df, bear_df = scan_rsi_divergence_batch(scan_list)
             st.session_state.rsi_div_bull = bull_df
             st.session_state.rsi_div_bear = bear_df
             
             # --- BİTİŞ ---
-            my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...")
+            my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...%100")
             st.session_state.generate_prompt = False # Eski prompt varsa temizle
             st.rerun() # Sayfayı yenile ki tablolar dolsun
             
@@ -4761,6 +4761,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
