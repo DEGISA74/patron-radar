@@ -241,7 +241,7 @@ other_crypto = [
     "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "TRX-USD", 
     "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "BCH-USD", "UNI-USD", "ATOM-USD", 
     "XLM-USD", "ETC-USD", "FIL-USD", "HBAR-USD", "APT-USD", "NEAR-USD", "VET-USD", 
-    "QNT-USD", "AAVE-USD", "ALGO-USD", "XAUUSD=X", "GC=F"
+    "QNT-USD", "AAVE-USD", "ALGO-USD"
 ]
 other_crypto.sort()
 final_crypto_list = priority_crypto + other_crypto
@@ -4761,5 +4761,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
