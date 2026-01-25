@@ -3983,9 +3983,8 @@ with col_btn:
             st.session_state.scan_data = analyze_market_intelligence(scan_list)
             st.session_state.radar2_data = radar2_scan(scan_list)
             
-            # 6. MINERVINI & FORMASYON & TUZAKLAR - %85
-            my_bar.progress(85, text="🦁 Minervini, Formasyon ve Tuzaklar Taranıyor...")
-            st.session_state.minervini_data = scan_minervini_batch(scan_list)
+            # 6. FORMASYON & TUZAKLAR - %85
+            my_bar.progress(85, text="🦁 Formasyon ve Tuzaklar Taranıyor...")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
             
@@ -4762,3 +4761,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
