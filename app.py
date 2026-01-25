@@ -879,7 +879,7 @@ def scan_bear_traps(asset_list):
         except: return None
 
     # -- PARALEL İŞLEM (HIZ İÇİN) --
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(_worker_bear_trap, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1108,7 +1108,7 @@ def scan_rsi_divergence_batch(asset_list):
         except: return None
 
     # Paralel Çalıştırma
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(_worker_div, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1148,7 +1148,7 @@ def scan_stp_signals(asset_list):
                     stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_single_stock_stp, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1324,7 +1324,7 @@ def scan_hidden_accumulation(asset_list):
         except: continue
 
     # 3. Paralel İşlem (Benchmark'ı da gönderiyoruz)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         # benchmark serisini her fonksiyona argüman olarak geçiyoruz
         futures = [executor.submit(process_single_accumulation, sym, df, benchmark) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
@@ -1440,7 +1440,7 @@ def analyze_market_intelligence(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_single_radar1, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1572,7 +1572,7 @@ def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_single_radar2, sym, df, idx, min_price, max_price, min_avg_vol_m) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1716,7 +1716,7 @@ def agent3_breakout_scan(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_single_breakout, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -1844,7 +1844,7 @@ def scan_confirmed_breakouts(asset_list):
                 if len(asset_list) == 1: stock_dfs.append((symbol, data))
         except: continue
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(process_single_confirmed, sym, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
@@ -2256,7 +2256,7 @@ def scan_minervini_batch(asset_list):
         except: continue
 
     # 3. Paralel Tarama (Yukarıdaki sertleştirilmiş fonksiyonu çağırır)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         # provided_df argümanını kullanarak internetten tekrar indirmeyi engelliyoruz
         futures = [executor.submit(calculate_minervini_sepa, sym, bench, df) for sym, df in stock_dfs]
         for future in concurrent.futures.as_completed(futures):
@@ -4761,6 +4761,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
