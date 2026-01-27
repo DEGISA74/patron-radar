@@ -238,10 +238,28 @@ final_sp500_list = priority_sp + raw_sp500_rest
 
 priority_crypto = ["BTC-USD", "ETH-USD"]
 other_crypto = [
-    "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "TRX-USD", 
-    "LINK-USD", "DOT-USD", "MATIC-USD", "LTC-USD", "BCH-USD", "UNI-USD", "ATOM-USD", 
-    "XLM-USD", "ETC-USD", "FIL-USD", "HBAR-USD", "APT-USD", "NEAR-USD", "VET-USD", 
-    "QNT-USD", "AAVE-USD", "ALGO-USD"
+    # --- MAJOR ALTCOINS ---
+    "BNB-USD", "SOL-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD", "TRX-USD",
+    "DOT-USD", "MATIC-USD", "LINK-USD", "TON-USD", "SHIB-USD", "LTC-USD", "BCH-USD",
+  
+    # --- POPULER KATMAN 1 & 2 (L1/L2) ---
+    "ICP-USD", "NEAR-USD", "APT-USD", "STX-USD", "FIL-USD", "ATOM-USD", "ARB-USD",
+    "OP-USD", "INJ-USD", "KAS-USD", "TIA-USD", "SEI-USD", "SUI-USD", "ALGO-USD",
+    "HBAR-USD", "EGLD-USD", "FTM-USD", "XLM-USD", "VET-USD", "ETC-USD", "EOS-USD",
+    "XTZ-USD", "MINA-USD", "ASTR-USD", "FLOW-USD", "KLAY-USD", "IOTA-USD", "NEO-USD",
+    
+    # --- DEFI & WEB3 & AI ---
+    "RNDR-USD", "GRT-USD", "FET-USD", "UNI-USD", "LDO-USD", "MKR-USD", "AAVE-USD",
+    "SNX-USD", "RUNE-USD", "QNT-USD", "CRV-USD", "CFX-USD", "CHZ-USD", "AXS-USD",
+    "SAND-USD", "MANA-USD", "THETA-USD", "GALA-USD", "ENJ-USD", "COMP-USD", "1INCH-USD",
+    "ZIL-USD", "BAT-USD", "LRC-USD", "SUSHI-USD", "YFI-USD", "ZRX-USD", "ANKR-USD",
+    
+    # --- MEME & SPECULATIVE ---
+    "PEPE-USD", "BONK-USD", "FLOKI-USD", "WIF-USD", "LUNC-USD",
+    
+    # --- ESKİ TOPRAKLAR (KLASİKLER) ---
+    "XMR-USD", "DASH-USD", "ZEC-USD", "BTT-USD", "RVN-USD", "WAVES-USD", "OMG-USD",
+    "ICX-USD", "IOST-USD", "ONT-USD", "QTUM-USD", "SC-USD", "DGB-USD", "XVG-USD"
 ]
 other_crypto.sort()
 final_crypto_list = priority_crypto + other_crypto
@@ -259,6 +277,15 @@ raw_nasdaq = [
     "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
+
+commodities_list = [
+"GLD",   # Altın ONS (Spot) - Senin ekranındaki XAUUSD
+    "SLV",   # Gümüş ONS (Spot) - Senin ekranındaki XAGUSD
+    "CPER",       # Bakır (Vadeli - Çünkü Spot kodu Yahoo'da bazen sıkıntılı)
+    "USO",       # Ham Petrol (WTI)
+    "UNG",       # Doğalgaz
+    "BNO"         # Brent Petrol
+]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
 priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
@@ -300,7 +327,8 @@ ASSET_GROUPS = {
     "S&P 500": final_sp500_list,
     "NASDAQ-100": raw_nasdaq,
     "BIST 500 ": final_bist100_list,
-    "KRİPTO-TOP 25": final_crypto_list
+    "KRİPTO-TOP 100": final_crypto_list,
+    "EMTİALAR": commodities_list
 }
 INITIAL_CATEGORY = "BIST 500 "
 
@@ -3267,7 +3295,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("EMA6 Analizi: Mavi (Fiyat) Sarıyı (STP) Yukarı Keserse AL", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-EMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_price_action_panel(ticker):
     pa = calculate_price_action_dna(ticker)
@@ -3609,7 +3637,14 @@ with st.sidebar:
     
     # 1. VERİYİ ÇEK (Tek Sefer)
     df_live = get_safe_historical_data(active_t)
-    
+    pa_data = None
+    bt_live = None
+    mini_live = None
+    acc_live = None
+    bo_live = None
+    r1_live = None
+    r2_live = None
+    stp_live = None
     if df_live is not None and not df_live.empty:
         
         # A. ENDEKS VERİLERİ (Gerekli hesaplamalar için)
@@ -3958,7 +3993,7 @@ with col_btn:
             # 1. ÖNCE VERİYİ ÇEK (Yahoo Koruması) - %10
             # En geniş veriyi (2y) bir kez çağırıyoruz ki önbelleğe (cache) girsin.
             # Diğer ajanlar cache'den okuyacağı için Yahoo'ya tekrar gitmeyecekler.
-            my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...")
+            my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...%10")
             get_batch_data_cached(scan_list, period="2y")
             
             # 2. STP & MOMENTUM AJANI - %25
@@ -3984,7 +4019,7 @@ with col_btn:
             st.session_state.radar2_data = radar2_scan(scan_list)
             
             # 6. FORMASYON & TUZAKLAR - %85
-            my_bar.progress(85, text="🦁 Formasyon ve Tuzaklar Taranıyor...%85")
+            my_bar.progress(85, text="🦁Formasyon ve Tuzaklar Taranıyor...%85")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
             
@@ -4211,7 +4246,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - Hedef Likidite (Mıknatıs): {liq_str}
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
-En başa "SMART MONEY RADAR   {t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
+En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
@@ -4221,7 +4256,7 @@ En başa "SMART MONEY RADAR   {t}  ANALİZİ -  {fiyat_str} 👇📷" başlığ�
    - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR" ve altına da "#SmartMoneyRadar ve #{t}" yaz.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR " ve onun da altına "#SmartMoneyRadar #{t}" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -4761,8 +4796,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
-
-
-
-
