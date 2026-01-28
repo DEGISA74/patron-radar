@@ -709,6 +709,40 @@ def calculate_synthetic_sentiment(ticker):
         return plot_df
     except Exception: return None
 
+@st.cache_data(ttl=600)
+def get_obv_divergence_status(ticker):
+    """
+    OBV ile Fiyat arasındaki uyumsuzluğu (Gizli Para Akışı) hesaplar.
+    Dönüş: (Başlık, Renk, Açıklama)
+    """
+    try:
+        df = get_safe_historical_data(ticker, period="2mo") # Biraz geniş veri alalım
+        if df is None or len(df) < 20: return ("Veri Yok", "#64748B", "Yetersiz veri.")
+        
+        # 1. OBV Hesapla
+        change = df['Close'].diff()
+        direction = np.sign(change).fillna(0)
+        obv = (direction * df['Volume']).cumsum()
+        
+        # 2. Son 10 Günlük Trend Kıyaslaması
+        p_now = df['Close'].iloc[-1]; p_old = df['Close'].iloc[-11]
+        obv_now = obv.iloc[-1]; obv_old = obv.iloc[-11]
+        
+        price_trend = "YUKARI" if p_now > p_old else "AŞAĞI"
+        obv_trend = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        
+        # 3. Karar Mekanizması
+        if price_trend == "AŞAĞI" and obv_trend == "YUKARI":
+            return ("🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk)", "#16a34a", "Fiyat düşerken 'Akıllı Para' topluyor. (OBV Artıyor)")
+        elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
+            return ("⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk)", "#dc2626", "Fiyat yükselirken 'Akıllı Para' satıyor. (OBV Düşüyor)")
+        elif obv_trend == "YUKARI":
+            return ("Pozitif (Para Girişi Var)", "#15803d", "Fiyat yükselişi hacimle destekleniyor.")
+        else:
+            return ("Negatif (Para Çıkışı Var)", "#b91c1c", "Fiyat düşüşü hacimle destekleniyor veya ilgi yok.")
+            
+    except: return ("Hesaplanamadı", "#64748B", "-")
+
 # --- OPTİMİZE EDİLMİŞ BATCH SCANNER'LAR ---
 
 def process_single_stock_stp(symbol, df):
@@ -3298,6 +3332,7 @@ def render_synthetic_sentiment_panel(data):
         st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-EMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_price_action_panel(ticker):
+    obv_title, obv_color, obv_desc = get_obv_divergence_status(ticker)
     pa = calculate_price_action_dna(ticker)
     if not pa:
         st.info("PA verisi bekleniyor...")
@@ -3334,6 +3369,11 @@ def render_price_action_panel(ticker):
         <div style="margin-bottom:8px;">
             <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
             <div class="edu-note">{pa['vol']['desc']}</div>
+        </div>
+
+        <div style="margin-top:4px; padding:4px; background:{obv_color}15; border-radius:4px; border-left:2px solid {obv_color};">
+            <div style="font-size:0.75rem; font-weight:700; color:{obv_color};">💰 {obv_title}</div>
+            <div style="font-size:0.7rem; color:#475569; font-style:italic;">{obv_desc}</div>
         </div>
 
         <div style="margin-bottom:8px;">
@@ -4164,9 +4204,34 @@ if st.session_state.generate_prompt:
             
     r2_txt = f"Skor: {radar_val} | Setup: {radar_setup}"
 
-    # Gizli Para Akışı
+    # --- GERÇEK PARA AKIŞI (OBV & DIVERGENCE) ---
     para_akisi_txt = "Nötr"
-    if synth_data is not None and len(synth_data) > 15:
+
+    # df_hist değişkeninin yukarıda tanımlı olduğundan emin ol (genelde prompt başında tanımlıdır)
+    if 'df_hist' in locals() and df_hist is not None and len(df_hist) > 20:
+        # 1. OBV Hesapla
+        change = df_hist['Close'].diff()
+        direction = np.sign(change).fillna(0)
+        obv = (direction * df_hist['Volume']).cumsum()
+
+        # 2. Trendleri Kıyasla (Son 10 Gün)
+        p_now = df_hist['Close'].iloc[-1]; p_old = df_hist['Close'].iloc[-11]
+        obv_now = obv.iloc[-1]; obv_old = obv.iloc[-11]
+
+        price_trend = "YUKARI" if p_now > p_old else "AŞAĞI"
+        obv_trend = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+
+        # 3. Yorumla
+        if price_trend == "AŞAĞI" and obv_trend == "YUKARI":
+            para_akisi_txt = "🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk - Fiyat Düşerken Mal Toplanıyor)"
+        elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
+            para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk - Fiyat Çıkarken Mal Çakılıyor)"
+        elif obv_trend == "YUKARI":
+            para_akisi_txt = "Pozitif (Para Girişi Fiyatı Destekliyor)"
+        else:
+            para_akisi_txt = "Negatif (Para Çıkışı Var)"
+    elif synth_data is not None and len(synth_data) > 15:
+        # Yedek Plan: df_hist yoksa eski yöntemi kullan
         wma_now = synth_data['MF_Smooth'].tail(10).mean()
         para_akisi_txt = "Pozitif (Giriş Var)" if wma_now > 0 else "Negatif (Çıkış Var)"
         
@@ -4249,14 +4314,14 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
-   - Karar: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
+   - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi direnç/BOS/Fibonacci/EMA seviyesi beklenebilir?
    - Takip Stopu (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
-   - Karar: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
+   - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR " ve onun da altına "#SmartMoneyRadar #{t}" yaz.
+4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t}" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
