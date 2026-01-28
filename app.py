@@ -1531,8 +1531,8 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         
         trend = "Yatay"
         if not np.isnan(sma200.iloc[-1]):
-            if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
-            elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
+            if (curr_c > sma50.iloc[-1]) and (curr_c > sma100.iloc[-1]) and (curr_c > sma200.iloc[-1]): trend = "Boğa"
+            elif curr_c < sma200.iloc[-1]: trend = "Ayı"
         
         # RSI ve MACD (Sadece Setup için histogram hesabı kalıyor, puanlamadan çıkacak)
         delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
