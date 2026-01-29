@@ -1531,8 +1531,8 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         
         trend = "Yatay"
         if not np.isnan(sma200.iloc[-1]):
-            if (curr_c > sma50.iloc[-1]) and (curr_c > sma100.iloc[-1]) and (curr_c > sma200.iloc[-1]): trend = "Boğa"
-            elif curr_c < sma200.iloc[-1]: trend = "Ayı"
+            if curr_c > sma50.iloc[-1] > sma100.iloc[-1] > sma200.iloc[-1] and sma200.iloc[-1] > sma200.iloc[-20]: trend = "Boğa"
+            elif curr_c < sma200.iloc[-1] and sma200.iloc[-1] < sma200.iloc[-20]: trend = "Ayı"
         
         # RSI ve MACD (Sadece Setup için histogram hesabı kalıyor, puanlamadan çıkacak)
         delta = close.diff(); gain = (delta.where(delta > 0, 0)).rolling(14).mean(); loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -2986,6 +2986,7 @@ def calculate_fib_levels(df, period=144):
             # Golden Pocket AŞAĞIDA (Destek) olmalı
             levels = {
                 "1.618 (Hedef)": max_h + (diff * 0.618),
+                "1.236 (Kırılım Hedefi)": max_h + (diff * 0.236), # YENİ EKLENEN SEVİYE
                 "0 (Tepe)": max_h,
                 "0.236": max_h - (diff * 0.236),
                 "0.382": max_h - (diff * 0.382),
@@ -3003,6 +3004,7 @@ def calculate_fib_levels(df, period=144):
                 "0.382": min_l + (diff * 0.382),
                 "0.236": min_l + (diff * 0.236),
                 "0 (Dip)": min_l,
+                "-0.236 (Kırılım Hedefi)": min_l - (diff * 0.236), # YENİ EKLENEN SEVİYE
                 "-0.618 (Hedef)": min_l - (diff * 0.618)
             }
             
@@ -3036,7 +3038,7 @@ def calculate_z_score_live(df, period=20):
 @st.cache_data(ttl=600)
 def get_advanced_levels_data(ticker):
     """
-    Arayüz için verileri paketler.
+    Arayüz için verileri paketler. (GÜNCELLENMİŞ: Buffer ve 1.236 Mantığı)
     """
     df = get_safe_historical_data(ticker, period="1y")
     if df is None: return None
@@ -3044,23 +3046,32 @@ def get_advanced_levels_data(ticker):
     # 1. SuperTrend
     st_val, st_dir = calculate_supertrend(df)
     
-    # 2. Fibonacci (Son 6 ay ~120 gün baz alınarak)
+    # 2. Fibonacci
     fibs = calculate_fib_levels(df, period=120)
     
-    curr_price = df['Close'].iloc[-1]
+    curr_price = float(df['Close'].iloc[-1])
     
     # En yakın destek ve direnci bulma
     sorted_fibs = sorted(fibs.items(), key=lambda x: float(x[1]))
     support = (None, -999999)
     resistance = (None, 999999)
     
+    # TAMPON BÖLGE (BUFFER) - Binde 2
+    # Fiyat dirence %0.2 kadar yaklaştıysa veya geçtiyse, o direnci "GEÇİLDİ" say.
+    buffer = 0.002 
+    
     for label, val in sorted_fibs:
+        # Destek: Fiyatın altında kalan en büyük değer
         if val < curr_price and val > support[1]:
             support = (label, val)
-        if val > curr_price and val < resistance[1]:
+            
+        # Direnç: Fiyatın (ve tamponun) üzerinde kalan en küçük değer
+        # MANTIK: Eğer Fiyat > Zirve ise, Zirve elenir, sıradaki "1.236 (Kırılım Hedefi)" seçilir.
+        if val > (curr_price * (1 + buffer)) and val < resistance[1]:
             resistance = (label, val)
+            
     if resistance[1] == 999999:
-        resistance = ("ZİRVE AŞIMI", curr_price * 1.10) # Sembolik %10 yukarı koy veya boş bırak
+        resistance = ("UZAY BOŞLUĞU 🚀", curr_price * 1.15) 
 
     return {
         "st_val": st_val,
@@ -3987,7 +3998,7 @@ with st.sidebar:
 
     # 3. AI ANALIST (En Altta)
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
-        st.caption("Verileri toplayıp ChatGPT için hazır metin oluşturur.")
+        st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
         if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
             st.session_state.generate_prompt = True
 
@@ -4155,6 +4166,24 @@ if st.session_state.generate_prompt:
     sma50_val = tech_data.get('sma50', 0)
     sma50_str = "ÜZERİNDE (Pozitif)" if curr_price > sma50_val else "ALTINDA (Negatif)"
 
+    # --- EMA HESAPLAMALARI (YENİ EKLENEN KISIM) ---
+    # df_hist verisinden EMA'ları hesaplayalım
+    df_hist['EMA8'] = df_hist['Close'].ewm(span=8, adjust=False).mean()
+    df_hist['EMA13'] = df_hist['Close'].ewm(span=13, adjust=False).mean()
+
+    ema8_val = df_hist['EMA8'].iloc[-1]
+    ema13_val = df_hist['EMA13'].iloc[-1]
+    
+    # Fiyatın bu ortalamalara göre durumu
+    ema8_status = "Üstünde (Kısa Vadede Güçlü)" if curr_price > ema8_val else "Altında (Kısa Vadede Zayıflama var)"
+    ema13_status = "Üstünde (Destek)" if curr_price > ema13_val else "Altında (Direnç)"
+
+    # Fark yüzdeleri
+    diff_ema8 = ((curr_price / ema8_val) - 1) * 100
+    diff_ema13 = ((curr_price / ema13_val) - 1) * 100
+
+    ema_txt = f"EMA8: {ema8_val:.2f} ({ema8_status} %{diff_ema8:.1f}) | EMA13: {ema13_val:.2f} ({ema13_status} %{diff_ema13:.1f})"
+
     # Destek/Direnç (Levels Data'dan çekme)
     fib_res = "-"
     fib_sup = "-"
@@ -4284,9 +4313,10 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - SuperTrend (Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 - SMA50 Durumu: {sma50_str}
+- EMA Durumu (8/13): {ema_txt}
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
-(NOT: Radar 2'deki "Setup" tipi [Pullback/Breakout] strateji için çok önemlidir.)
+(NOT: Radar 2'deki "Setup" tipi [Trend/Setup] strateji için çok önemlidir.)
 
 *** 2. SMART MONEY & ICT YAPISI ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
@@ -4312,16 +4342,16 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
-1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu?
+1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini en az 12 cümle ile ve madde madde analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala.
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
-   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi direnç/BOS/Fibonacci/EMA seviyesi beklenebilir?
-   - Takip Stopu (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
+   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir?
+   - İzsüren Stop (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
-   - Risk Analizi: Şu an girmek "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin?
-   - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek) gelmesini beklenebilir?
-4. UYARI: Eğer RSI uyumsuzluğu, Hacim düşüklüğü veya Trend tersliği varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t}" yaz.
+   - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
+   - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? 
+4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t}" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
