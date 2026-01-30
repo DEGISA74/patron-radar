@@ -2866,33 +2866,50 @@ def calculate_price_action_dna(ticker):
 
         # ======================================================
         # 6. RSI UYUMSUZLUK (DIVERGENCE) - GÜNCELLENMİŞ HASSASİYET
-        # ======================================================
+        # ==========================================================
         div_txt, div_desc, div_type = "Uyumlu", "RSI ve Fiyat paralel.", "neutral"
         try:
             # Son 5 gün vs Önceki 15 gün
             current_window = c.iloc[-5:]
             prev_window = c.iloc[-20:-5]
-            
+
             # Negatif Uyumsuzluk (Ayı)
             p_curr_max = current_window.max(); p_prev_max = prev_window.max()
             r_curr_max = rsi_series.iloc[-5:].max(); r_prev_max = rsi_series.iloc[-20:-5].max()
-            
+
+            # --- FİLTRELER ---
+            # 1. RSI Tavanı: 75 üstüyse "Sat" deme.
+            is_rsi_saturated = rsi_val >= 75
+            # 2. SMA50 Kuralı: Fiyat SMA50'nin %20'sinden fazla yukarıdaysa "Ralli Modu"dur.
+            is_parabolic = c1_c > (sma50 * 1.20)
+            # 3. Mum Rengi: Son mum (is_red) kırmızı değilse sat deme. (is_red yukarıda tanımlıydı)
+
+            # Matematiksel Uyumsuzluk Kontrolü
             # DÜZELTME: ">" yerine ">=" kullanarak İkili Tepeleri de dahil ettik.
-            # Fiyat Eşit veya Yüksekse VE RSI Düşükse -> Uyumsuzluktur.
             if (p_curr_max >= p_prev_max) and (r_curr_max < r_prev_max) and (r_prev_max > 60):
-                div_txt = "🐻 NEGATİF UYUMSUZLUK (Tepe Zayıflığı)"
-                div_desc = "Fiyat zirveyi zorluyor ama RSI güç kaybediyor. Düşüş riski!"
-                div_type = "bearish"
                 
+                # KARAR MEKANİZMASI: Filtrelerin HEPSİNDEN geçerse uyarı ver
+                if not is_rsi_saturated and is_red and not is_parabolic:
+                    div_txt = "🐻 NEGATİF UYUMSUZLUK (Tepe Zayıflığı)"
+                    div_desc = "Fiyat zirveyi zorluyor, RSI yoruluyor ve satış geldi."
+                    div_type = "bearish"
+                else:
+                    # Uyumsuzluk var ama trend çok güçlü (Ralli Modu)
+                    div_txt = "🚀 GÜÇLÜ MOMENTUM (Aşırı Alım)"
+                    reason = "Fiyat koptu (%20+)" if is_parabolic else "RSI doygunlukta"
+                    div_desc = f"Negatif uyumsuzluk var ANCAK trend çok güçlü ({reason}). Henüz dönüş onayı yok."
+                    div_type = "neutral"
+
             # Pozitif Uyumsuzluk (Boğa)
             p_curr_min = current_window.min(); p_prev_min = prev_window.min()
             r_curr_min = rsi_series.iloc[-5:].min(); r_prev_min = rsi_series.iloc[-20:-5].min()
-            
+
             # DÜZELTME: "<" yerine "<=" kullanarak İkili Dipleri de dahil ettik.
             if (p_curr_min <= p_prev_min) and (r_curr_min > r_prev_min) and (r_prev_min < 45):
                 div_txt = "💎 POZİTİF UYUMSUZLUK (Gizli Güç)"
                 div_desc = "Fiyat dipte tutunuyor ve RSI yükseliyor. Toplama sinyali!"
-                div_type = "bullish"      
+                div_type = "bullish"
+
         except: pass
 
         return {
@@ -4212,9 +4229,11 @@ if st.session_state.generate_prompt:
         loc_info = pa_data.get('loc', {})
         loc_desc = f"{loc_info.get('title', '-')} - {loc_info.get('desc', '-')}"
 
-        # Uyumsuzluk
+        # --- GÜNCELLENEN RSI KISMI ---
         div_data = pa_data.get('div', {})
-        pa_div = f"{div_data.get('title', '-')} ({div_data.get('type', '-')})"
+        div_title = div_data.get('title', '-')
+        div_reason = div_data.get('desc', '-')
+        pa_div = f"{div_title} -> DETAY: {div_reason}"
     # Diğer Metin Hazırlıkları
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     r1_txt = "Veri Yok"
