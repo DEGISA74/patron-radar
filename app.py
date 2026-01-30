@@ -37,7 +37,9 @@ current_theme = THEMES[st.session_state.theme]
 st.markdown(f"""
 <style>
     section[data-testid="stSidebar"] {{ width: 350px !important; }}
-
+    section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] * {{
+        font-family: 'Inter', sans-serif !important;
+    }}
     /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
     div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
     div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
@@ -3640,7 +3642,7 @@ def render_levels_card(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend</div>
+        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend: {display_ticker}</div>
         
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -3972,7 +3974,7 @@ with st.sidebar:
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:0.8rem; font-weight:700; color:#334155; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
+            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
             {scan_results_html}
         </div>
         """, unsafe_allow_html=True)
@@ -4397,7 +4399,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 (Bu bölüm hissenin içsel gücünü gösterir, analizinde mutlaka kullan!)
 - YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
 - HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
-- TREND: {sent_trend} (Ortalamaların durumu)
+- TREND: {sent_trend} (Ortalamaların durumu ve kısa vadeli trend için EMA 8/13 üstünde olup olmadığı)
 - MOMENTUM: {sent_mom} (RSI ve MACD gücü)
 - VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
 
