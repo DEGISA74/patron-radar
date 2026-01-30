@@ -1132,7 +1132,7 @@ def scan_rsi_divergence_batch(asset_list):
                 stock_dfs.append((symbol, data))
         except: continue
 
-    # İşçi Fonksiyon
+    # İşçi Fonksiyon (KESİN FİLTRELİ VERSİYON)
     def _worker_div(symbol, df):
         try:
             if df.empty or len(df) < 50: return None
@@ -1140,7 +1140,9 @@ def scan_rsi_divergence_batch(asset_list):
             close = df['Close']; open_ = df['Open']; volume = df['Volume']
             if 'Volume' not in df.columns: volume = pd.Series([1]*len(df))
             
-            # RSI Hesapla
+            # 1. Göstergeleri Hesapla (SMA50 ve RSI)
+            sma50 = close.rolling(50).mean()
+            
             delta = close.diff()
             gain = (delta.where(delta > 0, 0)).rolling(14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -1152,32 +1154,45 @@ def scan_rsi_divergence_batch(asset_list):
             
             curr_price = float(close.iloc[-1])
             curr_vol = float(volume.iloc[-1])
+            rsi_val = float(rsi_series.iloc[-1])
+            sma50_val = float(sma50.iloc[-1])
             
-            # 1. POZİTİF UYUMSUZLUK (BOĞA)
-            # Kriterler: Fiyat yeni dip, RSI yükselen dip, RSI < 45 VE Son Mum Yeşil
-            is_bull = (curr_p.min() < prev_p.min()) and \
+            # Mum Renkleri (Son gün)
+            is_red_candle = close.iloc[-1] < open_.iloc[-1]
+            is_green_candle = close.iloc[-1] > open_.iloc[-1]
+
+            # --- 1. POZİTİF UYUMSUZLUK (BOĞA) ---
+            # Kriterler: Fiyat yeni dip (veya eşit), RSI yükselen dip, RSI < 55 VE Son Mum Yeşil
+            is_bull = (curr_p.min() <= prev_p.min()) and \
                       (curr_r.min() > prev_r.min()) and \
-                      (prev_r.min() < 45) and \
-                      (close.iloc[-1] > open_.iloc[-1]) # TEYİT: YEŞİL MUM
+                      (rsi_val < 55) and \
+                      is_green_candle 
             
             if is_bull:
                 return {
                     "type": "bull",
-                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI_Dip": int(curr_r.min())}
+                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI": int(rsi_val)}
                 }
 
-            # 2. NEGATİF UYUMSUZLUK (AYI)
-            # Kriterler: Fiyat yeni tepe, RSI alçalan tepe, RSI > 60 VE Son Mum Kırmızı
-            is_bear = (curr_p.max() > prev_p.max()) and \
-                      (curr_r.max() < prev_r.max()) and \
-                      (prev_r.max() > 60) and \
-                      (close.iloc[-1] < open_.iloc[-1]) # TEYİT: KIRMIZI MUM
+            # --- 2. NEGATİF UYUMSUZLUK (AYI) ---
+            
+            # ÖNCE FİLTRELER (RSI 75 üstüyse hiç bakma bile!)
+            is_rsi_saturated = rsi_val >= 75
+            is_parabolic = curr_price > (sma50_val * 1.20)
+            
+            # Eğer RSI şişkinse veya Fiyat koptuysa -> DİREKT İPTAL ET (None dön)
+            if is_rsi_saturated or is_parabolic:
+                return None
 
-            if is_bear:
-                return {
-                    "type": "bear",
-                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI_Tepe": int(curr_r.max())}
-                }
+            # Sadece normal şartlarda uyumsuzluk ara
+            if (curr_p.max() >= prev_p.max()) and (curr_r.max() < prev_r.max()) and (curr_r.max() > 45):
+                
+                # Son Filtre: Mum Kırmızı mı?
+                if is_red_candle:
+                    return {
+                        "type": "bear",
+                        "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI": int(rsi_val)}
+                    }
                 
             return None
         except: return None
@@ -4697,7 +4712,7 @@ with col_left:
                     for i, row in st.session_state.rsi_div_bear.head(20).iterrows():
                         sym = row['Sembol']
                         # Buton Metni: 🔻 THYAO (250.0) | RSI: 68
-                        btn_label = f"🔻 {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI_Tepe']}"
+                        btn_label = f"🔻 {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
                         if st.button(btn_label, key=f"div_bear_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -4713,7 +4728,7 @@ with col_left:
                     for i, row in st.session_state.rsi_div_bull.head(20).iterrows():
                         sym = row['Sembol']
                         # Buton Metni: ✅ ASELS (45.0) | RSI: 32
-                        btn_label = f"✅ {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI_Dip']}"
+                        btn_label = f"✅ {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
                         if st.button(btn_label, key=f"div_bull_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
