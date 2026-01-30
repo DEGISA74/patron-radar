@@ -712,34 +712,47 @@ def calculate_synthetic_sentiment(ticker):
 @st.cache_data(ttl=600)
 def get_obv_divergence_status(ticker):
     """
-    OBV ile Fiyat arasındaki uyumsuzluğu (Gizli Para Akışı) hesaplar.
+    OBV ile Fiyat arasındaki uyumsuzluğu (Profesyonel SMA Filtreli) hesaplar.
     Dönüş: (Başlık, Renk, Açıklama)
     """
     try:
-        df = get_safe_historical_data(ticker, period="2mo") # Biraz geniş veri alalım
-        if df is None or len(df) < 20: return ("Veri Yok", "#64748B", "Yetersiz veri.")
+        # Periyodu biraz geniş tutuyoruz ki SMA20 hesaplanabilsin
+        df = get_safe_historical_data(ticker, period="3mo") 
+        if df is None or len(df) < 30: return ("Veri Yok", "#64748B", "Yetersiz veri.")
         
-        # 1. OBV Hesapla
+        # 1. OBV ve SMA Hesapla
         change = df['Close'].diff()
         direction = np.sign(change).fillna(0)
         obv = (direction * df['Volume']).cumsum()
+        obv_sma = obv.rolling(20).mean() # Profesyonel Filtre
         
         # 2. Son 10 Günlük Trend Kıyaslaması
         p_now = df['Close'].iloc[-1]; p_old = df['Close'].iloc[-11]
         obv_now = obv.iloc[-1]; obv_old = obv.iloc[-11]
+        obv_sma_now = obv_sma.iloc[-1]
         
         price_trend = "YUKARI" if p_now > p_old else "AŞAĞI"
-        obv_trend = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        # Klasik OBV trendi (Eski usul)
+        obv_trend_raw = "YUKARI" if obv_now > obv_old else "AŞAĞI"
         
-        # 3. Karar Mekanizması
-        if price_trend == "AŞAĞI" and obv_trend == "YUKARI":
-            return ("🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk)", "#16a34a", "Fiyat düşerken 'Akıllı Para' topluyor. (OBV Artıyor)")
-        elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
-            return ("⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk)", "#dc2626", "Fiyat yükselirken 'Akıllı Para' satıyor. (OBV Düşüyor)")
-        elif obv_trend == "YUKARI":
-            return ("Pozitif (Para Girişi Var)", "#15803d", "Fiyat yükselişi hacimle destekleniyor.")
+        # 3. GÜÇ FİLTRESİ: OBV şu an ortalamasının üzerinde mi?
+        is_obv_strong = obv_now > obv_sma_now
+        
+        # 4. Karar Mekanizması
+        if price_trend == "AŞAĞI" and obv_trend_raw == "YUKARI":
+            if is_obv_strong:
+                return ("🔥 GÜÇLÜ GİZLİ GİRİŞ", "#16a34a", "Fiyat düşerken OBV ortalamasını kırdı (Smart Money).")
+            else:
+                return ("👀 Olası Toplama (Zayıf)", "#d97706", "OBV artıyor ama henüz ortalamayı (SMA20) geçemedi.")
+                
+        elif price_trend == "YUKARI" and obv_trend_raw == "AŞAĞI":
+            return ("⚠️ GİZLİ ÇIKIŞ (Dağıtım)", "#dc2626", "Fiyat yükselirken OBV düşüyor. (Negatif Uyumsuzluk)")
+            
+        elif is_obv_strong:
+            return ("✅ Hacim Destekli Trend", "#15803d", "OBV, 20 günlük ortalamasının üzerinde (Sağlıklı).")
+            
         else:
-            return ("Negatif (Para Çıkışı Var)", "#b91c1c", "Fiyat düşüşü hacimle destekleniyor veya ilgi yok.")
+            return ("Nötr / Zayıf", "#64748B", "Hacim akışı ortalamanın altında veya nötr.")
             
     except: return ("Hesaplanamadı", "#64748B", "-")
 
@@ -2798,7 +2811,12 @@ def calculate_price_action_dna(ticker):
         if abs(c1_h - c2_h) < tweezer_tol and (c1_h > c3_h): add_signal(bears, "Tweezer Top 🥢", False)
         
         # Harami
-        if (c1_h < c2_h) and (c1_l > c2_l): neutrals.append("Harami (Inside Bar) 🤰")
+        if (c1_h < c2_h) and (c1_l > c2_l):
+            # Eğer hacim de son 10 günün en düşüğüyse veya ortalamanın en az %35 altındaysa
+            if c1_v < avg_v * 0.7:
+                neutrals.append("NR4/Sıkışma (Patlama Yakın) 🧨") # Çok daha değerli bir sinyal!
+            else:
+                neutrals.append("Inside Bar (Bekle) ⏸️")
 
         # ======================================================
         # 3. ÜÇLÜ MUM FORMASYONLARI
@@ -2837,7 +2855,7 @@ def calculate_price_action_dna(ticker):
         candle_title = "Formasyon Tespiti"
 
         # ======================================================
-        # DİĞER GÖSTERGELER (SFP, VSA, KONUM, SIKIŞMA)
+        # 4. DİĞER GÖSTERGELER (SFP, VSA, KONUM, SIKIŞMA)
         # ======================================================
         
         # SFP
@@ -2863,6 +2881,45 @@ def calculate_price_action_dna(ticker):
         range_5 = h.tail(5).max() - l.tail(5).min()
         sq_txt, sq_desc = "Normal", "Oynaklık normal seviyede."
         if range_5 < (1.5 * atr): sq_txt, sq_desc = "⏳ SÜPER SIKIŞMA (Coil)", "Fiyat yay gibi gerildi. Patlama yakın."
+
+        # ======================================================
+        # 5.5. OBV UYUMSUZLUĞU (SMART MONEY FİLTRELİ - YENİ)
+        # ======================================================
+        # A. OBV ve SMA Hesapla
+        change_obv = c.diff()
+        dir_obv = np.sign(change_obv).fillna(0)
+        obv = (dir_obv * v).cumsum()
+        
+        # Profesyonel Filtre: OBV'nin 20 günlük ortalaması
+        obv_sma = obv.rolling(20).mean()
+        
+        # B. Kıyaslamalar
+        p_now = c.iloc[-1]; p_old = c.iloc[-11]
+        obv_now = obv.iloc[-1]; obv_old = obv.iloc[-11]
+        obv_sma_now = obv_sma.iloc[-1]
+        
+        p_tr = "YUKARI" if p_now > p_old else "AŞAĞI"
+        o_tr_raw = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        
+        # Güç Filtresi: OBV şu an ortalamasının üzerinde mi?
+        is_obv_strong = obv_now > obv_sma_now
+
+        obv_data = {"title": "Nötr / Zayıf", "desc": "Hacim akışı ortalamanın altında.", "color": "#64748B"}
+        
+        # Senaryo 1: GİZLİ GİRİŞ (Fiyat Düşerken Mal Toplama)
+        if p_tr == "AŞAĞI" and o_tr_raw == "YUKARI":
+            if is_obv_strong:
+                obv_data = {"title": "🔥 GÜÇLÜ GİZLİ GİRİŞ", "desc": "Fiyat düşerken OBV ortalamasını kırdı (Smart Money).", "color": "#16a34a"}
+            else:
+                obv_data = {"title": "👀 Olası Toplama (Zayıf)", "desc": "OBV artıyor ama henüz ortalamayı geçemedi.", "color": "#d97706"}
+                
+        # Senaryo 2: GİZLİ ÇIKIŞ (Fiyat Çıkarken Mal Çakma)
+        elif p_tr == "YUKARI" and o_tr_raw == "AŞAĞI":
+            obv_data = {"title": "⚠️ GİZLİ ÇIKIŞ", "desc": "Fiyat çıkarken OBV düşüyor.", "color": "#dc2626"}
+            
+        # Senaryo 3: TREND DESTEĞİ
+        elif is_obv_strong:
+            obv_data = {"title": "✅ Hacim Destekli Trend", "desc": "OBV ortalamasının üzerinde.", "color": "#15803d"}
 
         # ======================================================
         # 6. RSI UYUMSUZLUK (DIVERGENCE) - GÜNCELLENMİŞ HASSASİYET
@@ -2918,6 +2975,7 @@ def calculate_price_action_dna(ticker):
             "vol": {"title": vol_txt, "desc": vol_desc},
             "loc": {"title": loc_txt, "desc": loc_desc},
             "sq": {"title": sq_txt, "desc": sq_desc},
+            "obv": obv_data,
             "div": {"title": div_txt, "desc": div_desc, "type": div_type}
         }
     except Exception: return None
@@ -4361,7 +4419,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
-1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini en az 12 cümle ile ve madde madde analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala.
+1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini en az 12 cümle ile ve madde madde analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. 
+Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala.
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir?
