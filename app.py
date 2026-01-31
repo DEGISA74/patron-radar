@@ -3420,7 +3420,7 @@ def render_synthetic_sentiment_panel(data):
             alt.value("#5B84C4"), 
             alt.value("#ef4444")
         )
-        bars = base.mark_bar(size=15, opacity=0.9).encode(
+        bars = base.mark_bar(size=12, opacity=0.9).encode(
             y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
             color=color_condition, 
             tooltip=['Date_Str', 'Price', 'MF_Smooth']
@@ -4436,8 +4436,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
-1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini en az 12 cümle ile ve madde madde analiz et, yorumla..ardından Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. 
-Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala.
+1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini, Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? En az 12 cümle ile ve madde madde analiz et, yorumla.. Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. 
+Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir?
