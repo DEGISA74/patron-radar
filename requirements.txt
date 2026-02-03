@@ -4,6 +4,6 @@ pandas
 feedparser
 textblob
 google-generativeai
-ta
-textblob
+ta>=0.11.0
+
 
