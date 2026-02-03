@@ -4164,62 +4164,52 @@ with st.sidebar:
         is_star_candidate = True # Yıldız da ekleyelim
         scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#059669; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ?</div>"
 
-    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI VE EDU NOTU
-        z_score_val = round(calculate_z_score_live(df_live), 2)
+    # ----------------------------------------------------------------------
+    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI (4 AŞAMALI KADEMELİ SİSTEM)
+    # ----------------------------------------------------------------------
+    z_score_val = round(calculate_z_score_live(df_live), 2)
+    
+    # --- A. DÜŞÜŞ SENARYOLARI (UCUZLAMA) ---
+    if z_score_val <= -2.0: 
+        # SEVİYE 3: KRİTİK DİP (FIRSAT)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"""
+        <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+            <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
+            <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>Fiyat -2 sapmayı kırdı. İstatistiksel olarak dönüş (tepki) ihtimali çok yüksektir.</div>
+        </div>
+        """
+    elif z_score_val <= -1.5: 
+        # SEVİYE 2: DİBE YAKLAŞIYOR (UYARI)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
         
-        # --- KADEMELİ Z-SCORE SİSTEMİ (Profesyonel) ---
-        
-        # 1. AŞIRI DÜŞÜŞ SENARYOLARI (UCUZLAMA)
-        if z_score_val <= -2.0: # KRİTİK SEVİYE (Güvenilir)
-            found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
-            # EDU NOTE: Güçlü
-            scan_results_html += f"""
-            <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-                <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ SİNYAL: Mean Reversion</div>
-                <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>
-                    Fiyat -2 standart sapmayı kırdı. İstatistiksel olarak bu bir "Anomali"dir. Tepki yükselişi ihtimali %95'tir.
-                </div>
-            </div>
-            """
-        elif z_score_val <= -1.5: # ERKEN UYARI (Takip)
-            found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-            # EDU NOTE: Hafif
-            scan_results_html += f"""
-            <div style='background:#fffbeb; border-left:3px solid #f59e0b; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-                <div style='font-size:0.65rem; color:#b45309; font-weight:bold;'>🎓 DİKKAT: İzleme Modu</div>
-                <div style='font-size:0.65rem; color:#92400e; line-height:1.2;'>
-                    Fiyat ortalamadan uzaklaştı (-1.5). Henüz tam dip değil ama "Alım Bölgesine" giriyor. Dönüş emareleri aranmalı.
-                </div>
-            </div>
-            """
+    elif z_score_val <= -1.0: 
+        # SEVİYE 1: UCUZLUYOR (BİLGİ) - [YENİ]
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#0284c7;'>📉 Ucuzluyor (Z-Score: {z_score_val:.2f})</div>"
 
-        # 2. AŞIRI YÜKSELİŞ SENARYOLARI (ŞİŞME)
-        elif z_score_val >= 2.0: # KRİTİK SEVİYE (Güvenilir)
-            found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
-            # EDU NOTE: Güçlü
-            scan_results_html += f"""
-            <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-                <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ SİNYAL: Aşırıalım</div>
-                <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>
-                    Fiyat +2 standart sapmayı aştı. Yakıt tükeniyor. Sert bir düzeltme veya kâr satışı riski çok yüksek.
-                </div>
-            </div>
-            """
-        elif z_score_val >= 1.5: # ERKEN UYARI (Takip)
-            found_any = True
-            scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-            # EDU NOTE: Hafif
-            scan_results_html += f"""
-            <div style='background:#fff7ed; border-left:3px solid #f97316; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-                <div style='font-size:0.65rem; color:#c2410c; font-weight:bold;'>🎓 DİKKAT: Risk Artıyor</div>
-                <div style='font-size:0.65rem; color:#9a3412; line-height:1.2;'>
-                    Fiyat ortalamadan saptı (+1.5). Henüz zirve olmayabilir ama riskli bölgeye giriliyor. Stop-loss yakın tutulmalı.
-                </div>
-            </div>
-            """
+    # --- B. YÜKSELİŞ SENARYOLARI (PAHALILANMA) ---
+    elif z_score_val >= 2.0: 
+        # SEVİYE 3: KRİTİK TEPE (SATIŞ RİSKİ)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"""
+        <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+            <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
+            <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>Fiyat +2 sapmayı aştı. Aşırı alım bölgesinde, düzeltme riski çok yüksek.</div>
+        </div>
+        """
+    elif z_score_val >= 1.5: 
+        # SEVİYE 2: TEPEYE YAKLAŞIYOR (UYARI)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
+        
+    elif z_score_val >= 1.0: 
+        # SEVİYE 1: PAHALILANIYOR (BİLGİ) - [YENİ]
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#854d0e;'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
@@ -4245,7 +4235,7 @@ with st.sidebar:
     # YENİ MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
     
-# --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
+    # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
     <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         🌟 YILDIZ ADAYLARI
