@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import feedparser
 import urllib.parse
+from ta.volume import VolumeWeightedAveragePrice
 from textblob import TextBlob
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
@@ -1820,16 +1821,16 @@ def process_single_confirmed(symbol, df):
     try:
         if df.empty or 'Close' not in df.columns: return None
         df = df.dropna(subset=['Close'])
-        if len(df) < 200: return None 
+        if len(df) < 100: return None 
 
         close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
-        # --- 1. ADIM: ZİRVE KONTROLÜ (Son 30 İş Günü) ---
-        # Bugünü (son satırı) hesaba katmadan, düne kadarki 30 günün zirvesi
-        high_val = high.iloc[:-1].tail(30).max()
+        # --- 1. ADIM: ZİRVE KONTROLÜ (Son 20 İş Günü) ---
+        # Bugünü (son satırı) hesaba katmadan, düne kadarki 20 günün zirvesi
+        high_val = high.iloc[:-1].tail(20).max()
         curr_close = float(close.iloc[-1])
         
-        # Eğer bugünkü fiyat, geçmiş 30 günün zirvesini geçmediyse ELE.
+        # Eğer bugünkü fiyat, geçmiş 20 günün zirvesini geçmediyse ELE.
         if curr_close <= high_val: return None 
 
         # --- 2. ADIM: GÜVENLİ HACİM HESABI (TIME-BASED) ---
@@ -1869,14 +1870,14 @@ def process_single_confirmed(symbol, df):
         
         # PERFORMANS ORANI
         # Eğer günün yarısı bittiyse ve hacim de ortalamanın yarısıysa oran 1.0 olur.
-        # Biz biraz 'hareket' istiyoruz, o yüzden 0.9 (Normalin %90'ı) alt sınır olsun.
+        # Biz biraz 'hareket' istiyoruz, o yüzden 0.6 (Normalin %60'ı) alt sınır olsun.
         if avg_vol_20 > 0:
             performance_ratio = curr_vol / expected_vol_now
         else:
             performance_ratio = 0
             
         # Filtre: Eğer o saate kadar yapması gereken hacmi yapmadıysa ELE.
-        if performance_ratio < 0.9: return None 
+        if performance_ratio < 0.6: return None 
         
         # --- GÜVENLİK 3: GAP (BOŞLUK) TUZAĞI ---
         prev_close = float(close.iloc[-2])
@@ -1908,7 +1909,7 @@ def process_single_confirmed(symbol, df):
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
         
-        if rsi > 75: return None
+        if rsi > 85: return None
 
         return {
             "Sembol": symbol,
@@ -2299,8 +2300,8 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
         # Böylece UI bozulmayacak.
         
         status = "🔥 GÜÇLÜ TREND"
-        if is_vcp and in_pivot: status = "💎 SÜPER BOĞA (VCP)"
-        elif in_pivot: status = "🚀 KIRILIM EŞİĞİNDE"
+        if is_vcp and in_pivot: status = "💎💎 SÜPER BOĞA (VCP)"
+        elif in_pivot: status = "🔥 KIRILIM EŞİĞİNDE"
         
         # Renk (Skor bazlı)
         color = "#16a34a" if raw_score >= 80 else "#ea580c"
@@ -2363,7 +2364,86 @@ def scan_minervini_batch(asset_list):
         return df.sort_values(by=["Raw_Score", "rs_val"], ascending=[False, False]).head(30)
     
     return pd.DataFrame()
+
+@st.cache_data(ttl=900)
+def scan_rs_momentum_leaders(asset_list):
+    """
+    GÜNCELLENMİŞ: RS MOMENTUM LİDERLERİ TARAMASI (SWING + GÜNLÜK)
+    Hem 5 günlük Alpha'yı hem de BUGÜNKÜ anlık Alpha'yı hesaplar.
+    """
+    # 1. Verileri Çek (Biraz daha geniş alalım, 3 ay yeterli)
+    data = get_batch_data_cached(asset_list, period="3mo")
+    if data.empty: return pd.DataFrame()
+
+    # 2. Endeks Verisi
+    cat = st.session_state.get('category', 'S&P 500')
+    bench_ticker = "XU100.IS" if "BIST" in cat else "^GSPC"
+    df_bench = get_safe_historical_data(bench_ticker, period="3mo")
     
+    if df_bench is None or df_bench.empty: return pd.DataFrame()
+    
+    # Endeks Performansları
+    b_close = df_bench['Close']
+    # 5 Günlük Endeks Değişimi
+    bench_5d = ((b_close.iloc[-1] - b_close.iloc[-6]) / b_close.iloc[-6]) * 100
+    # 1 Günlük Endeks Değişimi (Bugün)
+    bench_1d = ((b_close.iloc[-1] - b_close.iloc[-2]) / b_close.iloc[-2]) * 100
+
+    results = []
+
+    # 3. Hisseleri Tara
+    for symbol in asset_list:
+        try:
+            # Veri Ayrıştırma
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]: continue
+                df = data[symbol].dropna()
+            else:
+                df = data.dropna()
+
+            if len(df) < 20: continue
+
+            # --- HESAPLAMALAR ---
+            close = df['Close']; volume = df['Volume']
+            
+            # A. 5 GÜNLÜK PERFORMANS
+            stock_now = float(close.iloc[-1])
+            stock_old_5 = float(close.iloc[-6])
+            stock_perf_5d = ((stock_now - stock_old_5) / stock_old_5) * 100
+            alpha_5d = stock_perf_5d - bench_5d
+            
+            # B. 1 GÜNLÜK PERFORMANS (BUGÜN)
+            stock_old_1 = float(close.iloc[-2])
+            stock_perf_1d = ((stock_now - stock_old_1) / stock_old_1) * 100
+            alpha_1d = stock_perf_1d - bench_1d # Bugün endekse ne kadar fark attı?
+
+            # C. Hacim
+            curr_vol = float(volume.iloc[-1])
+            avg_vol = float(volume.iloc[-21:-1].mean())
+            vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 0
+
+            # --- FİLTRELEME (SWING KRİTERİ: 5 Günlük Güç) ---
+            # Alpha > 2.0 ve Hacim ölmemiş
+            if alpha_5d >= 2.0 and vol_ratio > 0.8:
+                
+                results.append({
+                    "Sembol": symbol,
+                    "Fiyat": stock_now,
+                    "Alpha_5D": alpha_5d,
+                    "Alpha_1D": alpha_1d, # Bugünün Gücü
+                    "Degisim_1D": stock_perf_1d, # Bugünün Yüzdesi
+                    "Hacim_Kat": vol_ratio,
+                    "Skor": alpha_5d + alpha_1d # Sıralama puanı
+                })
+
+        except: continue
+
+    # 4. Sıralama
+    if results:
+        return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+    
+    return pd.DataFrame()
+
 @st.cache_data(ttl=600)
 def calculate_sentiment_score(ticker):
     try:
@@ -2831,7 +2911,7 @@ def calculate_price_action_dna(ticker):
         if (c1_h < c2_h) and (c1_l > c2_l):
             # Eğer hacim de son 10 günün en düşüğüyse veya ortalamanın en az %35 altındaysa
             if c1_v < avg_v * 0.7:
-                neutrals.append("NR4/Sıkışma (Patlama Yakın) 🧨") # Çok daha değerli bir sinyal!
+                neutrals.append("NR4: 4 Gündür Dar Bantta (Patlama gelebilir)") # Çok daha değerli bir sinyal!
             else:
                 neutrals.append("Inside Bar (Bekle) ⏸️")
 
@@ -2986,6 +3066,44 @@ def calculate_price_action_dna(ticker):
 
         except: pass
 
+        # ======================================================
+        # 7. & 8. SMART MONEY VERİLERİ (VWAP & RS)
+        # ======================================================
+        
+        # --- 7. VWAP (KURUMSAL MALİYET) ---
+        vwap_now = c1_c; vwap_diff = 0
+        try:
+            # 'ta' kütüphanesi ile 20 günlük (Aylık) VWAP hesabı
+            vwap_indicator = VolumeWeightedAveragePrice(high=h, low=l, close=c, volume=v, window=20)
+            vwap_series = vwap_indicator.volume_weighted_average_price()
+            vwap_now = float(vwap_series.iloc[-1])
+            
+            # Sapma Yüzdesi
+            vwap_diff = ((c1_c - vwap_now) / vwap_now) * 100
+        except:
+            pass
+
+        # --- 8. RS (PİYASA GÜCÜ / ALPHA) ---
+        alpha_val = 0.0
+        try:
+            # Hissenin ait olduğu endeksi bul
+            bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
+            # Endeks verisini çek (Cache'den gelir, hızlıdır)
+            df_bench = get_safe_historical_data(bench_ticker, period="1mo")
+            
+            if df_bench is not None and not df_bench.empty:
+                # Günlük Değişimleri Hesapla (Son gün)
+                stock_chg = ((c1_c - c2_c) / c2_c) * 100
+                
+                b_close = df_bench['Close']
+                bench_chg = ((b_close.iloc[-1] - b_close.iloc[-2]) / b_close.iloc[-2]) * 100
+                
+                # Alpha (Fark): Hisse %3 arttı, Endeks %1 arttıysa -> Alpha +2 (Güçlü)
+                alpha_val = stock_chg - bench_chg
+        except:
+            pass
+
+        # GÜNCELLENMİŞ RETURN BLOĞU
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
             "sfp": {"title": sfp_txt, "desc": sfp_desc},
@@ -2993,12 +3111,14 @@ def calculate_price_action_dna(ticker):
             "loc": {"title": loc_txt, "desc": loc_desc},
             "sq": {"title": sq_txt, "desc": sq_desc},
             "obv": obv_data,
-            "div": {"title": div_txt, "desc": div_desc, "type": div_type}
+            "div": {"title": div_txt, "desc": div_desc, "type": div_type},
+            # --- YENİ EKLENENLER ---
+            "vwap": {"val": vwap_now, "diff": vwap_diff},
+            "rs": {"alpha": alpha_val}
         }
     except Exception: return None
 
 # --- SUPERTREND VE FIBONACCI HESAPLAYICI ---
-
 def calculate_supertrend(df, period=10, multiplier=3.0):
     """
     SuperTrend indikatörünü hesaplar.
@@ -3454,7 +3574,53 @@ def render_price_action_panel(ticker):
         div_style = "background:#f0fdf4; border-left:3px solid #16a34a; color:#166534;"
     else:
         div_style = "color:#475569;"
+
+    # --- YENİ VERİLERİN HAZIRLIĞI ---
+    vwap_data = pa.get('vwap', {'val': 0, 'diff': 0})
+    rs_data = pa.get('rs', {'alpha': 0})
     
+    # 7. VWAP MANTIĞI (TREND DOSTU GÜNCELLEME)
+    v_diff = vwap_data['diff']
+    
+    if v_diff < -2.0:
+        vwap_txt = "🟢 DİP FIRSATI (Aşırı İskonto)"
+        vwap_desc = f"Fiyat maliyetin %{abs(v_diff):.1f} altında. Tepki ihtimali yüksek."
+        vwap_col = "#035f25" # Koyu Yeşil
+    elif v_diff < 0.0:
+        vwap_txt = "🟢 UCUZ (Toplama)"
+        vwap_desc = "Fiyat kurumsal maliyetin hemen altında."
+        vwap_col = "#056d2b" # Açık Yeşil
+    elif v_diff < 8.0:
+        # %0 ile %8 arası: SAĞLIKLI TREND BÖLGESİ (Trenden İnme!)
+        vwap_txt = "🚀 RALLİ MODU (Güçlü Trend)"
+        vwap_desc = f"Fiyat maliyetin %{v_diff:.1f} üzerinde. Momentum arkanda."
+        vwap_col = "#034969" # Sky Blue (Güven Veren Mavi)
+    elif v_diff < 15.0:
+        # %8 ile %15 arası: ISINMA BÖLGESİ
+        vwap_txt = "🟠 DİKKAT (Piyasa Isınıyor)"
+        vwap_desc = f"Fiyat ortalamadan %{v_diff:.1f} uzaklaştı. Stop seviyesi yükseltilse iyi olur."
+        vwap_col = "#a36903" # Amber (Turuncu Uyarı)
+    else:
+        # %15 üzeri: ARTIK GERÇEKTEN RİSKLİ
+        vwap_txt = "🔴 PARABOLİK (Aşırı Kopuş)"
+        vwap_desc = f"Fiyat %{v_diff:.1f} saptı. Bu sürdürülemez, kâr almak düşünülebilir."
+        vwap_col = "#570214" # Rose Kırmızı
+
+    # 8. RS MANTIĞI
+    alpha = rs_data['alpha']
+    if alpha > 1.0:
+        rs_txt = "🦁 LİDER (Endeksi Yeniyor)"
+        rs_desc = f"Endekse göre %{alpha:.1f} daha güçlü (Alpha Pozitif)."
+        rs_col = "#059669"
+    elif alpha < -1.0:
+        rs_txt = "🐢 ZAYIF (Endeksin Gerisinde)"
+        rs_desc = f"Piyasa giderken gitmiyor (Fark %{alpha:.1f})."
+        rs_col = "#470312"
+    else:
+        rs_txt = "🔗 NÖTR (Endeks ile Aynı)"
+        rs_desc = "Piyasa rüzgarıyla paralel hareket ediyor."
+        rs_col = "#475569"
+
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #6366f1;">
         <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
@@ -3493,7 +3659,17 @@ def render_price_action_panel(ticker):
             <div style="font-weight:700; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
             <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
         </div>
-        
+        <div style="border-top: 1px dashed #cbd5e1; margin-top:8px; padding-top:6px;"></div>
+
+        <div style="margin-bottom:8px;">
+            <div style="font-weight:700; font-size:0.8rem; color:{vwap_col};">7. KURUMSAL MALİYET (VWAP): {vwap_txt}</div>
+            <div class="edu-note">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: {vwap_data['val']:.2f})</div>
+        </div>
+
+        <div style="margin-bottom:2px;">
+            <div style="font-weight:700; font-size:0.8rem; color:{rs_col};">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
+            <div class="edu-note" style="margin-bottom:0;">{rs_desc}</div>
+        </div>        
     </div>
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
@@ -3828,13 +4004,86 @@ with st.sidebar:
         if acc_live and bo_live:
             is_star_candidate = True
 
-        # --- D. HTML OLUŞTURMA ---
+        # ============================================================
+        # SIDEBAR İÇİN: 20 GÜNLÜK ALPHA (SWING MOMENTUM) - GARANTİLİ VERSİYON
+        # ============================================================
+        rs_html = ""
+        try:
+            # --- YENİ EKLENEN KISIM: ENDEKS KONTROLÜ ---
+            # Eğer seçili varlık bir endeks ise RS hesaplama, direkt çık.
+            is_index_asset = active_t.startswith("^") or "XU" in active_t or "XBANK" in active_t
+            if is_index_asset:
+                raise ValueError("Endeks için RS hesaplanmaz")
+            # -----------------------------------------------
+            # 1. HİSSE VERİSİ KONTROLÜ
+            if df_live is None or len(df_live) < 5:
+                raise ValueError("Hisse verisi yetersiz")
 
+            # 2. ENDEKS VERİSİ (GARANTİLEME)
+            # Öncelik 1: bench_series, Öncelik 2: idx_data, Öncelik 3: İndir
+            final_bench = None
+            
+            if 'bench_series' in locals() and bench_series is not None and len(bench_series) > 5:
+                final_bench = bench_series
+            elif 'idx_data' in locals() and idx_data is not None and len(idx_data) > 5:
+                final_bench = idx_data
+            else:
+                # Hiçbiri yoksa şimdi indir (XU100 veya S&P500)
+                b_ticker = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
+                final_bench = yf.download(b_ticker, period="1mo", progress=False)['Close']
+
+            if final_bench is None or len(final_bench) < 5:
+                raise ValueError("Endeks verisi yok")
+
+            # 3. VERİ TİPİ DÜZELTME (Series formatına zorla)
+            if isinstance(final_bench, pd.DataFrame):
+                # Eğer DataFrame ise ve 'Close' sütunu varsa onu al, yoksa ilk sütunu al
+                if 'Close' in final_bench.columns:
+                    final_bench = final_bench['Close']
+                else:
+                    final_bench = final_bench.iloc[:, 0]
+
+            # 4. HESAPLAMA (Son 5 İş Günü)
+            # Hissenin performansı
+            stock_now = float(df_live['Close'].iloc[-1])
+            stock_old = float(df_live['Close'].iloc[-6])
+            stock_perf = ((stock_now - stock_old) / stock_old) * 100
+            
+            # Endeksin performansı
+            bench_now = float(final_bench.iloc[-1])
+            bench_old = float(final_bench.iloc[-6])
+            bench_perf = ((bench_now - bench_old) / bench_old) * 100
+            
+            # 5. ALPHA (FARK)
+            alpha = stock_perf - bench_perf
+            
+            # 6. GÖRSEL DURUM
+            if alpha > 2.0: 
+                rs_icon = "🔥"; rs_color = "#056829"; rs_text = f"Endeksi Eziyor (+%{alpha:.1f})"
+            elif alpha > 0.0: 
+                rs_icon = "💪"; rs_color = "#05772f"; rs_text = f"Endeksi Yeniyor (+%{alpha:.1f})"
+            elif alpha > -2.0: 
+                rs_icon = "⚠️"; rs_color = "#9e9284"; rs_text = f"Endeksle Paralel (%{alpha:.1f})"
+            else: 
+                rs_icon = "🐢"; rs_color = "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
+
+            rs_html = f"<div style='font-size:0.75rem; margin-bottom:2px; color:{rs_color};'>{rs_icon} <b>RS Momentum (5 GÜN):</b> {rs_text}</div>"
+                
+        except Exception as e:
+            # Hata varsa ekrana basalım ki görelim (Canlı hata ayıklama)
+            # Normalde boş bırakırdık ama sorunu çözmek için hata mesajını yazdırıyoruz
+            rs_html = f"<div style='font-size:0.6rem; color:gray;'>RS Verisi Yok: {str(e)}</div>"
+
+        # --- D. HTML OLUŞTURMA ---
+        # 0. RS Gücünü En Üste Ekle (YENİ)
+        if rs_html:
+            scan_results_html += rs_html
+            found_any = True
         # 1. STP Sonuçları
         if stp_live:
             found_any = True
             if stp_live['type'] == 'cross':
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#056829;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
                 # Momentum Başlangıcı Kontrolü (Filtreli mi?)
                 if stp_live.get('is_filtered', False):
                     scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#db2777;'>🎯 <b>Momentum:</b> Başlangıç Sinyali (Filtreli)</div>"
@@ -4019,7 +4268,79 @@ with st.sidebar:
             acc_df = st.session_state.accum_data
             acc_symbols = set(acc_df['Sembol'].values)
             
-            # --- 1. SENARYO: HAREKET (Kıranlar + Akıllı Para) ---
+            # ------------------------------------------------------------------
+            # SENARYO 1: 🚀 ROKET MODU (RS Lideri + [Kıran VEYA Isınan])
+            # ------------------------------------------------------------------
+            
+            has_rs = st.session_state.rs_leaders_data is not None and not st.session_state.rs_leaders_data.empty
+            
+            # Hem Kıranlara (Right) hem Isınanlara (Left) bakıyoruz
+            has_break_right = st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty
+            has_break_left = st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty
+
+            if has_rs and (has_break_right or has_break_left):
+                rs_df = st.session_state.rs_leaders_data
+                rs_symbols = set(rs_df['Sembol'].values)
+                
+                # İki listeyi (Kıranlar + Isınanlar) birleştiriyoruz
+                bo_symbols = set()
+                bo_data_map = {} # Detayları saklamak için
+
+                # 1. Kıranları Ekle (Öncelikli)
+                if has_break_right:
+                    df_r = st.session_state.breakout_right
+                    for _, row in df_r.iterrows():
+                        sym = row['Sembol']
+                        bo_symbols.add(sym)
+                        bo_data_map[sym] = {'status': 'KIRDI 🔨', 'info': row['Hacim_Kati']}
+
+                # 2. Isınanları Ekle
+                if has_break_left:
+                    df_l = st.session_state.breakout_left
+                    for _, row in df_l.iterrows():
+                        # Sütun adı bazen Sembol_Raw bazen Sembol olabiliyor, kontrol et
+                        sym = row.get('Sembol_Raw', row.get('Sembol'))
+                        if sym:
+                            bo_symbols.add(sym)
+                            # Eğer zaten Kıranlarda yoksa, Isınan olarak ekle
+                            if sym not in bo_data_map:
+                                # Zirveye yakınlık bilgisini temizle
+                                prox = str(row.get('Zirveye Yakınlık', '')).split('<')[0].strip()
+                                bo_data_map[sym] = {'status': 'ISINIYOR', 'info': prox}
+
+                # KESİŞİM BUL (RS Lideri + [Kıran veya Isınan])
+                rocket_stars = rs_symbols.intersection(bo_symbols)
+
+                if rocket_stars:
+                    rocket_list = []
+                    for sym in rocket_stars:
+                        row_rs = rs_df[rs_df['Sembol'] == sym].iloc[0]
+                        bo_info = bo_data_map.get(sym, {'status': '?', 'info': ''})
+                        
+                        rocket_list.append({
+                            'sym': sym, 
+                            'price': row_rs['Fiyat'], 
+                            'alpha': row_rs['Alpha_5D'],
+                            'status': bo_info['status'],
+                            'info': bo_info['info'],
+                            'score': row_rs['Skor']
+                        })
+                    
+                    # Puana göre sırala
+                    rocket_list.sort(key=lambda x: x['score'], reverse=True)
+
+                    for item in rocket_list:
+                        stars_found = True
+                        sym = item['sym']
+                        # Etiket: 💎 THYAO | Alpha:+%5.2 | KIRDI 🔨 (3.5x)
+                        # Etiket: 💎 ASELS | Alpha:+%3.1 | ISINIYOR 🔥 (%98)
+                        label = f"💎 {sym} | Alpha:+%{item['alpha']:.1f} | {item['status']}"
+                        
+                        if st.button(label, key=f"star_rocket_hybrid_{sym}", use_container_width=True):
+                            on_scan_result_click(sym)
+                            st.rerun()
+                            
+            # --- 2. SENARYO: HAREKET (Kıranlar + Akıllı Para) ---
             if has_break:
                 bo_df = st.session_state.breakout_right
                 bo_symbols = set(bo_df['Sembol'].values)
@@ -4048,7 +4369,7 @@ with st.sidebar:
                             on_scan_result_click(sym)
                             st.rerun()
 
-            # --- 2. SENARYO: HAZIRLIK (Isınanlar + Akıllı Para) ---
+            # --- 3. SENARYO: HAZIRLIK (Isınanlar + Akıllı Para) ---
             if has_warm:
                 warm_df = st.session_state.breakout_left
                 col_name = 'Sembol_Raw' if 'Sembol_Raw' in warm_df.columns else 'Sembol'
@@ -4077,12 +4398,11 @@ with st.sidebar:
                         if st.button(label, key=f"star_prep_{sym}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
-        
         if not stars_found:
             if not has_accum:
-                st.info("'Sentiment Ajanı-Akıllı Para Topluyor' ile 'Breakout Ajanı' taramasının ortak sonuçları gösterilir.")
+                st.info("💎'Endeksi Yenen Güçlü Hisseler / Breakout Ajanı' ve ⏳'Akıllı Para Topluyor / Breakout Ajanı' taramalarının ortak sonuçları gösterilir.")
             elif not (has_warm or has_break):
-                st.info("'Sentiment Ajanı-Akıllı Para Topluyor' ile 'Breakout Ajanı' taramasının ortak sonuçları gösterilir.")
+                st.info("💎'Endeksi Yenen Güçlü Hisseler / Breakout Ajanı' ve ⏳'Akıllı Para Topluyor / Breakout Ajanı' taramalarının ortak sonuçları gösterilir.")
             else:
                 st.warning("Şu an toplanan ORTAK bir hisse yok.")
 
@@ -4151,6 +4471,10 @@ with col_btn:
             my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...%40")
             st.session_state.accum_data = scan_hidden_accumulation(scan_list)
             
+            # --- RS LİDERLERİ TARAMASI (MASTER SCAN İÇİNE) ---
+            my_bar.progress(45, text="🏆 Son 5 günün Piyasa Liderleri (RS Momentum) Hesaplanıyor...%45")
+            st.session_state.rs_leaders_data = scan_rs_momentum_leaders(scan_list)
+            
             # 4. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
             my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...%55")
             st.session_state.breakout_left = agent3_breakout_scan(scan_list)      # Isınanlar
@@ -4206,7 +4530,25 @@ if st.session_state.generate_prompt:
     mini_data = calculate_minervini_sepa(t) or {} 
     fund_data = get_fundamental_score(t) or {}
     master_score, pros, cons = calculate_master_score(t)
-    
+    # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
+    momentum_analiz_txt = "Veri Yok"
+    if synth_data is not None and not synth_data.empty:
+        # Son satırdaki MF_Smooth (Bar Rengi) verisini al
+        last_mf = float(synth_data.iloc[-1]['MF_Smooth'])
+        # Günlük fiyat değişimini al
+        p_change = info.get('change_pct', 0)
+
+        if last_mf > 0:
+            momentum_analiz_txt = "✅ GÜÇLÜ (Uyumlu): Momentum barı MAVİ. Para akışı fiyatı destekliyor."
+        else:
+            # Bar Kırmızı (Negatif) ise şimdi Fiyata bakıyoruz
+            if p_change >= 0:
+                # SENARYO: Fiyat Yükseliyor AMA Bar Kırmızı -> SENİN CÜMLEN BURADA
+                momentum_analiz_txt = "⚠️ UYARI (YORGUN BOĞA mı yoksa DEVAM mı): Fiyat hala tepede görünüyor olabilir ama aldanma. Son 6 günün ortalama hızının altına düştük: Bu yükselişin yakıtını sorgulamak gerekebilir, yakıt bitmiş olabilir, sadece rüzgarla gidiyor olabiliriz. 1) Eğer hacim düşükse bu bir 'Bayrak/Flama' (Güç Toplama) olabilir. 2) Eğer hacim yüksekse bu bir 'Mal Çıkışı' (Yorgun Boğa) olabilir. Stopları yaklaştır ve kırılımı bekle."
+            else:
+                # SENARYO: Fiyat Düşüyor VE Bar Kırmızı -> NORMAL
+                momentum_analiz_txt = "🔻 ZAYIF (Uyumlu): Düşüş trendi momentumla teyit ediliyor."
+    # -----------------------------------------------------------    
     # --- 2. AJAN HESAPLAMALARI ---
     stp_res = process_single_stock_stp(t, df_hist)                   
     acc_res = process_single_accumulation(t, df_hist, bench_series) 
@@ -4309,6 +4651,33 @@ if st.session_state.generate_prompt:
         div_title = div_data.get('title', '-')
         div_reason = div_data.get('desc', '-')
         pa_div = f"{div_title} -> DETAY: {div_reason}"
+    
+    # --- SMART MONEY VERİLERİ (AI İÇİN HAZIRLIK) ---
+    # Önce varsayılan değerleri atayalım (Veri yoksa hata vermesin)
+    v_val = 0; v_diff = 0; vwap_ai_txt = "Veri Yok"; rs_ai_txt = "Veri Yok"; alpha_val = 0
+
+    if pa_data: # Eğer Price Action verisi varsa hesapla
+        # VWAP Verisi
+        vwap_info = pa_data.get('vwap', {'val': 0, 'diff': 0})
+        v_val = vwap_info['val']
+        v_diff = vwap_info['diff']
+        
+        # VWAP Yorumu (Trend Dostu Mantık)
+        if v_diff < -2.0: vwap_ai_txt = "DİP FIRSATI (Aşırı İskonto)"
+        elif v_diff < 0.0: vwap_ai_txt = "UCUZ (Toplama Bölgesi)"
+        elif v_diff < 8.0: vwap_ai_txt = "RALLİ MODU (Güçlü Trend - Güvenli)"
+        elif v_diff < 15.0: vwap_ai_txt = "ISINIYOR (Dikkatli Takip Gerekir)"
+        else: vwap_ai_txt = "PARABOLİK (Aşırı Kopuş - Riskli)"
+
+        # RS Verisi
+        rs_info = pa_data.get('rs', {'alpha': 0})
+        alpha_val = rs_info['alpha']
+        
+        # RS Yorumu
+        if alpha_val > 1.0: rs_ai_txt = "LİDER (Endeksi Yeniyor - Güçlü)"
+        elif alpha_val < -1.0: rs_ai_txt = "ZAYIF (Endeksin Gerisinde - İlgi Yok)"
+        else: rs_ai_txt = "NÖTR (Endeksle Paralel)"
+    
     # Diğer Metin Hazırlıkları
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     r1_txt = "Veri Yok"
@@ -4402,6 +4771,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - TREND: {sent_trend} (Ortalamaların durumu ve kısa vadeli trend için EMA 8/13 üstünde olup olmadığı)
 - MOMENTUM: {sent_mom} (RSI ve MACD gücü)
 - VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
+- MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
 
 *** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
 - SuperTrend (Yön): {st_txt}
@@ -4433,19 +4803,31 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - En Yakın Direnç: {fib_res}
 - En Yakın Destek: {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
+*** 6. KURUMSAL MALİYET VE GÜÇ ***
+- VWAP (Adil Değer): {v_val:.2f}
+- Fiyat Konumu: Maliyetin %{v_diff:.1f} üzerinde/altında.
+- VWAP DURUMU: {vwap_ai_txt}
+- RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f})
+(NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi öner.)
 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
-1. GENEL ANALİZ: Öncelikli olarak canlı tarama sonuçlarını, momentumu, Hacmi, Price Action verilerini, Fiyat trendini (Minervini) ve Smart Money niyetini (Para Akışı) birleştirerek yorumla. Şirket temel olarak bu yükselişi destekliyor mu? En az 12 cümle ile ve madde madde analiz et, yorumla.. Olumlu maddelerin/cümlelerin önüne "✅" işareti koy, olumsuz maddelerin/cümlelerin önüne de "📍" işareti koy. 
-Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sonra da olumsuz olanları sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
+1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
+   - Verilen tüm verileri tara ve toplamda 8 maddelik bir analiz listesi oluştur.
+   - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
+     a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
+     b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
+   - UYARI: Listeyi 12 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
+   - Her maddeyi yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
+   Şu terimlerin, (eğer açtığın maddelerin başlık kısmında yer almıyorsa ama açtığın maddelerin açıklama kısmında yer alıyorsa) , başına "#" koyarak yaz: FOMO, BIST100, RSI, ICT, SmartMoney, EMA5, EMA8, EMA13, Sentiment, Supertrend, BOS, Breakout, Minervini, FVG. (yani mesela şöyle: (9/10) MINERVINI HİZALANMASI: #Minervini şablonuna göre....)
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
-   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir?
+   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
    - İzsüren Stop (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
-   - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? 
+   - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
 4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t}" yaz.
 """
     with st.sidebar:
@@ -4536,8 +4918,53 @@ with col_left:
         else:
             st.success("Belirgin negatif etken yok.")
             
-    # ---------------------------------------------------------------
+    # ---------------------------------------------------------
+    # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
+    # ---------------------------------------------------------
+    if 'rs_leaders_data' not in st.session_state: st.session_state.rs_leaders_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 5px; margin-bottom: 5px;">🕵️ RS Momentum Liderleri (Piyasa Şampiyonları: 80/100)</div>', unsafe_allow_html=True)
     
+    # 1. TARAMA BUTONU
+    if st.button(f"🕵️ SON 5 GÜNDE ENDEKSTEN HIZLI YÜKSELENLERİ GETİR ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_rs_leaders"):
+        with st.spinner("Piyasayı ezip geçen hisseler (Alpha > %2) sıralanıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            # Daha önce tanımladığımız fonksiyonu çağırıyoruz
+            st.session_state.rs_leaders_data = scan_rs_momentum_leaders(current_assets)
+            
+    # 2. SONUÇ EKRANI
+    if st.session_state.rs_leaders_data is not None:
+        count = len(st.session_state.rs_leaders_data)
+        if count > 0:
+            # st.success(f"🏆 Endeksi yenen {count} adet şampiyon bulundu!")
+            with st.container(height=250, border=True):
+                for i, row in st.session_state.rs_leaders_data.iterrows():
+                    # Verileri Satırdan Çekiyoruz (Fonksiyondan gelen yeni sütunlar)
+                    sym = row['Sembol']
+                    alpha_5 = row['Alpha_5D']
+                    alpha_1 = row.get('Alpha_1D', 0) # Hata olmasın diye .get kullanıyoruz
+                    degisim_1 = row.get('Degisim_1D', 0)
+                    vol = row['Hacim_Kat']
+                    
+                    # Renkler ve İkon (5 Günlük performansa göre ana rengi belirle)
+                    icon = "🔥" if alpha_5 > 5.0 else "💪"
+                    
+                    # Bugünün Durumu (Metin)
+                    today_status = "LİDER" if alpha_1 > 0.5 else "ZAYIF" if alpha_1 < -0.5 else "NÖTR"
+                    
+                    # YENİ BUTON METNİ: ||| Çizgili Format
+                    # Örn: 🔥 BURVA.IS (684.00) | Alpha(5G): +%42.7 | Vol: 0.9x ||| Bugün: +%5.2 (LİDER)
+                    label = f"{icon} {sym} ({row['Fiyat']:.2f}) | Alpha(5G): +%{alpha_5:.1f} | Vol: {vol:.1f}x ||| Bugün: %{degisim_1:.1f} ({today_status})"
+                    
+                    if st.button(label, key=f"rs_lead_{sym}_{i}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.info("Şu an endekse belirgin fark atan (%2+) hisse bulunamadı.")
+
+    # Araya bir çizgi çekelim ki Sentiment Ajanı ile karışmasın
+    st.markdown("<hr style='margin-top:15px; margin-bottom:15px;'>", unsafe_allow_html=True)
+    # ---------------------------------------------------------------    
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (Akıllı Para Topluyor: 60/100)</div>', unsafe_allow_html=True)
     
     if 'accum_data' not in st.session_state: st.session_state.accum_data = None
@@ -4691,7 +5118,7 @@ with col_left:
     if 'rsi_div_bull' not in st.session_state: st.session_state.rsi_div_bull = None
     if 'rsi_div_bear' not in st.session_state: st.session_state.rsi_div_bear = None
 
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">⚖️ RSI Uyumsuzluk Ajanı (Teyitli)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">⚖️ RSI Uyumsuzluk Ajanı (70/100)</div>', unsafe_allow_html=True)
 
     if st.button(f"⚖️ UYUMSUZLUKLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_div"):
         with st.spinner("RSI ile Fiyat arasındaki yalanlar tespit ediliyor..."):
@@ -4741,7 +5168,7 @@ with col_left:
     # ---------------------------------------------------------
     if 'pattern_data' not in st.session_state: st.session_state.pattern_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">📐 Formasyon Ajanı (TOBO, Bayrak, Range, Fincan-Kulp, Yükselen Üçgen)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">📐 Formasyon Ajanı (TOBO, Bayrak, Range, Fincan-Kulp, Yükselen Üçgen)(65/100)</div>', unsafe_allow_html=True)
     
     # TARAMA BUTONU
     if st.button(f"📐 FORMASYONLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_pattern"):
@@ -4753,7 +5180,7 @@ with col_left:
     if st.session_state.pattern_data is not None:
         count = len(st.session_state.pattern_data)
         if count > 0:
-            st.success(f"🧩 {count} adet formasyon yapısı tespit edildi!")
+            # st.success(f"🧩 {count} adet formasyon yapısı tespit edildi!")
             with st.container(height=300, border=True):
                 for i, row in st.session_state.pattern_data.iterrows():
                     sym = row['Sembol']
@@ -4774,7 +5201,7 @@ with col_left:
     # ---------------------------------------------------------
     if 'bear_trap_data' not in st.session_state: st.session_state.bear_trap_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🐻 Bear Trap Ajanı (Dip Avcısı)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🐻 Bear Trap Ajanı (Dip Avcısı)(80/100)</div>', unsafe_allow_html=True)
     
     # 1. TARAMA BUTONU
     if st.button(f"🐻 TUZAKLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_bear_trap"):
@@ -4786,7 +5213,7 @@ with col_left:
     if st.session_state.bear_trap_data is not None:
         count = len(st.session_state.bear_trap_data)
         if count > 0:
-            st.success(f"🎯 {count} adet Bear Trap tespit edildi!")
+            # st.success(f"🎯 {count} adet Bear Trap tespit edildi!")
             with st.container(height=250, border=True):
                 for i, row in st.session_state.bear_trap_data.iterrows():
                     sym = row['Sembol']
@@ -4817,11 +5244,11 @@ with col_left:
     if st.session_state.minervini_data is not None:
         count = len(st.session_state.minervini_data)
         if count > 0:
-            st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
+            # st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
             with st.container(height=300, border=True):
                 for i, row in st.session_state.minervini_data.iterrows():
                     sym = row['Sembol']
-                    icon = "💎" if "SÜPER" in row['Durum'] else "🔥"
+                    icon = "💎💎" if "SÜPER" in row['Durum'] else "🔥(İkinci)"
                     label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
                     
                     if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
@@ -4886,7 +5313,7 @@ with col_right:
                 'Sembol': sym,
                 'Fiyat': row_bt['Fiyat'],
                 'Zaman': row_bt['Zaman'],      # Örn: 2 Mum Önce
-                'RSI': int(row_div['RSI_Dip']) # Örn: 28
+                'RSI': int(row_div['RSI']) # Örn: 28
             })
             
     # 3. UI Çizimi (Turkuaz/Cyan Tasarım)
