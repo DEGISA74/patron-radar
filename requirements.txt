@@ -4,4 +4,6 @@ pandas
 feedparser
 textblob
 google-generativeai
+ta
+textblob
 
