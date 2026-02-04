@@ -2489,7 +2489,7 @@ def render_lorentzian_panel(ticker):
         </div>
         
         <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:0.7rem; font-weight:600; color:{data['color']}; letter-spacing:0.5px;">
+            <div style="font-size:0.7rem; font-weight:400; color:{data['color']}; letter-spacing:0.5px;">
                 {signal_text}
             </div>
             <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
@@ -5638,6 +5638,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
