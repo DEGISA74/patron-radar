@@ -2444,13 +2444,13 @@ def calculate_lorentzian_classification(ticker, k_neighbors=8):
         if bullish_votes >= bearish_votes:
             main_vote = bullish_votes
             prob_pct = (bullish_votes / k_neighbors) * 100
-            signal = "AL (Yükseliş Beklentisi)"
+            signal = "(Yükseliş Beklentisi)"
             color = "#16a34a" # Yeşil
             direction = "bull"
         else:
             main_vote = bearish_votes
             prob_pct = (bearish_votes / k_neighbors) * 100
-            signal = "SAT (Düşüş Beklentisi)"
+            signal = "(Düşüş Beklentisi)"
             color = "#dc2626" # Kırmızı
             direction = "bear"
             
@@ -5586,6 +5586,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
