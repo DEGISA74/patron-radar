@@ -2326,146 +2326,182 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
     except Exception: return None
 
 # ==============================================================================
-# LORENTZIAN CLASSIFICATION (KNN) MODÜLÜ - (1H -> 4H RESAMPLE)
+# LORENTZIAN CLASSIFICATION (10 YILLIK GÜNLÜK VERİ - TRADINGVIEW FORMÜLLERİ)
 # ==============================================================================
+@st.cache_data(ttl=3600)
 def calculate_lorentzian_classification(ticker, k_neighbors=8):
-    """
-    1. Yahoo'dan 1 Saatlik veri çeker (Max 2 yıl).
-    2. Bunu 4 Saatlik mumlara dönüştürür (Resample).
-    3. Lorentzian Mesafesi ile geçmişteki en benzer 4H mumları bulur.
-    """
     try:
-        # 1. VERİ ÇEKME (1 Saatlik - Maksimum Geçmiş)
-        # 4 saatliğe çevireceğimiz için mümkün olduğunca çok 1h veriye ihtiyacımız var.
-        df_1h = get_safe_historical_data(ticker, period="730d", interval="1h")
+        # 1. VERİ ÇEKME (10 YILLIK GÜNLÜK - Derin Öğrenme İçin Şart)
+        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
+        if ".IS" in ticker: clean_ticker = ticker 
         
-        if df_1h is None or len(df_1h) < 500: 
-            return None # Yetersiz veri
+        try:
+            # TradingView'in "Max Bars Back" (2000 bar) limitini karşılamak için
+            # Günlük veri çekiyoruz. 10 Yıl = ~2500 bar.
+            df = yf.download(clean_ticker, period="10y", interval="1d", progress=False)
+        except: return None
 
-        # 2. VERİ DÖNÜŞTÜRME (1H -> 4H RESAMPLING)
-        # Pandas ile 1 saatlik verileri 4 saatlik bloklara yığıyoruz
-        agg_dict = {
-            'Open': 'first',  # İlk saatin açılışı
-            'High': 'max',    # 4 saatin en yükseği
-            'Low': 'min',     # 4 saatin en düşüğü
-            'Close': 'last',  # Son saatin kapanışı
-            'Volume': 'sum'   # Toplam hacim
-        }
-        
-        # 4h dönüştürme işlemi
-        df_4h = df_1h.resample('4h').agg(agg_dict).dropna()
-        
-        # Dönüşüm sonrası veri kontrolü
-        if len(df_4h) < 120: return None
+        if df is None or len(df) < 200: return None 
 
-        # Hesaplamalarda artık df_4h kullanacağız
-        close = df_4h['Close']
-        high = df_4h['High']
-        low = df_4h['Low']
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # Hesaplama Serileri
+        src = df['Close']
+        high = df['High']
+        low = df['Low']
+        hlc3 = (high + low + src) / 3
+
+        # ---------------------------------------------------------
+        # 3. FEATURE ENGINEERING (TRADINGVIEW SCRIPT BİREBİR)
+        # ---------------------------------------------------------
         
-        # 3. ÖZELLİK MÜHENDİSLİĞİ (FEATURE ENGINEERING - 4H ÜZERİNE)
-        
-        # A. RSI (14, 2)
-        delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        # B. CCI (20)
-        tp = (high + low + close) / 3
-        cci = (tp - tp.rolling(20).mean()) / (0.015 * tp.rolling(20).std())
-        
-        # C. ADX (14)
-        plus_dm = high.diff()
-        minus_dm = low.diff()
-        plus_dm[plus_dm < 0] = 0
-        minus_dm[minus_dm > 0] = 0
-        tr1 = pd.DataFrame(high - low)
-        tr2 = pd.DataFrame(abs(high - close.shift(1)))
-        tr3 = pd.DataFrame(abs(low - close.shift(1)))
+        # --- Feature 1: RSI (14) ---
+        delta = src.diff()
+        up = delta.clip(lower=0)
+        down = -1 * delta.clip(upper=0)
+        avg_up = up.ewm(alpha=1/14, adjust=False).mean()
+        avg_down = down.ewm(alpha=1/14, adjust=False).mean()
+        rs = avg_up / avg_down
+        f1_rsi14 = 100 - (100 / (1 + rs))
+
+        # --- Feature 2: WaveTrend (10, 11) ---
+        esa = hlc3.ewm(span=10, adjust=False).mean()
+        d = abs(hlc3 - esa).ewm(span=10, adjust=False).mean()
+        ci = (hlc3 - esa) / (0.015 * d)
+        f2_wt = ci.ewm(span=11, adjust=False).mean()
+
+        # --- Feature 3: CCI (20) ---
+        tp = hlc3
+        sma20 = tp.rolling(20).mean()
+        mad = (tp - sma20).abs().rolling(20).mean()
+        f3_cci = (tp - sma20) / (0.015 * mad)
+
+        # --- Feature 4: ADX (20) ---
+        # Script ADX periyodunu 20 kullanıyor.
+        tr1 = high - low
+        tr2 = abs(high - src.shift(1))
+        tr3 = abs(low - src.shift(1))
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = tr.rolling(14).mean()
-        plus_di = 100 * (plus_dm.ewm(alpha=1/14).mean() / atr)
-        minus_di = 100 * (abs(minus_dm).ewm(alpha=1/14).mean() / atr)
-        dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
-        adx = dx.rolling(14).mean()
+        atr20 = tr.ewm(alpha=1/20, adjust=False).mean()
 
-        # D. WaveTrend (WT)
-        esa = close.ewm(span=10).mean()
-        d = (abs(close - esa)).ewm(span=10).mean()
-        ci = (close - esa) / (0.015 * d)
-        wt1 = ci.ewm(span=21).mean()
+        up_move = high.diff()
+        down_move = -low.diff()
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
         
-        # Veri setini birleştir
-        features = pd.DataFrame({
-            'RSI': rsi,
-            'CCI': cci,
-            'ADX': adx,
-            'WT': wt1,
-            'RSI_Lag': rsi.shift(2) 
+        plus_di = 100 * (pd.Series(plus_dm, index=df.index).ewm(alpha=1/20, adjust=False).mean() / atr20)
+        minus_di = 100 * (pd.Series(minus_dm, index=df.index).ewm(alpha=1/20, adjust=False).mean() / atr20)
+        dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
+        f4_adx = dx.ewm(alpha=1/20, adjust=False).mean()
+
+        # --- Feature 5: RSI (9) ---
+        avg_up9 = up.ewm(alpha=1/9, adjust=False).mean()
+        avg_down9 = down.ewm(alpha=1/9, adjust=False).mean()
+        rs9 = avg_up9 / avg_down9
+        f5_rsi9 = 100 - (100 / (1 + rs9))
+
+        # 4. NORMALİZASYON (Min-Max Scaling 0-1)
+        features_df = pd.DataFrame({
+            'f1': f1_rsi14, 'f2': f2_wt, 'f3': f3_cci, 'f4': f4_adx, 'f5': f5_rsi9
         }).dropna()
 
-        # Hedef (Target): Sonraki mumda (4 Saat Sonra) ne oldu?
-        # shift(-1) kullanıyoruz çünkü verimiz zaten 4 saatlik. Bir sonraki satır = 4 saat sonrası.
-        future_close = close.shift(-1) 
-        target = (future_close > close).astype(int) # 1: Yükseliş, 0: Düşüş
-        
-        # İndeksleri eşle
-        common_idx = features.index.intersection(target.index)
-        features = features.loc[common_idx]
-        target = target.loc[common_idx]
-        
-        if len(features) < 50: return None
+        features_norm = (features_df - features_df.min()) / (features_df.max() - features_df.min())
+        features_norm = features_norm.fillna(0.5)
 
-        # 4. LORENTZIAN MESAFE & KNN
-        current_features = features.iloc[-1].values
-        
-        # Kendisini hariç tut (Son mumu eğitimden çıkar)
-        history_features = features.iloc[:-1].values 
-        history_targets = target.iloc[:-1].values
-        
-        # Matematik Motoru (Lorentzian Distance)
-        # sum( log(1 + |x - y|) )
-        distances = np.sum(np.log(1 + np.abs(history_features - current_features)), axis=1)
-        
-        # En yakın 8 komşuyu bul
+        # ---------------------------------------------------------
+        # 5. HEDEF (TARGET) - OPTİMİZASYON
+        # ---------------------------------------------------------
+        # TradingView 4 bar sonrasına bakar. Günlük grafikte bu 4 gün eder.
+        # Biz burada "Yarın Yükselecek mi?" sorusuna (1 Bar) odaklanıyoruz.
+        # Bu, günlük trade için daha değerlidir.
+        future_close = src.shift(-1) 
+        target = (future_close > src).astype(int) 
+
+        common_idx = features_norm.index.intersection(target.index)
+        features_final = features_norm.loc[common_idx]
+        target_final = target.loc[common_idx]
+
+        if len(features_final) < 50: return None
+
+        # Eğitim: Son mum HARİÇ tüm geçmiş
+        current_features = features_final.iloc[-1].values
+        history_features = features_final.iloc[:-1].values
+        history_targets = target_final.iloc[:-1].values
+
+        # ---------------------------------------------------------
+        # 6. LORENTZIAN MESAFE (Script ile Birebir)
+        # ---------------------------------------------------------
+        abs_diff = np.abs(history_features - current_features)
+        distances = np.sum(np.log(1 + abs_diff), axis=1)
+
         nearest_indices = np.argsort(distances)[:k_neighbors]
-        
+
         bullish_votes = 0
         bearish_votes = 0
-        
+
         for idx in nearest_indices:
-            outcome = history_targets[idx]
-            if outcome == 1: bullish_votes += 1
+            if history_targets[idx] == 1: bullish_votes += 1
             else: bearish_votes += 1
-            
-        # Olasılık Hesabı
+
         if bullish_votes >= bearish_votes:
-            main_vote = bullish_votes
-            prob_pct = (bullish_votes / k_neighbors) * 100
-            signal = "(Yükseliş Beklentisi)"
-            color = "#16a34a" # Yeşil
-            direction = "bull"
+            signal = "YÜKSELİŞ"
+            prob = (bullish_votes / k_neighbors) * 100
+            color = "#16a34a"
         else:
-            main_vote = bearish_votes
-            prob_pct = (bearish_votes / k_neighbors) * 100
-            signal = "(Düşüş Beklentisi)"
-            color = "#dc2626" # Kırmızı
-            direction = "bear"
-            
+            signal = "DÜŞÜŞ"
+            prob = (bearish_votes / k_neighbors) * 100
+            color = "#dc2626"
+
         return {
             "signal": signal,
-            "votes": main_vote,
+            "prob": prob,
+            "votes": max(bullish_votes, bearish_votes),
             "total": k_neighbors,
-            "prob": prob_pct,
             "color": color,
-            "direction": direction,
-            "last_close": close.iloc[-1]
+            "bars": len(df) # Veri derinliğini görmek için
         }
 
-    except Exception as e:
-        return None
+    except Exception: return None
+
+def render_lorentzian_panel(ticker):
+    data = calculate_lorentzian_classification(ticker)
+    
+    if not data:
+        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian AI</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
+        return
+
+    display_prob = int(data['prob'])
+    ml_icon = "🚀" if data['signal'] == "YÜKSELİŞ" and display_prob >= 75 else "🐻" if data['signal'] == "DÜŞÜŞ" and display_prob >= 75 else "🧠"
+    bar_width = display_prob
+    
+    signal_text = f"{data['signal']} BEKLENTİSİ"
+
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
+        <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
+            <span>{ml_icon} Lorentzian AI (GÜNLÜK)</span>
+            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:700; color:{data['color']};">%{display_prob} Güven</span>
+        </div>
+        
+        <div style="text-align:center; padding:8px 0;">
+            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
+                {signal_text}
+            </div>
+            <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
+                Son <b>{data['bars']} günlük</b> veri (10 Yıl) tarandı.<br>
+                Benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
+            </div>
+        </div>
+
+        <div style="margin-top:5px; margin-bottom:5px; padding:0 4px;">
+            <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                <div style="width:{bar_width}%; height:100%; background:{data['color']};"></div>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
@@ -5586,3 +5622,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
