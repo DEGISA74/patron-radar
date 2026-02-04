@@ -4041,10 +4041,6 @@ def render_lorentzian_panel(ticker):
                 <div style="width:{bar_width}%; height:100%; background:{data['color']}; transition: width 1s;"></div>
             </div>
         </div>
-        
-        <div class="edu-note" style="margin-top:8px; border-top:1px dashed #cbd5e1; padding-top:6px;">
-            <b>Çalışma Mantığı:</b> Sistem 1 saatlik verileri toplayıp <b>4 saatlik</b> grafiklere dönüştürdü. Geçmişteki RSI, ADX ve CCI verileriyle bugüne en çok benzeyen anları buldu. "Tarih tekerrür ederse" yön yukarıdaki gibidir.
-        </div>
     </div>
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
@@ -5590,5 +5586,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
