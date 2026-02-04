@@ -2484,12 +2484,12 @@ def render_lorentzian_panel(ticker):
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
         <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
-            <span>{ml_icon} Lorentzian AI (GÜNLÜK)</span>
+            <span>{ml_icon} Lorentzian ML (GÜNLÜK)</span>
             <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:700; color:{data['color']};">%{display_prob} Güven</span>
         </div>
         
         <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
+            <div style="font-size:0.7rem; font-weight:600; color:{data['color']}; letter-spacing:0.5px;">
                 {signal_text}
             </div>
             <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
@@ -5638,6 +5638,7 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
 
