@@ -2472,11 +2472,15 @@ def render_lorentzian_panel(ticker):
         return
 
     display_prob = int(data['prob'])
+    # İkon seçimi
     ml_icon = "🚀" if data['signal'] == "YÜKSELİŞ" and display_prob >= 75 else "🐻" if data['signal'] == "DÜŞÜŞ" and display_prob >= 75 else "🧠"
-    bar_width = display_prob
     
+    bar_width = display_prob
     signal_text = f"{data['signal']} BEKLENTİSİ"
 
+    # --- DÜZELTME BURADA YAPILDI ---
+    # Başlık: GÜNLÜK
+    # Alt Bilgi: Vade: 1 Gün
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
         <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
@@ -2489,12 +2493,16 @@ def render_lorentzian_panel(ticker):
                 {signal_text}
             </div>
             <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
-                Son <b>{data['bars']} günlük</b> veri (10 Yıl) tarandı.<br>
+                Son 10 Yılın verisiyle eğitildi.<br>
                 Benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
             </div>
         </div>
 
-        <div style="margin-top:5px; margin-bottom:5px; padding:0 4px;">
+        <div style="margin-top:5px; margin-bottom:8px; padding:0 4px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#64748B; margin-bottom:2px;">
+                <span>Oylama: <b>{data['votes']}/{data['total']}</b></span>
+                <span>Vade: <b>1 Gün (Yarın)</b></span>
+            </div>
             <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
                 <div style="width:{bar_width}%; height:100%; background:{data['color']};"></div>
             </div>
@@ -5622,4 +5630,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
