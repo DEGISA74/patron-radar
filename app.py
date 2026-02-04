@@ -4052,37 +4052,45 @@ def render_levels_card(ticker):
 
 def render_lorentzian_panel(ticker):
     data = calculate_lorentzian_classification(ticker)
-    if not data: return
+    
+    if not data:
+        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian AI</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
+        return
 
     display_prob = int(data['prob'])
-    ml_icon = "🚀" if display_prob == 100 else "🔥" if display_prob >= 87 else "🧠"
-    vote_text = f"{data['votes']}/{data['total']}"
+    # İkon seçimi
+    ml_icon = "🚀" if data['signal'] == "YÜKSELİŞ" and display_prob >= 75 else "🐻" if data['signal'] == "DÜŞÜŞ" and display_prob >= 75 else "🧠"
+    
     bar_width = display_prob
-    bg_color = f"{data['color']}15" 
+    signal_text = f"{data['signal']} BEKLENTİSİ"
 
+    # --- DÜZELTME BURADA YAPILDI ---
+    # Başlık: GÜNLÜK
+    # Alt Bilgi: Vade: 1 Gün
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
         <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
-            <span>{ml_icon} Lorentzian AI (4 Saatlik)</span>
-            <span style="font-size:0.75rem; background:{bg_color}; padding:2px 8px; border-radius:10px; font-weight:700;">%{display_prob} Güven</span>
+            <span>{ml_icon} Lorentzian AI (GÜNLÜK)</span>
+            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:700; color:{data['color']};">%{display_prob} Güven</span>
         </div>
         
         <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:0.9rem; font-weight:700; color:{data['color']}; letter-spacing:0.5px;">
-                {data['signal']}
+            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
+                {signal_text}
             </div>
-            <div style="font-size:0.7rem; color:#64748B; margin-top:2px;">
-                Geçmişteki en benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
+            <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
+                Son 10 Yılın verisiyle eğitildi.<br>
+                Benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
             </div>
         </div>
 
-        <div style="margin-top:5px; margin-bottom:8px; padding:0 10px;">
-            <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:#64748B; margin-bottom:2px;">
-                <span>Oylama Sonucu: <b>{vote_text}</b></span>
-                <span>Vade: <b>4 Saat</b></span>
+        <div style="margin-top:5px; margin-bottom:8px; padding:0 4px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#64748B; margin-bottom:2px;">
+                <span>Oylama: <b>{data['votes']}/{data['total']}</b></span>
+                <span>Vade: <b>1 Gün (Yarın)</b></span>
             </div>
-            <div style="width:100%; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden;">
-                <div style="width:{bar_width}%; height:100%; background:{data['color']}; transition: width 1s;"></div>
+            <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                <div style="width:{bar_width}%; height:100%; background:{data['color']};"></div>
             </div>
         </div>
     </div>
@@ -5630,5 +5638,6 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
 
