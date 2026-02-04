@@ -2324,7 +2324,149 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
             "year_high": year_high
         }
     except Exception: return None
+
+# ==============================================================================
+# LORENTZIAN CLASSIFICATION (KNN) MODÜLÜ - (1H -> 4H RESAMPLE)
+# ==============================================================================
+def calculate_lorentzian_classification(ticker, k_neighbors=8):
+    """
+    1. Yahoo'dan 1 Saatlik veri çeker (Max 2 yıl).
+    2. Bunu 4 Saatlik mumlara dönüştürür (Resample).
+    3. Lorentzian Mesafesi ile geçmişteki en benzer 4H mumları bulur.
+    """
+    try:
+        # 1. VERİ ÇEKME (1 Saatlik - Maksimum Geçmiş)
+        # 4 saatliğe çevireceğimiz için mümkün olduğunca çok 1h veriye ihtiyacımız var.
+        df_1h = get_safe_historical_data(ticker, period="730d", interval="1h")
         
+        if df_1h is None or len(df_1h) < 500: 
+            return None # Yetersiz veri
+
+        # 2. VERİ DÖNÜŞTÜRME (1H -> 4H RESAMPLING)
+        # Pandas ile 1 saatlik verileri 4 saatlik bloklara yığıyoruz
+        agg_dict = {
+            'Open': 'first',  # İlk saatin açılışı
+            'High': 'max',    # 4 saatin en yükseği
+            'Low': 'min',     # 4 saatin en düşüğü
+            'Close': 'last',  # Son saatin kapanışı
+            'Volume': 'sum'   # Toplam hacim
+        }
+        
+        # 4h dönüştürme işlemi
+        df_4h = df_1h.resample('4h').agg(agg_dict).dropna()
+        
+        # Dönüşüm sonrası veri kontrolü
+        if len(df_4h) < 120: return None
+
+        # Hesaplamalarda artık df_4h kullanacağız
+        close = df_4h['Close']
+        high = df_4h['High']
+        low = df_4h['Low']
+        
+        # 3. ÖZELLİK MÜHENDİSLİĞİ (FEATURE ENGINEERING - 4H ÜZERİNE)
+        
+        # A. RSI (14, 2)
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        # B. CCI (20)
+        tp = (high + low + close) / 3
+        cci = (tp - tp.rolling(20).mean()) / (0.015 * tp.rolling(20).std())
+        
+        # C. ADX (14)
+        plus_dm = high.diff()
+        minus_dm = low.diff()
+        plus_dm[plus_dm < 0] = 0
+        minus_dm[minus_dm > 0] = 0
+        tr1 = pd.DataFrame(high - low)
+        tr2 = pd.DataFrame(abs(high - close.shift(1)))
+        tr3 = pd.DataFrame(abs(low - close.shift(1)))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean()
+        plus_di = 100 * (plus_dm.ewm(alpha=1/14).mean() / atr)
+        minus_di = 100 * (abs(minus_dm).ewm(alpha=1/14).mean() / atr)
+        dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
+        adx = dx.rolling(14).mean()
+
+        # D. WaveTrend (WT)
+        esa = close.ewm(span=10).mean()
+        d = (abs(close - esa)).ewm(span=10).mean()
+        ci = (close - esa) / (0.015 * d)
+        wt1 = ci.ewm(span=21).mean()
+        
+        # Veri setini birleştir
+        features = pd.DataFrame({
+            'RSI': rsi,
+            'CCI': cci,
+            'ADX': adx,
+            'WT': wt1,
+            'RSI_Lag': rsi.shift(2) 
+        }).dropna()
+
+        # Hedef (Target): Sonraki mumda (4 Saat Sonra) ne oldu?
+        # shift(-1) kullanıyoruz çünkü verimiz zaten 4 saatlik. Bir sonraki satır = 4 saat sonrası.
+        future_close = close.shift(-1) 
+        target = (future_close > close).astype(int) # 1: Yükseliş, 0: Düşüş
+        
+        # İndeksleri eşle
+        common_idx = features.index.intersection(target.index)
+        features = features.loc[common_idx]
+        target = target.loc[common_idx]
+        
+        if len(features) < 50: return None
+
+        # 4. LORENTZIAN MESAFE & KNN
+        current_features = features.iloc[-1].values
+        
+        # Kendisini hariç tut (Son mumu eğitimden çıkar)
+        history_features = features.iloc[:-1].values 
+        history_targets = target.iloc[:-1].values
+        
+        # Matematik Motoru (Lorentzian Distance)
+        # sum( log(1 + |x - y|) )
+        distances = np.sum(np.log(1 + np.abs(history_features - current_features)), axis=1)
+        
+        # En yakın 8 komşuyu bul
+        nearest_indices = np.argsort(distances)[:k_neighbors]
+        
+        bullish_votes = 0
+        bearish_votes = 0
+        
+        for idx in nearest_indices:
+            outcome = history_targets[idx]
+            if outcome == 1: bullish_votes += 1
+            else: bearish_votes += 1
+            
+        # Olasılık Hesabı
+        if bullish_votes >= bearish_votes:
+            main_vote = bullish_votes
+            prob_pct = (bullish_votes / k_neighbors) * 100
+            signal = "AL (Yükseliş Beklentisi)"
+            color = "#16a34a" # Yeşil
+            direction = "bull"
+        else:
+            main_vote = bearish_votes
+            prob_pct = (bearish_votes / k_neighbors) * 100
+            signal = "SAT (Düşüş Beklentisi)"
+            color = "#dc2626" # Kırmızı
+            direction = "bear"
+            
+        return {
+            "signal": signal,
+            "votes": main_vote,
+            "total": k_neighbors,
+            "prob": prob_pct,
+            "color": color,
+            "direction": direction,
+            "last_close": close.iloc[-1]
+        }
+
+    except Exception as e:
+        return None
+
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
     # 1. Veri İndirme (Hızlı Batch)
@@ -3864,6 +4006,70 @@ def render_levels_card(ticker):
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
+def render_lorentzian_panel(ticker):
+    # Hesaplamayı yap
+    data = calculate_lorentzian_classification(ticker)
+    
+    if not data:
+        # Veri yoksa veya hata varsa boş geç veya bilgi ver
+        st.info("Lorentzian AI: Yeterli 4 saatlik veri oluşturulamadı.")
+        return
+
+    # Gösterim Ayarları
+    # 6/8 -> %75
+    # 7/8 -> %88
+    # 8/8 -> %100
+    display_prob = int(data['prob'])
+    
+    # İkon ve Başlık
+    ml_icon = "🧠"
+    if display_prob == 100: ml_icon = "🚀"
+    elif display_prob >= 87: ml_icon = "🔥"
+    
+    # Bar genişliği (Görsel doluluk)
+    bar_width = display_prob
+    
+    # Güvenilirlik Metni
+    vote_text = f"{data['votes']}/{data['total']}" # Örn: 7/8
+    
+    # Arka plan hafif renk
+    bg_color = f"{data['color']}15" 
+
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
+        <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
+            <span>{ml_icon} Lorentzian AI (4 Saatlik)</span>
+            <span style="font-size:0.8rem; background:{bg_color}; padding:2px 8px; border-radius:10px; font-weight:700;">
+                %{display_prob} Güven
+            </span>
+        </div>
+        
+        <div style="text-align:center; padding:10px 0;">
+            <div style="font-size:1.2rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
+                {data['signal']}
+            </div>
+            <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
+                Geçmişteki en benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
+            </div>
+        </div>
+
+        <div style="margin-top:5px; margin-bottom:8px; padding:0 10px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:#64748B; margin-bottom:2px;">
+                <span>Oylama Sonucu: <b>{vote_text}</b></span>
+                <span>Hedef Vade: <b>4 Saat</b></span>
+            </div>
+            <div style="width:100%; height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden;">
+                <div style="width:{bar_width}%; height:100%; background:{data['color']}; transition: width 1s;"></div>
+            </div>
+        </div>
+        
+        <div class="edu-note" style="margin-top:8px; border-top:1px dashed #cbd5e1; padding-top:6px;">
+            <b>Çalışma Mantığı:</b> Sistem 1 saatlik verileri toplayıp <b>4 saatlik</b> grafiklere dönüştürdü. Geçmişteki RSI, ADX ve CCI verileriyle bugüne en çok benzeyen anları buldu. "Tarih tekerrür ederse" yön yukarıdaki gibidir.
+        </div>
+    </div>
+    """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+
 def render_minervini_panel_v2(ticker):
     # 1. Verileri al
     cat = st.session_state.get('category', 'S&P 500')
@@ -4232,9 +4438,11 @@ with st.sidebar:
 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
 
-    # YENİ MINERVINI PANELİ (Hatasız Versiyon)
+    # MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
-    
+    # LORENTZİAN PANELİ (Hata
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    render_lorentzian_panel(st.session_state.ticker)
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
     <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -5403,3 +5611,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
