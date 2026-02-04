@@ -2196,7 +2196,144 @@ def calculate_master_score(ticker):
         pros.append("🛡️ Mavi Çip Koruması (Temel çok güçlü olduğu için puan yükseltildi)")
 
     return int(final), pros, cons
+# ==============================================================================
+# 🦅 YENİ: ICT SNIPER TARAMA MOTORU (5 ŞARTLI DEDEKTÖR)
+# ==============================================================================
+
+def process_single_ict_setup(symbol, df):
+    """
+    ICT 2022 Mentorship Buy Model (5 Şart) Tarayıcısı.
+    Sadece Yüksek Olasılıklı (High Probability) kurulumları geçirir.
+    """
+    try:
+        if df.empty or len(df) < 50: return None
+        
+        # Son veriler
+        close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
+        current_price = float(close.iloc[-1])
+        
+        # --- 1. ADIM: DEALING RANGE & DISCOUNT (UCUZLUK) ---
+        # Son 40 günün en yükseği ve en düşüğü
+        lookback = 40
+        recent_high = high.tail(lookback).max()
+        recent_low = low.tail(lookback).min()
+        
+        # Range (Aralık)
+        range_size = recent_high - recent_low
+        equilibrium = recent_low + (range_size * 0.5) # %50 Seviyesi
+        
+        # ŞART 1: Fiyat Discount (Ucuzluk) Bölgesinde mi?
+        if current_price >= equilibrium: 
+            return None # Premium bölgedeyse ilgilenme, ele.
+
+        # --- 2. ADIM: LİKİDİTE ALIMI (SSL TAKEN) ---
+        # Fiyatın, son 40 gün içindeki "önceki" diplerden birini temizlemiş olması lazım.
+        # Basit mantık: Şu anki dip, önceki (örneğin 10 gün önceki) dipten aşağıda mıydı?
+        # Ancak fiyat toparlayıp yukarı çıkmış olmalı.
+        # Bunu zaten Discount kontrolü ve MSS ile dolaylı teyit ediyoruz ama spesifik bakalım:
+        # Son 20 günde, ondan önceki 20 günün dibi ihlal edildi mi?
+        prev_low_20 = low.iloc[-40:-20].min()
+        curr_low_20 = low.iloc[-20:].min()
+        
+        is_liquidity_sweep = curr_low_20 < prev_low_20
+        
+        if not is_liquidity_sweep:
+            # Tolerans: Belki çok sert bir trend dönüşüdür, şartı biraz gevşetebiliriz 
+            # ama sniper modu için katı duralım.
+            return None 
+
+        # --- 3. ADIM: MARKET YAPISI KIRILIMI (MSS) ---
+        # Son düşüş tepesi (Lower High) yukarı kırıldı mı?
+        # Basitleştirilmiş: Fiyat kısa vadeli ortalamaların (EMA10) üzerine sert attı mı?
+        # Veya son 10 günün en yükseğini kırdı mı?
+        short_term_high = high.iloc[-20:-5].max() # Yakın geçmiş tepe
+        is_mss = high.iloc[-1] > short_term_high or close.iloc[-1] > short_term_high
+        
+        if not is_mss: return None
+
+        # --- 4. ADIM: DISPLACEMENT (ENERJİ/HACİM) ---
+        # Son 5 mumdaki gövdeler, ortalama gövdelerden büyük mü?
+        body_sizes = abs(close - open_)
+        avg_body = body_sizes.rolling(20).mean().iloc[-1]
+        recent_max_body = body_sizes.tail(5).max()
+        
+        is_displacement = recent_max_body > (avg_body * 1.5) # %50 daha büyük mum
+        if not is_displacement: return None
+
+        # --- 5. ADIM: FVG (FAIR VALUE GAP) KONTROLÜ ---
+        # Discount bölgesinde, fiyatın hemen altında veya içinde olduğu bir FVG var mı?
+        # Bullish FVG: Mum(i) Low > Mum(i-2) High
+        has_fvg = False
+        fvg_info = ""
+        stop_loss = recent_low
+        
+        # Son 10 mumu tara (Yakın FVG arıyoruz)
+        for i in range(len(df)-1, len(df)-10, -1):
+            candle_low_curr = low.iloc[i]
+            candle_high_prev2 = high.iloc[i-2]
+            
+            if candle_low_curr > candle_high_prev2:
+                # FVG Bulundu. Peki fiyat şu an buna yakın mı? (Retracement)
+                fvg_top = candle_low_curr
+                fvg_bot = candle_high_prev2
+                gap_size = fvg_top - fvg_bot
+                
+                # Fiyat FVG'nin içine girdiyse veya hemen üzerindeyse (milimetrik temas)
+                if current_price <= (fvg_top * 1.02) and current_price >= (fvg_bot * 0.98):
+                    has_fvg = True
+                    fvg_info = f"FVG: {fvg_bot:.2f} - {fvg_top:.2f}"
+                    stop_loss = fvg_bot # Agresif stop FVG altı
+                    break
+        
+        if not has_fvg: return None # FVG yoksa veya fiyata uzaksak girme
+
+        # --- HEPSİ TAMAMSA ---
+        return {
+            "Sembol": symbol,
+            "Fiyat": current_price,
+            "Durum": "OTE (Mükemmel Giriş)",
+            "FVG_Durumu": "✅ Var (Destek)",
+            "Stop_Loss": f"{stop_loss:.2f}",
+            "Skor": 90 # Sabit yüksek skor
+        }
+
+    except Exception:
+        return None
+
+@st.cache_data(ttl=900)
+def scan_ict_batch(asset_list):
+    """
+    ICT Toplu Tarama Ajanı (Paralel Çalışır)
+    """
+    # 1. Veri Çek (Cache'den)
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
     
+    results = []
+    stock_dfs = []
+    
+    # Veriyi hisselere ayır
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+
+    # 2. Paralel İşleme (Dedektörü Çalıştır)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(process_single_ict_setup, sym, df) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+            
+    # 3. Sonuç Döndür
+    if results:
+        return pd.DataFrame(results)
+    
+    return pd.DataFrame()    
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -2468,7 +2605,7 @@ def render_lorentzian_panel(ticker):
     data = calculate_lorentzian_classification(ticker)
     
     if not data:
-        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian AI</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian Skoru</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
         return
 
     display_prob = int(data['prob'])
@@ -3860,6 +3997,69 @@ def render_price_action_panel(ticker):
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
     
+def render_ict_certification_card(ticker):
+    """
+    Sadece 5 şartı geçen hisselerde 'Onay Sertifikası' gösterir.
+    Görsel: Başlık solda, Sonuç sağda (Yeşil Tikli), Açıklama altta (Edu Note).
+    """
+    # 1. Teyit Et (Logic Çalıştır)
+    df = get_safe_historical_data(ticker, period="1y")
+    # Daha önce yazdığımız dedektör fonksiyonunu kullanıyoruz
+    res = process_single_ict_setup(ticker, df)
+    
+    # EĞER HİSSE SETUP'A UYMUYORSA HİÇ GÖSTERME (Sessizce çık)
+    if res is None: return 
+
+    # 2. HTML Tasarımı (MARTI Paneli Formatında)
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid #7c3aed; background: #faf5ff; margin-bottom: 10px;">
+        <div class="info-header" style="color:#5b21b6; display:flex; justify-content:space-between; align-items:center;">
+            <span>🦅 ICT Sniper Onay Raporu</span>
+            <span style="font-size:0.8rem; background:#7c3aed15; padding:2px 8px; border-radius:10px; font-weight:700;">5/5</span>
+        </div>
+        
+        <div class="info-row" style="margin-top:5px;">
+            <div class="label-long" style="width:160px; color:#4c1d95;">1. Likidite Temizliği (SSL):</div>
+            <div class="info-val" style="color:#16a34a; font-weight:800;">GEÇTİ ✅</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            Son 20-40 günün dibi aşağı kırıldı. Stoplar patlatıldı.
+        </div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:160px; color:#4c1d95;">2. Market Yapı Kırılımı:</div>
+            <div class="info-val" style="color:#16a34a; font-weight:800;">GEÇTİ ✅</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            Fiyat ani bir "U" dönüşüyle son tepeyi yukarı kırdı.
+        </div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:160px; color:#4c1d95;">3. Enerji / Hacim:</div>
+            <div class="info-val" style="color:#16a34a; font-weight:800;">GEÇTİ ✅</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            Yükseliş cılız mumlarla değil, gövdeli ve iştahlı mumlarla oldu.
+        </div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:160px; color:#4c1d95;">4. FVG Bıraktılar (İmza):</div>
+            <div class="info-val" style="color:#16a34a; font-weight:800;">VAR (Destek) ✅</div>
+        </div>
+        <div class="edu-note" style="margin-bottom:8px;">
+            Yükselirken arkasında doldurulmamış boşluk bıraktı.
+        </div>
+
+        <div class="info-row" style="border-top:1px dashed #d8b4fe; padding-top:6px; margin-top:4px;">
+            <div class="label-long" style="width:160px; color:#4c1d95; font-weight:800;">5. İndirimli Bölge:</div>
+            <div class="info-val" style="color:#16a34a; font-weight:800;">OTE (Mükemmel) ✅</div>
+        </div>
+        <div class="edu-note">
+            Fiyat, hareketin %50'sinden fazlasını geri alarak "Toptan Fiyat" bölgesine indi.
+        </div>
+    </div>
+    """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_ict_deep_panel(ticker):
     data = calculate_ict_deep_analysis(ticker)
@@ -4054,7 +4254,7 @@ def render_lorentzian_panel(ticker):
     data = calculate_lorentzian_classification(ticker)
     
     if not data:
-        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian AI</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="info-card" style="opacity:0.7;"><div class="info-header">🧠 Lorentzian Score</div><div style="font-size:0.7rem; padding:5px;">Veri Yetersiz.</div></div>""", unsafe_allow_html=True)
         return
 
     display_prob = int(data['prob'])
@@ -4070,8 +4270,8 @@ def render_lorentzian_panel(ticker):
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
         <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
-            <span>{ml_icon} Lorentzian AI (GÜNLÜK)</span>
-            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:700; color:{data['color']};">%{display_prob} Güven</span>
+            <span>{ml_icon} Lorentzian Score (GÜNLÜK)</span>
+            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:400; color:{data['color']};">%{display_prob} Güven</span>
         </div>
         
         <div style="text-align:center; padding:8px 0;">
@@ -4467,9 +4667,6 @@ with st.sidebar:
 
     # MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
-    # LORENTZİAN PANELİ (Hata
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    render_lorentzian_panel(st.session_state.ticker)
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
     <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -4631,8 +4828,10 @@ with st.sidebar:
             else:
                 st.warning("Şu an toplanan ORTAK bir hisse yok.")
 
+    # LORENTZİAN PANELİ 
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    render_lorentzian_panel(st.session_state.ticker)
     st.divider()
-
     # 3. AI ANALIST (En Altta)
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
@@ -4691,31 +4890,35 @@ with col_btn:
             st.session_state.stp_trends = trends
             st.session_state.stp_filtered = filtered
             st.session_state.stp_scanned = True
-            
-            # 3. SENTIMENT (AKILLI PARA) AJANI - %40
+
+            # 3. ICT SNIPER AJANI --- %35
+            my_bar.progress(50, text="🦅 ICT Sniper Kurulumları (Liquidity+MSS+FVG) Taranıyor...%35")
+            st.session_state.ict_scan_data = scan_ict_batch(scan_list)
+
+            # 4. SENTIMENT (AKILLI PARA) AJANI - %40
             my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...%40")
             st.session_state.accum_data = scan_hidden_accumulation(scan_list)
             
-            # --- RS LİDERLERİ TARAMASI (MASTER SCAN İÇİNE) ---
+            # 5. RS LİDERLERİ TARAMASI - %45
             my_bar.progress(45, text="🏆 Son 5 günün Piyasa Liderleri (RS Momentum) Hesaplanıyor...%45")
             st.session_state.rs_leaders_data = scan_rs_momentum_leaders(scan_list)
             
-            # 4. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
+            # 6. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
             my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...%55")
             st.session_state.breakout_left = agent3_breakout_scan(scan_list)      # Isınanlar
             st.session_state.breakout_right = scan_confirmed_breakouts(scan_list) # Kıranlar
             
-            # 5. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %70
+            # 7. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %70
             my_bar.progress(70, text="🧠 Radar Sinyalleri İşleniyor...%70")
             st.session_state.scan_data = analyze_market_intelligence(scan_list)
             st.session_state.radar2_data = radar2_scan(scan_list)
             
-            # 6. FORMASYON & TUZAKLAR - %85
+            # 8. FORMASYON & TUZAKLAR - %85
             my_bar.progress(85, text="🦁Formasyon ve Tuzaklar Taranıyor...%85")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
             
-            # 7. RSI UYUMSUZLUKLARI - %95
+            # 9. RSI UYUMSUZLUKLARI - %95
             my_bar.progress(95, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...%95")
             bull_df, bear_df = scan_rsi_divergence_batch(scan_list)
             st.session_state.rsi_div_bull = bull_df
@@ -5142,7 +5345,41 @@ with col_left:
             """, unsafe_allow_html=True)
         else:
             st.success("Belirgin negatif etken yok.")
+
+    # ---------------------------------------------------------
+    # 🦅 YENİ: ICT SNIPER AJANI (TARAMA PANELİ)
+    # Konum: Bear Trap Altı, Minervini Üstü
+    # ---------------------------------------------------------
+    if 'ict_scan_data' not in st.session_state: st.session_state.ict_scan_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦅 ICT Sniper Ajanı (Kurumsal Kurulum: 90/100)</div>', unsafe_allow_html=True)
+    
+    # 1. TARAMA BUTONU
+    if st.button(f"🦅 KURUMSAL SETUP TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_ict"):
+        with st.spinner("Kurumsal ayak izleri (MSS + Displacement + FVG) taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            # Daha önce yazdığımız (veya yazacağımız) batch fonksiyonu buraya gelecek
+            # Şimdilik placeholder (yer tutucu) fonksiyonu çağırıyoruz, aşağıda tanımlayacağız
+            st.session_state.ict_scan_data = scan_ict_batch(current_assets) 
             
+    # 2. SONUÇ EKRANI
+    if st.session_state.ict_scan_data is not None:
+        count = len(st.session_state.ict_scan_data)
+        if count > 0:
+            # Mor çerçeveli özel alan
+            with st.container(height=250, border=True):
+                for i, row in st.session_state.ict_scan_data.iterrows():
+                    sym = row['Sembol']
+                    
+                    # Buton Metni: 🦅 THYAO (280.50) | OTE Bölgesinde | FVG: Var
+                    label = f"🦅 {sym} ({row['Fiyat']:.2f}) | {row['Durum']} | {row['FVG_Durumu']}"
+                    
+                    # Mor Buton Stili (Primary'ye yakın ama ayırt edici olması için secondary bırakıp ikonla süsledik)
+                    if st.button(label, key=f"ict_scan_{sym}_{i}", use_container_width=True, help=f"Stop: {row['Stop_Loss']}"):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu tespit edilemedi. Piyasa 'Kill Zone' dışında olabilir.")            
     # ---------------------------------------------------------
     # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
     # ---------------------------------------------------------
@@ -5504,6 +5741,9 @@ with col_right:
     # 3. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
     
+    # 🦅 YENİ: ICT SNIPER ONAY RAPORU (Sadece Setup Varsa Çıkar)
+    render_ict_certification_card(st.session_state.ticker)
+
     # 4. ICT Paneli
     render_ict_deep_panel(st.session_state.ticker)
    
@@ -5638,8 +5878,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
-
-
-
-
