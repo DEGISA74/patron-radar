@@ -4264,13 +4264,12 @@ def render_lorentzian_panel(ticker):
     bar_width = display_prob
     signal_text = f"{data['signal']} BEKLENTİSİ"
 
-    # --- DÜZELTME BURADA YAPILDI ---
     # Başlık: GÜNLÜK
     # Alt Bilgi: Vade: 1 Gün
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
         <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
-            <span>{ml_icon} Lorentzian Score (GÜNLÜK)</span>
+            <span>{ml_icon} Lorentzian (GÜNLÜK): {ticker.replace('.IS', '')}</span>
             <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:400; color:{data['color']};">%{display_prob} Güven</span>
         </div>
         
