@@ -282,12 +282,12 @@ raw_nasdaq = [
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
 commodities_list = [
-"GLD",   # Altın ONS (Spot) - Senin ekranındaki XAUUSD
-    "SLV",   # Gümüş ONS (Spot) - Senin ekranındaki XAGUSD
-    "CPER",       # Bakır (Vadeli - Çünkü Spot kodu Yahoo'da bazen sıkıntılı)
-    "USO",       # Ham Petrol (WTI)
-    "UNG",       # Doğalgaz
-    "BNO"         # Brent Petrol
+    "GC=F",   # Altın ONS (Vadeli - Gold Futures) - 7/24 Aktif
+    "SI=F",   # Gümüş ONS (Vadeli - Silver Futures)
+    "HG=F",   # Bakır (Copper Futures) - CPER yerine bu daha iyidir
+    "CL=F",   # Ham Petrol (Crude Oil WTI Futures) - Piyasanın kalbi burasıdır
+    "NG=F",   # Doğalgaz (Natural Gas Futures)
+    "BZ=F"    # Brent Petrol (Brent Crude Futures)
 ]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
@@ -504,7 +504,7 @@ def get_batch_data_cached(asset_list, period="1y"):
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
-        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
+        clean_ticker = ticker.replace(".IS", "")
         if "BIST" in ticker or ".IS" in ticker:
             clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
         
@@ -2469,7 +2469,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
 def calculate_lorentzian_classification(ticker, k_neighbors=8):
     try:
         # 1. VERİ ÇEKME (10 YILLIK GÜNLÜK - Derin Öğrenme İçin Şart)
-        clean_ticker = ticker.replace(".IS", "").replace("=F", "")
+        clean_ticker = ticker.replace(".IS", "")
         if ".IS" in ticker: clean_ticker = ticker 
         
         try:
