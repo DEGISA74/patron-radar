@@ -2199,11 +2199,10 @@ def calculate_master_score(ticker):
 # ==============================================================================
 # 🦅 YENİ: ICT SNIPER TARAMA MOTORU (5 ŞARTLI DEDEKTÖR)
 # ==============================================================================
-
 def process_single_ict_setup(symbol, df):
     """
-    ICT 2022 Mentorship Buy Model (5 Şart) Tarayıcısı.
-    Sadece Yüksek Olasılıklı (High Probability) kurulumları geçirir.
+    ICT 2022 Mentorship Model (LONG ve SHORT) Tarayıcısı.
+    Hem Alış (Discount) hem Satış (Premium) fırsatlarını aynı anda arar.
     """
     try:
         if df.empty or len(df) < 50: return None
@@ -2212,93 +2211,87 @@ def process_single_ict_setup(symbol, df):
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         current_price = float(close.iloc[-1])
         
-        # --- 1. ADIM: DEALING RANGE & DISCOUNT (UCUZLUK) ---
-        # Son 40 günün en yükseği ve en düşüğü
+        # --- 1. ADIM: DEALING RANGE (OYUN SAHASI) ---
         lookback = 40
         recent_high = high.tail(lookback).max()
         recent_low = low.tail(lookback).min()
         
-        # Range (Aralık)
         range_size = recent_high - recent_low
         equilibrium = recent_low + (range_size * 0.5) # %50 Seviyesi
         
-        # ŞART 1: Fiyat Discount (Ucuzluk) Bölgesinde mi?
-        if current_price >= equilibrium: 
-            return None # Premium bölgedeyse ilgilenme, ele.
+        # Karar: Fiyat Nerede?
+        is_discount = current_price < equilibrium # Ucuz (Long Aranır)
+        is_premium = current_price > equilibrium  # Pahalı (Short Aranır)
 
-        # --- 2. ADIM: LİKİDİTE ALIMI (SSL TAKEN) ---
-        # Fiyatın, son 40 gün içindeki "önceki" diplerden birini temizlemiş olması lazım.
-        # Basit mantık: Şu anki dip, önceki (örneğin 10 gün önceki) dipten aşağıda mıydı?
-        # Ancak fiyat toparlayıp yukarı çıkmış olmalı.
-        # Bunu zaten Discount kontrolü ve MSS ile dolaylı teyit ediyoruz ama spesifik bakalım:
-        # Son 20 günde, ondan önceki 20 günün dibi ihlal edildi mi?
-        prev_low_20 = low.iloc[-40:-20].min()
-        curr_low_20 = low.iloc[-20:].min()
-        
-        is_liquidity_sweep = curr_low_20 < prev_low_20
-        
-        if not is_liquidity_sweep:
-            # Tolerans: Belki çok sert bir trend dönüşüdür, şartı biraz gevşetebiliriz 
-            # ama sniper modu için katı duralım.
-            return None 
-
-        # --- 3. ADIM: MARKET YAPISI KIRILIMI (MSS) ---
-        # Son düşüş tepesi (Lower High) yukarı kırıldı mı?
-        # Basitleştirilmiş: Fiyat kısa vadeli ortalamaların (EMA10) üzerine sert attı mı?
-        # Veya son 10 günün en yükseğini kırdı mı?
-        short_term_high = high.iloc[-20:-5].max() # Yakın geçmiş tepe
-        is_mss = high.iloc[-1] > short_term_high or close.iloc[-1] > short_term_high
-        
-        if not is_mss: return None
-
-        # --- 4. ADIM: DISPLACEMENT (ENERJİ/HACİM) ---
-        # Son 5 mumdaki gövdeler, ortalama gövdelerden büyük mü?
+        # --- ORTAK HESAPLAMALAR ---
+        # Displacement (Gövde Gücü) Kontrolü
         body_sizes = abs(close - open_)
         avg_body = body_sizes.rolling(20).mean().iloc[-1]
         recent_max_body = body_sizes.tail(5).max()
+        is_displacement = recent_max_body > (avg_body * 1.5)
         
-        is_displacement = recent_max_body > (avg_body * 1.5) # %50 daha büyük mum
-        if not is_displacement: return None
+        if not is_displacement: return None # Enerji yoksa iki yöne de bakma
 
-        # --- 5. ADIM: FVG (FAIR VALUE GAP) KONTROLÜ ---
-        # Discount bölgesinde, fiyatın hemen altında veya içinde olduğu bir FVG var mı?
-        # Bullish FVG: Mum(i) Low > Mum(i-2) High
-        has_fvg = False
-        fvg_info = ""
-        stop_loss = recent_low
-        
-        # Son 10 mumu tara (Yakın FVG arıyoruz)
-        for i in range(len(df)-1, len(df)-10, -1):
-            candle_low_curr = low.iloc[i]
-            candle_high_prev2 = high.iloc[i-2]
+        # =========================================================
+        # SENARYO A: LONG (BOĞA) ARANIYOR (Discount Bölgesi)
+        # =========================================================
+        if is_discount:
+            # 1. Likidite Alımı (SSL Taken): Son 20 günde, önceki dipler ihlal edildi mi?
+            prev_low_20 = low.iloc[-40:-20].min()
+            curr_low_20 = low.iloc[-20:].min()
             
-            if candle_low_curr > candle_high_prev2:
-                # FVG Bulundu. Peki fiyat şu an buna yakın mı? (Retracement)
-                fvg_top = candle_low_curr
-                fvg_bot = candle_high_prev2
-                gap_size = fvg_top - fvg_bot
-                
-                # Fiyat FVG'nin içine girdiyse veya hemen üzerindeyse (milimetrik temas)
-                if current_price <= (fvg_top * 1.02) and current_price >= (fvg_bot * 0.98):
-                    has_fvg = True
-                    fvg_info = f"FVG: {fvg_bot:.2f} - {fvg_top:.2f}"
-                    stop_loss = fvg_bot # Agresif stop FVG altı
-                    break
-        
-        if not has_fvg: return None # FVG yoksa veya fiyata uzaksak girme
+            if curr_low_20 < prev_low_20: # Dip temizliği var
+                # 2. MSS (Market Yapı Kırılımı): Yukarı dönüş var mı?
+                short_term_high = high.iloc[-20:-5].max()
+                if close.iloc[-1] > short_term_high: # Kırılım gerçekleşti
+                    
+                    # 3. FVG Kontrolü (Bullish)
+                    for i in range(len(df)-1, len(df)-10, -1):
+                        if low.iloc[i] > high.iloc[i-2]: # Gap Var
+                            fvg_top = low.iloc[i]; fvg_bot = high.iloc[i-2]
+                            # Fiyata yakın mı?
+                            if current_price <= (fvg_top * 1.02) and current_price >= (fvg_bot * 0.98):
+                                return {
+                                    "Sembol": symbol, "Fiyat": current_price,
+                                    "Yön": "LONG", "İkon": "🐂", "Renk": "#16a34a",
+                                    "Durum": "OTE (Ucuzluk Bölgesi)",
+                                    "Stop_Loss": f"{curr_low_20:.2f}",
+                                    "Skor": 95
+                                }
 
-        # --- HEPSİ TAMAMSA ---
-        return {
-            "Sembol": symbol,
-            "Fiyat": current_price,
-            "Durum": "OTE (Mükemmel Giriş)",
-            "FVG_Durumu": "✅ Var (Destek)",
-            "Stop_Loss": f"{stop_loss:.2f}",
-            "Skor": 90 # Sabit yüksek skor
-        }
+        # =========================================================
+        # SENARYO B: SHORT (AYI) ARANIYOR (Premium Bölgesi)
+        # =========================================================
+        elif is_premium:
+            # 1. Likidite Alımı (BSL Taken): Son 20 günde, önceki tepeler ihlal edildi mi?
+            prev_high_20 = high.iloc[-40:-20].max()
+            curr_high_20 = high.iloc[-20:].max()
+            
+            if curr_high_20 > prev_high_20: # Tepe temizliği var
+                # 2. MSS (Market Yapı Kırılımı): Aşağı dönüş var mı?
+                short_term_low = low.iloc[-20:-5].min()
+                if close.iloc[-1] < short_term_low: # Aşağı kırılım gerçekleşti
+                    
+                    # 3. FVG Kontrolü (Bearish)
+                    # Bearish FVG: Mum(i) High < Mum(i-2) Low
+                    for i in range(len(df)-1, len(df)-10, -1):
+                        if high.iloc[i] < low.iloc[i-2]: # Gap Var
+                            fvg_top = low.iloc[i-2]; fvg_bot = high.iloc[i]
+                            # Fiyata yakın mı?
+                            if current_price >= (fvg_bot * 0.98) and current_price <= (fvg_top * 1.02):
+                                return {
+                                    "Sembol": symbol, "Fiyat": current_price,
+                                    "Yön": "SHORT", "İkon": "🐻", "Renk": "#dc2626",
+                                    "Durum": "OTE (Pahalılık Bölgesi)",
+                                    "Stop_Loss": f"{curr_high_20:.2f}",
+                                    "Skor": 95
+                                }
+
+        return None # Hiçbir şarta uymadı
 
     except Exception:
         return None
+
 
 @st.cache_data(ttl=900)
 def scan_ict_batch(asset_list):
@@ -5371,24 +5364,50 @@ with col_left:
             # Şimdilik placeholder (yer tutucu) fonksiyonu çağırıyoruz, aşağıda tanımlayacağız
             st.session_state.ict_scan_data = scan_ict_batch(current_assets) 
             
-    # 2. SONUÇ EKRANI
+    # 2. SONUÇ EKRANI (ÇİFT SÜTUNLU)
     if st.session_state.ict_scan_data is not None:
-        count = len(st.session_state.ict_scan_data)
-        if count > 0:
-            # Mor çerçeveli özel alan
-            with st.container(height=250, border=True):
-                for i, row in st.session_state.ict_scan_data.iterrows():
-                    sym = row['Sembol']
+        df_res = st.session_state.ict_scan_data
+        
+        if not df_res.empty:
+            # Long ve Shortları ayır
+            longs = df_res[df_res['Yön'] == 'LONG']
+            shorts = df_res[df_res['Yön'] == 'SHORT']
+            
+            # İki Sütun Oluştur
+            c_long, c_short = st.columns(2)
+            
+            # --- SOL SÜTUN: LONG FIRSATLARI ---
+            with c_long:
+                st.markdown(f"<div style='text-align:center; color:#16a34a; font-weight:800; background:#f0fdf4; padding:5px; border-radius:5px; border:1px solid #86efac; margin-bottom:10px;'>🐂 LONG (Yükseliş) SETUPLARI ({len(longs)})</div>", unsafe_allow_html=True)
+                if not longs.empty:
+                    with st.container(height=300):
+                        for i, row in longs.iterrows():
+                            sym = row['Sembol']
+                            # Etiket: 🐂 THYAO (300.0) | Hedef: Yukarı
+                            label = f"🐂 {sym} ({row['Fiyat']:.2f}) | {row['Durum']}"
+                            if st.button(label, key=f"ict_long_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                                on_scan_result_click(sym)
+                                st.rerun()
+                else:
+                    st.info("Long yönlü kurumsal kurulum yok.")
+
+            # --- SAĞ SÜTUN: SHORT FIRSATLARI ---
+            with c_short:
+                st.markdown(f"<div style='text-align:center; color:#dc2626; font-weight:800; background:#fef2f2; padding:5px; border-radius:5px; border:1px solid #fca5a5; margin-bottom:10px;'>🐻 SHORT (Düşüş) SETUPLARI ({len(shorts)})</div>", unsafe_allow_html=True)
+                if not shorts.empty:
+                    with st.container(height=300):
+                        for i, row in shorts.iterrows():
+                            sym = row['Sembol']
+                            # Etiket: 🐻 GARAN (100.0) | Hedef: Aşağı
+                            label = f"🐻 {sym} ({row['Fiyat']:.2f}) | {row['Durum']}"
+                            if st.button(label, key=f"ict_short_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                                on_scan_result_click(sym)
+                                st.rerun()
+                else:
+                    st.info("Short yönlü kurumsal kurulum yok.")
                     
-                    # Buton Metni: 🦅 THYAO (280.50) | OTE Bölgesinde | FVG: Var
-                    label = f"🦅 {sym} ({row['Fiyat']:.2f}) | {row['Durum']} | {row['FVG_Durumu']}"
-                    
-                    # Mor Buton Stili (Primary'ye yakın ama ayırt edici olması için secondary bırakıp ikonla süsledik)
-                    if st.button(label, key=f"ict_scan_{sym}_{i}", use_container_width=True, help=f"Stop: {row['Stop_Loss']}"):
-                        on_scan_result_click(sym)
-                        st.rerun()
         else:
-            st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu tespit edilemedi. Piyasa 'Kill Zone' dışında olabilir.")            
+            st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu (ne Long ne Short) tespit edilemedi.") 
     # ---------------------------------------------------------
     # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
     # ---------------------------------------------------------
