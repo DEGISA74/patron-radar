@@ -2977,7 +2977,6 @@ def get_deep_xray_data(ticker):
         "str_bos": f"{icon('BOS ↑' in sent['str'])} Yapı Kırılımı"
     }
 
-# --- ICT MODÜLÜ (GÜNCELLENMİŞ: Hata Korumalı) ---
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
     error_ret = {"status": "Error", "msg": "Veri Yok", "structure": "-", "bias": "-", "entry": 0, "target": 0, "stop": 0, "rr": 0, "desc": "Veri bekleniyor", "displacement": "-", "fvg_txt": "-", "ob_txt": "-", "zone": "-", "mean_threshold": 0, "curr_price": 0, "setup_type": "BEKLE"}
@@ -3007,6 +3006,7 @@ def calculate_ict_deep_analysis(ticker):
         last_sh = sw_highs[-1][1] 
         last_sl = sw_lows[-1][1]  
         
+        # --- BİAS VE YAPI TESPİTİ ---
         structure = "YATAY / KONSOLİDE"
         bias = "neutral"
         displacement_txt = "Zayıf (Hacimsiz Hareket)"
@@ -3026,12 +3026,19 @@ def calculate_ict_deep_analysis(ticker):
             if close.iloc[-1] > open_.iloc[-1]: bias = "bullish_retrace" 
             else: bias = "bearish_retrace"
 
+        # --- 👇 YENİ: MIKNATIS (DOL) HESAPLAMA MANTIĞI 👇 ---
+        # Fiyatın gitmek isteyeceği en yakın Likidite havuzlarını buluyoruz
         next_bsl = min([h[1] for h in sw_highs if h[1] > curr_price], default=high.max())
         next_ssl = max([l[1] for l in sw_lows if l[1] < curr_price], default=low.min())
+        
+        # Eğer bir setup yoksa, sistemin "Nereye bakacağını" belirleyen DOL (Draw on Liquidity)
+        # Ayı piyasasında mıknatıs aşağıdaki DİP, Boğa piyasasında yukarıdaki TEPE'dir.
+        magnet_target = next_bsl if "bullish" in bias else next_ssl
+        # --- 👆 ---------------------------------------- 👆 ---
 
+        # FVG ve OB Taraması
         bullish_fvgs = []; bearish_fvgs = []
         active_fvg_txt = "Yok"
-        
         for i in range(len(df)-30, len(df)-1):
             if i < 2: continue
             if low.iloc[i] > high.iloc[i-2]:
@@ -3056,12 +3063,10 @@ def calculate_ict_deep_analysis(ticker):
             if isinstance(lowest_idx, pd.Timestamp): lowest_idx = df.index.get_loc(lowest_idx)
             for i in range(lowest_idx, max(0, lowest_idx-5), -1):
                 if df['Close'].iloc[i] < df['Open'].iloc[i]:
-                    ob_low = df['Low'].iloc[i]
-                    ob_high = df['High'].iloc[i]
+                    ob_low = df['Low'].iloc[i]; ob_high = df['High'].iloc[i]
                     active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Talep Bölgesi)"
                     mean_threshold = (ob_low + ob_high) / 2
                     break
-                    
         elif bias == "bearish" or bias == "bearish_retrace":
             if bearish_fvgs:
                 f = bearish_fvgs[-1]
@@ -3070,8 +3075,7 @@ def calculate_ict_deep_analysis(ticker):
             if isinstance(highest_idx, pd.Timestamp): highest_idx = df.index.get_loc(highest_idx)
             for i in range(highest_idx, max(0, highest_idx-5), -1):
                 if df['Close'].iloc[i] > df['Open'].iloc[i]:
-                    ob_low = df['Low'].iloc[i]
-                    ob_high = df['High'].iloc[i]
+                    ob_low = df['Low'].iloc[i]; ob_high = df['High'].iloc[i]
                     active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Arz Bölgesi)"
                     mean_threshold = (ob_low + ob_high) / 2
                     break
@@ -3080,45 +3084,37 @@ def calculate_ict_deep_analysis(ticker):
         range_loc = (curr_price - range_low) / (range_high - range_low)
         zone = "PREMIUM (Pahalı)" if range_loc > 0.5 else "DISCOUNT (Ucuz)"
 
+        # --- SETUP VE HEDEF KARARI ---
         setup_type = "BEKLE"
         entry_price = 0.0; stop_loss = 0.0; take_profit = 0.0; rr_ratio = 0.0
-        setup_desc = "Mantıklı bir R/R kurulumu veya Bölge uyumu bekleniyor."
-        
+        # Varsayılan hedefi mıknatıs (DOL) olarak belirliyoruz
+        final_target = magnet_target 
+        setup_desc = "İdeal bir setup (Entry) bekleniyor. Mevcut yön mıknatısı takip ediliyor."
+
         if bias in ["bullish", "bullish_retrace"] and zone == "DISCOUNT (Ucuz)":
             valid_fvgs = [f for f in bullish_fvgs if f['top'] < curr_price]
             if valid_fvgs and next_bsl > curr_price:
-                best_fvg = valid_fvgs[-1]
-                temp_entry = best_fvg['top']
+                best_fvg = valid_fvgs[-1]; temp_entry = best_fvg['top']
                 if next_bsl > temp_entry:
-                    entry_price = temp_entry
-                    take_profit = next_bsl
+                    entry_price = temp_entry; take_profit = next_bsl
                     stop_loss = last_sl if last_sl < entry_price else best_fvg['bot'] - atr * 0.5
-                    risk = entry_price - stop_loss
-                    reward = take_profit - entry_price
-                    if risk > 0:
-                        rr_ratio = reward / risk
-                        setup_type = "LONG"
-                        setup_desc = "Fiyat ucuzluk bölgesinde. FVG desteğinden yukarıdaki likidite (BSL) hedefleniyor."
+                    final_target = take_profit # Setup varsa hedef kâr al seviyesidir
+                    setup_type = "LONG"; setup_desc = "Fiyat ucuzluk bölgesinde. FVG desteğinden likidite (BSL) hedefleniyor."
 
         elif bias in ["bearish", "bearish_retrace"] and zone == "PREMIUM (Pahalı)":
             valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price]
             if valid_fvgs and next_ssl < curr_price:
-                best_fvg = valid_fvgs[-1]
-                temp_entry = best_fvg['bot']
+                best_fvg = valid_fvgs[-1]; temp_entry = best_fvg['bot']
                 if next_ssl < temp_entry:
-                    entry_price = temp_entry
-                    take_profit = next_ssl
+                    entry_price = temp_entry; take_profit = next_ssl
                     stop_loss = last_sh if last_sh > entry_price else best_fvg['top'] + atr * 0.5
-                    risk = stop_loss - entry_price
-                    reward = entry_price - take_profit
-                    if risk > 0:
-                        rr_ratio = reward / risk
-                        setup_type = "SHORT"
-                        setup_desc = "Fiyat pahalılık bölgesinde. Direnç bloğundan aşağıdaki likidite (SSL) hedefleniyor."
+                    final_target = take_profit # Setup varsa hedef kâr al seviyesidir
+                    setup_type = "SHORT"; setup_desc = "Fiyat pahalılık bölgesinde. Direnç bloğundan likidite (SSL) hedefleniyor."
 
         return {
             "status": "OK", "structure": structure, "bias": bias, "zone": zone,
-            "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, "target": take_profit,
+            "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, 
+            "target": final_target, # <-- Artık 0.00 yerine mıknatıs seviyesi dönecek
             "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
             "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt,
             "mean_threshold": mean_threshold, "curr_price": curr_price
@@ -5389,7 +5385,7 @@ with col_left:
                                 on_scan_result_click(sym)
                                 st.rerun()
                 else:
-                    st.info("Long yönlü kurumsal kurulum yok.")
+                    st.info("Long yönlü kurumsal Setup yok.")
 
             # --- SAĞ SÜTUN: SHORT FIRSATLARI ---
             with c_short:
@@ -5404,7 +5400,7 @@ with col_left:
                                 on_scan_result_click(sym)
                                 st.rerun()
                 else:
-                    st.info("Short yönlü kurumsal kurulum yok.")
+                    st.info("Short yönlü kurumsal Setup yok.")
                     
         else:
             st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu (ne Long ne Short) tespit edilemedi.") 
