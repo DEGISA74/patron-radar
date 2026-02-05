@@ -138,7 +138,7 @@ st.markdown(f"""
     .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
     
     .edu-note {{
-        font-size: 0.75rem;
+        font-size: 0.85rem;
         color: #64748B;
         font-style: italic;
         margin-top: 2px;
@@ -4066,6 +4066,7 @@ def render_ict_deep_panel(ticker):
         st.warning(f"ICT Analiz Bekleniyor... ({data.get('msg', 'Veri Yok')})")
         return
     
+    # --- İÇERİK METİNLERİ (HİÇBİRİ DEĞİŞMEDİ) ---
     struct_desc = "Piyasa kararsız."
     if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
     elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
@@ -4084,9 +4085,24 @@ def render_ict_deep_panel(ticker):
     
     liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
 
-    bias_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#475569"
-    bg_color_old = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f8fafc"
+    # --- RENK MANTIĞI (GÜNCELLENDİ: Ana Skor Font ve Renklerine Uyum) ---
+    # Yeşil: #166534, Kırmızı: #991b1b, Mor (Nötr): #6b21a8
+    
+    # 1. Bias Rengi
+    if "bullish" in data['bias']: 
+        bias_header_col = "#166534" # Koyu Yeşil
+        bias_bg = "#f0fdf4"
+        bias_border = "#bbf7d0"
+    elif "bearish" in data['bias']: 
+        bias_header_col = "#991b1b" # Koyu Kırmızı
+        bias_bg = "#fef2f2"
+        bias_border = "#fecaca"
+    else: 
+        bias_header_col = "#6b21a8" # Mor
+        bias_bg = "#faf5ff"
+        bias_border = "#e9d5ff"
 
+    # 2. Mean Threshold Rengi
     mt_html = "" 
     mt_val = data.get('mean_threshold', 0)
     curr = data.get('curr_price', 0)
@@ -4096,64 +4112,104 @@ def render_ict_deep_panel(ticker):
         if abs(diff_pct) < 0.003: 
             mt_status = "⚠️ KARAR ANI (BIÇAK SIRTI)"
             mt_desc = "Fiyat, yapının tam %50 denge noktasını test ediyor. Kırılım yönü beklenmeli."
-            mt_color = "#d97706"; mt_bg = "#fffbeb" 
+            mt_header_col = "#d97706"; mt_bg = "#fffbeb"; mt_border = "#fcd34d"
         elif diff_pct > 0:
             mt_status = "🛡️ Alıcılar Korumada" if "bullish" in data['bias'] else "Fiyat Dengenin Üzerinde"
             mt_desc = "Fiyat kritik orta noktanın üzerinde tutunuyor. Yapı korunuyor."
-            mt_color = "#15803d"; mt_bg = "#f0fdf4" 
+            mt_header_col = "#166534"; mt_bg = "#f0fdf4"; mt_border = "#bbf7d0"
         else:
             mt_status = "🛡️ Satıcılar Baskın" if "bearish" in data['bias'] else "💀 Savunma Çöktü"
             mt_desc = "Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir."
-            mt_color = "#b91c1c"; mt_bg = "#fef2f2" 
+            mt_header_col = "#991b1b"; mt_bg = "#fef2f2"; mt_border = "#fecaca"
             
+        # MT HTML (Sola Yaslı - Hatasız)
         mt_html = f"""
-        <div style="background:{mt_bg}; padding:6px; border-radius:5px; border-left:3px solid {mt_color}; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:700; color:{mt_color}; font-size:0.8rem;">⚖️ {mt_status}</span>
-                <span style="font-family:'JetBrains Mono'; font-size:0.8rem; font-weight:700;">{mt_val:.2f}</span>
-            </div>
-            <div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
-        </div>
-        """
-   
-    html_content = f"""
-    <div class="info-card" style="margin-bottom:8px;">
-        <div class="info-header">🧠 ICT Smart Money Analizi: {display_ticker}</div>
-        
-        <div style="background:{bg_color_old}; padding:6px; border-radius:5px; border-left:3px solid {bias_color}; margin-bottom:8px;">
-            <div style="font-weight:700; color:{bias_color}; font-size:0.8rem; margin-bottom:2px;">{data['structure']}</div>
-            <div class="edu-note">{struct_desc}</div>
-            
-            <div class="info-row"><div class="label-long">Enerji:</div><div class="info-val">{data['displacement']}</div></div>
-            <div class="edu-note">{energy_desc}</div>
-        </div>
-
-        {mt_html}
-
-        <div style="margin-bottom:8px;">
-            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px dashed #cbd5e1; margin-bottom:4px;">📍 Ucuz Pahalı Okları (Giriş/Çıkış Referansları)</div>
-            
-            <div class="info-row"><div class="label-long">Konum:</div><div class="info-val" style="font-weight:700;">{data['zone']}</div></div>
-            <div class="edu-note">{zone_desc}</div>
-            
-            <div class="info-row"><div class="label-long">GAP (FVG):</div><div class="info-val">{data['fvg_txt']}</div></div>
-            <div class="edu-note">{fvg_desc}</div>
-            
-            <div class="info-row"><div class="label-long">Aktif OB:</div><div class="info-val">{data['ob_txt']}</div></div>
-            <div class="edu-note">{ob_desc}</div>
-        </div>
-
-        <div style="background:#f1f5f9; padding:5px; border-radius:4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:0.8rem; font-weight:600; color:#475569;">🧲 Hedef Likidite</span>
-                <span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.8rem; color:#0f172a;">{data['target']:.2f}</span>
-            </div>
-            <div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
-        </div>
-    </div>
-    """
+<div style="background:{mt_bg}; padding:8px; border-radius:6px; border:1px solid {mt_border}; margin-bottom:8px;">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+<span style="font-weight:700; color:{mt_header_col}; font-size:0.75rem;">{mt_status}</span>
+<span style="font-family:'JetBrains Mono'; font-size:0.75rem; font-weight:700; color:#0f172a;">{mt_val:.2f}</span>
+</div>
+<div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
+</div>
+"""
     
-    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+    # 3. Sağ Sütun Renkleri (Otomatik Belirleme)
+    # Konum Rengi
+    if "DISCOUNT" in data['zone']: zone_col = "#166534" # Yeşil
+    elif "PREMIUM" in data['zone']: zone_col = "#991b1b" # Kırmızı
+    else: zone_col = "#6b21a8" # Mor
+
+    # FVG Rengi
+    if "Yok" in data['fvg_txt']: fvg_col = "#6b21a8" # Mor
+    elif "Destek" in data['fvg_txt']: fvg_col = "#166534" # Yeşil
+    else: fvg_col = "#991b1b" # Kırmızı
+
+    # OB Rengi
+    if "Yok" in data['ob_txt']: ob_col = "#6b21a8" # Mor
+    else: ob_col = "#0369a1" # Mavi (Aktif OB genelde nötr/mavi kalabilir veya Mor yapabiliriz, Mor seçtim)
+
+    display_ticker = ticker.replace(".IS", "").replace("=F", "")
+    info = fetch_stock_info(ticker)
+    current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
+    # --- HTML ÇIKTISI ---
+    
+    # 1. ANA BAŞLIK
+    st.markdown(f"""<div class="info-card" style="margin-bottom:8px;"><div class="info-header">🧠 ICT Smart Money Analizi: {display_ticker} <span style="color:#64748B; font-weight:400; font-size:0.8rem;">({current_price_str})</span></div>""", unsafe_allow_html=True)
+    # 2. SÜTUNLARI OLUŞTUR
+    col1, col2 = st.columns(2)
+
+    # SOL SÜTUN İÇERİĞİ (Structure, Energy, Mean Threshold)
+    with col1:
+        # Enerji Rengi
+        disp_col = "#166534" if "Güçlü" in data['displacement'] else "#6b21a8"
+
+        html_left = f"""
+<div style="background:{bias_bg}; padding:8px; border-radius:6px; border:1px solid {bias_border}; margin-bottom:8px;">
+<div style="font-weight:700; color:{bias_header_col}; font-size:0.75rem; margin-bottom:4px; border-bottom:1px solid {bias_border}; padding-bottom:2px;">{data['structure']}</div>
+<div class="edu-note" style="margin-bottom:8px;">{struct_desc}</div>
+<div style="font-weight:700; color:{disp_col}; font-size:0.75rem; margin-bottom:2px;">ENERJİ DURUMU</div>
+<div style="font-size:0.75rem; font-weight:600; color:#334155; margin-bottom:4px;">{data['displacement']}</div>
+<div class="edu-note">{energy_desc}</div>
+</div>
+{mt_html}
+"""
+        st.markdown(html_left, unsafe_allow_html=True)
+
+    # SAĞ SÜTUN İÇERİĞİ (KOMPLE TEK BİR GRİ KUTU İÇİNDE)
+    with col2:
+        html_right = f"""
+<div style="background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; height:100%;">
+<div style="font-size:0.75rem; font-weight:700; color:#6b21a8; border-bottom:1px solid #e2e8f0; margin-bottom:6px; padding-bottom:4px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
+
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{zone_col};">KONUM: {data['zone']}</div>
+<div class="edu-note">{zone_desc}</div>
+</div>
+
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{fvg_col};">GAP (FVG): {data['fvg_txt']}</div>
+<div class="edu-note">{fvg_desc}</div>
+</div>
+
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{ob_col};">AKTİF OB: {data['ob_txt']}</div>
+<div class="edu-note">{ob_desc}</div>
+</div>
+
+<div style="background:#ffffff; padding:6px; border-radius:4px; border:1px dashed #cbd5e1; margin-top:4px;">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<span style="font-size:0.75rem; font-weight:700; color:#6b21a8;">🧲 HEDEF LİKİDİTE</span>
+<span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.75rem; color:#0f172a;">{data['target']:.2f}</span>
+</div>
+<div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
+</div>
+
+</div>
+"""
+        st.markdown(html_right, unsafe_allow_html=True)
+
+    # 3. KAPANIŞ (DIV)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
@@ -5268,29 +5324,26 @@ col_left, col_right = st.columns([4, 1])
 
 # --- SOL SÜTUN ---
 with col_left:
+    # 1. PARA AKIŞ İVMESİ & FİYAT DENGESİ (EN TEPE)
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
-    render_detail_card_advanced(st.session_state.ticker)
-
-    # --- YENİ SADE ANA SKOR KARTI (ESTETİK & KOMPAKT) ---
-    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
-    # 1. SKOR HESAPLA
+    # 2. ANA SKOR PANELİ (İKİNCİ SIRA)
+    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-    # 2. DERECELENDİRME
     if master_score >= 85: grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
     elif master_score >= 70: grade="B (GÜÇLÜ)"; score_color="#0369a1"; icon="💎"
     elif master_score >= 50: grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
     else: grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
 
-    # 3. BAŞLIK KARTI (Gelişmiş Teknik Kart ile Aynı Stil)
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     
     st.markdown(f"""
     <div class="info-card" style="border-top: 3px solid {score_color}; margin-bottom: 5px;">
         <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:none; margin-bottom:0; padding-bottom:0;">
-            <span style="color:{score_color}; font-size: 0.9rem;">⚖️ ANA SKOR: {display_ticker}</span>
+            <span style="color:{score_color}; font-size: 0.9rem;">⚖️ ANA SKOR: {display_ticker} <span style="color:#64748B; font-weight:400; font-size:0.8rem;">({current_price_str})</span></span>
             <span style="font-weight:700; font-size:0.85rem; background:{score_color}15; color:{score_color}; padding:2px 8px; border-radius:4px;">
             {master_score} - {grade.split(' ')[0]}
             </span>
@@ -5298,37 +5351,26 @@ with col_left:
     </div>
     """, unsafe_allow_html=True)
 
-    # 4. NEDENLER (İKİ SÜTUN: SOL POZİTİF / SAĞ NEGATİF)
     c_pros, c_cons = st.columns(2)
-
-    # --- Sol Sütun: Pozitifler (Yeşil Kutu) ---
     with c_pros:
         if score_pros:
-            # 1. LİMİTLEME: En fazla 10 madde göster
             limited_pros = score_pros[:12]
-            
             html_pros = ""
             for p in limited_pros:
-                # 'break-inside: avoid-column' maddelerin sütun arasında bölünmesini engeller
                 html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px; break-inside: avoid-column;'>✅ {p}</div>"
             
             st.markdown(f"""
             <div style="background:#f0fdf4; padding:8px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
                 <div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:5px; border-bottom:1px solid #bbf7d0; padding-bottom:2px;">POZİTİF ETKENLER ({len(limited_pros)})</div>
-                <div style="column-count: 2; column-gap: 15px;">
-                    {html_pros}
-                </div>
+                <div style="column-count: 2; column-gap: 15px;">{html_pros}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.info("Belirgin pozitif etken yok.")
 
-    # --- Sağ Sütun: Negatifler (Kırmızı Kutu) ---
     with c_cons:
         if score_cons:
-            # 1. LİMİTLEME: En fazla 10 madde göster
             limited_cons = score_cons[:12]
-            
             html_cons = ""
             for c in limited_cons:
                 html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px; break-inside: avoid-column;'>❌ {c}</div>"
@@ -5336,13 +5378,19 @@ with col_left:
             st.markdown(f"""
             <div style="background:#fef2f2; padding:8px; border-radius:6px; border:1px solid #fecaca; height:100%;">
                 <div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:5px; border-bottom:1px solid #fecaca; padding-bottom:2px;">NEGATİF ETKENLER ({len(limited_cons)})</div>
-                <div style="column-count: 2; column-gap: 15px;">
-                    {html_cons}
-                </div>
+                <div style="column-count: 2; column-gap: 15px;">{html_cons}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.success("Belirgin negatif etken yok.")
+
+    # 3. ICT SMART MONEY ANALİZİ (YENİ YERİ: ANA SKOR ALTINDA)
+    # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    render_ict_deep_panel(st.session_state.ticker)
+
+    # 4. GELİŞMİŞ TEKNİK KART (ICT ALTINDA)
+    render_detail_card_advanced(st.session_state.ticker)
 
     # ---------------------------------------------------------
     # 🦅 YENİ: ICT SNIPER AJANI (TARAMA PANELİ)
@@ -5767,10 +5815,7 @@ with col_right:
     
     # 🦅 YENİ: ICT SNIPER ONAY RAPORU (Sadece Setup Varsa Çıkar)
     render_ict_certification_card(st.session_state.ticker)
-
-    # 4. ICT Paneli
-    render_ict_deep_panel(st.session_state.ticker)
-   
+  
     # ==============================================================================
     # YENİ: DİPTEN DÖNÜŞ PANELİ (AYI TUZAĞI + POZİTİF UYUMSUZLUK KESİŞİMİ)
     # ==============================================================================
