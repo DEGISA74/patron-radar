@@ -327,9 +327,9 @@ raw_bist_stocks.sort()
 final_bist100_list = priority_bist_indices + raw_bist_stocks
 
 ASSET_GROUPS = {
+    "BIST 500 ": final_bist100_list,
     "S&P 500": final_sp500_list,
     "NASDAQ-100": raw_nasdaq,
-    "BIST 500 ": final_bist100_list,
     "KRİPTO-TOP 100": final_crypto_list,
     "EMTİALAR": commodities_list
 }
