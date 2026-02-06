@@ -1327,6 +1327,14 @@ def process_single_accumulation(symbol, df, benchmark_series):
         
         if avg_mf <= 0: return None
         if change_pct > 0.05: return None 
+        # --- HALÜSİNASYON ÖNLEYİCİ (RSI FİLTRESİ) ---
+        # Eğer RSI > 60 ise, fiyat tepededir. Bu 'Toplama' değil, 'Dağıtım'dır.
+        # Bu yüzden RSI şişikse, bu hisseyi listeden atıyoruz.
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi_check = 100 - (100 / (1 + (gain / loss))).iloc[-1]
+        
+        if rsi_check > 60: return None # Şişkin hisseyi yok say.
 
         # --- 4. MANSFIELD RS (GÜÇ) ---
         rs_status = "Zayıf"
