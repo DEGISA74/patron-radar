@@ -2994,7 +2994,7 @@ def get_deep_xray_data(ticker):
 
 @st.cache_data(ttl=600)
 def calculate_ict_deep_analysis(ticker):
-    error_ret = {"status": "Error", "msg": "Veri Yok", "structure": "-", "bias": "-", "entry": 0, "target": 0, "stop": 0, "rr": 0, "desc": "Veri bekleniyor", "displacement": "-", "fvg_txt": "-", "ob_txt": "-", "zone": "-", "mean_threshold": 0, "curr_price": 0, "setup_type": "BEKLE"}
+    error_ret = {"status": "Error", "msg": "Veri Yok", "structure": "-", "bias": "-", "entry": 0, "target": 0, "stop": 0, "rr": 0, "desc": "Veri bekleniyor", "displacement": "-", "fvg_txt": "-", "ob_txt": "-", "zone": "-", "mean_threshold": 0, "curr_price": 0, "setup_type": "BEKLE", "bottom_line": "-"}
     
     try:
         df = get_safe_historical_data(ticker, period="1y")
@@ -3026,15 +3026,28 @@ def calculate_ict_deep_analysis(ticker):
         bias = "neutral"
         displacement_txt = "Zayıf (Hacimsiz Hareket)"
         
+        # MSS (Market Structure Shift) Tespiti için bir önceki bias kontrolü
+        prev_close = close.iloc[-2]
+        is_prev_bearish = prev_close < last_sl
+        is_prev_bullish = prev_close > last_sh
+
         last_candle_body = abs(open_.iloc[-1] - close.iloc[-1])
         if last_candle_body > avg_body_size.iloc[-1] * 1.2:
              displacement_txt = "🔥 Güçlü Displacement (Hacimli Kırılım)"
         
         if curr_price > last_sh:
-            structure = "BOS (Yükseliş Kırılımı) 🐂"
+            # Eğer önceden ayı yapısındaysak ve son tepeden yukarı çıktıysak bu MSS'tir
+            if is_prev_bearish:
+                structure = "MSS (Market Structure Shift) 🐂"
+            else:
+                structure = "BOS (Yükseliş Kırılımı) Order Flow Pozitif 🐂"
             bias = "bullish"
         elif curr_price < last_sl:
-            structure = "BOS (Düşüş Kırılımı) 🐻"
+            # Eğer önceden boğa yapısındaysak ve son dpten aşağı indiysek bu MSS'tir
+            if is_prev_bullish:
+                structure = "MSS (Market Structure Shift) 🐻"
+            else:
+                structure = "BOS (Düşüş Kırılımı) Order Flow Negatif 🐻"
             bias = "bearish"
         else:
             structure = "Internal Range (Düşüş/Düzeltme)"
@@ -3045,7 +3058,6 @@ def calculate_ict_deep_analysis(ticker):
         # Fiyatın gitmek isteyeceği en yakın Likidite havuzlarını buluyoruz
         next_bsl = min([h[1] for h in sw_highs if h[1] > curr_price], default=high.max())
         next_ssl = max([l[1] for l in sw_lows if l[1] < curr_price], default=low.min())
-        
         # Eğer bir setup yoksa, sistemin "Nereye bakacağını" belirleyen DOL (Draw on Liquidity)
         # Ayı piyasasında mıknatıs aşağıdaki DİP, Boğa piyasasında yukarıdaki TEPE'dir.
         magnet_target = next_bsl if "bullish" in bias else next_ssl
@@ -3126,13 +3138,29 @@ def calculate_ict_deep_analysis(ticker):
                     final_target = take_profit # Setup varsa hedef kâr al seviyesidir
                     setup_type = "SHORT"; setup_desc = "Fiyat pahalılık bölgesinde. Direnç bloğundan likidite (SSL) hedefleniyor."
 
+        # --- 👇 YENİ: AKSİYON ÖZETİ (THE BOTTOM LINE) ANALİZÖRÜ 👇 ---
+        struct_summary = "Yapı zayıf (Order Flow Negatif)" if "bearish" in bias else "Yapı güçlü (Order Flow Pozitif)"
+        zone_summary = "fiyat pahalı bölgesinden" if zone == "PREMIUM (Pahalı)" else "fiyat ucuzluk bölgesinden"
+        
+        # Güvenli seviye tespiti (Mean Threshold yoksa SH/SL kullanılır)
+        safety_lvl = mean_threshold if mean_threshold > 0 else (last_sh if "bearish" in bias else last_sl)
+        
+        if "bearish" in bias:
+            action_txt = f"güvenli alım için {safety_lvl:.2f} üzerinde kalıcılık beklenmeli."
+        else:
+            action_txt = f"yükselişin devamı için {safety_lvl:.2f} desteği korunmalı."
+            
+        bottom_line = f"{struct_summary}, {zone_summary} likiditeye ({final_target:.2f}) doğru süzülüyor; {action_txt}"
+        # --- 👆 ------------------------------------------------ 👆 ---
+
         return {
             "status": "OK", "structure": structure, "bias": bias, "zone": zone,
             "setup_type": setup_type, "entry": entry_price, "stop": stop_loss, 
             "target": final_target, # <-- Artık 0.00 yerine mıknatıs seviyesi dönecek
             "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
             "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt,
-            "mean_threshold": mean_threshold, "curr_price": curr_price
+            "mean_threshold": mean_threshold, "curr_price": curr_price,
+            "bottom_line": bottom_line
         }
 
     except Exception: return error_ret
@@ -4083,7 +4111,12 @@ def render_ict_deep_panel(ticker):
     
     # --- İÇERİK METİNLERİ (HİÇBİRİ DEĞİŞMEDİ) ---
     struct_desc = "Piyasa kararsız."
-    if "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
+    if "MSS" in data['structure']:
+        if "🐂" in data['structure']:
+            struct_desc = "🚨 TREND DÖNÜŞÜ (BULLISH MSS): Fiyat, düşüş yapısını bozan son önemli tepeyi aştı. Ayı piyasası bitmiş, Boğa dönemi başlıyor olabilir!"
+        else:
+            struct_desc = "🚨 TREND DÖNÜŞÜ (BEARISH MSS): Fiyat, yükseliş yapısını tutan son önemli dibi kırdı. Boğa piyasası bitmiş, Ayı dönemi başlıyor olabilir!"
+    elif "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
     elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
     elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
 
@@ -4134,7 +4167,7 @@ def render_ict_deep_panel(ticker):
             mt_header_col = "#166534"; mt_bg = "#f0fdf4"; mt_border = "#bbf7d0"
         else:
             mt_status = "🛡️ Satıcılar Baskın" if "bearish" in data['bias'] else "💀 Savunma Çöktü"
-            mt_desc = "Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir."
+            mt_desc = f"Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir. Fiyat {mt_val:.2f} altında işlem gördüğü sürece 'Premium' (Pahalı) bölgeden uzaklaşmış, 'Discount' (Ucuzluk) bölgesine olan yolculuğunu onaylamıştır. {mt_val:.2f} üzerine çıkılmadıkça, her yükseliş ICT mantığına göre bir satış fırsatıdır."
             mt_header_col = "#991b1b"; mt_bg = "#fef2f2"; mt_border = "#fecaca"
             
         # MT HTML (Sola Yaslı - Hatasız)
@@ -4173,7 +4206,7 @@ def render_ict_deep_panel(ticker):
     # 2. SÜTUNLARI OLUŞTUR
     col1, col2 = st.columns(2)
 
-    # SOL SÜTUN İÇERİĞİ (Structure, Energy, Mean Threshold)
+    # SOL SÜTUN İÇERİĞİ (Structure, Energy, Mean Threshold ve ARTIK BOTTOM LINE BURADA)
     with col1:
         # Enerji Rengi
         disp_col = "#166534" if "Güçlü" in data['displacement'] else "#6b21a8"
@@ -4188,9 +4221,22 @@ def render_ict_deep_panel(ticker):
 </div>
 {mt_html}
 """
+        # 👇 YENİ DÜZENLEME: BOTTOM LINE (SONUÇ) ARTIK SOL SÜTUNDA VE DENGELİ 👇
+        bottom_line_txt = data.get("bottom_line", "-")
+        if bottom_line_txt != "-":
+            html_left += f"""
+<div style="margin-top:8px; background:#f0f9ff; padding:8px; border-radius:6px; border:1px solid #bae6fd;">
+<div style="display:flex; align-items:center; margin-bottom:4px;">
+<span style="font-weight:700; color:#0369a1; font-size:0.75rem;">🏁 THE BOTTOM LINE (SONUÇ)</span>
+</div>
+<div class="edu-note" style="margin-bottom:0; color:#0f172a;">{bottom_line_txt}</div>
+</div>
+"""
+        # 👆 EKLEME SONU 👆
+
         st.markdown(html_left, unsafe_allow_html=True)
 
-    # SAĞ SÜTUN İÇERİĞİ (KOMPLE TEK BİR GRİ KUTU İÇİNDE)
+    # SAĞ SÜTUN İÇERİĞİ (KOMPLE TEK BİR GRİ KUTU İÇİNDE - TEMİZLENDİ)
     with col2:
         html_right = f"""
 <div style="background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; height:100%;">
@@ -4222,9 +4268,6 @@ def render_ict_deep_panel(ticker):
 </div>
 """
         st.markdown(html_right, unsafe_allow_html=True)
-
-    # 3. KAPANIŞ (DIV)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
