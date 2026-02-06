@@ -3142,8 +3142,35 @@ def calculate_ict_deep_analysis(ticker):
         struct_summary = "Yapı zayıf (Order Flow Negatif)" if "bearish" in bias else "Yapı güçlü (Order Flow Pozitif)"
         zone_summary = "fiyat pahalı bölgesinden" if zone == "PREMIUM (Pahalı)" else "fiyat ucuzluk bölgesinden"
         
-        # Güvenli seviye tespiti (Mean Threshold yoksa SH/SL kullanılır)
-        safety_lvl = mean_threshold if mean_threshold > 0 else (last_sh if "bearish" in bias else last_sl)
+        # --- GÜVENLİ SEVİYE MANTIĞI (DÜZELTİLDİ: Trader Mantığı) ---
+        safety_lvl = 0.0
+        
+        if "bearish" in bias:
+            # Ayı piyasasında "Güvenli Alım" için Önümüzdeki İLK CİDDİ ENGELE (FVG veya Swing High) bakarız.
+            candidates = []
+            
+            # 1. Aday: En yakın üst direnç FVG'sinin TEPESİ
+            valid_fvgs = [f for f in bearish_fvgs if f['bot'] > curr_price]
+            if valid_fvgs:
+                # En yakındaki FVG'yi bul
+                closest_fvg = min(valid_fvgs, key=lambda x: x['bot'] - curr_price)
+                candidates.append(closest_fvg['top'])
+            
+            # 2. Aday: Son Swing High (MSS Seviyesi)
+            if last_sh > curr_price:
+                candidates.append(last_sh)
+            
+            # Hiçbiri yoksa mecburen Mean Threshold veya %5 yukarı
+            if not candidates:
+                 safety_lvl = mean_threshold if mean_threshold > curr_price else curr_price * 1.05
+            else:
+                 # En yakın (en düşük) direnci seçiyoruz.
+                 safety_lvl = min(candidates)
+
+        else:
+            # Boğa piyasasında destek kırılımı (Stop) seviyesi
+            safety_lvl = last_sl
+        
         
         if "bearish" in bias:
             action_txt = f"güvenli alım için {safety_lvl:.2f} üzerinde kalıcılık beklenmeli."
@@ -3151,7 +3178,7 @@ def calculate_ict_deep_analysis(ticker):
             action_txt = f"yükselişin devamı için {safety_lvl:.2f} desteği korunmalı."
             
         bottom_line = f"{struct_summary}, {zone_summary} likiditeye ({final_target:.2f}) doğru süzülüyor; {action_txt}"
-        # --- 👆 ------------------------------------------------ 👆 ---
+        
 
         return {
             "status": "OK", "structure": structure, "bias": bias, "zone": zone,
@@ -4175,7 +4202,9 @@ def render_ict_deep_panel(ticker):
 <div style="background:{mt_bg}; padding:8px; border-radius:6px; border:1px solid {mt_border}; margin-bottom:8px;">
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
 <span style="font-weight:700; color:{mt_header_col}; font-size:0.75rem;">{mt_status}</span>
-<span style="font-family:'JetBrains Mono'; font-size:0.75rem; font-weight:700; color:#0f172a;">{mt_val:.2f}</span>
+<span style="font-family:'JetBrains Mono'; font-size:0.75rem; font-weight:700; color:#0f172a;">
+<span style="font-family:'Segoe UI'; font-weight:400; font-size:0.65rem; color:#64748b; margin-right:4px;">Aktif Order Block Orta Noktası:</span>{mt_val:.2f}
+</span>
 </div>
 <div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
 </div>
@@ -4225,7 +4254,7 @@ def render_ict_deep_panel(ticker):
         bottom_line_txt = data.get("bottom_line", "-")
         if bottom_line_txt != "-":
             html_left += f"""
-<div style="margin-top:8px; background:#f0f9ff; padding:8px; border-radius:6px; border:1px solid #bae6fd;">
+<div style="margin-top:8px; background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0;">
 <div style="display:flex; align-items:center; margin-bottom:4px;">
 <span style="font-weight:700; color:#0369a1; font-size:0.75rem;">🏁 THE BOTTOM LINE (SONUÇ)</span>
 </div>
