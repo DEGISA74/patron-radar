@@ -2380,7 +2380,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
         
         # Eğim Kontrolü: SMA200, 1 ay önceki değerinden yüksek olmalı
         sma200_prev = float(close.rolling(200).mean().iloc[-22])
-        sma200_up = sma200 > sma200_prev
+        sma200_up = sma200 >= (sma200_prev * 0.99)
         
         year_high = float(close.rolling(250).max().iloc[-1])
         year_low = float(close.rolling(250).min().iloc[-1])
@@ -5328,11 +5328,148 @@ if st.session_state.generate_prompt:
     pros_txt = ", ".join(pros[:5])
     
     st_txt = f"{'YÜKSELİŞ' if levels_data.get('st_dir')==1 else 'DÜŞÜŞ'} | {levels_data.get('st_val',0):.2f}" if levels_data else "-"
+    # ==============================================================================
+    # 🧠 ALGORİTMİK KARAR MATRİSİ V2.0 (SCENARIO DETECTOR)
+    # ==============================================================================
+    # 1. TEMEL METRİKLERİN HESAPLANMASI
+    # ---------------------------------------------------------
+    try:
+        # Fiyat & Değişim
+        p_now = info.get('price', 0)
+        p_change_pct = info.get('change_pct', 0) # Günlük Yüzde Değişim
+        
+        # Trend Gücü (SMA50 Referansı)
+        sma50_val = tech_data.get('sma50', 0)
+        trend_ratio = (p_now / sma50_val) if sma50_val > 0 else 1.0
+        
+        # Hacim Oranı (20 Günlük Ortalamaya Göre)
+        vol_ratio = 1.0
+        if df_hist is not None and len(df_hist) > 20:
+            v_curr = float(df_hist['Volume'].iloc[-1])
+            v_avg = float(df_hist['Volume'].rolling(20).mean().iloc[-1])
+            # Zaman ayarlı (Projection) düzeltme yapalım ki sabah seansı yanıltmasın
+            # Basitçe: Eğer seans devam ediyorsa hacmi 1.0 kabul et veya mevcut projection'ı kullan
+            # Ama burada df_hist son satırı kullandığımız için ham veriye bakalım:
+            if v_avg > 0: vol_ratio = v_curr / v_avg
+
+        # STP Durumu (Momentum)
+        is_stp_broken = False
+        if synth_data is not None and not synth_data.empty:
+            l_p = float(synth_data.iloc[-1]['Price'])
+            l_s = float(synth_data.iloc[-1]['STP'])
+            if l_p < l_s: is_stp_broken = True
+            
+        # RSI Durumu
+        rsi_val_now = sent_data.get('raw_rsi', 50)
+        is_rsi_div_neg = "NEGATİF" in str(pa_data.get('div', {}).get('title', ''))
+        
+        # Mum Durumu
+        bad_candles = ["Black Crows", "Bearish Engulfing", "Shooting Star", "Marubozu 🔻"]
+        has_bad_candle = any(x in str(mum_desc) for x in bad_candles)
+
+    except:
+        # Veri hatası olursa varsayılan değerler
+        p_change_pct = 0; trend_ratio = 1.0; vol_ratio = 1.0; is_stp_broken = False; rsi_val_now = 50
+
+    # 2. SENARYO TESPİT MOTORU
+    # ---------------------------------------------------------
+    ai_scenario_title = "NORMAL PİYASA AKIŞI"
+    ai_mood_instruction = "Veriler nötr/karışık. Her iki yönü de (Destek/Direnç) dengeli anlat."
     
+    # SENARYO 1: 🟢 DİNLENEN BOĞA (FIRSAT)
+    # Şartlar: Hafif Düşüş + Düşük Hacim + Güçlü Trend
+    if (-3.5 <= p_change_pct <= -0.5) and (vol_ratio < 0.85) and (trend_ratio > 1.03):
+        ai_scenario_title = "🟢 SENARYO: DİNLENEN BOĞA (HEALTHY PULLBACK)"
+        ai_mood_instruction = """
+        DURUM: Fiyat düşüyor (%1-%3 arası) FAKAT Hacim çok düşük (Satıcılar isteksiz).
+        Trend (SMA50) desteğinin %3 üzerindeyiz, yani ana yapı çok güçlü.
+        
+        TALİMAT:
+        1. Asla "Çöküş" veya "Trend Bitti" deme.
+        2. Bunu "Sağlıklı bir soluklanma" ve "Köpük alma" olarak yorumla.
+        3. Yatırımcıyı panik satışına karşı uyar, desteklerin çalışma ihtimalini vurgula.
+        4. "Fırsat" kelimesini (risk uyarısıyla birlikte) kullanabilirsin.
+        """
+
+    # SENARYO 2: 🟡 KÂR REALİZASYONU (İZLE)
+    # Şartlar: Orta Düşüş + Normal Hacim + Güçlü Trend + STP Kırık
+    elif (-5.0 <= p_change_pct <= -1.5) and (0.85 <= vol_ratio <= 1.25) and (trend_ratio > 1.03) and is_stp_broken:
+        ai_scenario_title = "🟡 SENARYO: KÂR REALİZASYONU (PROFIT TAKING)"
+        ai_mood_instruction = """
+        DURUM: Kısa vadeli momentum (STP) kırıldı ve fiyat düşüyor. Hacim normal seviyede.
+        Ancak Ana Trend (SMA50) hala çok aşağıda (Güvenli mesafede).
+        
+        TALİMAT:
+        1. "Kısa vadeli düzeltme derinleşebilir" uyarısı yap.
+        2. "Ana trend bozulmadı ama kısa vade zayıfladı" ayrımını net yap.
+        3. Acele etmemek iyi olabilir, dönüş sinyali (Yeşil Mum/STP Kesişimi) beklenmesi iyi olur, tarzından yorumla. asla kesin konuşma. direkt tavsiye verme.
+        """
+
+    # SENARYO 3: 🟠 YORGUN BOĞA (TUZAK RİSKİ)
+    # Şartlar: Fiyat Tepede/Yatay + Hacimsiz + Negatif Uyumsuzluk
+    elif (p_change_pct > -1.0) and (trend_ratio > 1.05) and (is_rsi_div_neg or (rsi_val_now > 70 and vol_ratio < 0.7)):
+        ai_scenario_title = "🟠 SENARYO: YORGUN BOĞA (EXHAUSTION)"
+        ai_mood_instruction = """
+        DURUM: Fiyat tepede veya yükseliyor GİBİ görünüyor AMA yakıt (Hacim) bitmiş.
+        RSI Negatif Uyumsuzluk veriyor veya aşırı şişmiş.
+        
+        TALİMAT:
+        1. Sentiment puanının yüksekliğine (Yeşil olmasına) aldanma, onlar gecikmeli veriler.
+        2. Kullanıcıyı "Gel-Gel Tuzağı" (Bull Trap) konusunda uyarabilirsin
+        3. "Yükselişler satış fırsatı olabilir", "Stoplar yaklaştırılırsa iyi olur" tonunu kullan. asla kesin konuşma. direkt tavsiye verme.
+        4. Coşku verme, şüphe uyandır. Halüsinasyon görüyor olabilirsin.
+        """
+
+    # SENARYO 4: 🟠 TREND SAVAŞI (KARAR ANI)
+    # Şartlar: Fiyat SMA50'ye çok yakın (+-%1.5) + STP Kırık
+    elif (0.985 <= trend_ratio <= 1.015) and is_stp_broken:
+        ai_scenario_title = "🟠 SENARYO: TREND SAVAŞI (MAJOR TEST)"
+        ai_mood_instruction = """
+        DURUM: Fiyat "Son Kale" olan SMA50 ortalamasına dayandı.
+        Buradan ya dönecek (Destek) ya da yıkılacak (Çöküş). Tam bıçak sırtı durum.
+        
+        TALİMAT:
+        1. Çok ciddi ve profesyonel konuş. Tahmin yapma, seviyeleri ver.
+        2. "SMA50 (Verdiğimiz seviye) altı kapanış stop, üstü devam" stratejisini kur.
+        3. Şu an işlem yapmanın "Yazı Tura" atmak olduğunu hissettir. Kapanışı beklet.
+        """
+
+    # SENARYO 5: 🔴 DAĞITIM / CHURNING (GİZLİ SATIŞ)
+    # Şartlar: Fiyat Gitmiyor (Doji/Pinbar) + Hacim Patlamış
+    elif (abs(p_change_pct) < 1.5) and (vol_ratio > 1.3) and (trend_ratio > 1.05):
+        ai_scenario_title = "🔴 SENARYO: DAĞITIM / CHURNING (GİZLİ SATIŞ)"
+        ai_mood_instruction = """
+        DURUM: Çok kritik bir anomali var! Hacim patlamış (Ortalamanın %30 üstü) ama fiyat gitmiyor.
+        Bu "Churning" yani patinaj gibi görünüyor. Büyük oyuncular mal devrediyor olabilir.
+        
+        TALİMAT:
+        1. "Hacim yüksek ama fiyat yerinde sayıyor, bu hayra alamet değil" diyebilirsin. "Dağıtım" ve "Churning" kavramlarını anlat.
+        2. Gizli bir satış baskısı olduğunu düşünüyorsan, vurgula.
+        3. Puan yüksek olsa bile "Risk Masadan Kalkmalı" imasında bulunabilirsin. asla kesin konuşma. direkt tavsiye verme.
+        """
+
+    # SENARYO 6: ⚫ TREND ÇÖKÜŞÜ (STOP-OUT)
+    # Şartlar: Sert Düşüş + Yüksek Hacim + SMA50 Kırılmış + STP Kırık
+    elif (p_change_pct < -2.5) and (vol_ratio > 1.1) and (trend_ratio < 0.99) and is_stp_broken:
+        ai_scenario_title = "⚫ SENARYO: TREND ÇÖKÜŞÜ (REVERSAL)"
+        ai_mood_instruction = """
+        DURUM: Oyun bitti. Sert ve hacimli bir düşüşle ana trend (SMA50) kırıldı.
+        Ayılar kontrolü tamamen ele aldı.
+        
+        TALİMAT:
+        1. Umut verme. "Dönerse senindir" deme.
+        2. Teknik olarak "STOP-OUT" (Zarar Kes) seviyesinin delindiğini belirt.
+        3. "Nakite geçip kenarda bekleme zamanı" olduğunu (tavsiye vermeden) ima et.
+        4. En karamsar ve korumacı senaryoyu yaz.
+        """    
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Price Action, ICT (Smart Money) ve Mark Minervini (SEPA) stratejilerinde uzmanlaşmış kıdemli bir Fon Yöneticisisin.
 Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem planı oluştur. Basit bir dille anlat.
+
+*** 🚨 DURUM RAPORU: {ai_scenario_title} ***
+(Analizini tamamen bu senaryo ve talimat üzerine kur!)
+{ai_mood_instruction}
 
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, analizin merkezine koy!)
@@ -5352,7 +5489,6 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - MOMENTUM: {sent_mom} (RSI ve MACD gücü)
 - VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
-
 *** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
 - SuperTrend (Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
@@ -5361,29 +5497,27 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
 (NOT: Radar 2'deki "Setup" tipi [Trend/Setup] strateji için çok önemlidir.)
-
 *** 2. SMART MONEY & ICT YAPISI ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
 - Konum (Zone): {ict_data.get('zone', 'Bilinmiyor')}
 - Gizli Para Akışı (10G WMA): {para_akisi_txt}
 - Aktif FVG: {ict_data.get('fvg_txt', 'Yok')}
-
-*** 3. ŞİRKET TEMEL KALİTESİ ***
-- Öne Çıkanlar: {fund_txt}
-
-*** 4. HEDEFLER VE RİSK ***
+- Aktif Order Block: {ict_data.get('ob_txt', 'Yok')}
+- HEDEF LİKİDİTE (Mıknatıs): {ict_data.get('target', 0)}
+- NİHAİ KARAR VE AKSİYON PLANI (THE BOTTOM LINE): {ict_data.get('bottom_line', 'Veri Yok')}
+*** 3. HEDEFLER VE RİSK ***
 - Direnç (Hedef): {fib_res}
 - Destek (Stop): {fib_sup}
 - Hedef Likidite: {liq_str}
-
-*** 5. PRICE ACTION  ***
+- HEDEF LİKİDİTE (Mıknatıs): {ict_data.get('target', 0)}
+*** 4. PRICE ACTION  ***
 - Mum Formasyonu: {mum_desc}
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 - TUZAK DURUMU (SFP): {sfp_desc}
 - En Yakın Direnç: {fib_res}
 - En Yakın Destek: {fib_sup}
 - Hedef Likidite (Mıknatıs): {liq_str}
-*** 6. KURUMSAL MALİYET VE GÜÇ ***
+*** 5. KURUMSAL MALİYET VE GÜÇ ***
 - VWAP (Adil Değer): {v_val:.2f}
 - Fiyat Konumu: Maliyetin %{v_diff:.1f} üzerinde/altında.
 - VWAP DURUMU: {vwap_ai_txt}
