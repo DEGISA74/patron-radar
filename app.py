@@ -5209,9 +5209,19 @@ if st.session_state.generate_prompt:
 
         price_trend = "YUKARI" if p_now > p_old else "AŞAĞI"
         obv_trend = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        
+        # --- [YENİ] Prompt İçin RSI Emniyet Kilidi ---
+        # AI'ın tepede "Gizli Giriş" diye saçmalamasını engeller.
+        delta_p = df_hist['Close'].diff()
+        gain_p = (delta_p.where(delta_p > 0, 0)).rolling(14).mean()
+        loss_p = (-delta_p.where(delta_p < 0, 0)).rolling(14).mean()
+        rsi_val_prompt = 100 - (100 / (1 + gain_p/loss_p)).iloc[-1]
 
-        # 3. Yorumla
-        if price_trend == "AŞAĞI" and obv_trend == "YUKARI":
+        # 3. Yorumla (Güncellenmiş Mantık)
+        if rsi_val_prompt > 60 and price_trend == "AŞAĞI":
+             # Fiyat düşüyor ama RSI hala tepedeyse bu giriş değil, "Mal Yedirme" olabilir.
+             para_akisi_txt = "⚠️ ZİRVE BASKISI (Dağıtım Riski - RSI Şişkin)"
+        elif price_trend == "AŞAĞI" and obv_trend == "YUKARI":
             para_akisi_txt = "🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk - Fiyat Düşerken Mal Toplanıyor)"
         elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
             para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk - Fiyat Çıkarken Mal Çakılıyor)"
@@ -5219,6 +5229,7 @@ if st.session_state.generate_prompt:
             para_akisi_txt = "Pozitif (Para Girişi Fiyatı Destekliyor)"
         else:
             para_akisi_txt = "Negatif (Para Çıkışı Var)"
+            
     elif synth_data is not None and len(synth_data) > 15:
         # Yedek Plan: df_hist yoksa eski yöntemi kullan
         wma_now = synth_data['MF_Smooth'].tail(10).mean()
