@@ -202,11 +202,11 @@ def remove_watchlist_db(symbol):
 init_db()
 
 # --- VARLIK LİSTELERİ ---
-priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC","QQQI", "AGNC", "ARCC", "TSPY", "JEPI", "MO", "JEPQ"]
+priority_sp = ["^GSPC", "^DJI", "^NDX", "^IXIC","QQQI", "SPYI", "TSPY", "ARCC", "JEPI"]
 
 # S&P 500'ün Tamamı (503 Hisse - Güncel)
 raw_sp500_rest = [
-    "A", "AAL", "AAPL", "ABBV", "ABNB", "ABT", "ACGL", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AIG", "AIZ", "AJG", 
+    "A", "AAL", "AAPL", "ABBV", "ABNB", "ABT", "ACGL", "ACN", "ADBE", "ADI", "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AGNC", "AIG", "AIZ", "AJG", 
     "AKAM", "ALB", "ALGN", "ALL", "ALLE", "AMAT", "AMCR", "AMD", "AME", "AMGN", "AMP", "AMT", "AMTM", "AMZN", "ANET", "ANSS", "AON", "AOS", "APA", 
     "APD", "APH", "APTV", "ARE", "ATO", "AVB", "AVGO", "AVY", "AWK", "AXON", "AXP", "AZO", "BA", "BAC", "BALL", "BAX", "BBWI", "BBY", "BDX", "BEN", 
     "BF-B", "BG", "BIIB", "BK", "BKNG", "BKR", "BLDR", "BLK", "BMY", "BR", "BRK-B", "BRO", "BSX", "BWA", "BX", "BXP", "C", "CAG", "CAH", "CARR", 
@@ -218,7 +218,7 @@ raw_sp500_rest = [
     "F", "FANG", "FAST", "FCX", "FDS", "FDX", "FE", "FFIV", "FI", "FICO", "FIS", "FITB", "FMC", "FOX", "FOXA", "FRT", "FSLR", "FTNT", "FTV", "GD", 
     "GE", "GEHC", "GEN", "GEV", "GILD", "GIS", "GL", "GLW", "GM", "GNRC", "GOOG", "GOOGL", "GPC", "GPN", "GRMN", "GS", "GWW", "HAL", "HAS", "HBAN", 
     "HCA", "HD", "HES", "HIG", "HII", "HLT", "HOLX", "HON", "HPE", "HPQ", "HRL", "HSY", "HUBB", "HUM", "HWM", "IBM", "ICE", "IDXX", "IEX", "IFF", 
-    "ILMN", "INCY", "INTC", "INTU", "INVH", "IP", "IPG", "IQV", "IR", "IRM", "ISRG", "IT", "ITW", "IVZ", "J", "JBHT", "JBL", "JCI", "JKHY", "JNJ", 
+    "ILMN", "INCY", "INTC", "INTU", "INVH", "IP", "IPG", "IQV", "IR", "IRM", "ISRG", "IT", "ITW", "IVZ", "J", "JBHT", "JBL", "JCI", "JEPQ", "JKHY", "JNJ", 
     "JNPR", "JPM", "K", "KDP", "KEY", "KEYS", "KHC", "KIM", "KKR", "KLAC", "KMB", "KMI", "KMX", "KO", "KR", "KVUE", "L", "LDOS", "LEN", "LH", 
     "LHX", "LIN", "LKQ", "LLY", "LMT", "LNT", "LOW", "LRCX", "LULU", "LUV", "LVS", "LW", "LYB", "LYV", "MA", "MAA", "MAR", "MAS", "MCD", "MCHP", 
     "MCK", "MCO", "MDLZ", "MDT", "MET", "META", "MGM", "MHK", "MKC", "MKTX", "MLM", "MMC", "MMM", "MNST", "MO", "MOH", "MOS", "MPC", "MPWR", "MRK", 
@@ -752,7 +752,14 @@ def get_obv_divergence_status(ticker):
             return ("⚠️ GİZLİ ÇIKIŞ (Dağıtım)", "#dc2626", "Fiyat yükselirken OBV düşüyor. (Negatif Uyumsuzluk)")
             
         elif is_obv_strong:
-            return ("✅ Hacim Destekli Trend", "#15803d", "OBV, 20 günlük ortalamasının üzerinde (Sağlıklı).")
+            # DÜZELTME: Trende değil, BUGÜNKÜ mumun rengine bakıyoruz.
+            # 10 günlük trend yukarı olsa bile, bugün fiyat düşüyorsa "Yükseliş" deme.
+            p_yesterday = df['Close'].iloc[-2]
+            
+            if p_now < p_yesterday: # Bugün Fiyat Düşüyorsa (Kırmızı Mum)
+                return ("🛡️ Düşüşe Direnç (Hacimli)", "#d97706", "OBV trendi koruyor ama fiyat bugün baskı altında. (Tutunma Çabası)")
+            else:
+                return ("✅ Hacim Destekli Trend", "#15803d", "OBV ortalamanın üzerinde ve Fiyat Yükseliyor (Sağlıklı).")
             
         else:
             return ("Nötr / Zayıf", "#64748B", "Hacim akışı ortalamanın altında veya nötr.")
