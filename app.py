@@ -3694,6 +3694,207 @@ def get_advanced_levels_data(ticker):
         "nearest_res": resistance,
         "curr_price": curr_price
     }
+# ==============================================================================
+# 🧠 GRANDMASTER MATRİSİ V8.0 (MERCAN KORUMALI & 60 GÜN HAFIZALI)
+# ==============================================================================
+def calculate_grandmaster_score_single(symbol, df, bench_series, fast_mode=False):
+    """
+    V8.0: Patron'un 'Mercan' tespiti üzerine revize edildi.
+    1. ICT Referansı: Son 252 Gün (Yıllık) zirve/dip baz alınır.
+    2. Tazelik Testi: Son 60 Gün (3 Ay) içinde Discount gören hisseye ceza kesilmez.
+    """
+    try:
+        if df is None or len(df) < 100: return None
+        
+        # Son veriler
+        close = df['Close']
+        curr_price = float(close.iloc[-1])
+        curr_vol = float(df['Volume'].iloc[-1])
+        avg_vol = float(df['Volume'].rolling(20).mean().iloc[-1])
+        vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 0
+        
+        z_score = calculate_z_score_live(df)
+        is_squeezed = check_lazybear_squeeze(df)
+        
+        # --- PUANLAMA MOTORU ---
+        raw_score = 0
+        story_tags = [] 
+        penalty_log = []
+        ai_power = 0 
+
+        # 1. LORENTZIAN (AI)
+        if not fast_mode:
+            try:
+                lor_data = calculate_lorentzian_classification(symbol) 
+                if lor_data:
+                    votes = lor_data['votes']
+                    signal = lor_data['signal']
+                    if signal == "YÜKSELİŞ":
+                        if votes == 8: 
+                            raw_score += 40
+                            ai_power = 2
+                            story_tags.append("🧠 Lorentzian: 8/8")
+                        elif votes >= 7: 
+                            raw_score += 30
+                            ai_power = 1
+                            story_tags.append("🧠 Lorentzian: 7/8")
+                    elif signal == "DÜŞÜŞ":
+                        raw_score = -999 
+            except: pass
+
+        # 2. HACİM
+        if vol_ratio >= 2.5: 
+            raw_score += 20
+            story_tags.append("⛽ Hacim Artışı 2.5x")
+        elif vol_ratio >= 1.5: 
+            raw_score += 10
+            story_tags.append("⛽ Hacim Artışı 1.5x")
+        
+        # 3. SIKIŞMA
+        if is_squeezed:
+            raw_score += 15
+            story_tags.append("📐 Sıkışma Halinde")
+
+        # 4. ICT KONUMU (MACRO ANALİZ & 60 GÜN HAFIZA)
+        # ---------------------------------------------------------
+        # A. Yıllık Range Hesabı (Macro Bakış)
+        lookback_period = min(252, len(df))
+        macro_high = df['High'].tail(lookback_period).max()
+        macro_low = df['Low'].tail(lookback_period).min()
+        
+        if macro_high > macro_low:
+            range_diff = macro_high - macro_low
+            fib_50 = macro_low + (range_diff * 0.5)
+            fib_premium_start = macro_low + (range_diff * 0.75) # Çok pahalı bölge
+            
+            # B. Mevcut Konum
+            is_currently_premium = curr_price > fib_50
+            
+            # C. 60 Günlük Hafıza Testi (Patron Kuralı)
+            # Son 60 gün içinde fiyatın %50 seviyesinin altına inip inmediğine bakıyoruz.
+            recent_lookback = min(60, len(df))
+            recent_lows = df['Low'].tail(recent_lookback)
+            was_recently_discount = (recent_lows < fib_50).any()
+            
+            # --- KARAR MEKANİZMASI ---
+            if not is_currently_premium:
+                # Şu an zaten ucuzsa (Discount) ödül ver
+                raw_score += 15
+                story_tags.append("🦅 ICT: Ucuzluk Bölgesinde")
+            
+            else:
+                # Şu an PAHALI (Premium) görünüyor.
+                # Ama geçmiş 60 günde ucuzladıysa veya AI çok güçlüyse CEZA KESME.
+                if was_recently_discount or ai_power > 0:
+                    # Ceza yok. Bu hareket 'Mal Toplama' sonrası kırılımdır.
+                    pass
+                else:
+                    # Hem pahalı, hem son 3 aydır hiç ucuzlamamış, hem AI zayıf.
+                    # İşte bu gerçek pahalıdır. Vur kırbacı.
+                    raw_score -= 25
+                    penalty_log.append("ICT:Premium(Şişkin)")
+        # ---------------------------------------------------------
+
+        # 5. TEKNİK & LİDERLİK
+        if -2.5 <= z_score <= -1.5:
+            raw_score += 10
+            story_tags.append(f"💎 Dip (Z:{z_score:.2f})")
+        
+        # Alpha Hesabı
+        if bench_series is not None:
+             try:
+                stock_5d = (close.iloc[-1] / close.iloc[-6]) - 1
+                common_idx = close.index.intersection(bench_series.index)
+                if len(common_idx) > 5:
+                    b_aligned = bench_series.loc[common_idx]
+                    bench_5d = (b_aligned.iloc[-1] / b_aligned.iloc[-6]) - 1
+                    alpha_val = (stock_5d - bench_5d) * 100
+                    if alpha_val > 3.0:
+                        raw_score += 5
+                        story_tags.append(f"🚀 Alpha Lideri")
+             except: pass
+
+        # --- EMNİYET SİBOBU ---
+        if z_score > 3.0: 
+            raw_score = -100 
+            penalty_log.append("Aşırı Şişkin")
+
+        # RSI Kontrolü
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
+        
+        if rsi > 85: # Toleransı biraz artırdım (80->85) çünkü boğa piyasası
+            raw_score -= 10
+            penalty_log.append("RSI>85")
+            
+        story_text = " | ".join(story_tags[:3]) if story_tags else "İzleme Listesi"
+
+        return {
+            "Sembol": symbol,
+            "Skor": int(raw_score),
+            "Fiyat": curr_price,
+            "Hacim_Kat": round(vol_ratio, 1),
+            "Z_Score": round(z_score, 2),
+            "Hikaye": story_text,
+            "RS Gücü": round(alpha_val, 1),
+            "Uyarılar": ", ".join(penalty_log) if penalty_log else "Temiz"
+        }
+
+    except Exception: return None
+
+@st.cache_data(ttl=900)
+def scan_grandmaster_batch(asset_list):
+    """
+    GRANDMASTER TARAMA MOTORU (V6):
+    - 40 Puan altı hisseler kesinlikle listeye giremez.
+    """
+    # 1. TOPLU VERİ ÇEK (Hızlı)
+    data = get_batch_data_cached(asset_list, period="1y") 
+    if data.empty: return pd.DataFrame()
+    
+    cat = st.session_state.get('category', 'S&P 500')
+    bench_ticker = "XU100.IS" if "BIST" in cat else "^GSPC"
+    bench_df = get_safe_historical_data(bench_ticker, period="1y")
+    bench_series = bench_df['Close'] if bench_df is not None else None
+
+    candidates = []
+    stock_dfs = []
+    
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
+            else:
+                if len(asset_list) == 1: stock_dfs.append((symbol, data))
+        except: continue
+
+    # --- AŞAMA 1: HIZLI ÖN ELEME ---
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(calculate_grandmaster_score_single, sym, df, bench_series, True) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            # Baraj: Ön elemede 25 puanı geçmeli
+            if res and res['Skor'] >= 25: 
+                candidates.append(res['Sembol'])
+
+    # --- AŞAMA 2: DERİN ANALİZ (Lorentzian Devrede) ---
+    final_results = []
+    df_dict = {sym: df for sym, df in stock_dfs}
+
+    for sym in candidates:
+        if sym in df_dict:
+            final_res = calculate_grandmaster_score_single(sym, df_dict[sym], bench_series, False)
+            # FİNAL BARAJI: Patron Emri -> 40 Puanın altı listeye giremez.
+            if final_res and final_res['Skor'] >= 40:
+                final_results.append(final_res)
+    
+    if final_results:
+        df_final = pd.DataFrame(final_results)
+        return df_final.sort_values(by="Skor", ascending=False).head(10)
+        
+    return pd.DataFrame()
 
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
@@ -6082,6 +6283,50 @@ with col_right:
  
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
+    # ---------------------------------------------------------
+    # 🏆 GRANDMASTER TOP 10 (TEKNİK & NET)
+    # ---------------------------------------------------------
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🏆 MASTER TOP 10 (1-5 Günlük Yükseliş Adayları)</div>', unsafe_allow_html=True)
+    
+    if 'gm_results' not in st.session_state: st.session_state.gm_results = None
+
+    if st.button("🏆 PATLAMA ADAYLARINI LİSTELE", type="primary", use_container_width=True, key="btn_gm_scan"):
+        with st.spinner("Grandmaster Algoritması çalışıyor... (Lorentzian + ICT + Momentum)"):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.gm_results = scan_grandmaster_batch(current_assets)
+            
+    if st.session_state.gm_results is not None and not st.session_state.gm_results.empty:
+        
+        with st.container(height=450, border=True):
+            for i, row in st.session_state.gm_results.iterrows():
+                # Renk Skalası
+                sc = row['Skor']
+                if sc >= 80: s_col = "#15803d" 
+                elif sc >= 60: s_col = "#055d8a" 
+                else: s_col = "#d97706" 
+                
+                # Etiket Hazırlığı 
+                story = row.get('Hikaye', '-')
+                label = f"{i+1}. {row['Sembol']} | SKOR: {sc}"
+                
+                # Teknik Detay (Alt Gri Yazı)
+                # Alpha -7.9 gibi ise de burada görünür, karar senindir.
+                alpha_val = row.get('Alpha', 0) 
+                detail_txt = f"Vol: {row['Hacim_Kat']}x | Z-Score: {row['Z_Score']} | Alpha: %{alpha_val}"
+
+                # Buton
+                if st.button(label, key=f"gm_res_{i}", use_container_width=True, help=f"Uyarılar: {row['Uyarılar']}"):
+                    on_scan_result_click(row['Sembol'])
+                    st.rerun()
+                
+                # Hikaye (Teknik Terimler - Mavi)
+                st.markdown(f"<div style='font-size:0.75rem; color:#1e40af; margin-top:-10px; margin-bottom:2px; padding-left:10px; font-weight:700;'>{story}</div>", unsafe_allow_html=True)
+                # Gri Detay
+                st.markdown(f"<div style='font-size:0.75rem; color:#045c8b; margin-bottom:10px; padding-left:10px;'>{detail_txt}</div>", unsafe_allow_html=True)
+
+    elif st.session_state.gm_results is not None:
+        st.warning("Kriterlere uyan (Skor > 40) hisse bulunamadı.")
+
     # --- TEK TUŞLA DEV TARAMA BUTONU ---
     if st.button(f"🚀 {st.session_state.category} KAPSAMLI TARA (R1 + R2)", type="primary", use_container_width=True, key="master_scan_btn"):
         with st.spinner("Piyasa Röntgeni Çekiliyor... Hem Momentum (R1) Hem Trend (R2) taranıyor..."):
@@ -6091,8 +6336,7 @@ with col_right:
             st.session_state.scan_data = analyze_market_intelligence(current_assets)
             st.session_state.radar2_data = radar2_scan(current_assets)
             
-            st.rerun() # Sayfayı yenile ki aşağıdaki listeler dolsun
-
+            st.rerun() # Sayfayı yenile ki aşağıdaki listeler dolsun    
     # 5. Ortak Fırsatlar Başlığı
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar (Kesişim)</div>", unsafe_allow_html=True)
     
