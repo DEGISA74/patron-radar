@@ -2609,13 +2609,13 @@ def calculate_lorentzian_classification(ticker, k_neighbors=8):
 
     except Exception: return None
 
-def render_lorentzian_panel(ticker):
+def render_lorentzian_panel(ticker, just_text=False):
     data = calculate_lorentzian_classification(ticker)
     
     # 1. KİLİT: Veri hiç yoksa çık (Bunu koymazsan kod çöker)
-    if not data: return
+    if not data: return ""
     # 2. KİLİT: Veri var ama güven 7/8'den düşükse çık (Senin istediğin filtre)
-    if data['votes'] < 7: return 
+    if data['votes'] < 7: return ""
 
     display_prob = int(data['prob'])
     # İkon seçimi
@@ -2663,7 +2663,17 @@ def render_lorentzian_panel(ticker):
         </div>
     </div>
     """
-    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+    if not just_text:  # <-- EĞER SADECE METİN İSTENMİYORSA ÇİZ
+        st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+
+# 3. VE EN ÖNEMLİ DEĞİŞİKLİK: AI İÇİN METİN OLUŞTUR VE DÖNDÜR
+    ai_data_text = f"""
+LORENTZIAN MODELİ'NİN GEÇMİŞ 2000 GÜNE BAKARAK YAPTIĞI YARIN (1 GÜNLÜK) TAHMİNİ: 
+- Beklenti: {data['signal']}
+- Güven Oranı: %{display_prob}
+- Oylama (Benzer Senaryo): {data['votes']}/{data['total']}
+"""
+    return ai_data_text
 
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
@@ -4345,7 +4355,7 @@ def render_levels_card(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend: {display_ticker}</div>
+        <div class="info-header" style="color:#4c1d95;">📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</div>
         
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -4385,53 +4395,6 @@ def render_levels_card(ticker):
                 <div style="font-size:0.65rem; color:{gp_desc_color}; font-style:italic;">
                     {gp_desc_text}
                 </div>
-            </div>
-        </div>
-    </div>
-    """
-    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
-
-def render_lorentzian_panel(ticker):
-    data = calculate_lorentzian_classification(ticker)
-    
-    # Veri yoksa gösterme (Eski satır)
-    if not data: return
-    # Skor 7 altında kalsa da gösterme 
-    if data['votes'] < 7: return
-
-    display_prob = int(data['prob'])
-    # İkon seçimi
-    ml_icon = "🚀" if data['signal'] == "YÜKSELİŞ" and display_prob >= 75 else "🐻" if data['signal'] == "DÜŞÜŞ" and display_prob >= 75 else "🧠"
-    
-    bar_width = display_prob
-    signal_text = f"{data['signal']} BEKLENTİSİ"
-
-    # Başlık: GÜNLÜK
-    # Alt Bilgi: Vade: 1 Gün
-    html_content = f"""
-    <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
-        <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
-            <span>{ml_icon} Lorentzian (Yarın Beklentisi): {ticker.replace('.IS', '')}</span>
-            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:400; color:{data['color']};">%{display_prob} Güven</span>
-        </div>
-        
-        <div style="text-align:center; padding:8px 0;">
-            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
-                {signal_text}
-            </div>
-            <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
-                Son 10 Yılın verisini inceledi.<br>
-                Benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
-            </div>
-        </div>
-
-        <div style="margin-top:5px; margin-bottom:8px; padding:0 4px;">
-            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#64748B; margin-bottom:2px;">
-                <span>Oylama: <b>{data['votes']}/{data['total']}</b></span>
-                <span>Vade: <b>1 Gün (Yarın)</b></span>
-            </div>
-            <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
-                <div style="width:{bar_width}%; height:100%; background:{data['color']};"></div>
             </div>
         </div>
     </div>
@@ -4890,6 +4853,7 @@ if st.session_state.generate_prompt:
     mini_data = calculate_minervini_sepa(t) or {} 
     fund_data = get_fundamental_score(t) or {}
     master_score, pros, cons = calculate_master_score(t)
+    lorentzian_bilgisi = render_lorentzian_panel(t, just_text=True)
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
     if synth_data is not None and not synth_data.empty:
@@ -5314,7 +5278,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - VWAP DURUMU: {vwap_ai_txt}
 - RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f})
 (NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi öner.)
-
+*** 6. YARIN NE OLABİLİR ***
+{lorentzian_bilgisi} 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
@@ -6095,7 +6060,7 @@ with col_right:
     if found_any:
         st.markdown(f"""
         <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:0.95rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
+            <div style="font-size:1.0rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
             {scan_results_html}
         </div>
         """, unsafe_allow_html=True)
