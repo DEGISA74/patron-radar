@@ -139,7 +139,7 @@ st.markdown(f"""
     
     .edu-note {{
         font-size: 0.85rem;
-        color: #040561;
+        color: #64748B;
         font-style: italic;
         margin-top: 2px;
         margin-bottom: 6px;
@@ -2152,8 +2152,8 @@ def calculate_master_score(ticker):
     
     s_mom = (sent_raw * 0.6) + (rsi_val * 0.4)
     
-    if sent_raw >= 60: pros.append(f"Smart Money Sentiment Güçlü ({sent_raw}/100)")
-    elif sent_raw <= 40: cons.append(f"Smart Money Sentiment Zayıf ({sent_raw}/100)")
+    if sent_raw >= 60: pros.append(f"Genel Duygu Güçlü ({sent_raw}/100)")
+    elif sent_raw <= 40: cons.append(f"Genel Duygu Zayıf ({sent_raw}/100)")
     
     if rsi_val > 50: pros.append(f"RSI Pozitif Bölgede ({int(rsi_val)})")
     else: cons.append(f"RSI Negatif Bölgede ({int(rsi_val)})")
@@ -2609,13 +2609,13 @@ def calculate_lorentzian_classification(ticker, k_neighbors=8):
 
     except Exception: return None
 
-def render_lorentzian_panel(ticker, just_text=False):
+def render_lorentzian_panel(ticker):
     data = calculate_lorentzian_classification(ticker)
     
     # 1. KİLİT: Veri hiç yoksa çık (Bunu koymazsan kod çöker)
-    if not data: return ""
+    if not data: return
     # 2. KİLİT: Veri var ama güven 7/8'den düşükse çık (Senin istediğin filtre)
-    if data['votes'] < 7: return ""
+    if data['votes'] < 7: return 
 
     display_prob = int(data['prob'])
     # İkon seçimi
@@ -2663,17 +2663,7 @@ def render_lorentzian_panel(ticker, just_text=False):
         </div>
     </div>
     """
-    if not just_text:  # <-- EĞER SADECE METİN İSTENMİYORSA ÇİZ
-        st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
-
-# 3. VE EN ÖNEMLİ DEĞİŞİKLİK: AI İÇİN METİN OLUŞTUR VE DÖNDÜR
-    ai_data_text = f"""
-LORENTZIAN MODELİ'NİN GEÇMİŞ 2000 GÜNE BAKARAK YAPTIĞI YARIN (1 GÜNLÜK) TAHMİNİ: 
-- Beklenti: {data['signal']}
-- Güven Oranı: %{display_prob}
-- Oylama (Benzer Senaryo): {data['votes']}/{data['total']}
-"""
-    return ai_data_text
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
@@ -3519,43 +3509,6 @@ def calculate_price_action_dna(ticker):
         }
     except Exception: return None
 
-def render_golden_trio_banner(ict_data, sent_data):
-    if not ict_data or not sent_data: return
-
-    # --- 1. MANTIK KONTROLÜ ---
-    # GÜÇ: Sentiment puanı 70 üstü veya 'Lider/Artıda' ibaresi var mı?
-    rs_text = sent_data.get('rs', '').lower()
-    cond_power = "artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or sent_data['total'] >= 70
-    
-    # KONUM: ICT analizinde 'Discount' bölgesinde mi?
-    cond_loc = "DISCOUNT" in ict_data.get('zone', '')
-    
-    # ENERJİ: ICT analizinde 'Güçlü' enerji var mı?
-    cond_energy = "Güçlü" in ict_data.get('displacement', '')
-
-    # --- 2. FİLTRE (YA HEP YA HİÇ) ---
-    # Eğer 3 şartın hepsi sağlanmıyorsa, fonksiyonu burada bitir (Ekrana hiçbir şey basma).
-    if not (cond_power and cond_loc and cond_energy):
-        return
-
-    # --- 3. HTML ÇIKTISI (SADECE 3/3 İSE BURASI ÇALIŞIR) ---
-    bg = "linear-gradient(90deg, #ca8a04 0%, #eab308 100%)" # Altın Sarısı
-    border = "#a16207"
-    txt = "#ffffff"
-    
-    st.markdown(f"""<div style="background:{bg}; border:1px solid {border}; border-radius:8px; padding:12px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<div style="display:flex; align-items:center; gap:10px;">
-<span style="font-size:1.6rem;">🏆</span>
-<div style="line-height:1.2;">
-<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ALTIN FIRSAT (GOLDEN TRIO)</div>
-<div style="font-size:0.75rem; color:{txt}; opacity:0.95;">RS Gücü + Ucuz Konum + Güçlü Enerji (ICT): Mükemmel Uyum.</div>
-</div>
-</div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:{txt}; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">3/3</div>
-</div>
-</div>""", unsafe_allow_html=True)
-    
 # --- SUPERTREND VE FIBONACCI HESAPLAYICI ---
 def calculate_supertrend(df, period=10, multiplier=3.0):
     """
@@ -3731,310 +3684,76 @@ def get_advanced_levels_data(ticker):
         "nearest_res": resistance,
         "curr_price": curr_price
     }
-# ==============================================================================
-# 🧠 GRANDMASTER MATRİSİ V8.0 (MERCAN KORUMALI & 60 GÜN HAFIZALI)
-# ==============================================================================
-def calculate_grandmaster_score_single(symbol, df, bench_series, fast_mode=False):
-    """
-    V8.0: Patron'un 'Mercan' tespiti üzerine revize edildi.
-    1. ICT Referansı: Son 252 Gün (Yıllık) zirve/dip baz alınır.
-    2. Tazelik Testi: Son 60 Gün (3 Ay) içinde Discount gören hisseye ceza kesilmez.
-    """
-    try:
-        if df is None or len(df) < 100: return None
-        
-        # Son veriler
-        close = df['Close']
-        curr_price = float(close.iloc[-1])
-        curr_vol = float(df['Volume'].iloc[-1])
-        avg_vol = float(df['Volume'].rolling(20).mean().iloc[-1])
-        vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 0
-        
-        z_score = calculate_z_score_live(df)
-        is_squeezed = check_lazybear_squeeze(df)
-        
-        # --- PUANLAMA MOTORU ---
-        raw_score = 0
-        story_tags = [] 
-        penalty_log = []
-        ai_power = 0 
-
-        # 1. LORENTZIAN (AI)
-        if not fast_mode:
-            try:
-                lor_data = calculate_lorentzian_classification(symbol) 
-                if lor_data:
-                    votes = lor_data['votes']
-                    signal = lor_data['signal']
-                    if signal == "YÜKSELİŞ":
-                        if votes == 8: 
-                            raw_score += 40
-                            ai_power = 2
-                            story_tags.append("🧠 Lorentzian: 8/8")
-                        elif votes >= 7: 
-                            raw_score += 30
-                            ai_power = 1
-                            story_tags.append("🧠 Lorentzian: 7/8")
-                    elif signal == "DÜŞÜŞ":
-                        raw_score = -999 
-            except: pass
-
-        # 2. HACİM
-        if vol_ratio >= 2.5: 
-            raw_score += 20
-            story_tags.append("⛽ Hacim Artışı 2.5x")
-        elif vol_ratio >= 1.5: 
-            raw_score += 10
-            story_tags.append("⛽ Hacim Artışı 1.5x")
-        
-        # 3. SIKIŞMA
-        if is_squeezed:
-            raw_score += 15
-            story_tags.append("📐 Sıkışma Halinde")
-
-        # 4. ICT KONUMU (MACRO ANALİZ & 60 GÜN HAFIZA)
-        # ---------------------------------------------------------
-        # A. Yıllık Range Hesabı (Macro Bakış)
-        lookback_period = min(252, len(df))
-        macro_high = df['High'].tail(lookback_period).max()
-        macro_low = df['Low'].tail(lookback_period).min()
-        
-        if macro_high > macro_low:
-            range_diff = macro_high - macro_low
-            fib_50 = macro_low + (range_diff * 0.5)
-            fib_premium_start = macro_low + (range_diff * 0.75) # Çok pahalı bölge
-            
-            # B. Mevcut Konum
-            is_currently_premium = curr_price > fib_50
-            
-            # C. 60 Günlük Hafıza Testi (Patron Kuralı)
-            # Son 60 gün içinde fiyatın %50 seviyesinin altına inip inmediğine bakıyoruz.
-            recent_lookback = min(60, len(df))
-            recent_lows = df['Low'].tail(recent_lookback)
-            was_recently_discount = (recent_lows < fib_50).any()
-            
-            # --- KARAR MEKANİZMASI ---
-            if not is_currently_premium:
-                # Şu an zaten ucuzsa (Discount) ödül ver
-                raw_score += 15
-                story_tags.append("🦅 ICT: Ucuzluk Bölgesinde")
-            
-            else:
-                # Şu an PAHALI (Premium) görünüyor.
-                # Ama geçmiş 60 günde ucuzladıysa veya AI çok güçlüyse CEZA KESME.
-                if was_recently_discount or ai_power > 0:
-                    # Ceza yok. Bu hareket 'Mal Toplama' sonrası kırılımdır.
-                    pass
-                else:
-                    # Hem pahalı, hem son 3 aydır hiç ucuzlamamış, hem AI zayıf.
-                    # İşte bu gerçek pahalıdır. Vur kırbacı.
-                    raw_score -= 25
-                    penalty_log.append("ICT:Premium(Şişkin)")
-        # ---------------------------------------------------------
-
-        # 5. TEKNİK & LİDERLİK
-        if -2.5 <= z_score <= -1.5:
-            raw_score += 10
-            story_tags.append(f"💎 Dip (Z:{z_score:.2f})")
-        
-        # Alpha Hesabı
-        if bench_series is not None:
-             try:
-                stock_5d = (close.iloc[-1] / close.iloc[-6]) - 1
-                common_idx = close.index.intersection(bench_series.index)
-                if len(common_idx) > 5:
-                    b_aligned = bench_series.loc[common_idx]
-                    bench_5d = (b_aligned.iloc[-1] / b_aligned.iloc[-6]) - 1
-                    alpha_val = (stock_5d - bench_5d) * 100
-                    if alpha_val > 3.0:
-                        raw_score += 5
-                        story_tags.append(f"🚀 Alpha Lideri")
-             except: pass
-
-        # --- EMNİYET SİBOBU ---
-        if z_score > 3.0: 
-            raw_score = -100 
-            penalty_log.append("Aşırı Şişkin")
-
-        # RSI Kontrolü
-        delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
-        
-        if rsi > 85: # Toleransı biraz artırdım (80->85) çünkü boğa piyasası
-            raw_score -= 10
-            penalty_log.append("RSI>85")
-            
-        story_text = " | ".join(story_tags[:3]) if story_tags else "İzleme Listesi"
-
-        return {
-            "Sembol": symbol,
-            "Skor": int(raw_score),
-            "Fiyat": curr_price,
-            "Hacim_Kat": round(vol_ratio, 1),
-            "Z_Score": round(z_score, 2),
-            "Hikaye": story_text,
-            "RS Gücü": round(alpha_val, 1),
-            "Uyarılar": ", ".join(penalty_log) if penalty_log else "Temiz"
-        }
-
-    except Exception: return None
-
-@st.cache_data(ttl=900)
-def scan_grandmaster_batch(asset_list):
-    """
-    GRANDMASTER TARAMA MOTORU (V6):
-    - 40 Puan altı hisseler kesinlikle listeye giremez.
-    """
-    # 1. TOPLU VERİ ÇEK (Hızlı)
-    data = get_batch_data_cached(asset_list, period="1y") 
-    if data.empty: return pd.DataFrame()
-    
-    cat = st.session_state.get('category', 'S&P 500')
-    bench_ticker = "XU100.IS" if "BIST" in cat else "^GSPC"
-    bench_df = get_safe_historical_data(bench_ticker, period="1y")
-    bench_series = bench_df['Close'] if bench_df is not None else None
-
-    candidates = []
-    stock_dfs = []
-    
-    for symbol in asset_list:
-        try:
-            if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]: stock_dfs.append((symbol, data[symbol]))
-            else:
-                if len(asset_list) == 1: stock_dfs.append((symbol, data))
-        except: continue
-
-    # --- AŞAMA 1: HIZLI ÖN ELEME ---
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(calculate_grandmaster_score_single, sym, df, bench_series, True) for sym, df in stock_dfs]
-        for future in concurrent.futures.as_completed(futures):
-            res = future.result()
-            # Baraj: Ön elemede 25 puanı geçmeli
-            if res and res['Skor'] >= 25: 
-                candidates.append(res['Sembol'])
-
-    # --- AŞAMA 2: DERİN ANALİZ (Lorentzian Devrede) ---
-    final_results = []
-    df_dict = {sym: df for sym, df in stock_dfs}
-
-    for sym in candidates:
-        if sym in df_dict:
-            final_res = calculate_grandmaster_score_single(sym, df_dict[sym], bench_series, False)
-            # FİNAL BARAJI: Patron Emri -> 40 Puanın altı listeye giremez.
-            if final_res and final_res['Skor'] >= 40:
-                final_results.append(final_res)
-    
-    if final_results:
-        df_final = pd.DataFrame(final_results)
-        return df_final.sort_values(by="Skor", ascending=False).head(10)
-        
-    return pd.DataFrame()
 
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
 # ==============================================================================
-def render_gauge_chart(score):
-    """Ana Skor için Hız Göstergesi (Kompakt & Renkli & Lacivert Yazılı)"""
-    score = int(score)
-    
-    # Renk Belirleme
-    color = "#b91c1c" 
-    if score >= 50: color = "#d97706" 
-    if score >= 70: color = "#16a34a" 
-    if score >= 85: color = "#15803d" 
-    
-    source = pd.DataFrame({"category": ["Skor", "Kalan"], "value": [score, 100-score]})
-    
-    base = alt.Chart(source).encode(
-        theta=alt.Theta("value", stack=True)
-    )
-    
-    # Yarıçapları biraz kıstım (Sığdırmak için)
-    pie = base.mark_arc(outerRadius=55, innerRadius=40).encode(
-        color=alt.Color("category", scale=alt.Scale(domain=["Skor", "Kalan"], range=[color, "#e2e8f0"]), legend=None),
-        order=alt.Order("category", sort="descending"),
-        tooltip=["value"]
-    )
-    
-    # Ortadaki Sayı
-    text = base.mark_text(radius=0, size=28, color=color, fontWeight="bold", dy=-5).encode(
-        text=alt.value(f"{score}")
-    )
-    
-    # Altındaki Etiket (KOYU LACİVERT ve BÜYÜK)
-    label = base.mark_text(radius=0, size=12, color="#1e3a8a", fontWeight="bold", dy=20).encode(
-        text=alt.value("ANA SKOR")
-    )
-    
-    # Yüksekliği 130px'e çektim (Daha kompakt)
-    chart = (pie + text + label).properties(height=130) 
-    
-    st.altair_chart(chart, use_container_width=True)
 
 def render_sentiment_card(sent):
     if not sent: return
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     
     score = sent['total']
-    # Renk ve İkon Belirleme
-    if score >= 70: 
-        color = "#16a34a"; icon = "🔥"; status = "GÜÇLÜ BOĞA"; bg_tone = "#f0fdf4"; border_tone = "#bbf7d0"
-    elif score >= 50: 
-        color = "#d97706"; icon = "↔️"; status = "NÖTR / POZİTİF"; bg_tone = "#fffbeb"; border_tone = "#fde68a"
-    elif score >= 30: 
-        color = "#b91c1c"; icon = "🐻"; status = "ZAYIF / AYI"; bg_tone = "#fef2f2"; border_tone = "#fecaca"
-    else: 
-        color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"; bg_tone = "#fef2f2"; border_tone = "#fecaca"
+    if score >= 70: color = "#16a34a"; icon = "🔥"; status = "GÜÇLÜ BOĞA"
+    elif score >= 50: color = "#d97706"; icon = "↔️"; status = "NÖTR / POZİTİF"
+    elif score >= 30: color = "#b91c1c"; icon = "🐻"; status = "ZAYIF / AYI"
+    else: color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"
     
-    # Etiketler
+    # 1. Başlık Puan Etiketi (25p mi 20p mi?)
     p_label = '25p' if sent.get('is_index', False) else '20p'
+    
+    # 2. RS Kutusu Başlığı (Devre Dışı mı 15p mi?)
     rs_label = 'Devre Dışı' if sent.get('is_index', False) else '15p'
 
-    # --- KART OLUŞTURUCU (SOLA YASLI - HATA VERMEZ) ---
-    def make_card(num, title, score_lbl, val, desc, emo):
-        # DİKKAT: Aşağıdaki HTML kodları bilerek en sola yaslanmıştır.
-        return f"""<div style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-<div style="background: #f8fafc; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-<div style="display:flex; align-items:center; gap:6px;">
-<span style="background:{color}; color:white; width:20px; height:20px; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:0.7rem; font-weight:bold;">{num}</span>
-<span style="font-weight: 700; color: #334155; font-size: 0.8rem;">{title} <span style="color:#94a3b8; font-weight:400; font-size:0.7rem;">({score_lbl})</span></span>
-</div>
-<div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 700; color: #0f172a;">{val}</div>
-</div>
-<div style="padding: 10px; font-size: 0.85rem; color: #1e3a8a; line-height: 1.4; background: #ffffff;">
-<span style="color:{color}; font-size:1rem; float:left; margin-right:6px; line-height:1;">{emo}</span>
-{desc}
-</div>
-</div>"""
+    html_content = f"""
+    <div class="info-card">
+        <div class="info-header">🎭 Smart Money Sentiment: {display_ticker}</div>
+        
+        <div class="info-row" style="border-bottom: 2px solid {color}; padding-bottom:6px; margin-bottom:8px; background-color:{color}10; border-radius:4px; padding:6px;">
+            <div style="font-weight:500; color:{color}; font-size:1rem;">{score}/100 {icon} {status}</div>
+        </div>
+        
+        <div style="font-family:'Arial', sans-serif; font-size:0.8rem; color:#1e3a8a; margin-bottom:8px; text-align:center; letter-spacing:1px;">{sent['bar']}</div>
+        
+        <div class="info-row" style="background:#f0f9ff; padding:2px; border-radius:4px;">
+            <div class="label-long" style="width:120px; color:#0369a1;">1. YAPI ({p_label}):</div>
+            <div class="info-val" style="font-weight:700;">{sent['str']}</div>
+        </div>
+        <div class="edu-note">Market Yapısı- Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)</div>
 
-    # --- KARTLARI OLUŞTUR ---
-    cards_html = ""
-    cards_html += make_card("1", "YAPI", p_label, sent['str'], "Market Yapısı- Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)", "🏗️")
-    cards_html += make_card("2", "TREND", p_label, sent['tr'], "Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4)", "📈")
-    cards_html += make_card("3", "HACİM", p_label, sent['vol'], "Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8)", "🌊")
-    cards_html += make_card("4", "MOMENTUM", "15p", sent['mom'], "RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5)", "🚀")
-    cards_html += make_card("5", "SIKIŞMA", "10p", sent['vola'], "Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)", "📐")
-    cards_html += make_card("6", "GÜÇ", rs_label, sent['rs'], "Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)", "💪")
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">2. TREND ({p_label}):</div>
+            <div class="info-val">{sent['tr']}</div>
+        </div>
+        <div class="edu-note">Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4)</div>
+        
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">3. HACİM ({p_label}):</div>
+            <div class="info-val">{sent['vol']}</div>
+        </div>
+        <div class="edu-note">Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8)</div>
 
-    # --- ANA HTML (SOLA YASLI) ---
-    final_html = f"""<div class="info-card" style="border-top: 3px solid {color}; background-color: #f8fafc; padding-bottom: 2px;">
-<div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-<span>🐦 Smart Money Sentiment: {display_ticker}</span>
-<span style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.1rem; color:{color}; background:{color}15; padding:2px 8px; border-radius:6px;">{score}/100</span>
-</div>
-<div style="background:{bg_tone}; border:1px solid {border_tone}; border-radius:6px; padding:8px; text-align:center; margin-bottom:12px;">
-<div style="font-weight:800; color:{color}; font-size:0.9rem; letter-spacing:0.5px;">{icon} {status}</div>
-<div style="font-size:0.65rem; color:#64748b; margin-top:2px; font-family: monospace;">{sent['bar']}</div>
-</div>
-<div style="display:flex; flex-direction:column; gap:2px;">
-{cards_html}
-</div>
-</div>"""
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">4. MOMENTUM (15p):</div>
+            <div class="info-val">{sent['mom']}</div>
+        </div>
+        <div class="edu-note">RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5)</div>
+        
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">5. SIKIŞMA (10p):</div>
+            <div class="info-val">{sent['vola']}</div>
+        </div>
+        <div class="edu-note">Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)</div>
+
+        <div class="info-row">
+            <div class="label-long" style="width:120px;">6. GÜÇ ({rs_label}):</div>
+            <div class="info-val">{sent['rs']}</div>
+        </div>
+        <div class="edu-note">Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)</div>
+    </div>
+    """.replace("\n", "")
     
-    st.markdown(final_html, unsafe_allow_html=True)
+    st.markdown(html_content, unsafe_allow_html=True)
 
 def render_deep_xray_card(xray):
     if not xray: return
@@ -4202,27 +3921,8 @@ def render_detail_card_advanced(ticker):
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
-    # --- YENİ EKLENECEK KISIM (BAŞLIYOR) ---
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-    
-    # Fiyatı çekiyoruz (Başlığın sağına koymak için)
-    info = fetch_stock_info(st.session_state.ticker)
-    current_price = info.get('price', 0) if info else 0
-    
-    header_color = "#3b82f6" # Mavi Başlık Rengi
-
-    # Yeni Profesyonel Başlık
-    st.markdown(f"""
-    <div class="info-card" style="border-top: 3px solid {header_color}; margin-bottom:15px;">
-        <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:1.1rem;">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</span>
-            <span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; background:#eff6ff; padding:2px 8px; border-radius:4px; font-size:1rem;">
-                {current_price:.2f}
-            </span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    # --- YENİ EKLENECEK KISIM (BİTTİ) ---
+    st.markdown(f"""<div class="info-card" style="margin-bottom:10px;"><div class="info-header">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</div></div>""", unsafe_allow_html=True)
     c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
     with c1:
         base = alt.Chart(data).encode(x=x_axis)
@@ -4436,145 +4136,167 @@ def render_ict_deep_panel(ticker):
         st.warning(f"ICT Analiz Bekleniyor... ({data.get('msg', 'Veri Yok')})")
         return
     
-    # ==============================================================================
-    # 1. ORİJİNAL İÇERİK MANTIĞI (ORİJİNAL METİNLER KORUNDU)
-    # ==============================================================================
-    
-    # Yapı Başlığı ve Açıklaması
-    struct_title = "MARKET YAPISI"
+    # --- İÇERİK METİNLERİ (HİÇBİRİ DEĞİŞMEDİ) ---
     struct_desc = "Piyasa kararsız."
-    
     if "MSS" in data['structure']:
-        if "🐂" in data['structure']: 
-            struct_title = "TREND DÖNÜŞÜ (BULLISH MSS)"
-            struct_desc = "Fiyat, düşüş yapısını bozan son önemli tepeyi aştı. Ayı piyasası bitmiş, Boğa dönemi başlıyor olabilir!"
-        else: 
-            struct_title = "TREND DÖNÜŞÜ (BEARISH MSS)"
-            struct_desc = "Fiyat, yükseliş yapısını tutan son önemli dibi kırdı. Boğa piyasası bitmiş, Ayı dönemi başlıyor olabilir!"
-    elif "BOS (Yükseliş" in data['structure']: 
-        struct_title = "YÜKSELİŞ TRENDİ (BULLISH BOS)"
-        struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
-    elif "BOS (Düşüş" in data['structure']: 
-        struct_title = "DÜŞÜŞ TRENDİ (BEARISH BOS)"
-        struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
-    elif "Internal" in data['structure']: 
-        struct_title = "INTERNAL RANGE (Düşüş/Düzeltme)" if "bearish" in data['bias'] else "INTERNAL RANGE (Yükseliş/Tepki)"
-        struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
+        if "🐂" in data['structure']:
+            struct_desc = "🚨 TREND DÖNÜŞÜ (BULLISH MSS): Fiyat, düşüş yapısını bozan son önemli tepeyi aştı. Ayı piyasası bitmiş, Boğa dönemi başlıyor olabilir!"
+        else:
+            struct_desc = "🚨 TREND DÖNÜŞÜ (BEARISH MSS): Fiyat, yükseliş yapısını tutan son önemli dibi kırdı. Boğa piyasası bitmiş, Ayı dönemi başlıyor olabilir!"
+    elif "BOS (Yükseliş" in data['structure']: struct_desc = "Boğalar kontrolü elinde tutuyor. Eski tepeler aşıldı, bu da yükseliş iştahının devam ettiğini gösterir. Geri çekilmeler alım fırsatı olabilir."
+    elif "BOS (Düşüş" in data['structure']: struct_desc = "Ayılar piyasaya hakim. Eski dipler kırıldı, düşüş trendi devam ediyor. Yükselişler satış fırsatı olarak görülebilir."
+    elif "Internal" in data['structure']: struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
 
-    # Enerji Açıklaması
-    energy_title = "ENERJİ DURUMU"
-    energy_desc = "Zayıf (Hacimsiz Hareket)\nMum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
-    if "Güçlü" in data['displacement']: 
-        energy_desc = "Güçlü (Displacement Var)\nFiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
+    energy_desc = "Mum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
+    if "Güçlü" in data['displacement']: energy_desc = "Fiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
 
-    # MT (Denge) Başlığı
-    mt_title = "Kritik Denge Seviyesi"
-    if "bearish" in data['bias']: mt_title = "Satıcılar Baskın"
-    elif "bullish" in data['bias']: mt_title = "Alıcılar Baskın"
-
-    # Konum Açıklaması
     zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu seviyelerden alım yapmayı tercih eder."
-    if "PREMIUM" in data['zone']: 
-        zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
+    if "PREMIUM" in data['zone']: zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
 
-    # FVG Açıklaması
-    fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu tespit edilemedi."
-    if "Destek" in data['fvg_txt']: fvg_desc = "Fiyatın bu boşluğu doldurup destek alması beklenebilir."
-    elif "Direnç" in data['fvg_txt']: fvg_desc = "Fiyatın bu boşluğu doldurup direnç görmesi beklenebilir."
+    fvg_desc = "Dengesizlik Boşluğu: Yani, Fiyatın denge bulmak için bu aralığı doldurması (rebalance) beklenir. Mıknatıs etkisi yapar."
+    if "Yok" in data['fvg_txt']: fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu tespit edilemedi."
 
-    # OB Açıklaması
-    ob_desc = "Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir. Eğer bu bölge fiyatı yeni bir tepeye (BOS) götürdüyse 'Kaliteli'dir. Götürmediyse zayıftır."
+    ob_desc = "Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir: Eğer bu bölge fiyatı yeni bir tepeye (BOS) götürdüyse 'Kaliteli'dir. Götürmediyse zayıftır."
     
-    # Likidite Açıklaması
     liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
 
-    # --- RENK PALETİ ---
-    main_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#7c3aed"
-    bg_light = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f5f3ff"
+    # --- RENK MANTIĞI (GÜNCELLENDİ: Ana Skor Font ve Renklerine Uyum) ---
+    # Yeşil: #166534, Kırmızı: #991b1b, Mor (Nötr): #6b21a8
     
+    # 1. Bias Rengi
+    if "bullish" in data['bias']: 
+        bias_header_col = "#166534" # Koyu Yeşil
+        bias_bg = "#f0fdf4"
+        bias_border = "#bbf7d0"
+    elif "bearish" in data['bias']: 
+        bias_header_col = "#991b1b" # Koyu Kırmızı
+        bias_bg = "#fef2f2"
+        bias_border = "#fecaca"
+    else: 
+        bias_header_col = "#6b21a8" # Mor
+        bias_bg = "#faf5ff"
+        bias_border = "#e9d5ff"
+
+    # 2. Mean Threshold Rengi
+    mt_html = "" 
+    mt_val = data.get('mean_threshold', 0)
+    curr = data.get('curr_price', 0)
+    
+    if mt_val > 0 and curr > 0:
+        diff_pct = (curr - mt_val) / mt_val
+        if abs(diff_pct) < 0.003: 
+            mt_status = "⚠️ KARAR ANI (BIÇAK SIRTI)"
+            mt_desc = "Fiyat, yapının tam %50 denge noktasını test ediyor. Kırılım yönü beklenmeli."
+            mt_header_col = "#d97706"; mt_bg = "#fffbeb"; mt_border = "#fcd34d"
+        elif diff_pct > 0:
+            mt_status = "🛡️ Alıcılar Korumada" if "bullish" in data['bias'] else "Fiyat Dengenin Üzerinde"
+            mt_desc = "Fiyat kritik orta noktanın üzerinde tutunuyor. Yapı korunuyor."
+            mt_header_col = "#166534"; mt_bg = "#f0fdf4"; mt_border = "#bbf7d0"
+        else:
+            mt_status = "🛡️ Satıcılar Baskın" if "bearish" in data['bias'] else "💀 Savunma Çöktü"
+            mt_desc = f"Fiyat kritik orta noktanın altına sarktı. Yapı bozulmuş olabilir. Fiyat {mt_val:.2f} altında işlem gördüğü sürece 'Premium' (Pahalı) bölgeden uzaklaşmış, 'Discount' (Ucuzluk) bölgesine olan yolculuğunu onaylamıştır. {mt_val:.2f} üzerine çıkılmadıkça, her yükseliş ICT mantığına göre bir satış fırsatıdır."
+            mt_header_col = "#991b1b"; mt_bg = "#fef2f2"; mt_border = "#fecaca"
+            
+        # MT HTML (Sola Yaslı - Hatasız)
+        mt_html = f"""
+<div style="background:{mt_bg}; padding:8px; border-radius:6px; border:1px solid {mt_border}; margin-bottom:8px;">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+<span style="font-weight:700; color:{mt_header_col}; font-size:0.75rem;">{mt_status}</span>
+<span style="font-family:'JetBrains Mono'; font-size:0.75rem; font-weight:700; color:#0f172a;">
+<span style="font-family:'Segoe UI'; font-weight:400; font-size:0.65rem; color:#64748b; margin-right:4px;">Aktif Order Block Orta Noktası:</span>{mt_val:.2f}
+</span>
+</div>
+<div class="edu-note" style="margin-bottom:0;">{mt_desc}</div>
+</div>
+"""
+    
+    # 3. Sağ Sütun Renkleri (Otomatik Belirleme)
+    # Konum Rengi
+    if "DISCOUNT" in data['zone']: zone_col = "#166534" # Yeşil
+    elif "PREMIUM" in data['zone']: zone_col = "#991b1b" # Kırmızı
+    else: zone_col = "#6b21a8" # Mor
+
+    # FVG Rengi
+    if "Yok" in data['fvg_txt']: fvg_col = "#6b21a8" # Mor
+    elif "Destek" in data['fvg_txt']: fvg_col = "#166534" # Yeşil
+    else: fvg_col = "#991b1b" # Kırmızı
+
+    # OB Rengi
+    if "Yok" in data['ob_txt']: ob_col = "#6b21a8" # Mor
+    else: ob_col = "#0369a1" # Mavi (Aktif OB genelde nötr/mavi kalabilir veya Mor yapabiliriz, Mor seçtim)
+
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
     info = fetch_stock_info(ticker)
     current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
-
-    # ==============================================================================
-    # 2. GÖRSEL TASARIM (MAKYAJ) - HTML KODLARI SOLA YASLANDI
-    # ==============================================================================
+    # --- HTML ÇIKTISI ---
     
-    # BAŞLIK
-    st.markdown(f"""
-<div class="info-card" style="border-top: 3px solid {main_color}; margin-bottom:15px;">
-<div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
-<span style="font-size:1.1rem;">🧠 ICT Smart Money Analizi: {display_ticker}</span>
-<span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; font-size:1.1rem;">{current_price_str}</span>
-</div>
-</div>
-""", unsafe_allow_html=True)
+    # 1. ANA BAŞLIK
+    st.markdown(f"""<div class="info-card" style="margin-bottom:8px;"><div class="info-header">🧠 ICT Smart Money Analizi: {display_ticker} <span style="color:#64748B; font-weight:400; font-size:0.8rem;">({current_price_str})</span></div>""", unsafe_allow_html=True)
+    # 2. SÜTUNLARI OLUŞTUR
+    col1, col2 = st.columns(2)
 
-    c1, c2 = st.columns([1.3, 1])
+    # SOL SÜTUN İÇERİĞİ (Structure, Energy, Mean Threshold ve ARTIK BOTTOM LINE BURADA)
+    with col1:
+        # Enerji Rengi
+        disp_col = "#166534" if "Güçlü" in data['displacement'] else "#6b21a8"
 
-    # --- SOL SÜTUN: ANALİZ BLOKLARI ---
-    with c1:
-        # Market Yapısı Kutusu
-        st.markdown(f"""
-<div style="border:1px solid {main_color}40; background:{bg_light}; border-radius:6px; padding:10px; margin-bottom:10px;">
-<div style="font-weight:800; color:{main_color}; font-size:0.9rem; margin-bottom:5px;">{struct_title}</div>
-<div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{struct_desc}</div>
+        html_left = f"""
+<div style="background:{bias_bg}; padding:8px; border-radius:6px; border:1px solid {bias_border}; margin-bottom:8px;">
+<div style="font-weight:700; color:{bias_header_col}; font-size:0.75rem; margin-bottom:4px; border-bottom:1px solid {bias_border}; padding-bottom:2px;">{data['structure']}</div>
+<div class="edu-note" style="margin-bottom:8px;">{struct_desc}</div>
+<div style="font-weight:700; color:{disp_col}; font-size:0.75rem; margin-bottom:2px;">ENERJİ DURUMU</div>
+<div style="font-size:0.75rem; font-weight:600; color:#334155; margin-bottom:4px;">{data['displacement']}</div>
+<div class="edu-note">{energy_desc}</div>
 </div>
-""", unsafe_allow_html=True)
+{mt_html}
+"""
+        # 👇 YENİ DÜZENLEME: BOTTOM LINE (SONUÇ) ARTIK SOL SÜTUNDA VE DENGELİ 👇
+        bottom_line_txt = data.get("bottom_line", "-")
+        if bottom_line_txt != "-":
+            html_left += f"""
+<div style="margin-top:8px; background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0;">
+<div style="display:flex; align-items:center; margin-bottom:4px;">
+<span style="font-weight:700; color:#0369a1; font-size:0.75rem;">🏁 THE BOTTOM LINE (SONUÇ)</span>
+</div>
+<div class="edu-note" style="margin-bottom:0; color:#0f172a;">{bottom_line_txt}</div>
+</div>
+"""
+        # 👆 EKLEME SONU 👆
 
-        # Enerji Kutusu
-        st.markdown(f"""
-<div style="border:1px solid #e2e8f0; background:#f8fafc; border-radius:6px; padding:10px; margin-bottom:10px;">
-<div style="font-weight:800; color:#7c3aed; font-size:0.9rem; margin-bottom:5px;">{energy_title}</div>
-<div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{energy_desc}</div>
-</div>
-""", unsafe_allow_html=True)
+        st.markdown(html_left, unsafe_allow_html=True)
 
-        # MT (Denge) Şeridi
-        st.markdown(f"""
-<div style="background:#fff7ed; border-left:4px solid #f97316; padding:8px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
-<div>
-<div style="font-weight:800; color:#c2410c; font-size:0.9rem;">🛡️ {mt_title}</div>
-<div style="font-size:0.7rem; color:#9a3412;">Fiyat kritik orta noktanın altına sarktı/üstüne çıktı. Yapı bozulmuş olabilir.</div>
-</div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.0rem; color:#c2410c;">{data['mean_threshold']:.2f}</div>
-</div>
-""", unsafe_allow_html=True)
+    # SAĞ SÜTUN İÇERİĞİ (KOMPLE TEK BİR GRİ KUTU İÇİNDE - TEMİZLENDİ)
+    with col2:
+        html_right = f"""
+<div style="background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; height:100%;">
+<div style="font-size:0.75rem; font-weight:700; color:#6b21a8; border-bottom:1px solid #e2e8f0; margin-bottom:6px; padding-bottom:4px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
 
-        # The Bottom Line (Sonuç)
-        st.markdown(f"""
-<div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:10px;">
-<div style="font-weight:800; color:#1e40af; font-size:0.9rem; margin-bottom:5px;">🖥️ THE BOTTOM LINE (SONUÇ)</div>
-<div style="font-size:1.0rem; color:#1e3a8a; font-style:italic; line-height:1.4;">"{data.get('bottom_line', '-')}"</div>
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{zone_col};">KONUM: {data['zone']}</div>
+<div class="edu-note">{zone_desc}</div>
 </div>
-""", unsafe_allow_html=True)
 
-    # --- SAĞ SÜTUN: REFERANSLAR (GİRİŞ/ÇIKIŞ) ---
-    with c2:
-        st.markdown(f"""
-<div style="border:1px solid #e2e8f0; background:white; border-radius:8px; padding:10px; height:100%;">
-<div style="font-weight:800; color:#be185d; font-size:0.85rem; border-bottom:1px solid #e2e8f0; padding-bottom:5px; margin-bottom:10px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
-<div style="margin-bottom:12px;">
-<div style="font-weight:700; color:#9f1239; font-size:0.85rem;">KONUM: <span style="color:#0f172a;">{data['zone']}</span></div>
-<div style="font-size:0.85rem; color:#475569; line-height:1.3;">{zone_desc}</div>
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{fvg_col};">GAP (FVG): {data['fvg_txt']}</div>
+<div class="edu-note">{fvg_desc}</div>
 </div>
-<div style="margin-bottom:12px;">
-<div style="font-weight:700; color:#7e22ce; font-size:0.85rem;">GAP (FVG): <span style="color:#0f172a;">{data['fvg_txt']}</span></div>
-<div style="font-size:0.85rem; color:#475569; line-height:1.3;">{fvg_desc}</div>
+
+<div style="margin-bottom:8px;">
+<div style="font-size:0.75rem; font-weight:700; color:{ob_col};">AKTİF OB: {data['ob_txt']}</div>
+<div class="edu-note">{ob_desc}</div>
 </div>
-<div style="margin-bottom:12px;">
-<div style="font-weight:700; color:#0369a1; font-size:0.85rem;">AKTİF OB: <span style="color:#0f172a;">{data['ob_txt']}</span></div>
-<div style="font-size:0.85rem; color:#475569; line-height:1.3;">{ob_desc}</div>
+
+<div style="background:#ffffff; padding:6px; border-radius:4px; border:1px dashed #cbd5e1; margin-top:4px;">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<span style="font-size:0.75rem; font-weight:700; color:#6b21a8;">🧲 HEDEF LİKİDİTE</span>
+<span style="font-family:'JetBrains Mono'; font-weight:700; font-size:0.75rem; color:#0f172a;">{data['target']:.2f}</span>
 </div>
-<div style="border:1px dashed #be185d; background:#fff1f2; padding:8px; border-radius:6px;">
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-<div style="font-weight:800; color:#be185d; font-size:0.8rem;">🧲 HEDEF LİKİDİTE</div>
-<div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1rem; color:#be185d;">{data['target']:.2f}</div>
+<div class="edu-note" style="margin-bottom:0;">{liq_desc}</div>
 </div>
-<div style="font-size:0.85rem; color:#9f1239; line-height:1.3;">{liq_desc}</div>
+
 </div>
-</div>
-""", unsafe_allow_html=True)
+"""
+        st.markdown(html_right, unsafe_allow_html=True)
 
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
@@ -4623,7 +4345,7 @@ def render_levels_card(ticker):
     
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</div>
+        <div class="info-header" style="color:#4c1d95;">📐 Kritik Seviyeler & Trend: {display_ticker}</div>
         
         <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -4663,6 +4385,53 @@ def render_levels_card(ticker):
                 <div style="font-size:0.65rem; color:{gp_desc_color}; font-style:italic;">
                     {gp_desc_text}
                 </div>
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
+
+def render_lorentzian_panel(ticker):
+    data = calculate_lorentzian_classification(ticker)
+    
+    # Veri yoksa gösterme (Eski satır)
+    if not data: return
+    # Skor 7 altında kalsa da gösterme 
+    if data['votes'] < 7: return
+
+    display_prob = int(data['prob'])
+    # İkon seçimi
+    ml_icon = "🚀" if data['signal'] == "YÜKSELİŞ" and display_prob >= 75 else "🐻" if data['signal'] == "DÜŞÜŞ" and display_prob >= 75 else "🧠"
+    
+    bar_width = display_prob
+    signal_text = f"{data['signal']} BEKLENTİSİ"
+
+    # Başlık: GÜNLÜK
+    # Alt Bilgi: Vade: 1 Gün
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid {data['color']}; margin-bottom: 15px;">
+        <div class="info-header" style="color:{data['color']}; display:flex; justify-content:space-between; align-items:center;">
+            <span>{ml_icon} Lorentzian (Yarın Beklentisi): {ticker.replace('.IS', '')}</span>
+            <span style="font-size:0.75rem; background:{data['color']}15; padding:2px 8px; border-radius:10px; font-weight:400; color:{data['color']};">%{display_prob} Güven</span>
+        </div>
+        
+        <div style="text-align:center; padding:8px 0;">
+            <div style="font-size:0.9rem; font-weight:800; color:{data['color']}; letter-spacing:0.5px;">
+                {signal_text}
+            </div>
+            <div style="font-size:0.65rem; color:#64748B; margin-top:4px;">
+                Son 10 Yılın verisini inceledi.<br>
+                Benzer <b>8</b> senaryonun <b>{data['votes']}</b> tanesinde yön aynıydı.
+            </div>
+        </div>
+
+        <div style="margin-top:5px; margin-bottom:8px; padding:0 4px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#64748B; margin-bottom:2px;">
+                <span>Oylama: <b>{data['votes']}/{data['total']}</b></span>
+                <span>Vade: <b>1 Gün (Yarın)</b></span>
+            </div>
+            <div style="width:100%; height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                <div style="width:{bar_width}%; height:100%; background:{data['color']};"></div>
             </div>
         </div>
     </div>
@@ -4753,9 +4522,282 @@ def render_minervini_panel_v2(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
     
+# --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ (FULL KAPSAM) ---
+    active_t = st.session_state.ticker
+    scan_results_html = ""
+    found_any = False
+    is_star_candidate = False
+    
+    # 1. VERİYİ ÇEK (Tek Sefer)
+    df_live = get_safe_historical_data(active_t)
+    pa_data = None
+    bt_live = None
+    mini_live = None
+    acc_live = None
+    bo_live = None
+    r1_live = None
+    r2_live = None
+    stp_live = None
+    if df_live is not None and not df_live.empty:
+        
+        # A. ENDEKS VERİLERİ (Gerekli hesaplamalar için)
+        cat_for_bench = st.session_state.category
+        bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
+        bench_series = get_benchmark_data(cat_for_bench)
+        idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
+
+        # --- B. TÜM HESAPLAMALAR (Sırayla) ---
+        
+        # 1. STP (Smart Trend Pilot) - Kesişim, Momentum, Trend
+        stp_live = process_single_stock_stp(active_t, df_live)
+        
+        # 2. Sentiment Ajanı (Akıllı Para)
+        acc_live = process_single_accumulation(active_t, df_live, bench_series)
+        
+        # 3. Breakout Ajanı (Isınanlar / Kıranlar)
+        bo_live = process_single_breakout(active_t, df_live)
+        
+        # 4. Minervini SEPA
+        mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker)
+        
+        # 5. Formasyonlar
+        pat_df = pd.DataFrame()
+        try: pat_df = scan_chart_patterns([active_t])
+        except: pass
+        
+        # 6. Radar 1 & 2
+        r1_live = process_single_radar1(active_t, df_live)
+        r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0)
+        
+        # 7. Bear Trap Kontrolü
+        bt_live = process_single_bear_trap_live(df_live)
+        pa_data = calculate_price_action_dna(active_t)
+
+        # --- C. YILDIZ ADAYI KONTROLÜ ---
+        # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
+        if acc_live and bo_live:
+            is_star_candidate = True
+
+        # ============================================================
+        # SIDEBAR İÇİN: 20 GÜNLÜK ALPHA (SWING MOMENTUM) - GARANTİLİ VERSİYON
+        # ============================================================
+        rs_html = ""
+        try:
+            # --- YENİ EKLENEN KISIM: ENDEKS KONTROLÜ ---
+            # Eğer seçili varlık bir endeks ise RS hesaplama, direkt çık.
+            is_index_asset = active_t.startswith("^") or "XU" in active_t or "XBANK" in active_t
+            if is_index_asset:
+                raise ValueError("Endeks için RS hesaplanmaz")
+            # -----------------------------------------------
+            # 1. HİSSE VERİSİ KONTROLÜ
+            if df_live is None or len(df_live) < 5:
+                raise ValueError("Hisse verisi yetersiz")
+
+            # 2. ENDEKS VERİSİ (GARANTİLEME)
+            # Öncelik 1: bench_series, Öncelik 2: idx_data, Öncelik 3: İndir
+            final_bench = None
+            
+            if 'bench_series' in locals() and bench_series is not None and len(bench_series) > 5:
+                final_bench = bench_series
+            elif 'idx_data' in locals() and idx_data is not None and len(idx_data) > 5:
+                final_bench = idx_data
+            else:
+                # Hiçbiri yoksa şimdi indir (XU100 veya S&P500)
+                b_ticker = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
+                final_bench = yf.download(b_ticker, period="1mo", progress=False)['Close']
+
+            if final_bench is None or len(final_bench) < 5:
+                raise ValueError("Endeks verisi yok")
+
+            # 3. VERİ TİPİ DÜZELTME (Series formatına zorla)
+            if isinstance(final_bench, pd.DataFrame):
+                # Eğer DataFrame ise ve 'Close' sütunu varsa onu al, yoksa ilk sütunu al
+                if 'Close' in final_bench.columns:
+                    final_bench = final_bench['Close']
+                else:
+                    final_bench = final_bench.iloc[:, 0]
+
+            # 4. HESAPLAMA (Son 5 İş Günü)
+            # Hissenin performansı
+            stock_now = float(df_live['Close'].iloc[-1])
+            stock_old = float(df_live['Close'].iloc[-6])
+            stock_perf = ((stock_now - stock_old) / stock_old) * 100
+            
+            # Endeksin performansı
+            bench_now = float(final_bench.iloc[-1])
+            bench_old = float(final_bench.iloc[-6])
+            bench_perf = ((bench_now - bench_old) / bench_old) * 100
+            
+            # 5. ALPHA (FARK)
+            alpha = stock_perf - bench_perf
+            
+            # 6. GÖRSEL DURUM
+            if alpha > 2.0: 
+                rs_icon = "🔥"; rs_color = "#056829"; rs_text = f"Endeksi Eziyor (+%{alpha:.1f})"
+            elif alpha > 0.0: 
+                rs_icon = "💪"; rs_color = "#05772f"; rs_text = f"Endeksi Yeniyor (+%{alpha:.1f})"
+            elif alpha > -2.0: 
+                rs_icon = "⚠️"; rs_color = "#9e9284"; rs_text = f"Endeksle Paralel (%{alpha:.1f})"
+            else: 
+                rs_icon = "🐢"; rs_color = "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
+
+            rs_html = f"<div style='font-size:0.75rem; margin-bottom:2px; color:{rs_color};'>{rs_icon} <b>RS Momentum (5 GÜN):</b> {rs_text}</div>"
+                
+        except Exception as e:
+            # Hata varsa ekrana basalım ki görelim (Canlı hata ayıklama)
+            # Normalde boş bırakırdık ama sorunu çözmek için hata mesajını yazdırıyoruz
+            rs_html = f"<div style='font-size:0.6rem; color:gray;'>RS Verisi Yok: {str(e)}</div>"
+
+        # --- D. HTML OLUŞTURMA ---
+        # 0. RS Gücünü En Üste Ekle (YENİ)
+        if rs_html:
+            scan_results_html += rs_html
+            found_any = True
+        # 1. STP Sonuçları
+        if stp_live:
+            found_any = True
+            if stp_live['type'] == 'cross':
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#056829;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
+                # Momentum Başlangıcı Kontrolü (Filtreli mi?)
+                if stp_live.get('is_filtered', False):
+                    scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#db2777;'>🎯 <b>Momentum:</b> Başlangıç Sinyali (Filtreli)</div>"
+            elif stp_live['type'] == 'trend':
+                gun = stp_live['data'].get('Gun', '?')
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>✅ <b>STP:</b> Trend ({gun} Gündür)</div>"
+
+        # 2. Akıllı Para (Sentiment)
+        if acc_live:
+            found_any = True
+            is_pp = acc_live.get('Pocket_Pivot', False)
+            icon = "⚡" if is_pp else "🤫"
+            text = "Pocket Pivot (Patlama)" if is_pp else "Sessiz Toplama"
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#7c3aed;'>{icon} <b>Akıllı Para:</b> {text}</div>"
+
+        # 3. Breakout (Isınan / Kıran)
+        if bo_live:
+            found_any = True
+            is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
+            prox_clean = str(bo_live['Zirveye Yakınlık']).split('<')[0].strip()
+            if is_firing:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM (Onaylı)</div>"
+            else:
+                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar ({prox_clean})</div>"
+
+        # 4. Minervini SEPA
+        if mini_live:
+            found_any = True
+            # Verinin içinden Durum ve Puanı çekiyoruz
+            durum = mini_live.get('Durum', 'Trend?')
+            puan = mini_live.get('Raw_Score', 0)
+            
+            # Ekrana dinamik olarak yazdırıyoruz: "🦁 Minervini: KIRILIM EŞİĞİNDE (70)"
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> {durum} ({puan})</div>"
+
+        # 5. Formasyonlar
+        if not pat_df.empty:
+            found_any = True
+            pat_name = pat_df.iloc[0]['Formasyon']
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
+
+        # 6. Radarlar
+        if r1_live and r1_live['Skor'] >= 4:
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum ({r1_live['Skor']}/7)</div>"
+        
+        if r2_live and r2_live['Skor'] >= 4:
+            found_any = True
+            setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
+        
+        # 7. Bear Trap (Görseli)
+        if bt_live:
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b45309;'>🪤 <b>Bear Trap:</b> {bt_live['Zaman']} (Vol: {bt_live['Hacim_Kat']})</div>"
+            
+    # --- HTML ÇIKTISI ---
+    star_title = " ⭐" if is_star_candidate else ""
+    display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
+
+    # 8. RSI UYUMSUZLUKLARI (YENİ EKLENEN KISIM)
+    # Detay panelindeki veriyi (pa_data) kullanalım
+    if pa_data:
+        div_info = pa_data.get('div', {})
+        div_type = div_info.get('type', 'neutral')
+        
+        if div_type == 'bullish':
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>💎 <b>RSI Uyumsuzluk:</b> POZİTİF (Alış?)</div>"
+        elif div_type == 'bearish':
+            found_any = True
+            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>🐻 <b>RSI Uyumsuzluk:</b> NEGATİF (Satış?)</div>"
+
+    # 9. DİPTEN DÖNÜŞ (KUTSAL KASE) KONTROLÜ (YENİ EKLENEN KISIM)
+    # Eğer hem Bear Trap hem de Pozitif Uyumsuzluk varsa
+    if bt_live and pa_data and pa_data.get('div', {}).get('type') == 'bullish':
+        found_any = True
+        is_star_candidate = True # Yıldız da ekleyelim
+        scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#059669; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ?</div>"
+
+    # ----------------------------------------------------------------------
+    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI (4 AŞAMALI KADEMELİ SİSTEM)
+    # ----------------------------------------------------------------------
+    z_score_val = round(calculate_z_score_live(df_live), 2)
+    
+    # --- A. DÜŞÜŞ SENARYOLARI (UCUZLAMA) ---
+    if z_score_val <= -2.0: 
+        # SEVİYE 3: KRİTİK DİP (FIRSAT)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"""
+        <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+            <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
+            <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>Fiyat -2 sapmayı kırdı. İstatistiksel olarak dönüş (tepki) ihtimali çok yüksektir.</div>
+        </div>
+        """
+    elif z_score_val <= -1.5: 
+        # SEVİYE 2: DİBE YAKLAŞIYOR (UYARI)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
+        
+    elif z_score_val <= -1.0: 
+        # SEVİYE 1: UCUZLUYOR (BİLGİ) - [YENİ]
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#0284c7;'>📉 Ucuzluyor (Z-Score: {z_score_val:.2f})</div>"
+
+    # --- B. YÜKSELİŞ SENARYOLARI (PAHALILANMA) ---
+    elif z_score_val >= 2.0: 
+        # SEVİYE 3: KRİTİK TEPE (SATIŞ RİSKİ)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"""
+        <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
+            <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
+            <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>Fiyat +2 sapmayı aştı. Aşırı alım bölgesinde, düzeltme riski çok yüksek.</div>
+        </div>
+        """
+    elif z_score_val >= 1.5: 
+        # SEVİYE 2: TEPEYE YAKLAŞIYOR (UYARI)
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
+        
+    elif z_score_val >= 1.0: 
+        # SEVİYE 1: PAHALILANIYOR (BİLGİ) - [YENİ]
+        found_any = True
+        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#854d0e;'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
+    if found_any:
+        st.markdown(f"""
+        <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
+            <div style="font-size:0.8rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
+            {scan_results_html}
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # Hiçbir şey yoksa boş bırak
+        pass
+        
     # -----------------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
-    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
+        sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -4763,10 +4805,7 @@ with st.sidebar:
         render_sentiment_card(sentiment_verisi)
 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    # LORENTZİAN PANELİ 
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    render_lorentzian_panel(st.session_state.ticker)
-    st.divider()
+
     # MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
@@ -4929,72 +4968,11 @@ with st.sidebar:
                 st.caption("💎'Endeksi Yenen Güçlü Hisseler / Breakout Ajanı' ve ⏳'Akıllı Para Topluyor / Breakout Ajanı' taramalarının ortak sonuçları gösterilir.")
             else:
                 st.warning("Şu an toplanan ORTAK bir hisse yok.")
-    # ==============================================================================
-    # ⚓ DİPTEN DÖNÜŞ PANELİ (Sidebar'a Taşındı - Yıldızların Altına)
-    # ==============================================================================
-    
-    # --- HATAYI ÖNLEYEN BAŞLATMA KODLARI (EKLEME) ---
-    if 'bear_trap_data' not in st.session_state: st.session_state.bear_trap_data = None
-    if 'rsi_div_bull' not in st.session_state: st.session_state.rsi_div_bull = None
-    # -----------------------------------------------
 
-    # 1. Veri Kontrolü
-    has_bt = st.session_state.bear_trap_data is not None and not st.session_state.bear_trap_data.empty
-    has_div = st.session_state.rsi_div_bull is not None and not st.session_state.rsi_div_bull.empty
-    
-    reversal_list = []
-    
-    # 2. Kesişim Mantığı
-    if has_bt and has_div:
-        bt_df = st.session_state.bear_trap_data
-        div_df = st.session_state.rsi_div_bull
-        
-        # Sembol Kümeleri
-        bt_syms = set(bt_df['Sembol'].values)
-        div_syms = set(div_df['Sembol'].values)
-        
-        # Ortak Olanlar (Kesişim)
-        common_syms = bt_syms.intersection(div_syms)
-        
-        for sym in common_syms:
-            # Verileri al
-            row_bt = bt_df[bt_df['Sembol'] == sym].iloc[0]
-            row_div = div_df[div_df['Sembol'] == sym].iloc[0]
-            
-            reversal_list.append({
-                'Sembol': sym,
-                'Fiyat': row_bt['Fiyat'],
-                'Zaman': row_bt['Zaman'],       # Örn: 2 Mum Önce
-                'RSI': int(row_div['RSI']) # Örn: 28
-            })
-            
-    # 3. UI Çizimi (Turkuaz/Cyan Tasarım)
+    # LORENTZİAN PANELİ 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-        ⚓ DİPTEN DÖNÜŞ?
-    </div>
-    """, unsafe_allow_html=True)
-    
-    with st.container(height=150):
-        if reversal_list:
-            # RSI değerine göre (Düşük RSI en üstte) sıralayalım
-            reversal_list.sort(key=lambda x: x['RSI']) 
-            
-            for item in reversal_list:
-                # Buton Etiketi: 💎 GARAN (150.20) | RSI:28 | 2 Mum Önce
-                label = f"💎 {item['Sembol']} ({item['Fiyat']:.2f}) | RSI:{item['RSI']} | {item['Zaman']}"
-                
-                if st.button(label, key=f"rev_btn_sidebar_{item['Sembol']}", use_container_width=True):
-                    on_scan_result_click(item['Sembol'])
-                    st.rerun()
-        else:
-            if not (has_bt and has_div):
-                st.caption("'Ayı Tuzağı' ve 'RSI Uyumsuzluk' taramalarının ortak sonuçları burada gösterilir.")
-            else:
-                st.info("Şu an hem tuzağa düşürüp hem uyumsuzluk veren (Kesişim) hisse yok.")
-
+    render_lorentzian_panel(st.session_state.ticker)
+    st.divider()
     # 3. AI ANALIST (En Altta)
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
@@ -5121,7 +5099,6 @@ if st.session_state.generate_prompt:
     mini_data = calculate_minervini_sepa(t) or {} 
     fund_data = get_fundamental_score(t) or {}
     master_score, pros, cons = calculate_master_score(t)
-    lorentzian_bilgisi = render_lorentzian_panel(t, just_text=True)
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
     if synth_data is not None and not synth_data.empty:
@@ -5546,8 +5523,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - VWAP DURUMU: {vwap_ai_txt}
 - RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f})
 (NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi öner.)
-*** 6. YARIN NE OLABİLİR ***
-{lorentzian_bilgisi} 
+
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
 En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
@@ -5555,7 +5531,7 @@ En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığ
    - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
-   - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
+   - UYARI: Listeyi 12 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
    - Her maddeyi yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
    Şu terimlerin, (eğer açtığın maddelerin başlık kısmında yer almıyorsa ama açtığın maddelerin açıklama kısmında yer alıyorsa) , başına "#" koyarak yaz: FOMO, BIST100, RSI, ICT, SmartMoney, EMA5, EMA8, EMA13, Sentiment, Supertrend, BOS, Breakout, Minervini, FVG. (yani mesela şöyle: (9/10) MINERVINI HİZALANMASI: #Minervini şablonuna göre....)
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
@@ -5566,7 +5542,7 @@ En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığ
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t} #BIST100 #XU100" yaz.
+4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t}" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -5588,61 +5564,57 @@ with col_left:
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-    # --- YENİ 3 SÜTUNLU AND SKOR DÜZENi (SOL KOKPİT - RENKLİ VERSİYON) ---
-    c_gauge, c_pos, c_neg = st.columns([1.2, 2, 2], vertical_alignment="center")
+    if master_score >= 85: grade="A+ (MÜKEMMEL)"; score_color="#15803d"; icon="🏆"
+    elif master_score >= 70: grade="B (GÜÇLÜ)"; score_color="#0369a1"; icon="💎"
+    elif master_score >= 50: grade="C (NÖTR)"; score_color="#b45309"; icon="⚖️"
+    else: grade="D (ZAYIF)"; score_color="#b91c1c"; icon="⚠️"
+
+    display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
+    current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     
-    # SÜTUN 1: HIZ GÖSTERGESİ (SOL - Başlıksız, Sadece Grafik)
-    with c_gauge:
-        # HİLE: Sağı ve solu EŞİT boşlukla sıkıştırıyoruz (Tam Orta)
-        bosluk_sol, grafik_alani, bosluk_sag = st.columns([0.4, 1, 0.4]) 
-        with grafik_alani:
-            render_gauge_chart(master_score)
+    st.markdown(f"""
+    <div class="info-card" style="border-top: 3px solid {score_color}; margin-bottom: 5px;">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:none; margin-bottom:0; padding-bottom:0;">
+            <span style="color:{score_color}; font-size: 0.9rem;">⚖️ ANA SKOR: {display_ticker} <span style="color:#64748B; font-weight:400; font-size:0.8rem;">({current_price_str})</span></span>
+            <span style="font-weight:700; font-size:0.85rem; background:{score_color}15; color:{score_color}; padding:2px 8px; border-radius:4px;">
+            {master_score} - {grade.split(' ')[0]}
+            </span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # SÜTUN 2: POZİTİF ETKENLER (YEŞİL KUTU - YÜKSEKLİK ARTIRILDI)
-    with c_pos:
-        # Liste HTML'ini Hazırla
-        pos_items_html = ""
+    c_pros, c_cons = st.columns(2)
+    with c_pros:
         if score_pros:
-            for p in score_pros:
-                # border-bottom stilini kaldırdım ki daha temiz görünsün, satır aralığını artırdım
-                pos_items_html += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:2px; padding:2px;'>✅ {p}</div>"
+            limited_pros = score_pros[:12]
+            html_pros = ""
+            for p in limited_pros:
+                html_pros += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:3px; break-inside: avoid-column;'>✅ {p}</div>"
+            
+            st.markdown(f"""
+            <div style="background:#f0fdf4; padding:8px; border-radius:6px; border:1px solid #bbf7d0; height:100%;">
+                <div style="font-size:0.75rem; font-weight:700; color:#166534; margin-bottom:5px; border-bottom:1px solid #bbf7d0; padding-bottom:2px;">POZİTİF ETKENLER ({len(limited_pros)})</div>
+                <div style="column-count: 2; column-gap: 15px;">{html_pros}</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            pos_items_html = "<div style='font-size:0.75rem; color:#14532d;'>Belirgin pozitif etken yok.</div>"
+            st.info("Belirgin pozitif etken yok.")
 
-        # HTML Kutu (height: 160px yapıldı ve z-index eklendi)
-        st.markdown(f"""
-        <div style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:160px; overflow-y:auto; position:relative;">
-            <div style="font-weight:800; font-size:0.8rem; color:#15803d; background-color:#f0fdf4; padding:10px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10;">
-                POZİTİF ETKENLER ({len(score_pros)})
-            </div>
-            <div style="padding:10px;">
-                {pos_items_html}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # SÜTUN 3: NEGATİF ETKENLER (KIRMIZI KUTU - YÜKSEKLİK ARTIRILDI)
-    with c_neg:
-        # Liste HTML'ini Hazırla
-        neg_items_html = ""
+    with c_cons:
         if score_cons:
-            for c in score_cons:
-                neg_items_html += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:2px; padding:2px;'>❌ {c}</div>"
+            limited_cons = score_cons[:12]
+            html_cons = ""
+            for c in limited_cons:
+                html_cons += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:3px; break-inside: avoid-column;'>❌ {c}</div>"
+            
+            st.markdown(f"""
+            <div style="background:#fef2f2; padding:8px; border-radius:6px; border:1px solid #fecaca; height:100%;">
+                <div style="font-size:0.75rem; font-weight:700; color:#991b1b; margin-bottom:5px; border-bottom:1px solid #fecaca; padding-bottom:2px;">NEGATİF ETKENLER ({len(limited_cons)})</div>
+                <div style="column-count: 2; column-gap: 15px;">{html_cons}</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            neg_items_html = "<div style='font-size:0.75rem; color:#7f1d1d;'>Belirgin negatif etken yok.</div>"
-
-        # HTML Kutu (height: 160px yapıldı ve z-index eklendi)
-        st.markdown(f"""
-        <div style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:160px; overflow-y:auto; position:relative;">
-            <div style="font-weight:800; font-size:0.8rem; color:#b91c1c; background-color:#fef2f2; padding:10px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10;">
-                NEGATİF ETKENLER ({len(score_cons)})
-            </div>
-            <div style="padding:10px;">
-                {neg_items_html}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
+            st.success("Belirgin negatif etken yok.")
 
     # 3. ICT SMART MONEY ANALİZİ (YENİ YERİ: ANA SKOR ALTINDA)
     # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
@@ -6060,319 +6032,12 @@ with col_left:
 with col_right:
     if not info: info = fetch_stock_info(st.session_state.ticker)
     
-    # 1. Fiyat (YENİ TERMİNAL GÖRÜNÜMÜ)
+    # 1. Fiyat
     if info and info.get('price'):
         display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
-        price_val = info.get('price', 0)
-        change_val = info.get('change_pct', 0)
-
-        # Rengi Belirle
-        if change_val >= 0:
-            bg_color = "#81bb96"  # Yeşil
-            arrow = "▲"
-            shadow_color = "rgba(22, 163, 74, 0.4)"
-        else:
-            bg_color = "#9b5d5d"  # Kırmızı
-            arrow = "▼"
-            shadow_color = "rgba(220, 38, 38, 0.4)"
-
-        # HTML Kodları (Sola Yaslı - Hata Vermez)
-        st.markdown(f"""<div style="background-color:{bg_color}; border-radius:12px; padding:15px; color:white; text-align:center; box-shadow: 0 10px 15px -3px {shadow_color}, 0 4px 6px -2px rgba(0,0,0,0.05); margin-bottom:15px; border: 1px solid rgba(255,255,255,0.2);">
-<div style="font-size:1.1rem; font-weight:600; opacity:0.9; letter-spacing:1px; margin-bottom:5px; text-transform:uppercase;">FİYAT: {display_ticker}</div>
-<div style="font-family:'JetBrains Mono', monospace; font-size:2.4rem; font-weight:800; line-height:1; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">{price_val:.2f}</div>
-<div style="margin-top:10px;">
-<span style="background:rgba(255,255,255,0.25); color:white; font-weight:700; font-size:1.1rem; padding:4px 12px; border-radius:20px; backdrop-filter: blur(4px);">
-{arrow} %{change_val:.2f}
-</span>
-</div>
-</div>""", unsafe_allow_html=True)
-    
-    else:
-        st.warning("Fiyat verisi alınamadı.")
-
-    # --- YENİ EKLENEN: HIZLI TARAMA DURUM PANELİ (FULL KAPSAM) ---
-    active_t = st.session_state.ticker
-    scan_results_html = ""
-    found_any = False
-    is_star_candidate = False
-    
-    # 1. VERİYİ ÇEK (Tek Sefer)
-    df_live = get_safe_historical_data(active_t)
-    pa_data = None
-    bt_live = None
-    mini_live = None
-    acc_live = None
-    bo_live = None
-    r1_live = None
-    r2_live = None
-    stp_live = None
-    if df_live is not None and not df_live.empty:
-        
-        # A. ENDEKS VERİLERİ (Gerekli hesaplamalar için)
-        cat_for_bench = st.session_state.category
-        bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
-        bench_series = get_benchmark_data(cat_for_bench)
-        idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
-
-        # --- B. TÜM HESAPLAMALAR (Sırayla) ---
-        
-        # 1. STP (Smart Trend Pilot) - Kesişim, Momentum, Trend
-        stp_live = process_single_stock_stp(active_t, df_live)
-        
-        # 2. Sentiment Ajanı (Akıllı Para)
-        acc_live = process_single_accumulation(active_t, df_live, bench_series)
-        
-        # 3. Breakout Ajanı (Isınanlar / Kıranlar)
-        bo_live = process_single_breakout(active_t, df_live)
-        
-        # 4. Minervini SEPA
-        mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker)
-        
-        # 5. Formasyonlar
-        pat_df = pd.DataFrame()
-        try: pat_df = scan_chart_patterns([active_t])
-        except: pass
-        
-        # 6. Radar 1 & 2
-        r1_live = process_single_radar1(active_t, df_live)
-        r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0)
-        
-        # 7. Bear Trap Kontrolü
-        bt_live = process_single_bear_trap_live(df_live)
-        pa_data = calculate_price_action_dna(active_t)
-
-        # --- C. YILDIZ ADAYI KONTROLÜ ---
-        # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
-        if acc_live and bo_live:
-            is_star_candidate = True
-
-        # ============================================================
-        # SIDEBAR İÇİN: 20 GÜNLÜK ALPHA (SWING MOMENTUM) - GARANTİLİ VERSİYON
-        # ============================================================
-        rs_html = ""
-        try:
-            # --- YENİ EKLENEN KISIM: ENDEKS KONTROLÜ ---
-            # Eğer seçili varlık bir endeks ise RS hesaplama, direkt çık.
-            is_index_asset = active_t.startswith("^") or "XU" in active_t or "XBANK" in active_t
-            if is_index_asset:
-                raise ValueError("Endeks için RS hesaplanmaz")
-            # -----------------------------------------------
-            # 1. HİSSE VERİSİ KONTROLÜ
-            if df_live is None or len(df_live) < 5:
-                raise ValueError("Hisse verisi yetersiz")
-
-            # 2. ENDEKS VERİSİ (GARANTİLEME)
-            # Öncelik 1: bench_series, Öncelik 2: idx_data, Öncelik 3: İndir
-            final_bench = None
-            
-            if 'bench_series' in locals() and bench_series is not None and len(bench_series) > 5:
-                final_bench = bench_series
-            elif 'idx_data' in locals() and idx_data is not None and len(idx_data) > 5:
-                final_bench = idx_data
-            else:
-                # Hiçbiri yoksa şimdi indir (XU100 veya S&P500)
-                b_ticker = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
-                final_bench = yf.download(b_ticker, period="1mo", progress=False)['Close']
-
-            if final_bench is None or len(final_bench) < 5:
-                raise ValueError("Endeks verisi yok")
-
-            # 3. VERİ TİPİ DÜZELTME (Series formatına zorla)
-            if isinstance(final_bench, pd.DataFrame):
-                # Eğer DataFrame ise ve 'Close' sütunu varsa onu al, yoksa ilk sütunu al
-                if 'Close' in final_bench.columns:
-                    final_bench = final_bench['Close']
-                else:
-                    final_bench = final_bench.iloc[:, 0]
-
-            # 4. HESAPLAMA (Son 5 İş Günü)
-            # Hissenin performansı
-            stock_now = float(df_live['Close'].iloc[-1])
-            stock_old = float(df_live['Close'].iloc[-6])
-            stock_perf = ((stock_now - stock_old) / stock_old) * 100
-            
-            # Endeksin performansı
-            bench_now = float(final_bench.iloc[-1])
-            bench_old = float(final_bench.iloc[-6])
-            bench_perf = ((bench_now - bench_old) / bench_old) * 100
-            
-            # 5. ALPHA (FARK)
-            alpha = stock_perf - bench_perf
-            
-            # 6. GÖRSEL DURUM
-            if alpha > 2.0: 
-                rs_icon = "🔥"; rs_color = "#056829"; rs_text = f"Endeksi Eziyor (+%{alpha:.1f})"
-            elif alpha > 0.0: 
-                rs_icon = "💪"; rs_color = "#05772f"; rs_text = f"Endeksi Yeniyor (+%{alpha:.1f})"
-            elif alpha > -2.0: 
-                rs_icon = "⚠️"; rs_color = "#9e9284"; rs_text = f"Endeksle Paralel (%{alpha:.1f})"
-            else: 
-                rs_icon = "🐢"; rs_color = "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
-
-            rs_html = f"<div style='font-size:0.75rem; margin-bottom:2px; color:{rs_color};'>{rs_icon} <b>RS Momentum (5 GÜN):</b> {rs_text}</div>"
-                
-        except Exception as e:
-            # Hata varsa ekrana basalım ki görelim (Canlı hata ayıklama)
-            # Normalde boş bırakırdık ama sorunu çözmek için hata mesajını yazdırıyoruz
-            rs_html = f"<div style='font-size:0.6rem; color:gray;'>RS Verisi Yok: {str(e)}</div>"
-
-        # --- D. HTML OLUŞTURMA ---
-        # 0. RS Gücünü En Üste Ekle (YENİ)
-        if rs_html:
-            scan_results_html += rs_html
-            found_any = True
-        # 1. STP Sonuçları
-        if stp_live:
-            found_any = True
-            if stp_live['type'] == 'cross':
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#056829;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
-                # Momentum Başlangıcı Kontrolü (Filtreli mi?)
-                if stp_live.get('is_filtered', False):
-                    scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#db2777;'>🎯 <b>Momentum:</b> Başlangıç Sinyali (Filtreli)</div>"
-            elif stp_live['type'] == 'trend':
-                gun = stp_live['data'].get('Gun', '?')
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>✅ <b>STP:</b> Trend ({gun} Gündür)</div>"
-
-        # 2. Akıllı Para (Sentiment)
-        if acc_live:
-            found_any = True
-            is_pp = acc_live.get('Pocket_Pivot', False)
-            icon = "⚡" if is_pp else "🤫"
-            text = "Pocket Pivot (Patlama)" if is_pp else "Sessiz Toplama"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#7c3aed;'>{icon} <b>Akıllı Para:</b> {text}</div>"
-
-        # 3. Breakout (Isınan / Kıran)
-        if bo_live:
-            found_any = True
-            is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
-            prox_clean = str(bo_live['Zirveye Yakınlık']).split('<')[0].strip()
-            if is_firing:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM (Onaylı)</div>"
-            else:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar ({prox_clean})</div>"
-
-        # 4. Minervini SEPA
-        if mini_live:
-            found_any = True
-            # Verinin içinden Durum ve Puanı çekiyoruz
-            durum = mini_live.get('Durum', 'Trend?')
-            puan = mini_live.get('Raw_Score', 0)
-            
-            # Ekrana dinamik olarak yazdırıyoruz: "🦁 Minervini: KIRILIM EŞİĞİNDE (70)"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> {durum} ({puan})</div>"
-
-        # 5. Formasyonlar
-        if not pat_df.empty:
-            found_any = True
-            pat_name = pat_df.iloc[0]['Formasyon']
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
-
-        # 6. Radarlar
-        if r1_live and r1_live['Skor'] >= 4:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum ({r1_live['Skor']}/7)</div>"
-        
-        if r2_live and r2_live['Skor'] >= 4:
-            found_any = True
-            setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
-        
-        # 7. Bear Trap (Görseli)
-        if bt_live:
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b45309;'>🪤 <b>Bear Trap:</b> {bt_live['Zaman']} (Vol: {bt_live['Hacim_Kat']})</div>"
-            
-    # --- HTML ÇIKTISI ---
-    star_title = " ⭐" if is_star_candidate else ""
-    display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
-
-    # 8. RSI UYUMSUZLUKLARI (YENİ EKLENEN KISIM)
-    # Detay panelindeki veriyi (pa_data) kullanalım
-    if pa_data:
-        div_info = pa_data.get('div', {})
-        div_type = div_info.get('type', 'neutral')
-        
-        if div_type == 'bullish':
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>💎 <b>RSI Uyumsuzluk:</b> POZİTİF (Alış?)</div>"
-        elif div_type == 'bearish':
-            found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>🐻 <b>RSI Uyumsuzluk:</b> NEGATİF (Satış?)</div>"
-
-    # 9. DİPTEN DÖNÜŞ (KUTSAL KASE) KONTROLÜ (YENİ EKLENEN KISIM)
-    # Eğer hem Bear Trap hem de Pozitif Uyumsuzluk varsa
-    if bt_live and pa_data and pa_data.get('div', {}).get('type') == 'bullish':
-        found_any = True
-        is_star_candidate = True # Yıldız da ekleyelim
-        scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#059669; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ?</div>"
-
-    # ----------------------------------------------------------------------
-    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI (4 AŞAMALI KADEMELİ SİSTEM)
-    # ----------------------------------------------------------------------
-    z_score_val = round(calculate_z_score_live(df_live), 2)
-    
-    # --- A. DÜŞÜŞ SENARYOLARI (UCUZLAMA) ---
-    if z_score_val <= -2.0: 
-        # SEVİYE 3: KRİTİK DİP (FIRSAT)
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
-        scan_results_html += f"""
-        <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-            <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
-            <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>Fiyat -2 sapmayı kırdı. İstatistiksel olarak dönüş (tepki) ihtimali çok yüksektir.</div>
-        </div>
-        """
-    elif z_score_val <= -1.5: 
-        # SEVİYE 2: DİBE YAKLAŞIYOR (UYARI)
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-        
-    elif z_score_val <= -1.0: 
-        # SEVİYE 1: UCUZLUYOR (BİLGİ) - [YENİ]
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#0284c7;'>📉 Ucuzluyor (Z-Score: {z_score_val:.2f})</div>"
-
-    # --- B. YÜKSELİŞ SENARYOLARI (PAHALILANMA) ---
-    elif z_score_val >= 2.0: 
-        # SEVİYE 3: KRİTİK TEPE (SATIŞ RİSKİ)
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
-        scan_results_html += f"""
-        <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-            <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
-            <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>Fiyat +2 sapmayı aştı. Aşırı alım bölgesinde, düzeltme riski çok yüksek.</div>
-        </div>
-        """
-    elif z_score_val >= 1.5: 
-        # SEVİYE 2: TEPEYE YAKLAŞIYOR (UYARI)
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-        
-    elif z_score_val >= 1.0: 
-        # SEVİYE 1: PAHALILANIYOR (BİLGİ) - [YENİ]
-        found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#854d0e;'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
-    if found_any:
-        st.markdown(f"""
-        <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:1.0rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
-            {scan_results_html}
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        # Hiçbir şey yoksa boş bırak
-        pass
-        
-    # --- YENİ EKLEME: ALTIN ÜÇLÜ KONTROL PANELİ ---
-    # Verileri taze çekelim ki hata olmasın
-    try:
-        ict_data_check = calculate_ict_deep_analysis(st.session_state.ticker)
-        # DÜZELTME: Resimdeki doğru fonksiyon ismini kullandık:
-        sent_data_check = calculate_sentiment_score(st.session_state.ticker) 
-        # 2. Fonksiyonu çağır (Sadece 3/3 ise ekrana basacak, yoksa boş geçecek)
-        render_golden_trio_banner(ict_data_check, sent_data_check)
-    except Exception as e:
-        pass # Bir hata olursa sessizce geç, ekranı bozma.
+        cls = "delta-pos" if info['change_pct'] >= 0 else "delta-neg"
+        st.markdown(f'<div class="stat-box-small" style="margin-bottom:10px;"><p class="stat-label-small">FİYAT: {display_ticker}</p><p class="stat-value-small money-text">{info["price"]:.2f}<span class="stat-delta-small {cls}">{"+" if info["change_pct"]>=0 else ""}{info["change_pct"]:.2f}%</span></p></div>', unsafe_allow_html=True)
+    else: st.warning("Fiyat verisi alınamadı.")
 
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
@@ -6383,53 +6048,66 @@ with col_right:
     # 🦅 YENİ: ICT SNIPER ONAY RAPORU (Sadece Setup Varsa Çıkar)
     render_ict_certification_card(st.session_state.ticker)
   
-
+    # ==============================================================================
+    # YENİ: DİPTEN DÖNÜŞ PANELİ (AYI TUZAĞI + POZİTİF UYUMSUZLUK KESİŞİMİ)
+    # ==============================================================================
+    
+    # 1. Veri Kontrolü
+    has_bt = st.session_state.bear_trap_data is not None and not st.session_state.bear_trap_data.empty
+    has_div = st.session_state.rsi_div_bull is not None and not st.session_state.rsi_div_bull.empty
+    
+    reversal_list = []
+    
+    # 2. Kesişim Mantığı
+    if has_bt and has_div:
+        bt_df = st.session_state.bear_trap_data
+        div_df = st.session_state.rsi_div_bull
+        
+        # Sembol Kümeleri
+        bt_syms = set(bt_df['Sembol'].values)
+        div_syms = set(div_df['Sembol'].values)
+        
+        # Ortak Olanlar (Kesişim)
+        common_syms = bt_syms.intersection(div_syms)
+        
+        for sym in common_syms:
+            # Verileri al
+            row_bt = bt_df[bt_df['Sembol'] == sym].iloc[0]
+            row_div = div_df[div_df['Sembol'] == sym].iloc[0]
+            
+            reversal_list.append({
+                'Sembol': sym,
+                'Fiyat': row_bt['Fiyat'],
+                'Zaman': row_bt['Zaman'],      # Örn: 2 Mum Önce
+                'RSI': int(row_div['RSI']) # Örn: 28
+            })
+            
+    # 3. UI Çizimi (Turkuaz/Cyan Tasarım)
+    st.markdown(f"""
+    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        ⚓ DİPTEN DÖNÜŞ?
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container(height=150):
+        if reversal_list:
+            # Fiyata göre sıralayalım (veya istersen RSI'a göre)
+            reversal_list.sort(key=lambda x: x['RSI']) 
+            
+            for item in reversal_list:
+                # Buton Etiketi: 💎 GARAN (150.20) | RSI:28 | 2 Mum Önce
+                label = f"💎 {item['Sembol']} ({item['Fiyat']:.2f}) | RSI:{item['RSI']} | {item['Zaman']}"
+                
+                if st.button(label, key=f"rev_btn_{item['Sembol']}", use_container_width=True):
+                    on_scan_result_click(item['Sembol'])
+                    st.rerun()
+        else:
+            if not (has_bt and has_div):
+                st.caption("'Ayı Tuzağı' ve 'RSI Uyumsuzluk' taramalarının ortak sonuçları burada gösterilir.")
+            else:
+                st.info("Şu an hem tuzağa düşürüp hem uyumsuzluk veren (Kesişim) hisse yok.")
  
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
-
-    # ---------------------------------------------------------
-    # 🏆 GRANDMASTER TOP 10 (TEKNİK & NET)
-    # ---------------------------------------------------------
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🏆 MASTER TOP 10 (1-5 Günlük Yükseliş Adayları)</div>', unsafe_allow_html=True)
-    
-    if 'gm_results' not in st.session_state: st.session_state.gm_results = None
-
-    if st.button("🏆 PATLAMA ADAYLARINI LİSTELE", type="primary", use_container_width=True, key="btn_gm_scan"):
-        with st.spinner("Grandmaster Algoritması çalışıyor... (Lorentzian + ICT + Momentum)"):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.gm_results = scan_grandmaster_batch(current_assets)
-            
-    if st.session_state.gm_results is not None and not st.session_state.gm_results.empty:
-        
-        with st.container(height=450, border=True):
-            for i, row in st.session_state.gm_results.iterrows():
-                # Renk Skalası
-                sc = row['Skor']
-                if sc >= 80: s_col = "#15803d" 
-                elif sc >= 60: s_col = "#055d8a" 
-                else: s_col = "#d97706" 
-                
-                # Etiket Hazırlığı 
-                story = row.get('Hikaye', '-')
-                label = f"{i+1}. {row['Sembol']} | SKOR: {sc}"
-                
-                # Teknik Detay (Alt Gri Yazı)
-                # Alpha -7.9 gibi ise de burada görünür, karar senindir.
-                alpha_val = row.get('Alpha', 0) 
-                detail_txt = f"Vol: {row['Hacim_Kat']}x | Z-Score: {row['Z_Score']} | Alpha: %{alpha_val}"
-
-                # Buton
-                if st.button(label, key=f"gm_res_{i}", use_container_width=True, help=f"Uyarılar: {row['Uyarılar']}"):
-                    on_scan_result_click(row['Sembol'])
-                    st.rerun()
-                
-                # Hikaye (Teknik Terimler - Mavi)
-                st.markdown(f"<div style='font-size:0.75rem; color:#1e40af; margin-top:-10px; margin-bottom:2px; padding-left:10px; font-weight:700;'>{story}</div>", unsafe_allow_html=True)
-                # Gri Detay
-                st.markdown(f"<div style='font-size:0.75rem; color:#045c8b; margin-bottom:10px; padding-left:10px;'>{detail_txt}</div>", unsafe_allow_html=True)
-
-    elif st.session_state.gm_results is not None:
-        st.warning("Kriterlere uyan (Skor > 40) hisse bulunamadı.")
 
     # --- TEK TUŞLA DEV TARAMA BUTONU ---
     if st.button(f"🚀 {st.session_state.category} KAPSAMLI TARA (R1 + R2)", type="primary", use_container_width=True, key="master_scan_btn"):
@@ -6440,7 +6118,8 @@ with col_right:
             st.session_state.scan_data = analyze_market_intelligence(current_assets)
             st.session_state.radar2_data = radar2_scan(current_assets)
             
-            st.rerun() # Sayfayı yenile ki aşağıdaki listeler dolsun    
+            st.rerun() # Sayfayı yenile ki aşağıdaki listeler dolsun
+
     # 5. Ortak Fırsatlar Başlığı
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:10px; color:#1e40af; background-color:{current_theme['box_bg']}; padding:5px; border-radius:5px; border:1px solid #1e40af;'>🎯 Ortak Fırsatlar (Kesişim)</div>", unsafe_allow_html=True)
     
