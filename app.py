@@ -3523,20 +3523,15 @@ def render_golden_trio_banner(ict_data, sent_data):
     if not ict_data or not sent_data: return
 
     # --- 1. MANTIK KONTROLÜ ---
-    # GÜÇ: Sentiment puanı 55 üstü veya 'Lider/Artıda' ibaresi var mı?
+    # GÜÇ: Sentiment puanı 70 üstü veya 'Lider/Artıda' ibaresi var mı?
     rs_text = sent_data.get('rs', '').lower()
-    cond_power = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or 
-              sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
+    cond_power = "artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or sent_data['total'] >= 70
     
     # KONUM: ICT analizinde 'Discount' bölgesinde mi?
-    # Discount bölgesinde değilse bile, eğer dönüş sinyali (BOS/MSS) varsa konumu onayla
-    cond_loc = "DISCOUNT" in ict_data.get('zone', '') or "MSS" in ict_data.get('structure', '') or "BOS" in ict_data.get('structure', '')
+    cond_loc = "DISCOUNT" in ict_data.get('zone', '')
     
     # ENERJİ: ICT analizinde 'Güçlü' enerji var mı?
-    # Displacement yoksa bile Hacim puanı iyiyse veya RSI ivmeliyse (55+) enerjiyi onayla
-    cond_energy = ("Güçlü" in ict_data.get('displacement', '') or 
-                "Hacim" in sent_data.get('vol', '') or 
-                sent_data.get('raw_rsi', 0) > 55)
+    cond_energy = "Güçlü" in ict_data.get('displacement', '')
 
     # --- 2. FİLTRE (YA HEP YA HİÇ) ---
     # Eğer 3 şartın hepsi sağlanmıyorsa, fonksiyonu burada bitir (Ekrana hiçbir şey basma).
@@ -6077,7 +6072,7 @@ with col_right:
             arrow = "▲"
             shadow_color = "rgba(22, 163, 74, 0.4)"
         else:
-            bg_color = "#9B7C99"  # Kırmızı
+            bg_color = "#9b5d5d"  # Kırmızı
             arrow = "▼"
             shadow_color = "rgba(220, 38, 38, 0.4)"
 
@@ -6389,207 +6384,13 @@ with col_right:
     render_ict_certification_card(st.session_state.ticker)
   
 
+ 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
-
-    # -----------------------------------------------------------------------------
-    # 🏆 ALTIN FIRSAT (GOLDEN TRIO) - TARAMA PANELİ
-    # -----------------------------------------------------------------------------
-    def get_golden_trio_batch_scan(ticker_list):
-        # Gerekli tüm kütüphaneleri burada çağırıyoruz (Hata riskine karşı)
-        import yfinance as yf
-        import pandas as pd
-        import time
-
-        # --- YARDIMCI RSI HESAPLAMA FONKSİYONU (MANUEL) ---
-        def calc_rsi_manual(series, period=14):
-            delta = series.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            return 100 - (100 / (1 + rs))
-
-        golden_candidates = []
-
-        # 1. BİLGİLENDİRME & HAZIRLIK
-        st.toast("Veri Ambari İndiriliyor (Batch Download)...", icon="⏳")
-        progress_text = "📡 Tüm Piyasa Verisi Tek Pakette İndiriliyor (Ban Korumalı Mod)..."
-        my_bar = st.progress(10, text=progress_text)
-
-        # 2. ENDEKS VERİSİNİ AL (RS Kıyaslaması İçin - XU100)
-        try:
-            index_df = yf.download("XU100.IS", period="3mo", progress=False)
-            if not index_df.empty:
-                # Tek sütun gelirse düzelt, MultiIndex gelirse 'Close' al
-                if isinstance(index_df.columns, pd.MultiIndex):
-                    index_close = index_df['Close'].iloc[:, 0] if not index_df['Close'].empty else None
-                else:
-                    index_close = index_df['Close']
-            else:
-                index_close = None
-        except:
-            index_close = None
-
-        # 3. TOPLU İNDİRME (BATCH DOWNLOAD)
-        try:
-            tickers_str = " ".join(ticker_list)
-            # group_by='ticker' önemli, veriyi hisse bazlı ayırır
-            data = yf.download(tickers_str, period="3mo", group_by='ticker', auto_adjust=True, progress=False, threads=True)
-        except Exception as e:
-            st.error(f"Veri indirme hatası: {e}")
-            return pd.DataFrame()
-
-        my_bar.progress(40, text="⚡ Hafızadaki Veriler İşleniyor (Algorithm Running)...")
-
-        # 4. HIZLI ANALİZ DÖNGÜSÜ (RAM ÜZERİNDEN)
-        # Sütun yapısını kontrol et
-        if isinstance(data.columns, pd.MultiIndex):
-            valid_tickers = [t for t in ticker_list if t in data.columns.levels[0]]
-        else:
-            # Eğer tek hisse indirdiysek yapı farklıdır
-            valid_tickers = ticker_list if not data.empty else []
-
-        total_tickers = len(valid_tickers)
-
-        for i, ticker in enumerate(valid_tickers):
-            try:
-                # Veriyi al
-                if isinstance(data.columns, pd.MultiIndex):
-                    df = data[ticker].copy()
-                else:
-                    df = data.copy()
-
-                # Veri yetersizse atla
-                if df.empty or len(df) < 50: continue
-
-                # --- KRİTER 1: GÜÇ (RS - RELATIVE STRENGTH) ---
-                is_powerful = False
-                current_price = df['Close'].iloc[-1]
-                prev_price_20 = df['Close'].iloc[-20]
-
-                if index_close is not None and len(index_close) > 20:
-                    stock_ret = (current_price / prev_price_20) - 1
-                    index_ret = (index_close.iloc[-1] / index_close.iloc[-20]) - 1
-                    if stock_ret > index_ret: is_powerful = True
-                else:
-                    # Endeks yoksa RSI > 60
-                    rsi_val = calc_rsi_manual(df['Close']).iloc[-1]
-                    if rsi_val > 60: is_powerful = True
-
-                # --- KRİTER 2: KONUM (DISCOUNT / UCUZLUK) ---
-                high_20 = df['High'].rolling(20).max().iloc[-1]
-                low_20 = df['Low'].rolling(20).min().iloc[-1]
-
-                range_diff = high_20 - low_20
-                is_discount = False
-                if range_diff > 0:
-                    loc_ratio = (current_price - low_20) / range_diff
-                    if loc_ratio < 0.5: is_discount = True
-
-                # --- KRİTER 3: ENERJİ (HACİM / MOMENTUM) ---
-                vol_sma20 = df['Volume'].rolling(20).mean().iloc[-1]
-                current_vol = df['Volume'].iloc[-1]
-                rsi_now = calc_rsi_manual(df['Close']).iloc[-1]
-
-                is_energy = (current_vol > vol_sma20 * 1.1) or (rsi_now > 55)
-
-                # --- FİNAL KARAR ---
-                if is_powerful and is_discount and is_energy:
-                    # KAZANANLAR İÇİN MARKET CAP
-                    # Burada hata olmasın diye try-except ekledim
-                    try:
-                        info = yf.Ticker(ticker).info
-                        mcap = info.get('marketCap', 0)
-                    except:
-                        mcap = 0
-
-                    golden_candidates.append({
-                        "Hisse": ticker, # DÜZELTME: .replace(".IS", "") KALDIRILDI. Ham veri saklanıyor.
-                        "Fiyat": current_price,
-                        "M.Cap": mcap,
-                        "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji (ICT)"
-                    })
-
-            except:
-                continue
-
-            if i % 10 == 0 and total_tickers > 0:
-                prog = int((i / total_tickers) * 100)
-                my_bar.progress(40 + int(prog/2), text=f"⚡ Analiz: {ticker}...")
-
-        my_bar.progress(100, text="✅ Tarama Tamamlandı! Listeleniyor...")
-        time.sleep(0.3)
-        my_bar.empty()
-
-        return pd.DataFrame(golden_candidates)
-
-    # --- ARAYÜZ KODU (State Mantığı ile Düzeltilmiş) ---
-
-    # 1. State Tanımlaması (Sidebar yenilendiğinde sonuçlar kaybolmasın)
-    if 'golden_results' not in st.session_state: 
-        st.session_state.golden_results = None
-
-    st.markdown("---")
-
-    # 2. TARAMA TETİKLEYİCİSİ
-    if st.button("🏆 ALTIN FIRSATLARI TARA", type="primary", use_container_width=True):
-        
-        scan_list = ASSET_GROUPS.get(st.session_state.category, [])
-        
-        if not scan_list:
-            st.error("⚠️ Lütfen önce sol menüden bir hisse grubu seçin.")
-        else:
-            # Tarama fonksiyonunu çağır
-            df_golden = get_golden_trio_batch_scan(scan_list)
-            
-            if not df_golden.empty:
-                # 1. SIRALAMA
-                df_golden = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
-                # 2. STATE'E KAYDET (İlk 10)
-                st.session_state.golden_results = df_golden.head(10)
-                st.rerun() # Sayfayı yenile ki aşağıdaki blok çalışsın
-            else:
-                st.session_state.golden_results = pd.DataFrame() # Boş dataframe
-                st.warning("⚠️ Kriterlere (Güç + Ucuzluk + Enerji) uyan hisse bulunamadı.")
-
-    # 3. SONUÇ GÖSTERİCİ (Buton bloğunun DIŞINDA olmalı)
-    if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
-        
-        st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.8rem; color:#92400e; text-align:center;'>🦁 Tespit Edilen Altın Fırsatlar ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-        
-        st.caption("Bulunan en değerli fırsatlar:")
-
-        for index, row in st.session_state.golden_results.iterrows():
-            
-            # --- GÖRSEL DÜZENLEME ---
-            # Veritabanındaki ham sembol (Örn: THYAO.IS veya BTC-USD)
-            raw_symbol = row['Hisse']
-            
-            # Ekranda gösterilecek temiz sembol (IS'siz)
-            display_symbol = raw_symbol.replace(".IS", "")
-            
-            # Etiket
-            label_text = f"{display_symbol} / {row['Fiyat']:.2f}₺ / {row['Onay']}"
-            
-            # Benzersiz key kullanarak butonu oluştur
-            if st.button(label_text, key=f"btn_gold_final_{raw_symbol}_{index}", use_container_width=True):
-                
-                # --- AKSİYON ---
-                # Seçili hisseyi HAM haliyle (örn: THYAO.IS) state'e atıyoruz.
-                st.session_state.ticker = raw_symbol
-                
-                # Analizi tetikle
-                st.session_state.run_analysis = True
-                st.session_state.scan_data = None 
-                st.session_state.radar2_data = None
-                st.rerun()
-
-    elif st.session_state.golden_results is not None and st.session_state.golden_results.empty:
-        st.info("Son taramada kriterlere uyan sonuç bulunamadı.")
 
     # ---------------------------------------------------------
     # 🏆 GRANDMASTER TOP 10 (TEKNİK & NET)
     # ---------------------------------------------------------
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🏆 1-5 GÜNLÜK YÜKSELİŞ ADAYLARI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🏆 MASTER TOP 10 (1-5 Günlük Yükseliş Adayları)</div>', unsafe_allow_html=True)
     
     if 'gm_results' not in st.session_state: st.session_state.gm_results = None
 
