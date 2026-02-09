@@ -4760,32 +4760,12 @@ with st.sidebar:
     
     # -----------------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
-    # 1. PİYASA DUYGUSU (En Üstte) - HATA TESPİT KODU
-    with st.spinner("Sentiment verisi kontrol ediliyor..."):
-        try:
-            # Veriyi çekmeyi dene
-            sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
-            
-            if sentiment_verisi:
-                # Veri varsa çiz
-                render_sentiment_card(sentiment_verisi)
-            else:
-                # Veri YOKSA (None döndüyse) ekrana nedenini bas
-                st.error(f"⚠️ Sentiment Verisi Çekilemedi!")
-                st.caption("Muhtemel Sebep: Yahoo Finance, sunucudan gelen '2 yıllık' veri isteğini engelliyor (Partial Ban).")
-                
-                # Hata ayıklama: Basit bir deneme yapıp sonucu görelim
-                try:
-                    test_df = yf.download(st.session_state.ticker, period="2y", progress=False)
-                    if test_df.empty:
-                        st.write("Kanıt: Yahoo BOŞ veri döndürdü (Blocked).")
-                    else:
-                        st.write(f"İlginç: Veri aslında var ({len(test_df)} satır). Kodda mantık hatası olabilir.")
-                except Exception as e:
-                    st.write(f"Bağlantı Hatası: {e}")
-
-        except Exception as e:
-            st.error(f"Fonksiyon Hatası: {e}")
+    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
+    
+    # 1. PİYASA DUYGUSU (En Üstte)
+    sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
+    if sentiment_verisi:
+        render_sentiment_card(sentiment_verisi)
 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     # LORENTZİAN PANELİ 
@@ -6719,4 +6699,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
