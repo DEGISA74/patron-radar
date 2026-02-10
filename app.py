@@ -5157,7 +5157,7 @@ st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allo
 
 if st.session_state.generate_prompt:
     t = st.session_state.ticker
-    
+    clean_ticker = t.replace(".IS", "").replace("-USD", "").replace("=F", "")
     # --- 1. GEREKLİ VERİLERİ TOPLA ---
     info = fetch_stock_info(t)
     df_hist = get_safe_historical_data(t) # Ana veri
@@ -5636,7 +5636,7 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 *** 6. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
 *** GÖREVİN *** Verileri sentezle ve kaliteli bir analiz kurgula, tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. 
-En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
+En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
    - Verilen tüm verileri tara ve toplamda 8 maddelik bir analiz listesi oluştur.
    - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
@@ -5655,12 +5655,191 @@ En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığ
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{t} #BIST100 #XU100" yaz.
+4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
         st.success("Prompt Güncellendi")
-    
+        # ==============================================================================
+        # 🐦 TWITTER VİRAL AJANI (V12.0 - DOĞRU SIRALAMA / DEFINITELY FIXED)
+        # ==============================================================================
+        st.markdown("---")
+        st.markdown("### 𝕏 Twitter Vitrini")
+
+        # 1. ADIM: TÜM DEĞİŞKENLERİ EN BAŞTA "BOŞ" OLARAK OLUŞTUR (INIT)
+        # Python yukarıdan aşağı okuduğu için bunları en tepede tanımlamak zorundayız.
+        # Böylece aşağıda veri bulamazsa bile elinde bu varsayılan değerler olur.
+        clean_ticker = "HISSE"
+        c_rsi = 50.0
+        c_rs = 0.0
+        c_score = 50.0
+        c_ict = 0.0
+        c_vol = 0.0
+        check_royal = False
+        check_golden = False
+        c_destek = "Grafikte"
+        c_direnc = "Grafikte"
+
+        # 2. ADIM: MEVCUT DEĞERLERİ GÜVENLİCE ÇEK VE GÜNCELLE
+        # ------------------------------------------------------------------
+        # Hisse Adı Güncelleme
+        if 't' in locals() and t: 
+            clean_ticker = str(t).replace(".IS", "").replace(".is", "")
+        elif 'sembol' in locals() and sembol: 
+            clean_ticker = str(sembol).replace(".IS", "").replace(".is", "")
+
+        # Sayısal Verileri Güncelleme
+        try:
+            if 'rsi' in locals(): c_rsi = float(rsi)
+            if 'rs_rating' in locals(): c_rs = float(rs_rating)
+            if 'master_score' in locals(): c_score = float(master_score)
+            if 'ict_score' in locals(): c_ict = float(ict_score)
+            if 'vol_score' in locals(): c_vol = float(vol_score)
+        except:
+            pass # Hata olursa varsayılan (50.0 veya 0.0) kalır.
+
+        # Özel Durumları (Royal/Golden) Güncelleme
+        try:
+            if 'is_royal' in locals() and "EVET" in str(is_royal): check_royal = True
+            if 'is_golden' in locals() and "EVET" in str(is_golden): check_golden = True
+        except:
+            pass
+
+        # Destek/Direnç Güncelleme
+        try:
+            if 'fib_sup' in locals(): c_destek = str(fib_sup).split(' ')[0]
+            if 'fib_res' in locals(): c_direnc = str(fib_res).split(' ')[0]
+        except:
+            pass
+
+        # 3. ADIM: SENARYO MOTORU (ARTIK HATA VEREMEZ)
+        # ------------------------------------------------------------------
+        txt_baslik = ""
+        txt_kanca = ""
+        txt_alt = ""
+        txt_kanit = ""
+
+        # --- GRUP A: EFSANE SİNYALLER (Nadir) ---
+        if check_royal:
+            txt_baslik = f"💎 {clean_ticker}: FLASH ROYAL (4/4) YAKALANDI! ♠️"
+            txt_kanca = "Borsada yılda sadece 2-3 kez denk gelen o kusursuz hizalanma."
+            txt_alt = "Temel, Teknik, Takas ve Hacim aynı anda 'EVET' diyor. Masadaki en güçlü el."
+            txt_kanit = f"🚀 RS Gücü: {c_rs} (Lider)\n🦁 Market Yapısı: Bullish\n💰 Para Girişi: Çok Güçlü"
+
+        elif check_golden:
+            txt_baslik = f"🏆 {clean_ticker}: GOLDEN TRIO (ALTIN ÜÇLÜ) AKTİF!"
+            txt_kanca = "Sistemin en sevdiği, rallilerin habercisi olan efsane kombinasyon."
+            txt_alt = "Trend, Momentum ve Hacim birleşti. Motorlar çalıştı, kalkış izni verildi."
+            txt_kanit = f"📈 Trend: SMA Üzeri (Güçlü)\n⚡ Momentum: Tam Gaz\n✅ Onay: 3/3 Sinyal"
+
+        # --- GRUP B: KURUMSAL İZLER & HACİM ---
+        elif c_ict >= 15:
+            txt_baslik = f"🦁 {clean_ticker}: MARKET YAPISI DEĞİŞTİ (MSS)!"
+            txt_kanca = "Ayılar tuzağa düştü, direksiyon artık Boğaların elinde."
+            txt_alt = "Düşüş trendinin son kalesi (Swing High) yıkıldı. Geri çekilmeler artık alım fırsatıdır."
+            txt_kanit = f"🛠️ Yapı: Market Structure Shift\n🛡️ Yeni Destek: {c_destek}\n🐋 Akıllı Para: Giriş Yaptı"
+
+        elif c_vol > 18 and c_score > 60:
+            txt_baslik = f"🐋 {clean_ticker}: SESSİZ BALİNA OPERASYONU!"
+            txt_kanca = "Fiyat henüz patlamadı ama Hacim patlıyor. Biri sessizce süpürüyor."
+            txt_alt = "Küçük yatırımcı sıkılıp satarken, 'Smart Money' depoyu dolduruyor. Yay geriliyor."
+            txt_kanit = f"💰 Para Girişi: Gizli Toplama\n📊 Hacim: Ortalamanın 2 Katı\n📍 Konum: Akümülasyon Alanı"
+
+        # --- GRUP C: TREND & GÜÇ ---
+        elif c_rs > 88:
+            txt_baslik = f"👑 {clean_ticker}: KRAL ÇIPLAK DEĞİL, ZIRHLI!"
+            txt_kanca = "Piyasanın tartıştığı değil, peşinden koştuğu 'Lider' hisse."
+            txt_alt = "Endeks düşerken o duruyor, endeks dururken o uçuyor. Para zayıflardan buraya akıyor."
+            txt_kanit = f"💪 RS Rating: {c_rs}/100\n📊 Ayrışma: Pozitif\n🎯 Hedef: {c_direnc}"
+
+        elif c_score >= 85:
+            txt_baslik = f"🚀 {clean_ticker}: ROKET MODU AÇILDI!"
+            txt_kanca = "Trend o kadar güçlü ki, önüne geleni eziyor."
+            txt_alt = "Tüm indikatörler yeşil yakmış durumda. Trendin önünde durulmaz."
+            txt_kanit = f"📊 Skor: {c_score}/100\n📈 Momentum: Aşırı Güçlü\n🛡️ Stop: İzsüren Stop"
+
+        # --- GRUP D: DÜŞÜŞ & DÖNÜŞ (Bear Hunter) ---
+        elif c_score >= 60 and c_rsi < 50:
+            txt_baslik = f"🧘 {clean_ticker}: BOĞALAR DİNLENİYOR (FIRSAT)!"
+            txt_kanca = "Bu bir çöküş değil, sadece bir 'Pit Stop' (Yakıt İkmali)."
+            txt_alt = "Ana trend hala çok güçlü. Panikçiler satarken, profesyoneller bu seviyeleri bekliyordu."
+            txt_kanit = f"🛡️ Trend: Bozulmadı\n📉 RSI: {c_rsi:.0f} (Soğudu/Cazip)\n🎯 Hedef: Zirve Tazeleme"
+
+        elif c_score >= 40 and c_rsi < 30:
+            txt_baslik = f"🎯 {clean_ticker}: SNIPER ATIŞI (DİP AVCI)!"
+            txt_kanca = "Korku zirve yaptı, hisse 'Kelepir' bölgesine düştü."
+            txt_alt = "RSI aşırı satım bölgesinden (Oversold) kafasını kaldırdı. Tepki yükselişi masada."
+            txt_kanit = f"📉 RSI: {c_rsi:.0f} (Dip)\n🛡️ Destek: {c_destek} Altı Stoplu\n⚡ Risk/Ödül: Muazzam"
+
+        elif c_score < 35 and c_rsi < 40:
+            txt_baslik = f"🔪 {clean_ticker}: DÜŞEN BIÇAĞI TUTMA!"
+            txt_kanca = "Ucuz görünüyor olabilir ama teknik yapı 'İflas' modunda."
+            txt_alt = "Trend kırılmış, ortalamalar aşağı bakıyor. Dönüş sinyali gelmeden kahramanlık yapma."
+            txt_kanit = f"⛔ Skor: {c_score}/100 (Kritik)\n📉 Trend: Çöküşte\n⚠️ Risk: Çok Yüksek"
+
+        # --- GRUP G: SÜRÜNENLER ---
+        elif c_score > 35 and c_score < 55 and 40 < c_rsi < 60:
+            txt_baslik = f"🐢 {clean_ticker}: SABIR TESTİ (DİP ÇALIŞMASI)!"
+            txt_kanca = "Gitmiyor diye kızdığınız o hisse, aslında ne yapıyor olabilir?"
+            txt_alt = "Fiyat dar bir banda sıkıştı. Buna 'Bezdirme Politikası' denir. Sabrı olmayan trenden iniyor."
+            txt_kanit = f"🧱 Durum: Dip Oluşumu\n⏳ Volatilite: Düşük\n🔑 Kırılım: {c_direnc} Üstü Beklenmeli"
+            
+        elif c_vol < 5 and c_score < 50:
+            txt_baslik = f"🚜 {clean_ticker}: AĞIR VASITA MODU..."
+            txt_kanca = "Rallilere katılmadı, kendi halinde takılıyor."
+            txt_alt = "Hacim çok düşük, ilgi az. Güvenli liman olabilir ama agresif kar bekleyenleri yorabilir."
+            txt_kanit = f"💤 Hacim: Çok Düşük\n⚖️ Hareket: Yatay/Ağır\n🛡️ Destek: {c_destek}"
+
+        # --- GRUP E: TUZAKLAR & UYARILAR ---
+        elif c_score < 50 and c_rsi > 70:
+            txt_baslik = f"🪤 {clean_ticker}: BOĞA TUZAĞI (FAKE OUT)!"
+            txt_kanca = "Fiyat yükseliyor ama sistem buna inanmıyor."
+            txt_alt = "Hacim zayıf, uyumsuzluk (Divergence) var. Malı yukarıdan ele vermek istiyor olabilirler."
+            txt_kanit = f"⚠️ RSI: {c_rsi:.0f} (Şişkin)\n📉 Hacim: Fiyatı Desteklemiyor\n⛔ Durum: Riskli"
+
+        elif c_rsi > 85:
+            txt_baslik = f"🔥 {clean_ticker}: MOTOR HARARET YAPTI!"
+            txt_kanca = "Çok hızlı gitti, biraz soğuması şart."
+            txt_alt = "RSI tarihi zirvelerde. Kar realizasyonu riski arttı."
+            txt_kanit = f"⚠️ RSI: {c_rsi:.0f} (Aşırı Alım)\n🛡️ Strateji: Kar Al / Stop Yükselt\n🎯 Direnç: {c_direnc}"
+
+        # --- GRUP F: GENEL ---
+        else:
+            txt_baslik = f"👀 {clean_ticker}: RADARA GİRDİ, İZLEMEDEYİM..."
+            txt_kanca = "Henüz net bir 'AL' yok ama hazırlık emareleri var."
+            txt_alt = "Bazı göstergeler olumluya dönüyor. Kırılım gelirse trene atlarız."
+            txt_kanit = f"📊 Skor: {c_score}/100\n🔑 Kritik Seviye: {c_direnc}\n⚖️ Görünüm: Nötr/Pozitif"
+
+        # 4. ADIM: NİHAİ TWEET (HATASIZ LİSTE YÖNTEMİ)
+        # ------------------------------------------------------------------
+        satirlar = []
+        satirlar.append(f"𝕏 {txt_baslik}")
+        satirlar.append("")
+        satirlar.append(txt_kanca)
+        satirlar.append("")
+        satirlar.append(txt_alt)
+        satirlar.append("")
+        satirlar.append("📊 TEKNİK KANITLAR:")
+        satirlar.append(txt_kanit)
+        satirlar.append("")
+        satirlar.append("👇 Detaylı analiz, hedefler ve risk haritası aşağıda 👇")
+        satirlar.append("(Yatırım Tavsiyesi Değildir)")
+        satirlar.append("")
+        
+        # Dinamik Hashtagler
+        tags = f"#Borsa #{clean_ticker} #Bist100"
+        if c_rs > 80: tags += " #Ralli #Lider"
+        if c_rsi < 30: tags += " #DipAvcısı"
+        if "GOLDEN" in txt_baslik: tags += " #GoldenTrio"
+        if "SABIR" in txt_baslik: tags += " #Sabır #DipAnalizi"
+        
+        satirlar.append(tags)
+        
+        final_tweet_safe = "\n".join(satirlar)
+
+        # 5. ADIM: EKRANA BASMA
+        st.text_area("👇 Kopyala ve Paylaş:", value=final_tweet_safe, height=350)
+        st.caption("📸 Analizin veya Grafiğin ekran görüntüsünü eklemeyi unutma!")
     st.session_state.generate_prompt = False
 
 info = fetch_stock_info(st.session_state.ticker)
