@@ -318,7 +318,7 @@ raw_bist_stocks = [
     "UFUK.IS", "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "UZERB.IS",
     "VAKBN.IS", "VAKFN.IS", "VAKKO.IS", "VANGD.IS", "VBTYZ.IS", "VERUS.IS", "VESBE.IS", "VESTL.IS", "VKFYO.IS", "VKGYO.IS", "VKING.IS", "VRGYO.IS",
     "YAPRK.IS", "YATAS.IS", "YAYLA.IS", "YBTAS.IS", "YEOTK.IS", "YESIL.IS", "YGGYO.IS", "YGYO.IS", "YKBNK.IS", "YKSLN.IS", "YONGA.IS", "YUNSA.IS", "YYAPI.IS", "YYLGD.IS",
-    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS", "PAHOL.IS", "MARMR.IS", "BIGEN.IS", "GLRMK.IS"
+    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS", "PAHOL.IS", "MARMR.IS", "BIGEN.IS", "GLRMK.IS", "TRHOL.IS"
 ]
 
 # Kopyaları Temizle ve Birleştir
@@ -3560,7 +3560,59 @@ def render_golden_trio_banner(ict_data, sent_data):
 <div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:{txt}; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">3/3</div>
 </div>
 </div>""", unsafe_allow_html=True)
+
+# --- ROYAL FLUSH HESAPLAYICI ---
+def render_royal_flush_banner(ict_data, sent_data, ticker):
+    if not ict_data or not sent_data: return
+
+    # --- KRİTER 1: YAPI (ICT) ---
+    # BOS veya MSS (Bullish) olmalı
+    cond_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS (Market Structure Shift) 🐂" in ict_data.get('structure', '')
     
+    # --- KRİTER 2: ZEKA (LORENTZIAN AI) ---
+    # 7/8 veya 8/8 Yükseliş olmalı
+    lor_data = calculate_lorentzian_classification(ticker)
+    cond_ai = False
+    votes_txt = "0/8"
+    if lor_data and lor_data['signal'] == "YÜKSELİŞ" and lor_data['votes'] >= 7:
+        cond_ai = True
+        votes_txt = f"{lor_data['votes']}/8"
+
+    # --- KRİTER 3: GÜÇ (RS MOMENTUM) ---
+    # Alpha pozitif olmalı
+    alpha_val = 0
+    pa_data = calculate_price_action_dna(ticker)
+    if pa_data:
+        alpha_val = pa_data.get('rs', {}).get('alpha', 0)
+    cond_rs = alpha_val > 0
+
+    # --- KRİTER 4: MALİYET (VWAP) ---
+    # Ralli modu veya Ucuz olmalı (Parabolik olmamalı)
+    v_diff = pa_data.get('vwap', {}).get('diff', 0) if pa_data else 0
+    cond_vwap = v_diff < 12 # %12'den fazla sapmamış (Aşırı şişmemiş) olmalı
+
+    # --- FİLTRE (YA HEP YA HİÇ - 4/4) ---
+    if not (cond_struct and cond_ai and cond_rs and cond_vwap):
+        return
+
+    # --- HTML ÇIKTISI ---
+    bg = "linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%)" # Kraliyet Mavisi
+    border = "#1e40af"
+    txt = "#ffffff"
+    
+    st.markdown(f"""<div style="background:{bg}; border:1px solid {border}; border-radius:8px; padding:12px; margin-top:5px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<div style="display:flex; align-items:center; gap:10px;">
+<span style="font-size:1.6rem;">♠️</span>
+<div style="line-height:1.2;">
+<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH (KRALİYET SET-UP)</div>
+<div style="font-size:0.75rem; color:{txt}; opacity:0.95;">AI ({votes_txt}) + ICT Yapı + RS Liderliği + VWAP Uyumu: En Yüksek Olasılık.</div>
+</div>
+</div>
+<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:{txt}; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">4/4</div>
+</div>
+</div>""", unsafe_allow_html=True)
+
 # --- SUPERTREND VE FIBONACCI HESAPLAYICI ---
 def calculate_supertrend(df, period=10, multiplier=3.0):
     """
@@ -5127,6 +5179,35 @@ if st.session_state.generate_prompt:
     fund_data = get_fundamental_score(t) or {}
     master_score, pros, cons = calculate_master_score(t)
     lorentzian_bilgisi = render_lorentzian_panel(t, just_text=True)
+    # --- ALTIN FIRSAT DURUMU HESAPLAMA (Garantili Versiyon) ---
+    rs_text_prompt = sent_data.get('rs', '').lower()
+    # 1. Güç Kontrolü
+    c_pwr = ("artıda" in rs_text_prompt or "lider" in rs_text_prompt or "pozitif" in rs_text_prompt or 
+             sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
+    # 2. Konum Kontrolü
+    c_loc = ("DISCOUNT" in ict_data.get('zone', '') or "MSS" in ict_data.get('structure', '') or 
+             "BOS" in ict_data.get('structure', ''))
+    # 3. Enerji Kontrolü
+    c_nrg = ("Güçlü" in ict_data.get('displacement', '') or "Hacim" in sent_data.get('vol', '') or 
+             sent_data.get('raw_rsi', 0) > 55)
+    # Final Onay Durumu
+    is_golden = "🚀 EVET (3/3 Onaylı - KRİTİK FIRSAT)" if (c_pwr and c_loc and c_nrg) else "HAYIR"
+
+    # --- ROYAL FLUSH DURUMU HESAPLAMA (4/4 Kesişim) ---
+    # 1. Yapı: BOS veya MSS Bullish olmalı
+    c_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS" in ict_data.get('structure', '')
+    # 2. Zeka: Lorentzian 7/8 veya 8/8 olmalı
+    lor_data_prompt = calculate_lorentzian_classification(t)
+    c_ai = False
+    if lor_data_prompt and lor_data_prompt['signal'] == "YÜKSELİŞ" and lor_data_prompt['votes'] >= 7:
+        c_ai = True
+    # 3. Güç: Alpha Pozitif olmalı (RS Liderliği)
+    c_rs = pa_data.get('rs', {}).get('alpha', 0) > 0
+    # 4. Maliyet: VWAP sapması %12'den az olmalı (Güvenli Zemin)
+    c_vwap = pa_data.get('vwap', {}).get('diff', 0) < 12
+    # Final Royal Flush Onayı
+    is_royal = "♠️ EVET (4/4 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_ai and c_rs and c_vwap) else "HAYIR"
+
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
     if synth_data is not None and not synth_data.empty:
@@ -5498,9 +5579,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 *** 🚨 DURUM RAPORU: {ai_scenario_title} ***
 (Analizini tamamen bu senaryo ve talimat üzerine kur!)
 {ai_mood_instruction}
-
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
-(Burası sistemin tespit ettiği en sıcak sinyallerdir, analizin merkezine koy!)
+(Burası sistemin tespit ettiği en sıcak sinyallerdir, )
 {scan_summary_str}
 
 *** VARLIK KİMLİĞİ ***
@@ -5508,6 +5588,8 @@ Aşağıdaki TEKNİK ve TEMEL verilere dayanarak profesyonel bir analiz/işlem p
 - GÜNCEL FİYAT: {fiyat_str}
 - ANA SKOR: {master_txt} (Algoritmik Puan)
 - Temel Artılar: {pros_txt}
+- ALTIN FIRSAT (GOLDEN TRIO) DURUMU: {is_golden}
+- ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
 
 *** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) ***
 (Bu bölüm hissenin içsel gücünü gösterir, analizinde mutlaka kullan!)
@@ -5559,6 +5641,8 @@ En başa "SMART MONEY RADAR   #{t}  ANALİZİ -  {fiyat_str} 👇📷" başlığ
    - Verilen tüm verileri tara ve toplamda 8 maddelik bir analiz listesi oluştur.
    - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
+        - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (#RS), kurumsal toplama bölgesinde olduğunu (#ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
+        - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
    - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
    - Her maddeyi yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
@@ -6379,6 +6463,9 @@ with col_right:
     except Exception as e:
         pass # Bir hata olursa sessizce geç, ekranı bozma.
 
+    # Royal Flush Paneli
+    render_royal_flush_banner(ict_data_check, sent_data_check, st.session_state.ticker)
+
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
     
@@ -6392,15 +6479,15 @@ with col_right:
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
     # -----------------------------------------------------------------------------
-    # 🏆 ALTIN FIRSAT (GOLDEN TRIO) - TARAMA PANELİ
+    # 🏆 ALTIN FIRSAT & ♠️ ROYAL FLUSH (SÜPER TARAMA MOTORU)
     # -----------------------------------------------------------------------------
     def get_golden_trio_batch_scan(ticker_list):
-        # Gerekli tüm kütüphaneleri burada çağırıyoruz (Hata riskine karşı)
+        # Gerekli tüm kütüphaneleri burada çağırıyoruz
         import yfinance as yf
         import pandas as pd
         import time
 
-        # --- YARDIMCI RSI HESAPLAMA FONKSİYONU (MANUEL) ---
+        # --- YARDIMCI RSI HESAPLAMA FONKSİYONU ---
         def calc_rsi_manual(series, period=14):
             delta = series.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -6409,17 +6496,17 @@ with col_right:
             return 100 - (100 / (1 + rs))
 
         golden_candidates = []
+        royal_candidates = [] # YENİ: Royal Flush adayları
 
         # 1. BİLGİLENDİRME & HAZIRLIK
-        st.toast("Veri Ambari İndiriliyor (Batch Download)...", icon="⏳")
+        st.toast("Veri Ambari İndiriliyor (1 Yıllık Derinlik)...", icon="⏳")
         progress_text = "📡 Tüm Piyasa Verisi Tek Pakette İndiriliyor (Ban Korumalı Mod)..."
         my_bar = st.progress(10, text=progress_text)
 
         # 2. ENDEKS VERİSİNİ AL (RS Kıyaslaması İçin - XU100)
         try:
-            index_df = yf.download("XU100.IS", period="3mo", progress=False)
+            index_df = yf.download("XU100.IS", period="1y", progress=False) # Süre 1y yapıldı
             if not index_df.empty:
-                # Tek sütun gelirse düzelt, MultiIndex gelirse 'Close' al
                 if isinstance(index_df.columns, pd.MultiIndex):
                     index_close = index_df['Close'].iloc[:, 0] if not index_df['Close'].empty else None
                 else:
@@ -6432,20 +6519,18 @@ with col_right:
         # 3. TOPLU İNDİRME (BATCH DOWNLOAD)
         try:
             tickers_str = " ".join(ticker_list)
-            # group_by='ticker' önemli, veriyi hisse bazlı ayırır
-            data = yf.download(tickers_str, period="3mo", group_by='ticker', auto_adjust=True, progress=False, threads=True)
+            # period="1y" yapıldı (Royal Flush analizi için gerekli)
+            data = yf.download(tickers_str, period="1y", group_by='ticker', auto_adjust=True, progress=False, threads=True)
         except Exception as e:
             st.error(f"Veri indirme hatası: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
 
-        my_bar.progress(40, text="⚡ Hafızadaki Veriler İşleniyor (Algorithm Running)...")
+        my_bar.progress(40, text="⚡ Hafızadaki Veriler İşleniyor (Çift Katmanlı Analiz)...")
 
-        # 4. HIZLI ANALİZ DÖNGÜSÜ (RAM ÜZERİNDEN)
-        # Sütun yapısını kontrol et
+        # 4. HIZLI ANALİZ DÖNGÜSÜ
         if isinstance(data.columns, pd.MultiIndex):
             valid_tickers = [t for t in ticker_list if t in data.columns.levels[0]]
         else:
-            # Eğer tek hisse indirdiysek yapı farklıdır
             valid_tickers = ticker_list if not data.empty else []
 
         total_tickers = len(valid_tickers)
@@ -6458,56 +6543,82 @@ with col_right:
                 else:
                     df = data.copy()
 
-                # Veri yetersizse atla
-                if df.empty or len(df) < 50: continue
+                # Veri yetersizse atla (SMA200 için en az 200 bar lazım)
+                if df.empty or len(df) < 200: continue
 
-                # --- KRİTER 1: GÜÇ (RS - RELATIVE STRENGTH) ---
-                is_powerful = False
                 current_price = df['Close'].iloc[-1]
-                prev_price_20 = df['Close'].iloc[-20]
+                
+                # --- KRİTER 1: GÜÇ (RS) - GÜNCELLENDİ (10 GÜN) ---
+                is_powerful = False
+                # DİKKAT: 20 yerine 10 yaptık. TRHOL gibi yeni uyananları yakalar.
+                prev_price_rs = df['Close'].iloc[-10] 
 
-                if index_close is not None and len(index_close) > 20:
-                    stock_ret = (current_price / prev_price_20) - 1
-                    index_ret = (index_close.iloc[-1] / index_close.iloc[-20]) - 1
+                if index_close is not None and len(index_close) > 10:
+                    stock_ret = (current_price / prev_price_rs) - 1
+                    index_ret = (index_close.iloc[-1] / index_close.iloc[-10]) - 1
                     if stock_ret > index_ret: is_powerful = True
                 else:
-                    # Endeks yoksa RSI > 60
+                    # Endeks yoksa RSI > 55 (Biraz gevşettik)
                     rsi_val = calc_rsi_manual(df['Close']).iloc[-1]
-                    if rsi_val > 60: is_powerful = True
+                    if rsi_val > 55: is_powerful = True
 
                 # --- KRİTER 2: KONUM (DISCOUNT / UCUZLUK) ---
                 high_20 = df['High'].rolling(20).max().iloc[-1]
                 low_20 = df['Low'].rolling(20).min().iloc[-1]
-
                 range_diff = high_20 - low_20
                 is_discount = False
                 if range_diff > 0:
                     loc_ratio = (current_price - low_20) / range_diff
-                    if loc_ratio < 0.5: is_discount = True
+                    if loc_ratio < 0.6: is_discount = True 
 
-                # --- KRİTER 3: ENERJİ (HACİM / MOMENTUM) ---
+                # --- KRİTER 3: ENERJİ (HACİM / MOMENTUM) - GÜNCELLENDİ ---
                 vol_sma20 = df['Volume'].rolling(20).mean().iloc[-1]
                 current_vol = df['Volume'].iloc[-1]
                 rsi_now = calc_rsi_manual(df['Close']).iloc[-1]
+                
+                # Hacim barajını %10'dan %5'e çektik (1.1 -> 1.05)
+                is_energy = (current_vol > vol_sma20 * 1.05) or (rsi_now > 55)
 
-                is_energy = (current_vol > vol_sma20 * 1.1) or (rsi_now > 55)
-
-                # --- FİNAL KARAR ---
+                # === ANA FİLTRE: ALTIN FIRSAT ===
                 if is_powerful and is_discount and is_energy:
-                    # KAZANANLAR İÇİN MARKET CAP
-                    # Burada hata olmasın diye try-except ekledim
+                    
+                    # Piyasa Değeri
                     try:
                         info = yf.Ticker(ticker).info
                         mcap = info.get('marketCap', 0)
                     except:
                         mcap = 0
 
+                    # 1. ALTIN LİSTEYE EKLE
                     golden_candidates.append({
-                        "Hisse": ticker, # DÜZELTME: .replace(".IS", "") KALDIRILDI. Ham veri saklanıyor.
+                        "Hisse": ticker,
                         "Fiyat": current_price,
                         "M.Cap": mcap,
-                        "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji (ICT)"
+                        "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji"
                     })
+
+                    # === İKİNCİ FİLTRE: ROYAL FLUSH (ELİT) KONTROLÜ ===
+                    # Sadece Altın olanlara bakıyoruz
+                    
+                    # Royal Şart 1: Uzun Vade Trend (SMA200 Üzerinde mi?)
+                    sma200 = df['Close'].rolling(200).mean().iloc[-1]
+                    is_bull_trend = current_price > sma200
+                    
+                    # Royal Şart 2: Maliyet/Trend (SMA50 Üzerinde mi?)
+                    sma50 = df['Close'].rolling(50).mean().iloc[-1]
+                    is_structure_solid = current_price > sma50
+                    
+                    # Royal Şart 3: RSI Güvenli Bölge (Aşırı şişmemiş)
+                    is_safe_entry = rsi_now < 75
+
+                    if is_bull_trend and is_structure_solid and is_safe_entry:
+                        # 2. ROYAL LİSTEYE DE EKLE
+                        royal_candidates.append({
+                            "Hisse": ticker,
+                            "Fiyat": current_price,
+                            "M.Cap": mcap,
+                            "Onay": "♠️ 4/4 KRALİYET: Trend(200) + Yapı(50) + RS + Enerji"
+                        })
 
             except:
                 continue
@@ -6520,13 +6631,15 @@ with col_right:
         time.sleep(0.3)
         my_bar.empty()
 
-        return pd.DataFrame(golden_candidates)
+        return pd.DataFrame(golden_candidates), pd.DataFrame(royal_candidates)
 
     # --- ARAYÜZ KODU (State Mantığı ile Düzeltilmiş) ---
 
-    # 1. State Tanımlaması (Sidebar yenilendiğinde sonuçlar kaybolmasın)
+    # 1. State Tanımlaması
     if 'golden_results' not in st.session_state: 
         st.session_state.golden_results = None
+    if 'royal_results' not in st.session_state: # YENİ
+        st.session_state.royal_results = None
 
     st.markdown("---")
 
@@ -6538,53 +6651,77 @@ with col_right:
         if not scan_list:
             st.error("⚠️ Lütfen önce sol menüden bir hisse grubu seçin.")
         else:
-            # Tarama fonksiyonunu çağır
-            df_golden = get_golden_trio_batch_scan(scan_list)
-            
-            if not df_golden.empty:
-                # 1. SIRALAMA
-                df_golden = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
-                # 2. STATE'E KAYDET (İlk 10)
-                st.session_state.golden_results = df_golden.head(10)
-                st.rerun() # Sayfayı yenile ki aşağıdaki blok çalışsın
-            else:
-                st.session_state.golden_results = pd.DataFrame() # Boş dataframe
-                st.warning("⚠️ Kriterlere (Güç + Ucuzluk + Enerji) uyan hisse bulunamadı.")
+            # Spinner ile kullanıcıyı bekletiyoruz
+            with st.spinner("Piyasa taranıyor (Altın Fırsat + Royal Flush)..."):
+                
+                # Fonksiyon artık 2 Dataframe döndürüyor
+                df_golden, df_royal = get_golden_trio_batch_scan(scan_list)
+                
+                # State'e kaydet
+                if not df_golden.empty:
+                    st.session_state.golden_results = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
+                else:
+                    st.session_state.golden_results = pd.DataFrame()
 
-    # 3. SONUÇ GÖSTERİCİ (Buton bloğunun DIŞINDA olmalı)
+                if not df_royal.empty:
+                    st.session_state.royal_results = df_royal.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
+                else:
+                    st.session_state.royal_results = pd.DataFrame()
+            
+            # Eğer hiçbir şey yoksa uyarı ver
+            if st.session_state.golden_results.empty and st.session_state.royal_results.empty:
+                st.warning("⚠️ Kriterlere (Güç + Ucuzluk + Enerji) uyan hisse bulunamadı.")
+            else:
+                st.rerun() # Sayfayı yenile ki aşağıdaki bloklar çalışsın
+
+    # 3. SONUÇ GÖSTERİCİ (Buton bloğunun DIŞINDA)
+    
+    # --- BÖLÜM A: 🦁 ALTIN FIRSATLAR LİSTESİ ---
     if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
         
-        st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.8rem; color:#92400e; text-align:center;'>🦁 Tespit Edilen Altın Fırsatlar ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-        
-        st.caption("Bulunan en değerli fırsatlar:")
+        st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#92400e; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
+        st.caption("Kriterler: RS Gücü + Ucuz Konum + Hacim/Enerji")
 
-        for index, row in st.session_state.golden_results.iterrows():
+        # 3'lü kolonlar halinde butonları diz
+        cols = st.columns(3)
+        for index, row in st.session_state.golden_results.head(12).iterrows(): # İlk 12 tanesi
             
-            # --- GÖRSEL DÜZENLEME ---
-            # Veritabanındaki ham sembol (Örn: THYAO.IS veya BTC-USD)
             raw_symbol = row['Hisse']
-            
-            # Ekranda gösterilecek temiz sembol (IS'siz)
             display_symbol = raw_symbol.replace(".IS", "")
+            fiyat_str = f"{row['Fiyat']:.2f}"
             
-            # Etiket
-            label_text = f"{display_symbol} / {row['Fiyat']:.2f}₺ / {row['Onay']}"
-            
-            # Benzersiz key kullanarak butonu oluştur
-            if st.button(label_text, key=f"btn_gold_final_{raw_symbol}_{index}", use_container_width=True):
-                
-                # --- AKSİYON ---
-                # Seçili hisseyi HAM haliyle (örn: THYAO.IS) state'e atıyoruz.
+            # Standart Buton
+            if cols[index % 3].button(f"🦁 {display_symbol}\n{fiyat_str}", key=f"btn_gold_{index}", use_container_width=True):
                 st.session_state.ticker = raw_symbol
-                
-                # Analizi tetikle
                 st.session_state.run_analysis = True
-                st.session_state.scan_data = None 
-                st.session_state.radar2_data = None
+                st.session_state.scan_data = None
                 st.rerun()
 
+    # --- BÖLÜM B: ♠️ ROYAL FLUSH (ELİTLER) LİSTESİ ---
+    if st.session_state.royal_results is not None and not st.session_state.royal_results.empty:
+        
+        st.markdown("---")
+        st.markdown(f"<div style='background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:6px; padding:8px; margin-bottom:10px; font-size:1rem; font-weight:bold; color:white; text-align:center;'>♠️ ROYAL FLUSH (ELİTLER) ({len(st.session_state.royal_results)})</div>", unsafe_allow_html=True)
+        st.caption("Ekstra Kriterler: Boğa Trendi (SMA200) + Sağlam Yapı + Güvenli Giriş")
+
+        # 3'lü kolonlar halinde butonları diz
+        cols_royal = st.columns(3)
+        for index, row in st.session_state.royal_results.head(6).iterrows(): # En iyi 6 tanesi
+            
+            raw_symbol = row['Hisse']
+            display_symbol = raw_symbol.replace(".IS", "")
+            fiyat_str = f"{row['Fiyat']:.2f}"
+            
+            # Primary (Vurgulu) Buton
+            if cols_royal[index % 3].button(f"♠️ {display_symbol}\n{fiyat_str}", type="primary", key=f"btn_royal_{index}", use_container_width=True):
+                st.session_state.ticker = raw_symbol
+                st.session_state.run_analysis = True
+                st.session_state.scan_data = None
+                st.rerun()
+    
     elif st.session_state.golden_results is not None and st.session_state.golden_results.empty:
-        st.info("Son taramada kriterlere uyan sonuç bulunamadı.")
+        # Eğer tarama yapılmış ama sonuç yoksa (Daha önce uyarı vermiştik ama burada da temiz dursun)
+        pass
 
     # ---------------------------------------------------------
     # 🏆 GRANDMASTER TOP 10 (TEKNİK & NET)
