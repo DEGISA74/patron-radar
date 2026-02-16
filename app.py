@@ -1748,9 +1748,39 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
     except: return None
 
+# ==============================================================================
+# 🧠 MERKEZİ VERİ ÖNBELLEĞİ (BAN KORUMASI VE SÜPER HIZ)
+# ==============================================================================
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_market_data_cached(tickers_tuple):
+    import yfinance as yf
+    tickers_str = " ".join(tickers_tuple)
+    return yf.download(tickers_str, period="1y", group_by='ticker', auto_adjust=True, progress=False, threads=True)
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_index_data_cached():
+    import yfinance as yf
+    import pandas as pd
+    try:
+        index_df = yf.download("XU100.IS", period="1y", progress=False)
+        if not index_df.empty:
+            if isinstance(index_df.columns, pd.MultiIndex):
+                return index_df['Close'].iloc[:, 0] if not index_df['Close'].empty else None
+            else:
+                return index_df['Close']
+    except:
+        pass
+    return None
+
 @st.cache_data(ttl=3600)
 def radar2_scan(asset_list, min_price=5, max_price=5000, min_avg_vol_m=0.5):
-    data = get_batch_data_cached(asset_list, period="1y")
+    # ORTAK HAFIZADAN ÇEKER (Altın Fırsatlar ile Aynı Havuz)
+    try:
+        data = fetch_market_data_cached(tuple(asset_list))
+    except Exception as e:
+        st.error(f"Radar 2 veri hatası: {e}")
+        return pd.DataFrame()
+        
     if data.empty: return pd.DataFrame()
     
     try: idx = yf.download("^GSPC", period="1y", progress=False)["Close"]
@@ -7382,26 +7412,14 @@ with col_right:
         progress_text = "📡 Tüm Piyasa Verisi Tek Pakette İndiriliyor (Ban Korumalı Mod)..."
         my_bar = st.progress(10, text=progress_text)
 
-        # 2. ENDEKS VERİSİNİ AL (RS Kıyaslaması İçin - XU100)
-        try:
-            index_df = yf.download("XU100.IS", period="1y", progress=False) # Süre 1y yapıldı
-            if not index_df.empty:
-                if isinstance(index_df.columns, pd.MultiIndex):
-                    index_close = index_df['Close'].iloc[:, 0] if not index_df['Close'].empty else None
-                else:
-                    index_close = index_df['Close']
-            else:
-                index_close = None
-        except:
-            index_close = None
+        # 2. ENDEKS VERİSİNİ AL (Hafızadan Çeker)
+        index_close = fetch_index_data_cached()
 
-        # 3. TOPLU İNDİRME (BATCH DOWNLOAD)
+        # 3. TOPLU İNDİRME (Hafızadan Çeker - BAN Korumalı)
         try:
-            tickers_str = " ".join(ticker_list)
-            # period="1y" yapıldı (Royal Flush analizi için gerekli)
-            data = yf.download(tickers_str, period="1y", group_by='ticker', auto_adjust=True, progress=False, threads=True)
+            data = fetch_market_data_cached(tuple(ticker_list))
         except Exception as e:
-            st.error(f"Veri indirme hatası: {e}")
+            st.error(f"Veri çekme hatası: {e}")
             return pd.DataFrame(), pd.DataFrame()
 
         my_bar.progress(40, text="⚡ Hafızadaki Veriler İşleniyor (Çift Katmanlı Analiz)...")
@@ -7565,21 +7583,24 @@ with col_right:
 
     st.markdown("---")
 
-    # 2. TARAMA TETİKLEYİCİSİ
-    if st.button("🏆 ALTIN FIRSATLARI TARA", type="primary", use_container_width=True):
-        
+    # 2. MERKEZİ TARAMA TETİKLEYİCİSİ (TEK TUŞ - TÜM RADARLAR)
+    if st.button("🏆 TARA (LORENTZIAN + ALTIN FIRSATLAR)", type="primary", use_container_width=True):
+
         scan_list = ASSET_GROUPS.get(st.session_state.category, [])
-        
+
         if not scan_list:
             st.error("⚠️ Lütfen önce sol menüden bir hisse grubu seçin.")
         else:
-            # Spinner ile kullanıcıyı bekletiyoruz
-            with st.spinner("Piyasa taranıyor (Altın Fırsat + Royal Flush)..."):
-                
-                # Fonksiyon artık 2 Dataframe döndürüyor
+            with st.spinner("Tüm Piyasa Verisi Çekiliyor ve Algoritmalar Çalışıyor (Lütfen Bekleyin)..."):
+
+                # 1. Radar 2 (Lorentzian) Taraması
+                df_radar2 = radar2_scan(scan_list)
+                st.session_state.radar2_data = df_radar2
+
+                # 2. Altın Fırsat & Royal Flush Taraması
                 df_golden, df_royal = get_golden_trio_batch_scan(scan_list)
-                
-                # State'e kaydet
+
+                # State'lere kaydet
                 if not df_golden.empty:
                     st.session_state.golden_results = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
                 else:
@@ -7589,63 +7610,73 @@ with col_right:
                     st.session_state.royal_results = df_royal.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
                 else:
                     st.session_state.royal_results = pd.DataFrame()
-            
-            # Eğer hiçbir şey yoksa uyarı ver
-            if st.session_state.golden_results.empty and st.session_state.royal_results.empty:
-                st.warning("⚠️ Kriterlere (Güç + Ucuzluk + Enerji) uyan hisse bulunamadı.")
+
+            if st.session_state.golden_results.empty and st.session_state.royal_results.empty and (df_radar2 is None or df_radar2.empty):
+                st.warning("⚠️ Kriterlere uyan hisse bulunamadı.")
             else:
-                st.rerun() # Sayfayı yenile ki aşağıdaki bloklar çalışsın
+                st.rerun() # Sayfayı yenile ki tüm paneller aynı anda dolsun
 
-    # 3. SONUÇ GÖSTERİCİ (Buton bloğunun DIŞINDA)
+    # 3. SONUÇ GÖSTERİCİ EKRAN (TÜM RADARLAR ALT ALTA)
     
-    # --- BÖLÜM A: 🦁 ALTIN FIRSATLAR LİSTESİ ---
-    if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
-        
-        st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#92400e; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-        st.caption("Kriterler: RS Gücü + Ucuz Konum + Hacim/Enerji")
-
-        # 3'lü kolonlar halinde butonları diz
-        cols = st.columns(3)
-        for index, row in st.session_state.golden_results.head(12).iterrows(): # İlk 12 tanesi
-            
-            raw_symbol = row['Hisse']
-            display_symbol = raw_symbol.replace(".IS", "")
-            
-            fiyat_val = row['Fiyat']
-            has_warn = row.get('Warning', False)
-            fiyat_str = f"🟠 {fiyat_val:.2f}" if has_warn else f"{fiyat_val:.2f}"
-
-            # Standart Buton
-            if cols[index % 3].button(f"🦁 {display_symbol}\n{fiyat_str}", key=f"btn_gold_{index}", use_container_width=True):
-                st.session_state.ticker = raw_symbol
-                st.session_state.run_analysis = True
-                st.session_state.scan_data = None
-                st.rerun()
-
-    # --- BÖLÜM B: ♠️ ROYAL FLUSH (ELİTLER) LİSTESİ ---
+    # --- BÖLÜM A: ♠️ ROYAL FLUSH (EN ÜSTTE ÇÜNKÜ EN ELİT) ---
     if st.session_state.royal_results is not None and not st.session_state.royal_results.empty:
-        
         st.markdown("---")
         st.markdown(f"<div style='background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:6px; padding:8px; margin-bottom:10px; font-size:1rem; font-weight:bold; color:white; text-align:center;'>♠️ ROYAL FLUSH (ELİTLER) ({len(st.session_state.royal_results)})</div>", unsafe_allow_html=True)
-        st.caption("Ekstra Kriterler: Boğa Trendi (SMA200) + Sağlam Yapı + Güvenli Giriş")
+        st.caption("Kriterler: Boğa Trendi (SMA200) + Sağlam Yapı + Güvenli Giriş + RS Gücü")
 
-        # 3'lü kolonlar halinde butonları diz
         cols_royal = st.columns(3)
-        for index, row in st.session_state.royal_results.head(6).iterrows(): # En iyi 6 tanesi
-            
+        for index, row in st.session_state.royal_results.head(6).iterrows():
             raw_symbol = row['Hisse']
             display_symbol = raw_symbol.replace(".IS", "")
-            
             fiyat_val = row['Fiyat']
             has_warn = row.get('Warning', False)
             fiyat_str = f"🟠 {fiyat_val:.2f}" if has_warn else f"{fiyat_val:.2f}"
 
-            # Primary (Vurgulu) Buton
             if cols_royal[index % 3].button(f"♠️ {display_symbol}\n{fiyat_str}", type="primary", key=f"btn_royal_{index}", use_container_width=True):
                 st.session_state.ticker = raw_symbol
                 st.session_state.run_analysis = True
                 st.session_state.scan_data = None
                 st.rerun()
+
+    # --- BÖLÜM B: 🦁 ALTIN FIRSATLAR LİSTESİ ---
+    if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
+        st.markdown("---")
+        st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#92400e; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
+        st.caption("Kriterler: RS Gücü + Ucuz Konum + Hacim/Enerji")
+
+        cols_gold = st.columns(3)
+        for index, row in st.session_state.golden_results.head(12).iterrows():
+            raw_symbol = row['Hisse']
+            display_symbol = raw_symbol.replace(".IS", "")
+            fiyat_val = row['Fiyat']
+            has_warn = row.get('Warning', False)
+            fiyat_str = f"🟠 {fiyat_val:.2f}" if has_warn else f"{fiyat_val:.2f}"
+
+            if cols_gold[index % 3].button(f"🦁 {display_symbol}\n{fiyat_str}", key=f"btn_gold_{index}", use_container_width=True):
+                st.session_state.ticker = raw_symbol
+                st.session_state.run_analysis = True
+                st.session_state.scan_data = None
+                st.rerun()
+
+    # --- BÖLÜM C: 🚀 RADAR 2 (LORENTZIAN / YÜKSELİŞ ADAYLARI) ---
+    if st.session_state.radar2_data is not None and not st.session_state.radar2_data.empty:
+        st.markdown("---")
+        st.markdown(f"<div style='background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#166534; text-align:center;'>🚀 YÜKSELİŞ ADAYLARI (LORENTZIAN) ({len(st.session_state.radar2_data)})</div>", unsafe_allow_html=True)
+        st.caption("Kriterler: Makine Öğrenimi KNN Algoritması ile Alım Sinyalleri")
+
+        # 👇 İŞTE BURASI KAYAR KUTUYU (SCROLL) OLUŞTURAN YER
+        with st.container(height=180, border=True):
+            cols_radar2 = st.columns(3)
+            for index, row in st.session_state.radar2_data.iterrows():
+                sym = row["Sembol"]
+                display_sym = sym.replace(".IS", "")
+                setup = row['Setup'] if row['Setup'] != "-" else "Trend"
+                
+                if cols_radar2[index % 3].button(f"🚀 {int(row['Skor'])}/7 | {display_sym}", key=f"r2_res_new_{index}", use_container_width=True, help=f"Setup: {setup}"):
+                    st.session_state.ticker = sym
+                    st.session_state.run_analysis = True
+                    st.session_state.scan_data = None
+                    st.rerun()
     
     elif st.session_state.golden_results is not None and st.session_state.golden_results.empty:
         # Eğer tarama yapılmış ama sonuç yoksa (Daha önce uyarı vermiştik ama burada da temiz dursun)
