@@ -7425,7 +7425,48 @@ with col_right:
                 # Veri yetersizse atla (SMA200 için en az 200 bar lazım)
                 if df.empty or len(df) < 200: continue
 
-                current_price = df['Close'].iloc[-1]
+                # --- YENİ: DÜŞEN BIÇAK VE TUZAK KALKANI (5 KURAL) ---
+                today_c = df['Close'].iloc[-1]
+                today_o = df['Open'].iloc[-1]
+                today_h = df['High'].iloc[-1]
+                today_l = df['Low'].iloc[-1]
+                yest_c = df['Close'].iloc[-2]
+                yest_o = df['Open'].iloc[-2]
+                day2_c = df['Close'].iloc[-3]
+
+                # 1. Kırmızı Mum İptali (Bugün Kapanış < Açılış ise direkt ele)
+                if today_c < today_o:
+                    continue
+
+                # 2. Son 2 Günlük Mikro RS Kalkanı (Dün kırmızı, bugün yeşilse)
+                if yest_c < yest_o and today_c >= today_o:
+                    if index_close is not None and len(index_close) > 3:
+                        stock_2d_ret = (today_c / day2_c) - 1
+                        index_2d_ret = (index_close.iloc[-1] / index_close.iloc[-3]) - 1
+                        if stock_2d_ret < index_2d_ret:
+                            continue # Ölü kedi sıçraması, endeksi yenemedi, ele.
+
+                # 3. %4 Çöküş Koruması
+                crash_2d = (today_c - day2_c) / day2_c
+                if crash_2d < -0.04:
+                    continue # 2 günde %4'ten fazla düştüyse şelaledir, ele.
+
+                # UYARI BAYRAKLARI (Shooting Star & Doji)
+                has_warning = False
+                body = abs(today_c - today_o)
+                rng = today_h - today_l
+                upper_shadow = today_h - max(today_c, today_o)
+                lower_shadow = min(today_c, today_o) - today_l
+
+                # 4. Shooting Star (Kayan Yıldız) Uyarısı
+                if upper_shadow >= 2 * body and lower_shadow <= body and body > 0:
+                    has_warning = True
+
+                # 5. Doji Uyarısı
+                if rng > 0 and body <= rng * 0.1:
+                    has_warning = True
+
+                current_price = today_c
                 
                 # --- KRİTER 1: GÜÇ (RS) - GÜNCELLENDİ (10 GÜN) ---
                 is_powerful = False
@@ -7473,20 +7514,21 @@ with col_right:
                         "Hisse": ticker,
                         "Fiyat": current_price,
                         "M.Cap": mcap,
-                        "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji"
+                        "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji",
+                        "Warning": has_warning
                     })
 
                     # === İKİNCİ FİLTRE: ROYAL FLUSH (ELİT) KONTROLÜ ===
                     # Sadece Altın olanlara bakıyoruz
-                    
+
                     # Royal Şart 1: Uzun Vade Trend (SMA200 Üzerinde mi?)
                     sma200 = df['Close'].rolling(200).mean().iloc[-1]
                     is_bull_trend = current_price > sma200
-                    
+
                     # Royal Şart 2: Maliyet/Trend (SMA50 Üzerinde mi?)
                     sma50 = df['Close'].rolling(50).mean().iloc[-1]
                     is_structure_solid = current_price > sma50
-                    
+
                     # Royal Şart 3: RSI Güvenli Bölge (Aşırı şişmemiş)
                     is_safe_entry = rsi_now < 75
 
@@ -7496,7 +7538,8 @@ with col_right:
                             "Hisse": ticker,
                             "Fiyat": current_price,
                             "M.Cap": mcap,
-                            "Onay": "♠️ 4/4 KRALİYET: Trend(200) + Yapı(50) + RS + Enerji"
+                            "Onay": "♠️ 4/4 KRALİYET: Trend(200) + Yapı(50) + RS + Enerji",
+                            "Warning": has_warning
                         })
 
             except:
@@ -7567,8 +7610,11 @@ with col_right:
             
             raw_symbol = row['Hisse']
             display_symbol = raw_symbol.replace(".IS", "")
-            fiyat_str = f"{row['Fiyat']:.2f}"
             
+            fiyat_val = row['Fiyat']
+            has_warn = row.get('Warning', False)
+            fiyat_str = f"🟠 {fiyat_val:.2f}" if has_warn else f"{fiyat_val:.2f}"
+
             # Standart Buton
             if cols[index % 3].button(f"🦁 {display_symbol}\n{fiyat_str}", key=f"btn_gold_{index}", use_container_width=True):
                 st.session_state.ticker = raw_symbol
@@ -7589,8 +7635,11 @@ with col_right:
             
             raw_symbol = row['Hisse']
             display_symbol = raw_symbol.replace(".IS", "")
-            fiyat_str = f"{row['Fiyat']:.2f}"
             
+            fiyat_val = row['Fiyat']
+            has_warn = row.get('Warning', False)
+            fiyat_str = f"🟠 {fiyat_val:.2f}" if has_warn else f"{fiyat_val:.2f}"
+
             # Primary (Vurgulu) Buton
             if cols_royal[index % 3].button(f"♠️ {display_symbol}\n{fiyat_str}", type="primary", key=f"btn_royal_{index}", use_container_width=True):
                 st.session_state.ticker = raw_symbol
