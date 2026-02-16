@@ -3433,12 +3433,49 @@ def calculate_ict_deep_analysis(ticker):
             safety_lvl = last_sl
         
         
-        if "bearish" in bias:
-            action_txt = f"güvenli alım için {safety_lvl:.2f} üzerinde kalıcılık beklenmeli."
+        import random
+
+        # İleri ve Derin hedeflerin hesaplanması (Geniş Vizyon)
+        derin_hedef = min(range_low, magnet_target)
+        if derin_hedef >= final_target: derin_hedef = final_target * 0.96
+        
+        ileri_hedef = max(range_high, magnet_target)
+        if ileri_hedef <= final_target: ileri_hedef = final_target * 1.04
+
+        # KARAR MATRİSİ: Yön (Bias) x Konum (Zone) Çaprazlaması (HİBRİT SENARYOLAR)
+        is_bullish = "bullish" in bias
+        is_premium = "PREMIUM" in zone
+
+        if is_bullish and not is_premium:
+            # 1. ÇEYREK: Boğa + Ucuzluk (İdeal Long Bölgesi)
+            lines = [
+                f"Trend yukarı (Bullish) ve fiyat cazip (Discount) bölgesinde. Kurumsal alım iştahı (Order Flow) ivmeleniyor. {final_target:.2f} direncindeki ilk stop havuzu alındıktan sonra gözler {ileri_hedef:.2f} ana hedefine çevrilecek. Sermaye koruması için {safety_lvl:.2f} majör destek olarak sıkı korunmalı.",
+                f"İdeal 'Smart Money' koşulları devrede: Yön yukarı, fiyat iskontolu. Toplanan emirlerle {final_target:.2f} seviyesindeki likidite hedefleniyor, ardından {ileri_hedef:.2f} bandına yürüyüş başlayabilir. Olası tuzaklara karşı {safety_lvl:.2f} seviyesinin altı yapısal iptal (invalidation) alanıdır.",
+                f"Piyasa yapısı güçlü ve fiyat ucuzluk (Discount) seviyelerinde. Kurumsal destekle önce {final_target:.2f}, ardından {ileri_hedef:.2f} dirençleri kademeli hedef konumunda. Trendin sigortası olan {safety_lvl:.2f} desteği kırılmadıkça yön yukarıdır."
+            ]
+        elif is_bullish and is_premium:
+            # 2. ÇEYREK: Boğa + Pahalılık (FOMO / Kâr Realizasyonu Riski - Senin Formatın)
+            lines = [
+                f"Trend yukarı (Bullish) ancak fiyat pahalılık (Premium) bölgesinde. Kurumsal alım iştahı (Order Flow) devam ediyor. {final_target:.2f} seviyesindeki ilk stop havuzu alındıktan sonra gözler {ileri_hedef:.2f} likiditesine çevrilecek. Ancak {final_target:.2f} hedefine ulaşılamadan kurumsal kâr satışları (Realizasyon) gelebilir. {safety_lvl:.2f} kırılırsa trend bozulur.",
+                f"Yapı pozitif olsa da fiyat 'Premium' seviyelerde yorulma emareleri gösteriyor. Hedefte ilk olarak {final_target:.2f}, ardından {ileri_hedef:.2f} dirençleri var. Buralardan (FOMO ile) yeni maliyetlenmek risklidir; {safety_lvl:.2f} altı kapanışlarda anında savunmaya geçilmeli.",
+                f"Boğalar kontrolü elinde tutuyor fakat fiyat şişmiş (Premium) durumda. Kademeli hedeflerimiz sırasıyla {final_target:.2f} ve {ileri_hedef:.2f} olsa da, bu bölgelerde son bir likidite avı izlenip sert satış gelebilir. İptal seviyesi {safety_lvl:.2f} kesinlikle tavizsiz uygulanmalı."
+            ]
+        elif not is_bullish and is_premium:
+            # 3. ÇEYREK: Ayı + Pahalılık (İdeal Short / Dağıtım Bölgesi)
+            lines = [
+                f"Trend aşağı (Bearish) ve fiyat tam dağıtım (Premium) bölgesinde. Satıcılı baskı sürüyor; {final_target:.2f} seviyesindeki ilk durak kırıldıktan sonra gözler ana uçurum olan {derin_hedef:.2f} likiditesine çevrilecek. Bu ivmenin bozulması ve trend dönüşü için {safety_lvl:.2f} üzerinde kalıcılık şart.",
+                f"Piyasa yapısı zayıf ve kurumsal oyuncular mal çıkıyor (Distribution). Pahalılık bölgesinden başlayan düşüş trendinde {final_target:.2f} hedefine çekilme var, satışlar derinleşirse {derin_hedef:.2f} bandı rahatlıkla test edilebilir. İptal seviyesi: {safety_lvl:.2f}.",
+                f"Aşağı yönlü momentum devrede, satıcılar avantajlı (Premium) konumda. Hedefte sırasıyla {final_target:.2f} ve {derin_hedef:.2f} desteklerindeki stop havuzları var. Fiyata karşı inatlaşmamak ve 'Long' denemek için {safety_lvl:.2f} aşılmasını beklemek kritik."
+            ]
         else:
-            action_txt = f"yükselişin devamı için {safety_lvl:.2f} desteği korunmalı."
-            
-        bottom_line = f"{struct_summary}, {zone_summary} likiditeye ({final_target:.2f}) doğru süzülüyor; {action_txt}"
+            # 4. ÇEYREK: Ayı + Ucuzluk (Aşırı Satım / Sweep Beklentisi)
+            lines = [
+                f"Trend aşağı (Bearish) ancak fiyat iskontolu (Discount) bölgeye inmiş durumda. Satış baskısı devam ediyor; ilk durak {final_target:.2f} ve ardından {derin_hedef:.2f} hedefleri masada. Ancak buralardan 'Short' açmak risklidir, kurumsallar stop patlatıp (Sweep) dönebilir. Dönüş onayı {safety_lvl:.2f}.",
+                f"Aşırı satım (Oversold) bölgesi! Yapı negatif görünse de fiyat çok ucuzlamış. {final_target:.2f} altındaki likiditeye doğru son bir silkeleme (Liquidity Hunt) yaşandıktan sonra {derin_hedef:.2f} görülmeden sert tepki gelebilir. Trend dönüşü için {safety_lvl:.2f} aşılmalı.",
+                f"Ayı piyasası sürüyor fakat fiyatın ucuzluk (Discount) bölgesinde olması düşüş momentumunu yavaşlatabilir. Kademeli hedefler {final_target:.2f} ve {derin_hedef:.2f} olsa da, olası sert tepki alımlarına karşı savunmada kalınmalı ve {safety_lvl:.2f} direnci yakından izlenmeli."
+            ]
+
+        bottom_line = random.choice(lines)
         
 
         return {
