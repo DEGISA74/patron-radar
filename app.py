@@ -5965,7 +5965,8 @@ Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir anali
 
 *** 🚨 DURUM RAPORU: {ai_scenario_title} ***
 (Analizini tamamen bu senaryo ve talimat üzerine kur!)
-{ai_mood_instruction}
+Sistem Talimatı: {ai_mood_instruction}
+Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum belirtilmedi.')}
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, )
 {scan_summary_str}
@@ -6043,7 +6044,7 @@ En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. UYARI: Eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
+4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -6183,269 +6184,269 @@ En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷
             # 1. GEOMETRİK DÖNÜŞ FORMASYONLARI
             if "TOBO" in aktif_formasyon:
                 txt_baslik = f"🏗️ {clean_ticker}: TOBO Formasyonu Onaylandı mı?"
-                txt_kanca = "Düşüş trendinin tabanında devasa bir (TOBO) tespit edildi! Boyun çizgisi kırılıyor, ayılar masadan kalktı mı? UYARI kısmına dikkat👇"
+                txt_kanca = "Düşüş trendinin tabanında devasa bir (TOBO) tespit edildi! Boyun çizgisi kırılıyor, ayılar masadan kalktı mı? Sonuç ve UYARI kısmına dikkat👇"
             elif "OBO" in aktif_formasyon and "TOBO" not in aktif_formasyon:
                 txt_baslik = f"☠️ {clean_ticker}: OBO Tehlikesi?"
-                txt_kanca = "Zirvede tehlikeli bir (OBO) yapısı belirdi. Akıllı para malı dağıtıyor ve boyun çizgisi tehdit altında! UYARI kısmına dikkat👇"
+                txt_kanca = "Zirvede tehlikeli bir (OBO) yapısı belirdi. Akıllı para malı dağıtıyor ve boyun çizgisi tehdit altında! Sonuç ve UYARI kısmına dikkat👇"
             elif "FİNCAN" in aktif_formasyon or "CUP" in aktif_formasyon:
                 txt_baslik = f"☕ {clean_ticker}: Fincan-Kulp Hazırlığı mı?"
-                txt_kanca = "Uzun süren sabır testi bitiyor! Fincan-Kulp formasyonu tamamlanmak üzere. Devasa bir ralli kapıda mı? UYARI kısmına dikkat👇"
+                txt_kanca = "Uzun süren sabır testi bitiyor! Fincan-Kulp formasyonu tamamlanmak üzere. Devasa bir ralli kapıda mı? Sonuç ve UYARI kısmına dikkat👇"
             elif "BAYRAK" in aktif_formasyon or "FLAG" in aktif_formasyon:
                 txt_baslik = f"🏴 {clean_ticker}: Boğa Bayrağı Dalgalanıyor mu?"
-                txt_kanca = "Sert bir direğin ardından kusursuz bir bayrak flama dinlenmesi! Rallinin ikinci ve daha sert ayağı başlıyor mu? UYARI kısmına dikkat👇"
+                txt_kanca = "Sert bir direğin ardından kusursuz bir bayrak flama dinlenmesi! Rallinin ikinci ve daha sert ayağı başlıyor mu? Sonuç ve UYARI kısmına dikkat👇"
 
             # 2. KURUMSAL ARZ-TALEP (SUPPLY/DEMAND) BÖLGELERİ
             elif "RBR" in aktif_formasyon or "RALLY BASE RALLY" in aktif_formasyon:
                 txt_baslik = f"🚀 {clean_ticker}: Rally-Base-Rally? Yeni Dalga!"
-                txt_kanca = "Kurumsal Arz-Talep formasyonu devrede. Ralli, dinlenme ve yeni bir ralli! Hedef neresi? UYARI kısmına dikkat👇"
+                txt_kanca = "Kurumsal Arz-Talep formasyonu devrede. Ralli, dinlenme ve yeni bir ralli! Hedef neresi? Sonuç ve UYARI kısmına dikkat👇"
             elif "DBR" in aktif_formasyon or "DROP BASE RALLY" in aktif_formasyon:
                 txt_baslik = f"🧲 {clean_ticker}: Drop-Base-Rally? Dip Dönüşü!"
-                txt_kanca = "Sert düşüş sonrası yatay toplama evresi bitti. Akıllı para dipten dönüşü (DBR) ateşledi mi? UYARI kısmına dikkat👇"
+                txt_kanca = "Sert düşüş sonrası yatay toplama evresi bitti. Akıllı para dipten dönüşü (DBR) ateşledi mi? Sonuç ve UYARI kısmına dikkat👇"
             elif "DBD" in aktif_formasyon or "DROP BASE DROP" in aktif_formasyon:
                 txt_baslik = f"📉 {clean_ticker}: Drop-Base-Drop? Ayıların İnsafı Yok!"
-                txt_kanca = "Düşüş sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? UYARI kısmına dikkat👇"
+                txt_kanca = "Düşüş sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? Sonuç ve UYARI kısmına dikkat👇"
             elif "RBD" in aktif_formasyon or "RALLY BASE DROP" in aktif_formasyon:
                 txt_baslik = f"🧱 {clean_ticker}: Rally-Base-Drop? Zirvede Dağıtım?"
-                txt_kanca = "Ralli sonrası tepede oyalama (Base) ve ardından sert çöküş (Drop). Büyük oyuncular malı devredip çıkıyor mu? UYARI kısmına dikkat👇"
+                txt_kanca = "Ralli sonrası tepede oyalama (Base) ve ardından sert çöküş (Drop). Büyük oyuncular malı devredip çıkıyor mu? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- GRUP A: EFSANE SİNYALLER ---
         if check_royal:
             if c_rsi >= 70:
                 if c_rs > 80:
                     txt_baslik = f"💎 {clean_ticker}: Kusursuz Fırtına Liderliği? (Flash Royal)"
-                    txt_kanca = "RSI şişmiş olsa da RS (Alpha) gücü endeksi eziyor mu? Trendin zirvesinde kurumsal inat devam ediyor. UYARI kısmına dikkat👇"
+                    txt_kanca = "RSI şişmiş olsa da RS (Alpha) gücü endeksi eziyor mu? Trendin zirvesinde kurumsal inat devam ediyor. Sonuç ve UYARI kısmına dikkat👇"
                 else:
                     txt_baslik = f"🔥 {clean_ticker}: Rallide Kâr Katlanıyor ama Yorulma Belirtileri mi Var?"
-                    txt_kanca = "Kusursuz yükseliş sürüyor fakat RS ivmesi yavaşlıyor. Erken girenler kârını maksimize ederken, düzeltme ufukta olabilir mi? UYARI kısmına dikkat👇"
+                    txt_kanca = "Kusursuz yükseliş sürüyor fakat RS ivmesi yavaşlıyor. Erken girenler kârını maksimize ederken, düzeltme ufukta olabilir mi? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 if c_vol > 20:
                     txt_baslik = f"🚀 {clean_ticker}: Tarihi Fırsat ve Hacim Patlaması?"
-                    txt_kanca = "Tüm göstergeler aynı anda yeşil yaktı ve devasa bir hacimle onaylandı! Büyük kalkış için kurumsal vagonlar doldu mu? UYARI kısmına dikkat👇"
+                    txt_kanca = "Tüm göstergeler aynı anda yeşil yaktı ve devasa bir hacimle onaylandı! Büyük kalkış için kurumsal vagonlar doldu mu? Sonuç ve UYARI kısmına dikkat👇"
                 else:
                     txt_baslik = f"💎 {clean_ticker}: Kusursuz Hizalanma Tamamlandı mı? (Flash Royal)"
-                    txt_kanca = "Sistem 4/4 onay verdi ancak hacim hala sakin. Sessizce pozisyon alanlar büyük hareketi mi bekliyor? UYARI kısmına dikkat👇"
+                    txt_kanca = "Sistem 4/4 onay verdi ancak hacim hala sakin. Sessizce pozisyon alanlar büyük hareketi mi bekliyor? Sonuç ve UYARI kısmına dikkat👇"
         
         elif check_golden:
             if c_rsi >= 70:
                 if aylik_getiri > 15.0:
                     txt_baslik = f"🏆 {clean_ticker}: Altın Ralli Zirveyi Zorluyor?"
-                    txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} getiri ile ralli olgunluk evresinde. Tutanlar rahat, peki yeni girenler için risk/ödül ne durumda? UYARI kısmına dikkat👇"
+                    txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} getiri ile ralli olgunluk evresinde. Tutanlar rahat, peki yeni girenler için risk/ödül ne durumda? Sonuç ve UYARI kısmına dikkat👇"
                 else:
                     txt_baslik = f"🔥 {clean_ticker}: Golden Trio Onayıyla İstikrarlı Yükseliş?"
-                    txt_kanca = "Trend, ivme ve hacim sapasağlam! Göstergeler sıcak ama fiyat aşırı fiyatlanmamış. Ralli devam edecek mi? UYARI kısmına dikkat👇"
+                    txt_kanca = "Trend, ivme ve hacim sapasağlam! Göstergeler sıcak ama fiyat aşırı fiyatlanmamış. Ralli devam edecek mi? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 if c_score > 80:
                     txt_baslik = f"⚡ {clean_ticker}: Güçlü Sinyal, Yüksek Skor? (Golden Trio)"
-                    txt_kanca = "Algoritmik skor zirvede, üçlü onay devrede! Tahtada akıllı para toplanıyor, kalkış izni çıktı. UYARI kısmına dikkat👇"
+                    txt_kanca = "Algoritmik skor zirvede, üçlü onay devrede! Tahtada akıllı para toplanıyor, kalkış izni çıktı. Sonuç ve UYARI kısmına dikkat👇"
                 else:
                     txt_baslik = f"🏆 {clean_ticker}: Ralli Hazırlığı mı? (Golden Trio!)"
-                    txt_kanca = "Trend ve momentum onay verdi. Radar yeşile döndü ancak ana skor hala temkinli. Kırılım an meselesi mi? UYARI kısmına dikkat👇"
+                    txt_kanca = "Trend ve momentum onay verdi. Radar yeşile döndü ancak ana skor hala temkinli. Kırılım an meselesi mi? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- GRUP B: KURUMSAL İZLER ---
         elif c_ict >= 15:
             if c_rsi > 60:
                 txt_baslik = f"🦁 {clean_ticker}: Ayılar Tamamen Pes Etti mi? (Kurumsal Hakimiyet)"
-                txt_kanca = "Fiyat momentum kazanıyor ve kurumsal fonlar tahtayı domine ediyor. Dirençler tek tek kırılacak mı? UYARI kısmına dikkat👇"
+                txt_kanca = "Fiyat momentum kazanıyor ve kurumsal fonlar tahtayı domine ediyor. Dirençler tek tek kırılacak mı? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 txt_baslik = f"🦁 {clean_ticker}: Düşüş Trendi Kırıldı mı? (MSS/BOS)"
-                txt_kanca = "Ayıların son kalesi yıkıldı! Diplerden gelen kurumsal alımlarla direksiyon artık Boğaların elinde. UYARI kısmına dikkat👇"
+                txt_kanca = "Ayıların son kalesi yıkıldı! Diplerden gelen kurumsal alımlarla direksiyon artık Boğaların elinde. Sonuç ve UYARI kısmına dikkat👇"
 
         # --- ÖZEL FIRSATLAR ---
         elif c_vol < 5 and 45 < c_rsi < 55 and c_score > 50:
             if c_rs > 50:
                 txt_baslik = f"💣 {clean_ticker}: Yukarı Yönlü Fırtına Öncesi Sessizlik? (Squeeze)"
-                txt_kanca = f"Hacim kurudu, bantlar daraldı. Ancak hisse {context_rakip} karşısında güçlü (RS>50). Yukarı yönlü %20'lik bir patlama kapıda mı? UYARI kısmına dikkat👇"
+                txt_kanca = f"Hacim kurudu, bantlar daraldı. Ancak hisse {context_rakip} karşısında güçlü (RS>50). Yukarı yönlü %20'lik bir patlama kapıda mı? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 txt_baslik = f"🗜️ {clean_ticker}: Yön Kararı An Meselesi olabilir mi? (Volatilite Daralması)"
-                txt_kanca = "Fiyat dar bir alana hapsoldu, alıcı ve satıcı dengede. Akıllı para tetiği hangi yöne çekecek? UYARI kısmına dikkat👇"
+                txt_kanca = "Fiyat dar bir alana hapsoldu, alıcı ve satıcı dengede. Akıllı para tetiği hangi yöne çekecek? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score > 70 and c_vol > 25 and c_rs > 80:
             txt_baslik = f"🚀 {clean_ticker}: Köprüleri Yaktı mı? (Breakaway/Kaçış)"
-            txt_kanca = "Güçlü hacim, yüksek RS ve devasa skor! Bu sıradan bir hareket değil, kurumsal bir 'Kaçış' dalgası olabilir. UYARI kısmına dikkat👇"
+            txt_kanca = "Güçlü hacim, yüksek RS ve devasa skor! Bu sıradan bir hareket değil, kurumsal bir 'Kaçış' dalgası olabilir. Sonuç ve UYARI kısmına dikkat👇"
 
         # --- UÇ DURUMLAR ---
         elif c_rsi < 22 and c_score < 30:
             if c_vol > 15:
                 txt_baslik = f"💀 {clean_ticker}: Kan Banyosunda Panik Satışı mı? (Kapitülasyon)"
-                txt_kanca = f"RSI tarihi dipte ve hacim çok yüksek! Küçük yatırımcı 'Battık' diyip kaçarken {j_aktor} dipten mi topluyor? UYARI kısmına dikkat👇"
+                txt_kanca = f"RSI tarihi dipte ve hacim çok yüksek! Küçük yatırımcı 'Battık' diyip kaçarken {j_aktor} dipten mi topluyor? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 txt_baslik = f"🕳️ {clean_ticker}: Sessiz Çöküş Devam Ediyor mu? (Aşırı Satım)"
-                txt_kanca = "RSI dipte ama hacim yok. Kimse almaya cesaret edemiyor. Bıçağı tutmak için erken mi? UYARI kısmına dikkat👇"
+                txt_kanca = "RSI dipte ama hacim yok. Kimse almaya cesaret edemiyor. Bıçağı tutmak için erken mi? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rsi > 88:
             if c_vol > 20:
                 txt_baslik = f"🎈 {clean_ticker}: Kusursuz Balon Şişti mi? (Dağıtım Tehlikesi)"
-                txt_kanca = "RSI 88 üstünde ve hacim patlıyor! Akıllı para malı ky'ye mi devrediyor? 'Hüzün' gelmeden kârı koruma vakti mi? UYARI kısmına dikkat👇"
+                txt_kanca = "RSI 88 üstünde ve hacim patlıyor! Akıllı para malı ky'ye mi devrediyor? 'Hüzün' gelmeden kârı koruma vakti mi? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 txt_baslik = f"🔥 {clean_ticker}: Yerçekimine Meydan mı Okuyor? (Parabolik)"
-                txt_kanca = "Aşırı alım bölgesinde limitsiz gidiş. Motor hararet yaptı, kâr realizasyonu her an sert gelebilir. UYARI kısmına dikkat👇"
+                txt_kanca = "Aşırı alım bölgesinde limitsiz gidiş. Motor hararet yaptı, kâr realizasyonu her an sert gelebilir. Sonuç ve UYARI kısmına dikkat👇"
 
         # --- 1. GRUP: RS GÜCÜ ---
         elif c_rs > 90 and c_score > 65:
             txt_baslik = f"🦖 {clean_ticker}: {context_piyasa}'nın Mutlak Lideri mi?"
-            txt_kanca = f"{context_rakip} kan ağlarken o zirve yeniliyor. {j_aktor} buraya sığınıyor, Alfa gücü devrede! UYARI kısmına dikkat👇"
+            txt_kanca = f"{context_rakip} kan ağlarken o zirve yeniliyor. {j_aktor} buraya sığınıyor, Alfa gücü devrede! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score < 45:
             if aylik_getiri > 12.0:
                 txt_baslik = f"🚧 {clean_ticker}: Zirve Yorgunluğu mu? (Ralli Molası)"
-                txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} ralli yaptı ama şimdi skor düşüyor. Kâr satışları başladı, yeni bir sıçrama için güç mü topluyor? UYARI kısmına dikkat👇"
+                txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} ralli yaptı ama şimdi skor düşüyor. Kâr satışları başladı, yeni bir sıçrama için güç mü topluyor? Sonuç ve UYARI kısmına dikkat👇"
             else:
                 if "BTC-" in str(t):
                     txt_baslik = f"🥀 {clean_ticker}: Dijital Altın Pas mı Tuttu?"
-                    txt_kanca = "Risk iştahı kesildi, skor yerlerde. Piyasa beklerken o neden kan kaybediyor? UYARI kısmına dikkat👇"
+                    txt_kanca = "Risk iştahı kesildi, skor yerlerde. Piyasa beklerken o neden kan kaybediyor? Sonuç ve UYARI kısmına dikkat👇"
                 elif is_major:
                     txt_baslik = f"🏛️ {clean_ticker}: Piyasanın Kolonları Titriyor mu?"
-                    txt_kanca = "Ana oyuncu zayıfladı, güven erozyonu sürüyor. Bu çöküş tüm piyasayı aşağı çeker mi? UYARI kısmına dikkat👇"
+                    txt_kanca = "Ana oyuncu zayıfladı, güven erozyonu sürüyor. Bu çöküş tüm piyasayı aşağı çeker mi? Sonuç ve UYARI kısmına dikkat👇"
                 else:
                     txt_baslik = f"🚜 {clean_ticker}: Piyasa Giderken O Neden Duruyor?"
-                    txt_kanca = f"Denge skoru düşük, hareket yok. {j_aktor} bu tahtayı tamamen unuttu mu, yoksa bezdirme mi var? UYARI kısmına dikkat👇"
+                    txt_kanca = f"Denge skoru düşük, hareket yok. {j_aktor} bu tahtayı tamamen unuttu mu, yoksa bezdirme mi var? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rs < 35 and c_score > 60:
             txt_baslik = f"🧟 {clean_ticker}: Bu Yükseliş Gerçek mi? (Yalancı Bahar)"
-            txt_kanca = "Skor yüksek ama RS (Endeks Gücü) yerlerde. Fiyat artıyor ama altı boş. Bu bir 'Boğa Tuzağı' olabilir mi? UYARI kısmına dikkat👇"
+            txt_kanca = "Skor yüksek ama RS (Endeks Gücü) yerlerde. Fiyat artıyor ama altı boş. Bu bir 'Boğa Tuzağı' olabilir mi? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score < 30 and 40 < c_rs < 50:
             txt_baslik = f"🕳️ {clean_ticker}: Ucuz Sandıkça Daha da Ucuzluyor mu?"
-            txt_kanca = "RS nötr ama ana skor iflas bayrağı çekiyor. Dibi bulmaya çalışmak portföy intiharı mı? UYARI kısmına dikkat👇"
+            txt_kanca = "RS nötr ama ana skor iflas bayrağı çekiyor. Dibi bulmaya çalışmak portföy intiharı mı? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rs < 45 and c_score > 40 and c_vol > 12:
             txt_baslik = f"🎭 {clean_ticker}: Direnç Kırıldı mı, Kandırdı mı? (Boğa Tuzağı)"
-            txt_kanca = "Hacim geldi ama RS hala zayıf. Dün 'Tamam' dedik, bugün vazgeçtiler. Sahte kırılımla mal mı kilitlediler? UYARI kısmına dikkat👇"
+            txt_kanca = "Hacim geldi ama RS hala zayıf. Dün 'Tamam' dedik, bugün vazgeçtiler. Sahte kırılımla mal mı kilitlediler? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- 2. GRUP: ANOMALİLER ---
         elif c_score < 45 and 40 < c_rsi < 50:
             txt_baslik = f"🧹 {clean_ticker}: Gizli Toplama (Akümülasyon) İzi mi?"
-            txt_kanca = f"Fiyat dipte yataya bağladı ama Z-Score iyileşiyor. {j_aktor} panik yaptırıp sessizce mal mı topluyor? UYARI kısmına dikkat👇"
+            txt_kanca = f"Fiyat dipte yataya bağladı ama Z-Score iyileşiyor. {j_aktor} panik yaptırıp sessizce mal mı topluyor? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rsi > 75 and c_rs < 60:
             txt_baslik = f"🥵 {clean_ticker}: Rallinin Nefesi Kesildi mi?"
-            txt_kanca = "Fiyat zirveyi gördü ama RS (Alfa) desteklemiyor. Rüzgar tersine dönmek üzere, kârı cebine koyma vakti mi? UYARI kısmına dikkat👇"
+            txt_kanca = "Fiyat zirveyi gördü ama RS (Alfa) desteklemiyor. Rüzgar tersine dönmek üzere, kârı cebine koyma vakti mi? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rsi > 40 and c_score < 40 and c_vol > 8:
             txt_baslik = f"👻 {clean_ticker}: Fiyat Yalan Söylüyor mu? (RSI Uyumsuzluğu)"
-            txt_kanca = "Fiyat 'Öldüm' diyor, İndikatörler 'Hayır' diyor. Trend dönüşü mü yoksa son bir silkeleme mi? UYARI kısmına dikkat👇"
+            txt_kanca = "Fiyat 'Öldüm' diyor, İndikatörler 'Hayır' diyor. Trend dönüşü mü yoksa son bir silkeleme mi? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score > 60 and c_rsi < 60 and c_vol < 8:
             txt_baslik = f"🪤 {clean_ticker}: Ekranda Yeşil Mumlar, Peki Altı Boş mu? (Fake Out)"
-            txt_kanca = "Skor şişmiş ama hacim yok, RSI yatay. Malı yavaşça yukarıdan mı devrediyorlar? UYARI kısmına dikkat👇"
+            txt_kanca = "Skor şişmiş ama hacim yok, RSI yatay. Malı yavaşça yukarıdan mı devrediyorlar? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rs > 75 and c_score > 75 and c_rsi > 50:
             txt_baslik = f"🌟 {clean_ticker}: Kutsal Kase Formasyonu Onaylandı mı?"
-            txt_kanca = "Trend, Momentum ve Alfa gücü (RS) aynı yönü gösteriyor. Büyük oyun başladı, hedefler neresi? UYARI kısmına dikkat👇"
+            txt_kanca = "Trend, Momentum ve Alfa gücü (RS) aynı yönü gösteriyor. Büyük oyun başladı, hedefler neresi? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- 3. GRUP: ZİRVE/YATAY ---
         elif c_vol > 20 and 60 < c_rsi < 80:
             txt_baslik = f"🌪️ {clean_ticker}: Sessiz Dağıtım Devrede mi?"
-            txt_kanca = "Fiyat gitmiyor ama hacim patlıyor. Yukarı kırmıyor, satışı karşılıyorlar. Bu bir 'Gel Gel' operasyonu mu? UYARI kısmına dikkat👇"
+            txt_kanca = "Fiyat gitmiyor ama hacim patlıyor. Yukarı kırmıyor, satışı karşılıyorlar. Bu bir 'Gel Gel' operasyonu mu? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score > 65 and c_vol < 8 and 50 < c_rsi < 65:
             txt_baslik = f"🏳️ {clean_ticker}: Boğa Bayrağı Dalgalanıyor mu? (Mola)"
-            txt_kanca = "Hacim kurudu, satıcılar isteksiz, skor güçlü. Rallinin ikinci ayağı için enerji mi toplanıyor? UYARI kısmına dikkat👇"
+            txt_kanca = "Hacim kurudu, satıcılar isteksiz, skor güçlü. Rallinin ikinci ayağı için enerji mi toplanıyor? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rsi > 70 and c_score < 60:
             txt_baslik = f"🎣 {clean_ticker}: Wyckoff Tuzağı! İçeri mi Çektiler?"
-            txt_kanca = "Tavanı deliyor gibi yapıp geri bastılar. Skor zayıf, RSI şişik. Bu tam bir 'Fake Breakout'. UYARI kısmına dikkat👇"
+            txt_kanca = "Tavanı deliyor gibi yapıp geri bastılar. Skor zayıf, RSI şişik. Bu tam bir 'Fake Breakout'. Sonuç ve UYARI kısmına dikkat👇"
         
         elif 50 < c_rsi < 60 and c_score > 75:
             txt_baslik = f"🧊 {clean_ticker}: Sağlıklı Yükseliş mi? (RSI Reset)"
-            txt_kanca = "Fiyat düşmeden indikatörler soğudu. Trendin gücünü koruduğu en sağlıklı ralli işareti! UYARI kısmına dikkat👇"
+            txt_kanca = "Fiyat düşmeden indikatörler soğudu. Trendin gücünü koruduğu en sağlıklı ralli işareti! Sonuç ve UYARI kısmına dikkat👇"
 
         # --- 4. GRUP: DÜŞÜŞ ---
         elif c_score < 30 and c_vol > 20:
             txt_baslik = f"🛗 {clean_ticker}: Halat Koptu, Serbest Düşüş mü?"
-            txt_kanca = "Bu sıradan bir düzeltme değil! Devasa hacimle skor dibe vurdu. Kurumsallar 'Ne olursa olsun sat' diyor! UYARI kısmına dikkat👇"
+            txt_kanca = "Bu sıradan bir düzeltme değil! Devasa hacimle skor dibe vurdu. Kurumsallar 'Ne olursa olsun sat' diyor! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rs > 70 and c_rsi < 55 and c_score > 55:
             txt_baslik = f"🩺 {clean_ticker}: Sağlıklı Pullback! (Alım Fırsatı mı?)"
-            txt_kanca = "Köpük alındı, fiyat trend desteğine indi. Endeksten güçlü hissede trene binmek için ikinci şans mı? UYARI kısmına dikkat👇"
+            txt_kanca = "Köpük alındı, fiyat trend desteğine indi. Endeksten güçlü hissede trene binmek için ikinci şans mı? Sonuç ve UYARI kısmına dikkat👇"
 
         elif 50 < c_score < 65 and c_rsi < 50:
             txt_baslik = f"🎒 {clean_ticker}: Trend Yoruldu, Kanama Başlayabilir mi?"
-            txt_kanca = "Tırmanış açısı eğildi, ivme kayboldu. Denge bozuluyor, yavaş yavaş destekler test edilecek. UYARI kısmına dikkat👇"
+            txt_kanca = "Tırmanış açısı eğildi, ivme kayboldu. Denge bozuluyor, yavaş yavaş destekler test edilecek. Sonuç ve UYARI kısmına dikkat👇"
         
         elif c_score < 40 and c_rsi < 30 and c_vol > 15:
             txt_baslik = f"🦈 {clean_ticker}: Likidite Avı! Stopları Patlattılar mı?"
-            txt_kanca = f"Desteğin altına atılan o hacimli iğne tesadüf değil. {j_aktor} panikleyenlerin ucuz malını mı topluyor? UYARI kısmına dikkat👇"
+            txt_kanca = f"Desteğin altına atılan o hacimli iğne tesadüf değil. {j_aktor} panikleyenlerin ucuz malını mı topluyor? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score > 40 and c_vol > 25 and c_rsi < 60:
             txt_baslik = f"🦅 {clean_ticker}: Anka Kuşu! Küllerinden Doğuyor mu?"
-            txt_kanca = "Dünün kaybını devasa hacimle tek lokmada yuttu! Ayılar gafil avlandı, rüzgar aniden döndü. UYARI kısmına dikkat👇"
+            txt_kanca = "Dünün kaybını devasa hacimle tek lokmada yuttu! Ayılar gafil avlandı, rüzgar aniden döndü. Sonuç ve UYARI kısmına dikkat👇"
         
         elif c_score > 75 and 48 < c_rsi < 55:
             txt_baslik = f"⚓ {clean_ticker}: Trend Onayı! Güvenli Giriş Limanı mı?"
-            txt_kanca = "Fırtına dindi, RSI tam 50 desteğinden güç aldı. Skor zirvedeyken en güvenli alım penceresi mi? UYARI kısmına dikkat👇"
+            txt_kanca = "Fırtına dindi, RSI tam 50 desteğinden güç aldı. Skor zirvedeyken en güvenli alım penceresi mi? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- 5. GRUP: ARZ-TALEP (SUPPLY/DEMAND) FORMASYONLARI ---
         
         # 1. RALLY - BASE - RALLY (RBR)
         elif aylik_getiri > 10.0 and 50 < c_rsi < 65 and c_vol < 10 and c_score > 65:
             txt_baslik = f"🚀 {clean_ticker}: Rally-Base-Rally! Yeni Zirve Hazırlığı mı?"
-            txt_kanca = "Güçlü bir yükseliş (Rally), ardından hacimsiz bir dinlenme (Base) ve şimdi yeniden yukarı sinyali! İkinci dalga başlıyor mu? UYARI kısmına dikkat👇"
+            txt_kanca = "Güçlü bir yükseliş (Rally), ardından hacimsiz bir dinlenme (Base) ve şimdi yeniden yukarı sinyali! İkinci dalga başlıyor mu? Sonuç ve UYARI kısmına dikkat👇"
             
         # 2. DROP - BASE - RALLY (DBR)
         elif aylik_getiri < -10.0 and 40 < c_rsi < 55 and c_ict >= 15:
             txt_baslik = f"🧲 {clean_ticker}: Drop-Base-Rally! Dip Dönüşü Onaylandı mı?"
-            txt_kanca = "Sert düşüş (Drop) sonrası yatay bantta (Base) mal toplandı ve şimdi Market Yapısı Kırılımı (MSS/Rally) geldi! Akıllı para trene bindi mi? UYARI kısmına dikkat👇"
+            txt_kanca = "Sert düşüş (Drop) sonrası yatay bantta (Base) mal toplandı ve şimdi Market Yapısı Kırılımı (MSS/Rally) geldi! Akıllı para trene bindi mi? Sonuç ve UYARI kısmına dikkat👇"
 
         # 3. DROP - BASE - DROP (DBD)
         elif aylik_getiri < -5.0 and 40 < c_rsi < 50 and c_score < 35:
             txt_baslik = f"📉 {clean_ticker}: Drop-Base-Drop! Ayıların İnsafı Yok mu?"
-            txt_kanca = "Düşüş (Drop) sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? UYARI kısmına dikkat👇"
+            txt_kanca = "Düşüş (Drop) sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? Sonuç ve UYARI kısmına dikkat👇"
             
         # 4. RALLY - BASE - DROP (RBD)
         elif aylik_getiri > 15.0 and 55 < c_rsi < 70 and c_score < 45:
             txt_baslik = f"🧱 {clean_ticker}: Rally-Base-Drop! Zirvede Dağıtım Formasyonu mu?"
-            txt_kanca = "Güçlü ralli (Rally) sonrası tepede oyalama (Base) ve şimdi skor hızla düşüyor (Drop). Büyük oyuncular malı devredip çıkıyor mu? UYARI kısmına dikkat👇"
+            txt_kanca = "Güçlü ralli (Rally) sonrası tepede oyalama (Base) ve şimdi skor hızla düşüyor (Drop). Büyük oyuncular malı devredip çıkıyor mu? Sonuç ve UYARI kısmına dikkat👇"
 
         # 5. ÖLÜMCÜL YATAY BANT (Uzun Süreli Konsolidasyon)
         elif -3.0 < aylik_getiri < 3.0 and 45 < c_rsi < 55 and c_vol < 8:
             txt_baslik = f"⏳ {clean_ticker}: Ölümcül Yatay Bant! Akümülasyon mu, Dağıtım mı?"
-            txt_kanca = "Uzun süredir yön bulamıyor. Hacim ölü, getiri sıfır. Bu devasa sıkışmanın sonu efsanevi bir patlama mı olacak? UYARI kısmına dikkat👇"
+            txt_kanca = "Uzun süredir yön bulamıyor. Hacim ölü, getiri sıfır. Bu devasa sıkışmanın sonu efsanevi bir patlama mı olacak? Sonuç ve UYARI kısmına dikkat👇"
 
         # --- ESKİLER ---
         elif c_vol > 18 and c_score > 60:
             txt_baslik = f"🐋 {clean_ticker}: Balina Hazırlığı! Gizli Toplama mı?"
-            txt_kanca = f"Fiyat henüz patlamadı ama Hacim çıldırıyor. {j_aktor} büyük bir ralli için vagonları mı dolduruyor? UYARI kısmına dikkat👇"
+            txt_kanca = f"Fiyat henüz patlamadı ama Hacim çıldırıyor. {j_aktor} büyük bir ralli için vagonları mı dolduruyor? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rs > 88:
             txt_baslik = f"👑 {clean_ticker}: Piyasaya Meydan Okuyan Lider!"
-            txt_kanca = f"{context_rakip} düşerken o neden dimdik ayakta? Kurumsal koruma kalkanı devrede! UYARI kısmına dikkat👇"
+            txt_kanca = f"{context_rakip} düşerken o neden dimdik ayakta? Kurumsal koruma kalkanı devrede! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score >= 85:
             txt_baslik = f"🚀 {clean_ticker}: Roket Modu Açıldı, Hedef Neresi?"
-            txt_kanca = "Trend o kadar güçlü ki önüne geleni eziyor! Kusursuz skor, amansız yükseliş! UYARI kısmına dikkat👇"
+            txt_kanca = "Trend o kadar güçlü ki önüne geleni eziyor! Kusursuz skor, amansız yükseliş! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score >= 60 and c_rsi < 50:
             txt_baslik = f"🧘 {clean_ticker}: Boğaların Dinlenme Tesisleri! (Pit Stop)"
-            txt_kanca = "Skor hala güçlü ama RSI dinleniyor. Bu bir çöküş değil, yeni bir sıçrama öncesi enerji toplama molası. UYARI kısmına dikkat👇"
+            txt_kanca = "Skor hala güçlü ama RSI dinleniyor. Bu bir çöküş değil, yeni bir sıçrama öncesi enerji toplama molası. Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score >= 40 and c_rsi < 30:
             txt_baslik = f"🎯 {clean_ticker}: Korkunun Zirvesinde Sniper Atışı!"
-            txt_kanca = "Korku tavan yaptı, fiyat 'Bedava' bölgesine düştü. RSI diplerdeyken cesaret eden kazanacak mı? UYARI kısmına dikkat👇"
+            txt_kanca = "Korku tavan yaptı, fiyat 'Bedava' bölgesine düştü. RSI diplerdeyken cesaret eden kazanacak mı? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score < 35 and c_rsi < 40:
             txt_baslik = f"🔪 {clean_ticker}: Düşen Bıçağı Tutmak? (Yüksek Risk)"
-            txt_kanca = "Ucuz görünüyor ama teknik yapı iflas çekiyor. Dip sandığın yer aslında yeni bir uçurumun kenarı olabilir. UYARI kısmına dikkat👇"
+            txt_kanca = "Ucuz görünüyor ama teknik yapı iflas çekiyor. Dip sandığın yer aslında yeni bir uçurumun kenarı olabilir. Sonuç ve UYARI kısmına dikkat👇"
 
         elif 35 < c_score < 55 and 40 < c_rsi < 60:
             txt_baslik = f"🐢 {clean_ticker}: Bezdirme Politikası mı Devrede?"
-            txt_kanca = "Ne düşüyor ne çıkıyor. Gitmiyor diye sattığınız an uçuracaklar mı? Büyük bir sabır testi! UYARI kısmına dikkat👇"
+            txt_kanca = "Ne düşüyor ne çıkıyor. Gitmiyor diye sattığınız an uçuracaklar mı? Büyük bir sabır testi! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_vol < 5 and c_score < 50:
             txt_baslik = f"🚜 {clean_ticker}: Zaman Kaybı mı, Güvenli Liman mı?"
-            txt_kanca = "Herkes kazanırken o yerinde sayıyor. Hacim yok, skor düşük. Tahta yapıcısı tatile mi çıktı? UYARI kısmına dikkat👇"
+            txt_kanca = "Herkes kazanırken o yerinde sayıyor. Hacim yok, skor düşük. Tahta yapıcısı tatile mi çıktı? Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_score < 50 and c_rsi > 70:
             txt_baslik = f"🪤 {clean_ticker}: Kusursuz Boğa Tuzağı mı? (Gel-Gel)"
-            txt_kanca = "Fiyat çıkıyor, RSI şişiyor ama ana skor desteklemiyor. Malı kitleyip kaçma ihtimalleri masada! UYARI kısmına dikkat👇"
+            txt_kanca = "Fiyat çıkıyor, RSI şişiyor ama ana skor desteklemiyor. Malı kitleyip kaçma ihtimalleri masada! Sonuç ve UYARI kısmına dikkat👇"
 
         elif c_rsi > 85:
             txt_baslik = f"🔥 {clean_ticker}: Motor Hararet Yaptı mı? (Aşırı Isınma)"
-            txt_kanca = "RSI tarihi zirvede! Rasyonellik bitti, FOMO başladı. Kârı alıp kenara çekilme vakti mi? UYARI kısmına dikkat👇"
+            txt_kanca = "RSI tarihi zirvede! Rasyonellik bitti, FOMO başladı. Kârı alıp kenara çekilme vakti mi? Sonuç ve UYARI kısmına dikkat👇"
 
         else:
             txt_baslik = f"👀 {clean_ticker}: Radara Girdi! Hazırlık Başladı mı?"
-            txt_kanca = "Henüz net bir 'AL' veya 'SAT' kırılımı yok ama göstergeler hareketleniyor. Kritik eşik neresi? UYARI kısmına dikkat👇"
+            txt_kanca = "Henüz net bir 'AL' veya 'SAT' kırılımı yok ama göstergeler hareketleniyor. Kritik eşik neresi? Sonuç ve UYARI kısmına dikkat👇"
 
         # ---------------------------------------------------------
         # 4. ADIM: NİHAİ TWEET (ICT MOTORUNA TAM ENTEGRE)
@@ -7795,3 +7796,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
