@@ -5537,7 +5537,19 @@ if st.session_state.generate_prompt:
     bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
     bench_series = get_benchmark_data(cat_for_bench)
     idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
-    
+    # Teknik verileri çeken fonksiyonunuzu çağırıyoruz
+    tech_vals = get_tech_card_data(t) 
+    # Eğer veri geldiyse değişkenlere atıyoruz, gelmediyse 0 diyoruz
+    if tech_vals:
+        sma50_val  = tech_vals.get('sma50', 0)
+        sma100_val = tech_vals.get('sma100', 0)
+        sma200_val = tech_vals.get('sma200', 0)
+        ema144_val = tech_vals.get('ema144', 0)
+    else:
+        sma50_val = 0
+        sma100_val = 0
+        sma200_val = 0
+        ema144_val = 0        
     # Diğer Hesaplamalar
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
@@ -5991,6 +6003,11 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - SuperTrend (Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 - SMA50 Durumu: {sma50_str}
+[TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
+- SMA 50 (Orta Vade): {sma50_val:.2f}
+- SMA 100 (Ana Destek): {sma100_val:.2f}
+- SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
+- EMA 144 (Fibonacci/Robotik Seviye): {ema144_val:.2f}
 - EMA Durumu (8/13): {ema_txt}
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
@@ -6026,6 +6043,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 Görevin; tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yükse", "en kötü", "en sert" gibi keskin konuşma.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak (teknik terimleri parantez içinde global kodlarıyla belirterek) sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
+YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 8 maddelik bir liste oluştur. Zorlama madde ekleme! 3 kritik sinyal varsa 3 madde yaz.
    - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
@@ -7796,4 +7814,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
