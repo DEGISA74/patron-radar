@@ -304,7 +304,7 @@ raw_bist_stocks = [
     "GARAN.IS", "GARFA.IS", "GEDIK.IS", "GEDZA.IS", "GENIL.IS", "GENTS.IS", "GEREL.IS", "GESAN.IS", "GLBMD.IS", "GLCVY.IS", "GLRYH.IS", "GLYHO.IS", "GMTAS.IS", "GOKNR.IS", "GOLTS.IS", "GOODY.IS", "GOZDE.IS", "GRNYO.IS", "GRSEL.IS", "GSDDE.IS", "GSDHO.IS", "GSRAY.IS", "GUBRF.IS", "GWIND.IS", "GZNMI.IS",
     "HALKB.IS", "HATEK.IS", "HATSN.IS", "HDFGS.IS", "HEDEF.IS", "HEKTS.IS", "HKTM.IS", "HLGYO.IS", "HRKET.IS", "HTTBT.IS", "HUBVC.IS", "HUNER.IS", "HURGZ.IS",
     "ICBCT.IS", "ICUGS.IS", "IDGYO.IS", "IEYHO.IS", "IHAAS.IS", "IHEVA.IS", "IHGZT.IS", "ILVE.IS", "IMASM.IS", "INDES.IS", "INFO.IS", "INGRM.IS", "INTEM.IS", "INVEO.IS", "INVES.IS", "IPEKE.IS", "ISATR.IS", "ISBIR.IS", "ISBTR.IS", "ISCTR.IS", "ISDMR.IS", "ISFIN.IS", "ISGSY.IS", "ISGYO.IS", "ISKPL.IS", "ISKUR.IS", "ISMEN.IS", "ISSEN.IS", "ISYAT.IS", "ITTFH.IS", "IZENR.IS", "IZFAS.IS", "IZINV.IS", "IZMDC.IS",
-    "JANTS.IS",
+    "JANTS.IS", "TRALT.IS",
     "KAPLM.IS", "KAREL.IS", "KARSN.IS", "KARYE.IS", "KATMR.IS", "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KENT.IS", "KERVN.IS", "KERVT.IS", "KFEIN.IS", "KGYO.IS", "KIMMR.IS", "KLGYO.IS", "KLKIM.IS", "KLMSN.IS", "KLNMA.IS", "KLSER.IS", "KLRHO.IS", "KMPUR.IS", "KNFRT.IS", "KOCMT.IS", "KONKA.IS", "KONTR.IS", "KONYA.IS", "KOPOL.IS", "KORDS.IS", "KOTON.IS", "KOZAA.IS", "KOZAL.IS", "KRDMA.IS", "KRDMB.IS", "KRDMD.IS", "KRGYO.IS", "KRONT.IS", "KRPLS.IS", "KRSTL.IS", "KRTEK.IS", "KRVGD.IS", "KSTUR.IS", "KTLEV.IS", "KTSKR.IS", "KUTPO.IS", "KUVVA.IS", "KUYAS.IS", "KZBGY.IS", "KZGYO.IS",
     "LIDER.IS", "LIDFA.IS", "LILAK.IS", "LINK.IS", "LKMNH.IS", "LMKDC.IS", "LOGO.IS", "LUKSK.IS",
     "MAALT.IS", "MACKO.IS", "MAGEN.IS", "MAKIM.IS", "MAKTK.IS", "MANAS.IS", "MARBL.IS", "MARKA.IS", "MARTI.IS", "MAVI.IS", "MEDTR.IS", "MEGAP.IS", "MEGMT.IS", "MEKAG.IS", "MEPET.IS", "MERCN.IS", "MERIT.IS", "MERKO.IS", "METEM.IS", "METRO.IS", "METUR.IS", "MGROS.IS", "MIATK.IS", "MIPAZ.IS", "MMCAS.IS", "MNDRS.IS", "MNDTR.IS", "MOBTL.IS", "MOGAN.IS", "MPARK.IS", "MRGYO.IS", "MRSHL.IS", "MSGYO.IS", "MTRKS.IS", "MTRYO.IS", "MZHLD.IS",
@@ -1748,6 +1748,86 @@ def process_single_radar2(symbol, df, idx, min_price, max_price, min_avg_vol_m):
         return { "Sembol": symbol, "Fiyat": round(curr_c, 2), "Trend": trend, "Setup": setup, "Skor": score, "RS": round(rs_score * 100, 1), "Etiketler": " | ".join(tags), "Detaylar": details }
     except: return None
 
+# --- YENİ EKLENEN HACİM FONKSİYONLARI ---
+
+def calculate_volume_delta(df):
+    """Mumun kapanışına göre tahmini Hacim Deltası hesaplar."""
+    df = df.copy()
+    df['Range'] = df['High'] - df['Low']
+    df['Range'] = df['Range'].replace(0, 0.0001) # Sıfıra bölünme hatasını önle
+    
+    df['Buying_Pressure'] = (df['Close'] - df['Low']) / df['Range']
+    df['Selling_Pressure'] = (df['High'] - df['Close']) / df['Range']
+    
+    df['Buying_Volume'] = df['Volume'] * df['Buying_Pressure']
+    df['Selling_Volume'] = df['Volume'] * df['Selling_Pressure']
+    
+    # Günlük net hacim farkı (Alıcılar - Satıcılar)
+    df['Volume_Delta'] = df['Buying_Volume'] - df['Selling_Volume']
+    return df
+
+def calculate_volume_profile_poc(df, lookback=20, bins=20):
+    """Belirtilen periyotta en çok hacmin yığıldığı fiyatı (POC) bulur."""
+    if len(df) < lookback:
+        lookback = len(df)
+        
+    recent_df = df.tail(lookback).copy()
+    min_price = recent_df['Low'].min()
+    max_price = recent_df['High'].max()
+    
+    if min_price == max_price: # Fiyat hiç değişmemişse
+        return min_price
+        
+    price_bins = np.linspace(min_price, max_price, bins)
+    recent_df['Typical_Price'] = (recent_df['High'] + recent_df['Low'] + recent_df['Close']) / 3
+    recent_df['Bin_Index'] = np.digitize(recent_df['Typical_Price'], price_bins)
+    
+    volume_by_price = recent_df.groupby('Bin_Index')['Volume'].sum()
+    poc_index = volume_by_price.idxmax()
+    
+    if poc_index - 1 < len(price_bins):
+        poc_price = price_bins[poc_index - 1]
+    else:
+        poc_price = price_bins[-1]
+        
+    return poc_price
+
+def calculate_volume_profile(df, lookback=50, bins=20):
+    """
+    Son 'lookback' kadar mumu alır, fiyatı 'bins' kadar parçaya böler 
+    ve en çok hacmin döndüğü fiyatı (Point of Control) bulur.
+    """
+    if len(df) < lookback:
+        lookback = len(df)
+        
+    recent_df = df.tail(lookback).copy()
+    
+    # Fiyatı min ve max arasında belirli dilimlere (bins) böl
+    min_price = recent_df['Low'].min()
+    max_price = recent_df['High'].max()
+    
+    # Fiyat dilimlerini oluştur
+    price_bins = np.linspace(min_price, max_price, bins)
+    
+    # Her bir mumun hacmini, o mumun ortalama fiyatına göre ilgili dilime ekle
+    recent_df['Typical_Price'] = (recent_df['High'] + recent_df['Low'] + recent_df['Close']) / 3
+    recent_df['Bin_Index'] = np.digitize(recent_df['Typical_Price'], price_bins)
+    
+    # Dilimlerdeki toplam hacmi hesapla
+    volume_by_price = recent_df.groupby('Bin_Index')['Volume'].sum()
+    
+    # En yüksek hacme sahip dilimi (POC) bul
+    poc_index = volume_by_price.idxmax()
+    
+    # POC Fiyatını belirle (o dilimin fiyatı)
+    # digitize indexleri 1'den başlar, bu yüzden -1 yapıyoruz
+    if poc_index - 1 < len(price_bins):
+        poc_price = price_bins[poc_index - 1]
+    else:
+        poc_price = price_bins[-1]
+        
+    return poc_price
+    
 # ==============================================================================
 # 🧠 MERKEZİ VERİ ÖNBELLEĞİ (BAN KORUMASI VE SÜPER HIZ)
 # ==============================================================================
@@ -3527,7 +3607,10 @@ def calculate_price_action_dna(ticker):
     try:
         df = get_safe_historical_data(ticker, period="6mo") 
         if df is None or len(df) < 50: return None
-        
+# --- YENİ HACİM HESAPLAMALARI (ADIM 2) BURAYA EKLENDİ ---
+        df = calculate_volume_delta(df)
+        poc_price = calculate_volume_profile_poc(df, lookback=20, bins=20)
+        # --------------------------------------------------------
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
         # --- VERİ HAZIRLIĞI (SON 3 GÜN) ---
@@ -3846,8 +3929,41 @@ def calculate_price_action_dna(ticker):
                 alpha_val = stock_chg - bench_chg
         except:
             pass
+        
+        # ======================================================
+        # 9. HACİM DELTASI VE POC İLİŞKİSİ (YENİ FORMAT + YÜZDE)
+        # ======================================================
+        son_mum = df.iloc[-1]
+        onceki_mum = df.iloc[-2]
+        delta_val = son_mum['Volume_Delta']
+        fiyat = son_mum['Close']
+        toplam_hacim = son_mum['Volume']
+        
+        # Fiyat ile POC Yüzde farkı hesaplama
+        fark_yuzde = abs((fiyat - poc_price) / poc_price) * 100
+        
+        # DELTA GÜCÜ (Baskınlık Yüzdesi) Hesaplama
+        if toplam_hacim > 0:
+            delta_gucu_yuzde = abs((delta_val / toplam_hacim) * 100)
+        else:
+            delta_gucu_yuzde = 0
+        
+        # Başlığı hazırlama
+        if fiyat > poc_price:
+            delta_title = "✅ Point of Control ÜZERİNDE"
+            yon_metni = "üzerinde"
+        else:
+            delta_title = "⚠️ Point of Control ALTINDA"
+            yon_metni = "altında"
+            
+        if fiyat > onceki_mum['Close'] and delta_val < 0:
+            delta_title += " (🚨 Gizli Satıcı Baskısı)"
+        elif fiyat < onceki_mum['Close'] and delta_val > 0:
+            delta_title += " (🟢 Gizli Alım)"
+            
+        # İstediğin formatta Edu-Note Açıklaması
+        delta_desc = f"Fiyat son 20 mumun hacim merkezi (yani alıcı ve satıcıların en çok işlem yaptığı yer) olan <b>{poc_price:.2f}</b>, %{fark_yuzde:.2f} {yon_metni}."
 
-        # GÜNCELLENMİŞ RETURN BLOĞU
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
             "sfp": {"title": sfp_txt, "desc": sfp_desc},
@@ -3856,9 +3972,15 @@ def calculate_price_action_dna(ticker):
             "sq": {"title": sq_txt, "desc": sq_desc},
             "obv": obv_data,
             "div": {"title": div_txt, "desc": div_desc, "type": div_type},
-            # --- YENİ EKLENENLER ---
             "vwap": {"val": vwap_now, "diff": vwap_diff},
-            "rs": {"alpha": alpha_val}
+            "rs": {"alpha": alpha_val},
+            "smart_volume": {
+                "title": delta_title, 
+                "desc": delta_desc, 
+                "poc": poc_price, 
+                "delta": delta_val, 
+                "delta_yuzde": delta_gucu_yuzde
+            }
         }
     except Exception: return None
 
@@ -4643,7 +4765,7 @@ def render_synthetic_sentiment_panel(data):
         line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
         line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
         area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-EMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
+        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_price_action_panel(ticker):
     obv_title, obv_color, obv_desc = get_obv_divergence_status(ticker)
@@ -4781,7 +4903,52 @@ def render_price_action_panel(ticker):
     </div>
     """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
-    
+
+    # --- EKRANDA SMART MONEY HACİM ROZETİ GÖSTERİMİ ---
+    if pa and "smart_volume" in pa:
+        sv_data = pa["smart_volume"]
+        delta_val = sv_data.get("delta", 0)
+        delta_yuzde = sv_data.get("delta_yuzde", 0) # Yeni eklediğimiz yüzdeyi çekiyoruz
+        
+        # Yüzde durumuna ve yönüne göre RENKLENDİRİLMİŞ baskınlık metni
+        if delta_val < 0:
+            baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>%{delta_yuzde:.1f} Net Satıcı Baskısı</span>"
+        elif delta_val > 0:
+            baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>%{delta_yuzde:.1f} Net Alıcı Baskısı</span>"
+        else:
+            baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
+            
+        # İstediğin formattaki alt metin (Lot kelimesi kalktı, yüzde geldi)
+        delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
+        
+        # Renk temaları
+        if "SATICI" in sv_data["title"] or "ALTINDA" in sv_data["title"]:
+            border_color = "#dc2626"; bg_color = "#fef2f2"
+        elif "ALIM" in sv_data["title"] or "ÜZERİNDE" in sv_data["title"]:
+            border_color = "#16a34a"; bg_color = "#f0fdf4"
+        else:
+            border_color = "#d97706"; bg_color = "#fffbeb"
+
+        st.markdown(f"""
+        <div style="
+            border: 2px solid {border_color}; 
+            background-color: {bg_color}; 
+            padding: 12px; 
+            border-radius: 8px; 
+            margin-top: 10px; 
+            margin-bottom: 10px;">
+            <div style="font-weight: 800; font-size: 0.9rem; color: {border_color}; margin-bottom: 4px;">
+                📊 SMART MONEY HACİM ANALİZİ
+            </div>
+            <div style="font-weight: 700; font-size: 0.85rem; color: #0f172a;">{sv_data['title']}</div>
+            <div style="font-style: italic; font-size: 0.95rem; color: #1e3a8a; margin-top: 4px; line-height: 1.4;">{sv_data['desc']}</div>
+            <div style="border-top: 1px dashed {border_color}; margin-top: 10px; padding-top: 8px; font-size: 0.8rem; color: #1e3a8a;">
+                {delta_text}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    # --------------------------------------------------
+
 def render_ict_certification_card(ticker):
     """
     Sadece 5 şartı geçen hisselerde 'Onay Sertifikası' gösterir.
@@ -5549,7 +5716,7 @@ if st.session_state.generate_prompt:
         sma50_val = 0
         sma100_val = 0
         sma200_val = 0
-        ema144_val = 0        
+        ema144_val = 0    
     # Diğer Hesaplamalar
     ict_data = calculate_ict_deep_analysis(t) or {}
     sent_data = calculate_sentiment_score(t) or {}
@@ -5969,6 +6136,36 @@ if st.session_state.generate_prompt:
         
     havuz_ai = ict_data.get('eqh_eql_txt', 'Yok') if isinstance(ict_data, dict) else 'Yok'
     sweep_ai = ict_data.get('sweep_txt', 'Yok') if isinstance(ict_data, dict) else 'Yok'
+    # --- 🚨 PROMPT'TAN HEMEN ÖNCE PAKETİ AÇIYORUZ ---
+    # calculate_price_action_dna'dan dönen veriyi (örneğin dna değişkeni) kontrol ediyoruz:
+    df = get_safe_historical_data(t, period="6mo") 
+    dna = calculate_price_action_dna(t)
+    # --- PROMPT İÇİN POC VERİLERİNİ HAZIRLAMA ---
+    if dna and "smart_volume" in dna:
+        sv = dna["smart_volume"]
+        poc_price = f"{sv['poc']:.2f}"
+        delta_val = sv.get("delta", 0)
+        delta_yuzde = sv.get("delta_yuzde", 0)
+        
+        if delta_val < 0:
+            baskinlik = f"-%{delta_yuzde:.1f} (Satıcılar Baskın)"
+        elif delta_val > 0:
+            baskinlik = f"+%{delta_yuzde:.1f} (Alıcılar Baskın)"
+        else:
+            baskinlik = "Kusursuz Denge (%0)"
+            
+        delta_durumu = f"{sv['title']} | Net Baskınlık: {baskinlik}"
+    else:
+        delta_durumu = "Veri Yok"
+        poc_price = "Veri Yok"
+        # -----------------------------------------------------
+
+    # Güncel fiyatı DataFrame'den veya mevcut bir fiyattan çekiyoruz
+    try:
+        guncel_fiyat = f"{df['Close'].iloc[-1]:.2f}"
+    except:
+        guncel_fiyat = "Bilinmiyor"
+    # ------------------------------------------------
 
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
@@ -5999,7 +6196,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
 
-*** 1. TREND VE GÜÇ (Minervini & SuperTrend) ***
+*** 1. TREND VE GÜÇ ***
 - SuperTrend (Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 - SMA50 Durumu: {sma50_str}
@@ -6011,8 +6208,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - EMA Durumu (8/13): {ema_txt}
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
-
-*** 2. SMART MONEY LİKİDİTE & ICT YAPISI (Çok Önemli)***
+*** 2. SMART MONEY LİKİDİTE & ICT YAPISI ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
 - Konum (Zone): {ict_data.get('zone', 'Bilinmiyor')}
 - LİKİDİTE HAVUZLARI (Mıknatıs): {havuz_ai}
@@ -6031,6 +6227,15 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - Mum Formasyonu: {mum_desc}
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 - TUZAK DURUMU (SFP): {sfp_desc}
+EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
+- Smart Money Hacim Durumu: {delta_durumu}
+- Hacim Profili POC (Kontrol Noktası): {poc_price}
+- Güncel Fiyat: {guncel_fiyat}
+ANALİZ TALİMATLARI:
+1. Fiyat POC (Kontrol Noktası) seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
+2. Smart Money Hacim Durumundaki "Net Baskınlık" yüzdesine çok dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada çok ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olduğunu özellikle belirt.
+3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı şiddetle uyar.
+4. Analizini sadece standart göstergelerle değil, mutlaka bu hacim, baskınlık yüzdesi ve kurumsal maliyet (POC) verileriyle harmanlayarak, likidite avı perspektifinden yap. Analizinde POC'dan bahsedeceksen daima parantez içinde POC değerini de ver.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f}
 - Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında.
@@ -6062,7 +6267,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
+4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima 3 SATIR EKLE. ilk satıra büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ikinci satıra "(LÜTFEN AŞAĞIDAKİ RESMİ İNCELEYİNİZ)" ve son satıra da  " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -7379,7 +7584,9 @@ with col_right:
     else:
         # Hiçbir şey yoksa boş bırak
         pass
-        
+    # 2. Price Action Paneli
+    render_price_action_panel(st.session_state.ticker)
+
     # --- YENİ EKLEME: ALTIN ÜÇLÜ KONTROL PANELİ ---
     # Verileri taze çekelim ki hata olmasın
     try:
@@ -7393,10 +7600,7 @@ with col_right:
 
     # Royal Flush Paneli
     render_royal_flush_banner(ict_data_check, sent_data_check, st.session_state.ticker)
-
-    # 2. Price Action Paneli
-    render_price_action_panel(st.session_state.ticker)
-    
+  
     # 3. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
     
@@ -7814,5 +8018,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
-
