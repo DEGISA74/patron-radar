@@ -3545,12 +3545,32 @@ def calculate_ict_deep_analysis(ticker):
         
         import random
 
-        # İleri ve Derin hedeflerin hesaplanması (Geniş Vizyon)
-        derin_hedef = min(range_low, magnet_target)
-        if derin_hedef >= final_target: derin_hedef = final_target * 0.96
+        # --- İleri ve Derin Hedeflerin Hesaplanması (Sıralı Likidite Havuzları) ---
+        # Fiyatın üstündeki tepeleri (küçükten büyüğe) ve altındaki dipleri (büyükten küçüğe) sırala
+        all_highs = sorted([h[1] for h in sw_highs if h[1] > curr_price])
+        all_lows = sorted([l[1] for l in sw_lows if l[1] < curr_price], reverse=True)
         
-        ileri_hedef = max(range_high, magnet_target)
-        if ileri_hedef <= final_target: ileri_hedef = final_target * 1.04
+        # Boğa (Yükseliş) için 2. Likidite Havuzunu (İleri Hedef) belirle
+        if len(all_highs) > 1:
+            ileri_hedef = all_highs[1]
+        elif len(all_highs) == 1:
+            ileri_hedef = all_highs[0] * 1.02
+        else:
+            ileri_hedef = curr_price * 1.04
+            
+        # Ayı (Düşüş) için 2. Likidite Havuzunu (Derin Hedef) belirle
+        if len(all_lows) > 1:
+            derin_hedef = all_lows[1]
+        elif len(all_lows) == 1:
+            derin_hedef = all_lows[0] * 0.98
+        else:
+            derin_hedef = curr_price * 0.96
+            
+        # Matematiksel Emniyet Kilidi (İkinci hedef, ilk hedeften daha geride olamaz)
+        if derin_hedef >= final_target: 
+            derin_hedef = final_target * 0.98
+        if ileri_hedef <= final_target: 
+            ileri_hedef = final_target * 1.02
 
         # KARAR MATRİSİ: Yön (Bias) x Konum (Zone) Çaprazlaması (HİBRİT SENARYOLAR)
         is_bullish = "bullish" in bias
@@ -6235,7 +6255,7 @@ ANALİZ TALİMATLARI:
 1. Fiyat POC (Kontrol Noktası) seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
 2. Smart Money Hacim Durumundaki "Net Baskınlık" yüzdesine çok dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada çok ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olduğunu özellikle belirt.
 3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı şiddetle uyar.
-4. Analizini sadece standart göstergelerle değil, mutlaka bu hacim, baskınlık yüzdesi ve kurumsal maliyet (POC) verileriyle harmanlayarak, likidite avı perspektifinden yap. Analizinde POC'dan bahsedeceksen daima parantez içinde POC değerini de ver.
+4. Analizini sadece standart göstergelerle değil, mutlaka bu hacim, baskınlık yüzdesi ve kurumsal maliyet (POC) verileriyle harmanlayarak, likidite avı perspektifinden yap.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f}
 - Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında.
@@ -6267,7 +6287,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima 3 SATIR EKLE. ilk satıra büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ikinci satıra "(LÜTFEN AŞAĞIDAKİ RESMİ İNCELEYİNİZ)" ve son satıra da  " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
+4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
