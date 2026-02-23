@@ -2009,41 +2009,33 @@ def process_single_breakout(symbol, df):
         today_date = datetime.now().date()
         is_live = (last_date == today_date)
         
-        # Varsayılan: Gün bitti (%100)
         progress = 1.0 
-
         if is_live:
             now = datetime.now() + timedelta(hours=3) # TR Saati
             current_hour = now.hour
             current_minute = now.minute
             
-            # BIST Seans Mantığı (10:00 - 18:00)
             if current_hour < 10: progress = 0.1
             elif current_hour >= 18: progress = 1.0
             else:
                 progress = ((current_hour - 10) * 60 + current_minute) / 480.0
                 progress = max(0.1, min(progress, 1.0))
 
-        # Mevcut Hacim
         curr_vol_raw = float(volume.iloc[-1])
-        # Yansıtılmış (Projected) Hacim: "Bu hızla giderse gün sonu ne olur?"
         curr_vol_projected = curr_vol_raw / progress
         
-        # Hacim Ortalaması (Bugün hariç son 20 gün)
         vol_20 = volume.iloc[:-1].tail(20).mean()
         if pd.isna(vol_20) or vol_20 == 0: vol_20 = 1
 
-        # Relative Volume (RVOL) - Projeksiyon kullanılarak hesaplanır
         rvol = curr_vol_projected / vol_20
         
         # --- TEKNİK HESAPLAMALAR ---
-        # Ortalamalar
         ema5 = close.ewm(span=5, adjust=False).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
         sma20 = close.rolling(20).mean(); sma50 = close.rolling(50).mean()
         
-        # Zirve Hesabı (Bugün hariç son 45 gün - Taze Zirve)
-        high_val = high.iloc[:-1].tail(45).max()
+        # 👑 DÜZELTME BURADA: Artık iğnelere (high) değil, gövdelere (close) bakıyoruz!
+        high_val = close.iloc[:-1].tail(45).max()
         curr_price = close.iloc[-1]
         
         # RSI
@@ -2052,62 +2044,52 @@ def process_single_breakout(symbol, df):
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + (gain / loss))).iloc[-1]
         
-        # --- ŞARTLAR (HAVUZ DARALTMAMAK İÇİN MEVCUT KRİTERLER KORUNDU) ---
+        # --- ŞARTLAR ---
         cond_ema = ema5.iloc[-1] > ema20.iloc[-1]
-        
-        # DÜZELTME: Artık "Projected" hacme bakıyoruz, sabah da çalışır.
         cond_vol = rvol > 1.2 
-        
         cond_prox = curr_price > (high_val * 0.90) # %10 Yakınlık
         cond_rsi = rsi < 70
         sma_ok = sma20.iloc[-1] > sma50.iloc[-1]
         
         if cond_ema and cond_vol and cond_prox and cond_rsi:
             
-            # --- 2. LAZYBEAR PATLAMA KONTROLÜ (YENİ) ---
             sq_now, sq_prev = check_lazybear_squeeze_breakout(df)
-            
-            # Patlama Tanımı: Dün Sıkışık (True) VE Bugün Değil (False)
             is_firing = sq_prev and not sq_now
             
-            # --- 3. SIRALAMA VE ÇIKTI ---
-            
-            # Sıralama: Tetiklenenler en üste, diğerleri hacim hızına göre
-            # +1000 puan vererek listenin en tepesine çiviliyoruz.
             sort_score = rvol + (1000 if is_firing else 0)
 
             # Görsel Metin
             prox_pct = (curr_price / high_val) * 100
             
             if is_firing:
-                prox_str = f"🚀 TETİKLENDİ (Triggered)"
+                prox_str = f"🚀 TETİKLENDİ"
             elif sq_now:
-                prox_str = f"💣 Sıkışma Var (Squeeze)"
+                prox_str = f"💣 Sıkışma Var"
             else:
-                prox_str = f"%{prox_pct:.1f}" + (" (Sınırda)" if prox_pct >= 98 else " (Hazırlık)")
+                # DÜZELTME: Eğer fiyat zaten direnci (%100'ü) geçmişse ekranda KIRIYOR yazsın
+                if prox_pct >= 100:
+                    prox_str = f"%{prox_pct:.1f} (Direnç Üstü)"
+                else:
+                    prox_str = f"%{prox_pct:.1f}" + (" (Sınırda)" if prox_pct >= 98 else " (Hazırlık)")
             
-            # Fitil Uyarısı (Satış baskısı var mı?)
+            # Fitil Uyarısı
             body_size = abs(close.iloc[-1] - open_.iloc[-1])
             upper_wick = high.iloc[-1] - max(open_.iloc[-1], close.iloc[-1])
             is_wick_rejected = (upper_wick > body_size * 1.5) and (upper_wick > 0)
             wick_warning = " ⚠️ Satış Baskısı" if is_wick_rejected else ""
             
-            # Hacim Metni (Eğer gerçek hacim düşükse ama hız yüksekse belirtelim)
             if (curr_vol_raw < vol_20) and (rvol > 1.2):
                 rvol_text = "Hız Yüksek (Proj.) 📈"
             else:
                 rvol_text = "Olağanüstü 🐳" if rvol > 2.0 else "İlgi Artıyor 📈"
 
-            display_symbol = symbol
-            trend_display = f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}"
-            
             return { 
                 "Sembol_Raw": symbol, 
-                "Sembol_Display": display_symbol, 
+                "Sembol_Display": symbol, 
                 "Fiyat": f"{curr_price:.2f}", 
                 "Zirveye Yakınlık": prox_str + wick_warning, 
                 "Hacim Durumu": rvol_text, 
-                "Trend Durumu": trend_display, 
+                "Trend Durumu": f"✅EMA | {'✅SMA' if sma_ok else '❌SMA'}", 
                 "RSI": f"{rsi:.0f}", 
                 "SortKey": sort_score,
                 "Hacim": curr_vol_raw
@@ -2144,11 +2126,12 @@ def process_single_confirmed(symbol, df):
         df = df.dropna(subset=['Close'])
         if len(df) < 100: return None 
 
-        close = df['Close']; high = df['High']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
+        # DÜZELTME 1: open_ eklendi (Aşağıda Gap hesabı hata vermesin diye)
+        close = df['Close']; high = df['High']; open_ = df['Open']; volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
         # --- 1. ADIM: ZİRVE KONTROLÜ (Son 20 İş Günü) ---
-        # Bugünü (son satırı) hesaba katmadan, düne kadarki 20 günün zirvesi
-        high_val = high.iloc[:-1].tail(20).max()
+        # 👑 DÜZELTME 2: Artık iğnelere (high) değil, mum kapanışlarına (close) bakıyoruz!
+        high_val = close.iloc[:-1].tail(20).max()
         curr_close = float(close.iloc[-1])
         
         # Eğer bugünkü fiyat, geçmiş 20 günün zirvesini geçmediyse ELE.
@@ -5594,8 +5577,11 @@ with st.sidebar:
     render_minervini_panel_v2(st.session_state.ticker)
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
-    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-        🌟 YILDIZ ADAYLARI
+    <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 12px 8px; border-radius: 6px; text-align: center; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="font-weight: 800; font-size: 1.05rem; letter-spacing: 0.5px; margin-bottom: 5px;">🌟 YILDIZ ADAYLARI</div>
+        <div style="font-size: 0.75rem; font-weight: 400; opacity: 0.9; line-height: 1.3;">
+            Son 5 gündür Endeksten güçlü, 45 günlük yatay direnci hacimle kırdı ya da kırmak üzere, RSI<70
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -5603,7 +5589,7 @@ with st.sidebar:
     stars_found = False
     
     # Scroll Alanı Başlatıyoruz
-    with st.container(height=150):
+    with st.container(height=350):
         
         # Verilerin varlığını kontrol et
         has_accum = st.session_state.accum_data is not None and not st.session_state.accum_data.empty
@@ -5681,7 +5667,7 @@ with st.sidebar:
                         sym = item['sym']
                         # Etiket: 💎 THYAO | Alpha:+%5.2 | KIRDI 🔨 (3.5x)
                         # Etiket: 💎 ASELS | Alpha:+%3.1 | ISINIYOR 🔥 (%98)
-                        label = f"💎 {sym} | Alpha:+%{item['alpha']:.1f} | {item['status']}"
+                        label = f"💎 {sym.replace('.IS', '')} | Alpha:+%{item['alpha']:.1f} | {item['status']}"
                         
                         if st.button(label, key=f"star_rocket_hybrid_{sym}", use_container_width=True):
                             on_scan_result_click(sym)
@@ -5711,7 +5697,7 @@ with st.sidebar:
                     for item in move_star_list:
                         stars_found = True
                         sym = item['sym']
-                        label = f"🚀 {sym} ({item['price']}) | HAREKET"
+                        label = f"🚀 {sym.replace('.IS', '')} ({item['price']}) | HAREKET"
                         if st.button(label, key=f"star_mov_{sym}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -5741,7 +5727,7 @@ with st.sidebar:
                     for item in prep_star_list:
                         stars_found = True
                         sym = item['sym']
-                        label = f"⏳ {sym} ({item['price']}) | HAZIRLIK"
+                        label = f"⏳ {sym.replace('.IS', '')} ({item['price']}) | HAZIRLIK"
                         if st.button(label, key=f"star_prep_{sym}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -5807,7 +5793,7 @@ with st.sidebar:
             
             for item in reversal_list:
                 # Buton Etiketi: 💎 GARAN (150.20) | RSI:28 | 2 Mum Önce
-                label = f"💎 {item['Sembol']} ({item['Fiyat']:.2f}) | RSI:{item['RSI']} | {item['Zaman']}"
+                label = f"💎 {item['Sembol'].replace('.IS', '')} ({item['Fiyat']:.2f}) | RSI:{item['RSI']} | {item['Zaman']}"
                 
                 if st.button(label, key=f"rev_btn_sidebar_{item['Sembol']}", use_container_width=True):
                     on_scan_result_click(item['Sembol'])
@@ -6410,7 +6396,7 @@ Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT 
 Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, basit bir dille anlat. Teknik terimleri parantez içinde global kısaltmalarıyla (örneğin: Fiyat Boşluğu deyip ama yanına (FVG) yaz) kullan ama anlatımı tamamen Türkçe ve yalın yap.
 
 *** 🚨 DURUM RAPORU: {ai_scenario_title} ***
-(Analizini tamamen bu senaryo ve talimat üzerine kur!)
+(Analizini bu senaryo ve talimat üzerine kur!)
 Sistem Talimatı: {ai_mood_instruction}
 Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum belirtilmedi.')}
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
@@ -6425,7 +6411,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - ALTIN FIRSAT (GOLDEN TRIO) DURUMU: {is_golden}
 - ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
 
-*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) ***
+*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Amam bunların GECİKMELİ VERİLER olduğunu unutma***
 - YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
 - HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
 - TREND: {sent_trend} (Ortalamaların durumu ve kısa vadeli trend için EMA 8/13 üstünde olup olmadığı)
@@ -6434,10 +6420,10 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
 
 *** 1. TREND VE GÜÇ ***
-- SuperTrend (Yön): {st_txt}
+- SuperTrend (son 60 günlük Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
-- SMA50 Durumu: {sma50_str}
 [TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
+- SMA50 Durumu: {sma50_str}
 - SMA 50 (Orta Vade): {sma50_val:.2f}
 - SMA 100 (Ana Destek): {sma100_val:.2f}
 - SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
@@ -6445,25 +6431,24 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - EMA Durumu (8/13): {ema_txt}
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
-*** 2. SMART MONEY LİKİDİTE & ICT YAPISI ***
+*** 2. PRICE ACTION / ARZ-TALEP BÖLGELERİ / SMART MONEY LİKİDİTE & ICT YAPISI ***
 - Market Yapısı: {ict_data.get('structure', 'Bilinmiyor')} ({ict_data.get('bias', 'Nötr')})
 - Konum (Zone): {ict_data.get('zone', 'Bilinmiyor')}
 - LİKİDİTE HAVUZLARI (Mıknatıs): {havuz_ai}
 - LİKİDİTE AVI (Sweep/Silkeleme): {sweep_ai}
-- 🐳 Balina Ayak İzi (Taze Arz-Talep Bölgesi): {sd_txt_ai}
+- Balina Ayak İzi (Taze Arz-Talep Bölgesi): {sd_txt_ai}
 - Gizli Para Akışı (10G WMA): {para_akisi_txt}
 - Aktif FVG: {ict_data.get('fvg_txt', 'Yok')}
 - Aktif Order Block: {ict_data.get('ob_txt', 'Yok')}
 - HEDEF LİKİDİTE (Mıknatıs): {ict_data.get('target', 0)}
+- Mum Formasyonu: {mum_desc}
+- RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
+- TUZAK DURUMU (SFP): {sfp_desc}
 - NİHAİ KARAR VE AKSİYON PLANI (THE BOTTOM LINE): {ict_data.get('bottom_line', 'Veri Yok')}
 *** 3. HEDEFLER VE RİSK ***
 - Direnç (Hedef): {fib_res}
 - Destek (Stop): {fib_sup}
 - Hedef Likidite: {liq_str}
-*** 4. PRICE ACTION & ARZ-TALEP BÖLGELERİ ***
-- Mum Formasyonu: {mum_desc}
-- RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
-- TUZAK DURUMU (SFP): {sfp_desc}
 EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
 - Smart Money Hacim Durumu: {delta_durumu}
 - Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
@@ -6481,7 +6466,7 @@ ANALİZ TALİMATLARI:
 *** 6. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
 *** GÖREVİN *** 
-Görevin; tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yükse", "en kötü", "en sert" gibi keskin konuşma.
+Görevin; tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak (teknik terimleri parantez içinde global kodlarıyla belirterek) sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
@@ -6494,7 +6479,6 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
    - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
    - Her maddeyi yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
-   Eeğer açtığın maddelerin başlık kısmında yer almıyorsa ama açtığın maddelerin açıklama kısmında yer alıyorsa, metin içindeki şu kelimelerin önüne "#" koyarak yaz: FOMO, BIST100, RSI, ICT, SmartMoney, EMA5, EMA8, EMA13, Sentiment, Supertrend, BOS, Breakout, Minervini, FVG. (yani mesela şöyle: (9/10) MINERVINI HİZALANMASI: #Minervini şablonuna göre....)
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? Emir kipi kullanmadan ("edilebilir", "beklenebilir") Trend/Destek kırılımına göre risk yönetimi çiz. İzsüren stop (Trailing Stop) seviyesi öner.
@@ -8105,7 +8089,7 @@ with col_right:
     if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
         st.markdown("---")
         st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#92400e; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-        st.caption("Kriterler: Son 10 gün Endeksten Güçlü + Son 60 güne göre Ucuz sayılır + Hacim/Enerji")
+        st.caption("Kriterler: Son 10 gün Endeksten Güçlü + Son 60 güne göre Ucuz + Hacim/Enerji artıyor")
 
         cols_gold = st.columns(3)
         for index, row in st.session_state.golden_results.head(12).iterrows():
