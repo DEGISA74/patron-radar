@@ -14,6 +14,11 @@ import concurrent.futures
 import re
 import altair as alt
 import random
+import os
+
+CACHE_DIR = "veriler"
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -477,28 +482,88 @@ def get_fundamental_score(ticker):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_batch_data_cached(asset_list, period="1y"):
     """
-    Tüm listenin verisini tek seferde çeker ve önbellekte tutar.
-    Tarama fonksiyonları internete değil, buraya başvurur.
+    TOPLU TARAMALAR İÇİN AKILLI ÖNBELLEK (SCANNER'LAR İÇİN)
     """
     if not asset_list:
         return pd.DataFrame()
-    
-    try:
-        # Tickers listesini string'e çevir
-        tickers_str = " ".join(asset_list)
         
-        # Tek seferde devasa indirme (Batch Download)
-        data = yf.download(
-            tickers_str, 
-            period=period, 
-            group_by='ticker', 
-            threads=True, 
-            progress=False,
-            auto_adjust=False 
-        )
-        return data
-    except Exception:
-        return pd.DataFrame()
+    missing_assets = []
+    
+    # 1. Hangi hisselerin diskte verisi yok?
+    for sym in asset_list:
+        clean_sym = sym.replace(".IS", "")
+        if "BIST" in sym or ".IS" in sym:
+            clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
+        if not os.path.exists(os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")):
+            missing_assets.append(sym)
+            
+    # 2. HİÇ OLMAYANLARI ilk defaya mahsus 2 yıllık toplu çek ve diske yaz
+    if missing_assets:
+        df_missing = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False)
+        if not df_missing.empty:
+            for sym in missing_assets:
+                clean_sym = sym.replace(".IS", "")
+                if "BIST" in sym or ".IS" in sym:
+                    clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
+                    
+                try:
+                    df_sym = df_missing[sym] if len(missing_assets) > 1 and isinstance(df_missing.columns, pd.MultiIndex) else df_missing
+                    df_sym = df_sym.dropna(subset=['Close'])
+                    if not df_sym.empty:
+                        df_sym.columns = [c.capitalize() for c in df_sym.columns]
+                        if 'Volume' not in df_sym.columns: df_sym['Volume'] = 1
+                        df_sym.to_parquet(os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet"))
+                except: continue
+
+    # 3. TÜM LİSTE İÇİN (VAR OLANLAR DAHİL) SADECE SON 5 GÜNÜ TOPLU ÇEK (Güncel kalsın diye)
+    df_recent = yf.download(" ".join(asset_list), period="5d", group_by='ticker', threads=True, progress=False)
+    
+    # 4. DİSKTEN OKU + 5 GÜNLÜKLE BİRLEŞTİR + SİSTEME VER
+    combined_dict = {}
+    period_map = {"10y": 2500, "5y": 1250, "2y": 500, "1y": 250, "6mo": 125, "3mo": 60, "1mo": 20}
+    days_to_keep = period_map.get(period, 500) 
+    
+    for sym in asset_list:
+        clean_sym = sym.replace(".IS", "")
+        if "BIST" in sym or ".IS" in sym:
+            clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
+        file_path = os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")
+        
+        try:
+            if os.path.exists(file_path):
+                df_cached = pd.read_parquet(file_path)
+                
+                # Yeni 5 günlük veriyi ayıkla
+                df_sym_recent = pd.DataFrame()
+                if not df_recent.empty:
+                    if len(asset_list) == 1:
+                        df_sym_recent = df_recent
+                    elif isinstance(df_recent.columns, pd.MultiIndex) and sym in df_recent.columns.levels[0]:
+                        df_sym_recent = df_recent[sym]
+                        
+                if not df_sym_recent.empty:
+                    df_sym_recent = df_sym_recent.dropna(subset=['Close'])
+                    df_sym_recent.columns = [c.capitalize() for c in df_sym_recent.columns]
+                    if 'Volume' not in df_sym_recent.columns: df_sym_recent['Volume'] = 1
+                    
+                    # ESKİ VE YENİ VERİYİ BİRLEŞTİR (Yeni veri ezerek günceller)
+                    df_combined = pd.concat([df_cached, df_sym_recent])
+                    df_combined = df_combined[~df_combined.index.duplicated(keep='last')]
+                    df_combined.sort_index(inplace=True)
+                    
+                    df_combined.to_parquet(file_path) # Diski güncelle
+                    final_df = df_combined
+                else:
+                    final_df = df_cached
+                
+                combined_dict[sym] = final_df.tail(days_to_keep)
+        except Exception:
+            continue
+            
+    # Taramaların (eski kodun) yapısını bozmamak için MultiIndex DataFrame olarak birleştir
+    if combined_dict:
+        return pd.concat(combined_dict.values(), axis=1, keys=combined_dict.keys())
+    return pd.DataFrame()
 
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
 @st.cache_data(ttl=300)
@@ -507,26 +572,58 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
         clean_ticker = ticker.replace(".IS", "")
         if "BIST" in ticker or ".IS" in ticker:
             clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
-        
-        df = yf.download(clean_ticker, period=period, interval=interval, progress=False)
-        
-        if df.empty: return None
             
-        if isinstance(df.columns, pd.MultiIndex):
-            try:
-                if clean_ticker in df.columns.levels[1]: df = df.xs(clean_ticker, axis=1, level=1)
-                else: df.columns = df.columns.get_level_values(0)
-            except: df.columns = df.columns.get_level_values(0)
+        file_path = os.path.join(CACHE_DIR, f"{clean_ticker}_{interval}.parquet")
+        
+        # 1. DİSK KONTROLÜ VE "SADECE EKSİĞİ (Son 5 Gün)" İNDİRME
+        if os.path.exists(file_path):
+            df_cached = pd.read_parquet(file_path)
+            
+            # SADECE son 5 günü çek (Ban riski yok, şimşek hızında ve hep canlı)
+            df_new = yf.download(clean_ticker, period="5d", interval=interval, progress=False)
+            
+            if not df_new.empty:
+                if isinstance(df_new.columns, pd.MultiIndex):
+                    try: df_new = df_new.xs(clean_ticker, axis=1, level=1)
+                    except: df_new.columns = df_new.columns.get_level_values(0)
+                df_new.columns = [c.capitalize() for c in df_new.columns]
+                if 'Volume' not in df_new.columns: df_new['Volume'] = 1
                 
-        df.columns = [c.capitalize() for c in df.columns]
-        required = ['Close', 'High', 'Low', 'Open']
-        if not all(col in df.columns for col in required): return None
+                # 2. ESKİ VE YENİ VERİYİ KAYNAŞTIR (Güncel olan eskisini ezer)
+                df_combined = pd.concat([df_cached, df_new])
+                df_combined = df_combined[~df_combined.index.duplicated(keep='last')]
+                df_combined.sort_index(inplace=True)
+                
+                # 3. DİSKİ GÜNCELLE
+                df_combined.to_parquet(file_path)
+                final_df = df_combined
+            else:
+                final_df = df_cached
+                
+        else:
+            # DİSKTE HİÇ YOKSA (İlk kez açılıyorsa): Tamamını indir
+            # Gelecekte Lorentzian vb için lazım olacağından ana depoya hep 10y atalım
+            fetch_period = "10y" if interval == "1d" else period
+            df_new = yf.download(clean_ticker, period=fetch_period, interval=interval, progress=False)
+            if df_new.empty: return None
+            
+            if isinstance(df_new.columns, pd.MultiIndex):
+                try: df_new = df_new.xs(clean_ticker, axis=1, level=1)
+                except: df_new.columns = df_new.columns.get_level_values(0)
+            df_new.columns = [c.capitalize() for c in df_new.columns]
+            if 'Volume' not in df_new.columns: df_new['Volume'] = 1
+            
+            df_new.to_parquet(file_path)
+            final_df = df_new
 
-        if 'Volume' not in df.columns: df['Volume'] = 1
-        df['Volume'] = df['Volume'].replace(0, 1)
-        return df
+        # 4. İSTENEN SÜREYİ VER (İçeride 10 yıl var ama "6mo" istendiyse sadece 6 ayı ver)
+        period_map = {"10y": 2500, "5y": 1250, "2y": 500, "1y": 250, "6mo": 125, "3mo": 60, "1mo": 20}
+        days_to_keep = period_map.get(period, len(final_df))
+        
+        return final_df.tail(days_to_keep)
 
-    except Exception: return None
+    except Exception as e:
+        return None
 
 def check_lazybear_squeeze_breakout(df):
     """
@@ -1000,10 +1097,14 @@ def scan_chart_patterns(asset_list):
             volume = df['Volume']
             curr_price = float(close.iloc[-1])
             
-            # --- ACIMASIZ ANA TREND FİLTRESİ ---
-            # Fiyat 200 günlük ortalamanın altındaysa HİÇ BAKMA.
+            # --- ACIMASIZ 2 BÜYÜK FİLTRE ---
+            # 1. KURAL: Fiyat 200 günlük ortalamanın altındaysa HİÇ BAKMA.
             sma200 = close.rolling(200).mean().iloc[-1]
             if curr_price < sma200: continue 
+            
+            # 2. KURAL: Son gün mumu dünkü kapanışa göre %2.5 veya daha fazla düşmüşse (Ani Satış/Dump) HİÇ BAKMA.
+            prev_close = float(close.iloc[-2])
+            if (curr_price - prev_close) / prev_close <= -0.025: continue
 
             pattern_found = False; pattern_name = ""; desc = ""; base_score = 0
             
@@ -1014,7 +1115,8 @@ def scan_chart_patterns(asset_list):
             flag_h = high.iloc[-5:].max(); flag_l = low.iloc[-5:].min()
             tight = (flag_h - flag_l) / flag_l
             
-            if pole > 0.15 and tight < 0.06 and curr_price > flag_h * 0.99:
+            # Kırılım %1 aşağıdan başlar, direncin en fazla %4 üzerine kadar taze kabul edilir
+            if pole > 0.15 and tight < 0.06 and (curr_price >= flag_h * 0.99) and (curr_price <= flag_h * 1.04):
                 pattern_found = True; pattern_name = "🚩 BOĞA BAYRAĞI"; base_score = 85
                 desc = f"Direk: %{pole*100:.1f} | Sıkışma: %{tight*100:.1f}"
 
@@ -1030,8 +1132,9 @@ def scan_chart_patterns(asset_list):
                 deep = cup_b < rim_l * 0.85
                 handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b + (rim_r - cup_b)*0.5)
                 
-                breaking = curr_price >= rim_r * 0.99
-                approaching = curr_price >= rim_r * 0.95 and not breaking
+                # Kırılımın taze olması şartı: Maksimum %4 üstüne kadar kabul edilir.
+                breaking = (curr_price >= rim_r * 0.99) and (curr_price <= rim_r * 1.04)
+                approaching = (curr_price >= rim_r * 0.95) and not breaking
 
                 if aligned and deep and handle_exists:
                     if breaking or approaching:
@@ -1079,8 +1182,9 @@ def scan_chart_patterns(asset_list):
                     l1 = low.iloc[-(45*scale):-(30*scale)].min()
                     rising = l3 > l2 and l2 > l1
                     
-                    breaking = curr_price >= avg_res * 0.99
-                    approaching = curr_price >= avg_res * 0.95 and not breaking
+                    # Direnç kırılımı taze olmalı (maks %4 tolerans)
+                    breaking = (curr_price >= avg_res * 0.99) and (curr_price <= avg_res * 1.04)
+                    approaching = (curr_price >= avg_res * 0.95) and not breaking
 
                     if flat and rising:
                         if breaking or approaching:
@@ -1103,8 +1207,10 @@ def scan_chart_patterns(asset_list):
                 range_width = (period_max - period_min) / period_min
                 
                 if range_width < 0.15: # Fiyat %15'lik yatay bir kanalda hapsolmuş
-                    breaking_up = curr_price >= period_max * 0.98
-                    bouncing_up = curr_price <= period_min * 1.02
+                    # Yukarı kırılımın taze olması (maks %4 yukarıda)
+                    breaking_up = (curr_price >= period_max * 0.98) and (curr_price <= period_max * 1.04)
+                    # Destekten sekme (Desteğin hafif altına sarkabilir ama %4'ten fazla zıplamamış olmalı)
+                    bouncing_up = (curr_price >= period_min * 0.98) and (curr_price <= period_min * 1.04)
                     
                     if breaking_up or bouncing_up:
                         pattern_found = True
@@ -1183,7 +1289,11 @@ def scan_chart_patterns(asset_list):
                 if close.iloc[-1] < open_.iloc[-1] and close.iloc[-2] < open_.iloc[-2]:
                     q_score -= 35
                     desc += " (⚠️ Düşüşte)"
-                
+                # 5. SIĞ TAHTA (LİKİDİTE) UYARISI
+                # Son 20 günlük ortalama hacim 5 Milyon lotun altındaysa formasyon adına uyarı ekler.
+                if avg_vol < 5000000:
+                    pattern_name += " (⚠️ SIĞ TAHTA)"
+                    desc += " | 🚨 Dikkat: Ortalama işlem hacmi 5 Milyon lotun altında, manipülasyona açık tahta!"
                 # Sonuçları listeye ekliyoruz
                 results.append({
                     "Sembol": symbol,
@@ -2541,15 +2651,24 @@ def process_single_ict_setup(symbol, df):
         # Displacement (Gövde Gücü) Kontrolü
         body_sizes = abs(close - open_)
         avg_body = body_sizes.rolling(20).mean().iloc[-1]
-        recent_max_body = body_sizes.tail(5).max()
-        is_displacement = recent_max_body > (avg_body * 1.5)
         
-        if not is_displacement: return None # Enerji yoksa iki yöne de bakma
+        # Son 5 mumdaki en büyük YEŞİL ve KIRMIZI gövdeleri ayırt ediyoruz
+        green_bodies = body_sizes.where(close > open_, 0)
+        red_bodies = body_sizes.where(close < open_, 0)
+        
+        max_green_body = green_bodies.tail(5).max()
+        max_red_body = red_bodies.tail(5).max()
 
         # =========================================================
         # SENARYO A: LONG (BOĞA) ARANIYOR (Discount Bölgesi)
         # =========================================================
         if is_discount:
+            # KURAL 1: LONG için enerjinin (displacement) kesinlikle YEŞİL mumla olması şarttır! (Kırmızı şelale geçersizdir)
+            if max_green_body < (avg_body * 1.5): return None
+            
+            # KURAL 2 (ICT ACİL DURUM KALKANI): Son 3 günde %5'ten fazla düşmüşse (Bıçak düşüyorsa) Setup İPTAL!
+            if close.iloc[-1] < close.iloc[-3] * 0.95: return None
+
             # 1. Likidite Alımı (SSL Taken): Son 20 günde, önceki dipler ihlal edildi mi?
             prev_low_20 = low.iloc[-40:-20].min()
             curr_low_20 = low.iloc[-20:].min()
@@ -2577,6 +2696,12 @@ def process_single_ict_setup(symbol, df):
         # SENARYO B: SHORT (AYI) ARANIYOR (Premium Bölgesi)
         # =========================================================
         elif is_premium:
+            # KURAL 1: SHORT için enerjinin (displacement) kesinlikle KIRMIZI mumla olması şarttır!
+            if max_red_body < (avg_body * 1.5): return None
+            
+            # KURAL 2 (ICT ACİL DURUM KALKANI): Son 3 günde %5'ten fazla fırlamışsa (Roket uçuyorsa) Short İPTAL!
+            if close.iloc[-1] > close.iloc[-3] * 1.05: return None
+
             # 1. Likidite Alımı (BSL Taken): Son 20 günde, önceki tepeler ihlal edildi mi?
             prev_high_20 = high.iloc[-40:-20].max()
             curr_high_20 = high.iloc[-20:].max()
@@ -2780,11 +2905,10 @@ def calculate_lorentzian_classification(ticker, k_neighbors=8):
         if ".IS" in ticker: clean_ticker = ticker 
         
         try:
-            # TradingView'in "Max Bars Back" (2000 bar) limitini karşılamak için
-            # Günlük veri çekiyoruz. 10 Yıl = ~2500 bar.
-            df = yf.download(clean_ticker, period="10y", interval="1d", progress=False)
+            # Artık doğrudan yeni akıllı yerel önbellek fonksiyonumuzu kullanıyoruz
+            # Diskten şimşek hızında çekecek ve sadece son günleri yfinance'e soracak.
+            df = get_safe_historical_data(clean_ticker, period="10y", interval="1d")
         except: return None
-
         if df is None or len(df) < 200: return None 
 
         if isinstance(df.columns, pd.MultiIndex):
@@ -3594,7 +3718,7 @@ def calculate_ict_deep_analysis(ticker):
             # 3. ÇEYREK: Ayı + Pahalılık (İdeal Short / Dağıtım Bölgesi)
             lines = [
                 f"Trend aşağı (Bearish) ve fiyat tam dağıtım (Premium) bölgesinde. Satıcılı baskı sürüyor; {final_target:.2f} seviyesindeki ilk durak kırıldıktan sonra gözler ana uçurum olan {derin_hedef:.2f} likiditesine çevrilecek. Bu ivmenin bozulması ve trend dönüşü için {safety_lvl:.2f} üzerinde kalıcılık şart.",
-                f"Piyasa yapısı zayıf ve kurumsal oyuncular mal çıkıyor (Distribution). Pahalılık bölgesinden başlayan düşüş trendinde {final_target:.2f} hedefine çekilme var, satışlar derinleşirse {derin_hedef:.2f} bandı rahatlıkla test edilebilir. İptal seviyesi: {safety_lvl:.2f}.",
+                f"Piyasa yapısı zayıf ve kurumsal oyuncular mal çıkıyor (Distribution). Pahalılık bölgesinden başlayan düşüş trendinde {final_target:.2f} hedefine çekilme var, satışlar derinleşirse {derin_hedef:.2f} bandı test edilebilir. İptal seviyesi: {safety_lvl:.2f}.",
                 f"Aşağı yönlü momentum devrede, satıcılar avantajlı (Premium) konumda. Hedefte sırasıyla {final_target:.2f} ve {derin_hedef:.2f} desteklerindeki stop havuzları var. Fiyata karşı inatlaşmamak ve 'Long' denemek için {safety_lvl:.2f} aşılmasını beklemek kritik."
             ]
         else:
@@ -4930,13 +5054,27 @@ def render_price_action_panel(ticker):
         delta_val = sv_data.get("delta", 0)
         delta_yuzde = sv_data.get("delta_yuzde", 0) # Yeni eklediğimiz yüzdeyi çekiyoruz
         
+        # Seçili sembolün ENDEKS olup olmadığını kontrol etme
+        # (BIST endeksleri genellikle XU, XB, XT ile başlar. Global endeksler ^ ile başlar)
+        is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
+        
         # Yüzde durumuna ve yönüne göre RENKLENDİRİLMİŞ baskınlık metni
-        if delta_val < 0:
-            baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>%{delta_yuzde:.1f} Net Satıcı Baskısı</span>"
-        elif delta_val > 0:
-            baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>%{delta_yuzde:.1f} Net Alıcı Baskısı</span>"
+        if is_index:
+            # Sembol bir ENDEKS ise YÜZDE GÖSTERME
+            if delta_val < 0:
+                baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Net Satıcı Baskısı</span>"
+            elif delta_val > 0:
+                baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Net Alıcı Baskısı</span>"
+            else:
+                baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge</span>"
         else:
-            baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
+            # Sembol bir HİSSE ise YÜZDEYİ GÖSTER
+            if delta_val < 0:
+                baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>%{delta_yuzde:.1f} Net Satıcı Baskısı</span>"
+            elif delta_val > 0:
+                baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>%{delta_yuzde:.1f} Net Alıcı Baskısı</span>"
+            else:
+                baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
             
         # İstediğin formattaki alt metin (Lot kelimesi kalktı, yüzde geldi)
         delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
@@ -5366,8 +5504,79 @@ def render_minervini_panel_v2(ticker):
 # ==============================================================================
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
-    
-    # -----------------------------------------------------------
+
+    # --- YENİ EKLENEN: TEKNİK SEVİYELER (MA) PANELİ ---
+    try:
+        if "ticker" in st.session_state and st.session_state.ticker:
+            
+            df_ma = get_safe_historical_data(st.session_state.ticker, period="1y") 
+            
+            if df_ma is not None and not df_ma.empty:
+                if 'Close' in df_ma.columns: c_col = 'Close'
+                elif 'close' in df_ma.columns: c_col = 'close'
+                elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
+                else: c_col = df_ma.columns[0]
+
+                current_price = df_ma[c_col].iloc[-1]
+
+                ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
+                ema8 = df_ma[c_col].ewm(span=8, adjust=False).mean().iloc[-1]
+                ema13 = df_ma[c_col].ewm(span=13, adjust=False).mean().iloc[-1]
+                ema144 = df_ma[c_col].ewm(span=144, adjust=False).mean().iloc[-1]
+
+                sma50 = df_ma[c_col].rolling(window=50).mean().iloc[-1]
+                sma100 = df_ma[c_col].rolling(window=100).mean().iloc[-1]
+                sma200 = df_ma[c_col].rolling(window=200).mean().iloc[-1]
+
+                # AKILLI FORMAT: Endeksleri (XU) veya 1000'den büyük rakamları yakala
+                is_index = "XU" in st.session_state.ticker.upper() or "^" in st.session_state.ticker or current_price > 1000
+
+                def ma_status(ma_value, price):
+                    if pd.isna(ma_value): return "⏳ -"
+                    
+                    # Küsurat ayarı
+                    if is_index:
+                        val_str = f"{int(ma_value)}" # Endeks ise tam sayı yap (Örn: 14016)
+                    else:
+                        val_str = f"{ma_value:.2f}"  # Hisse ise küsuratlı kalsın (Örn: 15.42)
+                        
+                    if price > ma_value:
+                        return f"🟢 <b>{val_str}</b>"
+                    else:
+                        return f"🔴 <b>{val_str}</b>"
+
+                # DİKKAT: HTML etiketleri en sola dayalı olmalı!
+                st.markdown(f"""
+<div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+    <div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 6px; text-align: center; font-weight: 700; font-size: 0.9rem;">
+        📊 TEKNİK SEVİYELER
+    </div>
+    <div style="display: flex; padding: 10px 5px; background-color: transparent;">
+        <div style="flex: 1; padding-right: 10px; border-right: 1px solid #4b5563;">
+            <div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">📉 KISA VADE</div>
+            <div style="font-size: 0.85rem; line-height: 1.6;">
+                EMA 5: {ma_status(ema5, current_price)}<br>
+                EMA 8: {ma_status(ema8, current_price)}<br>
+                EMA 13: {ma_status(ema13, current_price)}
+            </div>
+        </div>
+        <div style="flex: 1; padding-left: 10px;">
+            <div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">🔭 ORTA/UZUN VADE</div>
+            <div style="font-size: 0.85rem; line-height: 1.6;">
+                SMA 50: {ma_status(sma50, current_price)}<br>
+                SMA 100: {ma_status(sma100, current_price)}<br>
+                SMA 200: {ma_status(sma200, current_price)}<br>
+                EMA 144: {ma_status(ema144, current_price)}
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+                
+    except Exception as e:
+        st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
+    # --------------------------------------------------
+    # --------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     
@@ -5660,47 +5869,55 @@ with col_btn:
             my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...%10")
             get_batch_data_cached(scan_list, period="2y")
             
-            # 2. STP & MOMENTUM AJANI - %25
-            my_bar.progress(25, text="⚡ STP ve Momentum Taranıyor...%25")
+            # 2. STP & MOMENTUM AJANI - %15
+            my_bar.progress(15, text="⚡ STP ve Momentum Taranıyor...%15")
             crosses, trends, filtered = scan_stp_signals(scan_list)
             st.session_state.stp_crosses = crosses
             st.session_state.stp_trends = trends
             st.session_state.stp_filtered = filtered
             st.session_state.stp_scanned = True
 
-            # 3. ICT SNIPER AJANI --- %35
-            my_bar.progress(50, text="🦅 ICT Sniper Kurulumları (Liquidity+MSS+FVG) Taranıyor...%35")
+            # 3. ICT SNIPER AJANI --- %20
+            my_bar.progress(20, text="🦅 ICT Sniper Kurulumları (Liquidity+MSS+FVG) Taranıyor...%20")
             st.session_state.ict_scan_data = scan_ict_batch(scan_list)
 
-            # 4. SENTIMENT (AKILLI PARA) AJANI - %40
+            # 5. PATLAMA ADAYLARI / GRANDMASTER - %35
+            my_bar.progress(35, text="🚀 Grandmaster Patlama Adayları Taranıyor...%35")
+            st.session_state.gm_results = scan_grandmaster_batch(scan_list)
+
+            # 6. SENTIMENT (AKILLI PARA) AJANI - %40
             my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...%40")
             st.session_state.accum_data = scan_hidden_accumulation(scan_list)
             
-            # 5. RS LİDERLERİ TARAMASI - %45
+            # 7. RS LİDERLERİ TARAMASI - %45
             my_bar.progress(45, text="🏆 Son 5 günün Piyasa Liderleri (RS Momentum) Hesaplanıyor...%45")
             st.session_state.rs_leaders_data = scan_rs_momentum_leaders(scan_list)
             
-            # 6. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
+            # 8. BREAKOUT AJANI (ISINANLAR/KIRANLAR) - %55
             my_bar.progress(55, text="🔨 Kırılımlar ve Hazırlıklar Kontrol Ediliyor...%55")
             st.session_state.breakout_left = agent3_breakout_scan(scan_list)      # Isınanlar
             st.session_state.breakout_right = scan_confirmed_breakouts(scan_list) # Kıranlar
             
-            # 7. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %70
-            my_bar.progress(70, text="🧠 Radar Sinyalleri İşleniyor...%70")
+            # 9. RADAR 1 & RADAR 2 (GENEL TEKNİK) - %65
+            my_bar.progress(65, text="🧠 Radar Sinyalleri İşleniyor...%65")
             st.session_state.scan_data = analyze_market_intelligence(scan_list)
             st.session_state.radar2_data = radar2_scan(scan_list)
             
-            # 8. FORMASYON & TUZAKLAR - %85
-            my_bar.progress(85, text="🦁Formasyon ve Tuzaklar Taranıyor...%85")
+            # 10. FORMASYON & TUZAKLAR - %75
+            my_bar.progress(75, text="🦁Formasyon ve Tuzaklar Taranıyor...%75")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
             
-            # 9. RSI UYUMSUZLUKLARI - %95
-            my_bar.progress(95, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...%95")
+            # 11. RSI UYUMSUZLUKLARI - %85
+            my_bar.progress(85, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...%85")
             bull_df, bear_df = scan_rsi_divergence_batch(scan_list)
             st.session_state.rsi_div_bull = bull_df
             st.session_state.rsi_div_bear = bear_df
-            
+
+            # 12. MİNERVİNİ SEPA AJANI - %95
+            my_bar.progress(95, text="🦁 Minervini Sepa Taranıyor...%95")
+            st.session_state.minervini_data = scan_minervini_batch(scan_list)
+
             # --- BİTİŞ ---
             my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...%100")
             st.session_state.generate_prompt = False # Eski prompt varsa temizle
@@ -6249,13 +6466,12 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - TUZAK DURUMU (SFP): {sfp_desc}
 EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
 - Smart Money Hacim Durumu: {delta_durumu}
-- Hacim Profili POC (Kontrol Noktası): {poc_price}
+- Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
 - Güncel Fiyat: {guncel_fiyat}
 ANALİZ TALİMATLARI:
-1. Fiyat POC (Kontrol Noktası) seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-2. Smart Money Hacim Durumundaki "Net Baskınlık" yüzdesine çok dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada çok ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olduğunu özellikle belirt.
-3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı şiddetle uyar.
-4. Analizini sadece standart göstergelerle değil, mutlaka bu hacim, baskınlık yüzdesi ve kurumsal maliyet (POC) verileriyle harmanlayarak, likidite avı perspektifinden yap.
+1. Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
+2. Smart Money Hacim Durumundaki o güne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada o gün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f}
 - Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında.
@@ -6804,7 +7020,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
                         satirlar.append(f"🔹 {line}")
 
         # Alt Bilgi
-        satirlar.append("Detaylı analiz, hedefler ve resimli risk haritası için buyrun: 👇")
+        satirlar.append("Detaylı analiz ve resimli risk haritası için buyrun: 👇")
 
         # 3. LİSTEYİ BİRLEŞTİR VE SONUCU ÜRET
         final_tweet_safe = "\n".join(satirlar)
@@ -6926,11 +7142,11 @@ with col_left:
             with c_long:
                 st.markdown(f"<div style='text-align:center; color:#16a34a; font-weight:800; background:#f0fdf4; padding:5px; border-radius:5px; border:1px solid #86efac; margin-bottom:10px;'>🐂 LONG (Yükseliş) SETUPLARI ({len(longs)})</div>", unsafe_allow_html=True)
                 if not longs.empty:
-                    with st.container(height=300):
+                    with st.container(height=100):
                         for i, row in longs.iterrows():
                             sym = row['Sembol']
                             # Etiket: 🐂 THYAO (300.0) | Hedef: Yukarı
-                            label = f"🐂 {sym} ({row['Fiyat']:.2f}) | {row['Durum']}"
+                            label = f"🐂 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {row['Durum']}"
                             if st.button(label, key=f"ict_long_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
                                 on_scan_result_click(sym)
                                 st.rerun()
@@ -6941,11 +7157,11 @@ with col_left:
             with c_short:
                 st.markdown(f"<div style='text-align:center; color:#dc2626; font-weight:800; background:#fef2f2; padding:5px; border-radius:5px; border:1px solid #fca5a5; margin-bottom:10px;'>🐻 SHORT (Düşüş) SETUPLARI ({len(shorts)})</div>", unsafe_allow_html=True)
                 if not shorts.empty:
-                    with st.container(height=300):
+                    with st.container(height=100):
                         for i, row in shorts.iterrows():
                             sym = row['Sembol']
                             # Etiket: 🐻 GARAN (100.0) | Hedef: Aşağı
-                            label = f"🐻 {sym} ({row['Fiyat']:.2f}) | {row['Durum']}"
+                            label = f"🐻 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {row['Durum']}"
                             if st.button(label, key=f"ict_short_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
                                 on_scan_result_click(sym)
                                 st.rerun()
@@ -6990,7 +7206,7 @@ with col_left:
                     
                     # YENİ BUTON METNİ: ||| Çizgili Format
                     # Örn: 🔥 BURVA.IS (684.00) | Alpha(5G): +%42.7 | Vol: 0.9x ||| Bugün: +%5.2 (LİDER)
-                    label = f"{icon} {sym} ({row['Fiyat']:.2f}) | Alpha(5G): +%{alpha_5:.1f} | Vol: {vol:.1f}x ||| Bugün: %{degisim_1:.1f} ({today_status})"
+                    label = f"{icon} {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | Alpha(5G): +%{alpha_5:.1f} | Vol: {vol:.1f}x ||| Bugün: %{degisim_1:.1f} ({today_status})"
                     
                     if st.button(label, key=f"rs_lead_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
@@ -7079,7 +7295,7 @@ with col_left:
                         q_tag = "💎 A" if "A KALİTE" in row.get('Kalite', '') else "B"
 
                         # Buton Etiketi (A ise Elmas koyar, B ise sadece harf)
-                        btn_label = f"{icon} {row['Sembol']} ({row['Fiyat']}) | {q_tag} | {rs_short}"
+                        btn_label = f"{icon} {row['Sembol'].replace('.IS', '')} ({row['Fiyat']}) | {q_tag} | {rs_short}"
                         
                         # Basit ve Çalışan Buton Yapısı
                         if st.button(btn_label, key=f"btn_acc_{row['Sembol']}_{index}", use_container_width=True):
@@ -7177,7 +7393,7 @@ with col_left:
                     for i, row in st.session_state.rsi_div_bear.head(20).iterrows():
                         sym = row['Sembol']
                         # Buton Metni: 🔻 THYAO (250.0) | RSI: 68
-                        btn_label = f"🔻 {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
+                        btn_label = f"🔻 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
                         if st.button(btn_label, key=f"div_bear_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -7193,7 +7409,7 @@ with col_left:
                     for i, row in st.session_state.rsi_div_bull.head(20).iterrows():
                         sym = row['Sembol']
                         # Buton Metni: ✅ ASELS (45.0) | RSI: 32
-                        btn_label = f"✅ {sym} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
+                        btn_label = f"✅ {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
                         if st.button(btn_label, key=f"div_bull_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym)
                             st.rerun()
@@ -7225,7 +7441,7 @@ with col_left:
                     # Renkler
                     icon = "🚩" if "BAYRAK" in pat else "📦" if "RANGE" in pat else "🧛"
                     
-                    label = f"{icon} {sym} ({row['Fiyat']:.2f}) | {pat} (Puan: {int(row['Skor'])})"
+                    label = f"{icon} {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {pat} (Puan: {int(row['Skor'])})"
                     
                     if st.button(label, key=f"pat_{sym}_{i}", use_container_width=True, help=row['Detay']):
                         on_scan_result_click(sym)
@@ -7255,7 +7471,7 @@ with col_left:
                     sym = row['Sembol']
                     
                     # Buton Metni: 🪤 GARAN (112.5) | ⏰ 2 Mum Önce | 2.5x Vol
-                    label = f"🪤 {sym} ({row['Fiyat']:.2f}) | {row['Zaman']} | Vol: {row['Hacim_Kat']}"
+                    label = f"🪤 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {row['Zaman']} | Vol: {row['Hacim_Kat']}"
                     
                     if st.button(label, key=f"bt_scan_{sym}_{i}", use_container_width=True, help=row['Detay']):
                         on_scan_result_click(sym)
@@ -7607,6 +7823,9 @@ with col_right:
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
 
+    # 🦅 YENİ: ICT SNIPER ONAY RAPORU (Sadece Setup Varsa Çıkar)
+    render_ict_certification_card(st.session_state.ticker)
+
     # --- YENİ EKLEME: ALTIN ÜÇLÜ KONTROL PANELİ ---
     # Verileri taze çekelim ki hata olmasın
     try:
@@ -7623,10 +7842,6 @@ with col_right:
   
     # 3. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
-    
-    # 🦅 YENİ: ICT SNIPER ONAY RAPORU (Sadece Setup Varsa Çıkar)
-    render_ict_certification_card(st.session_state.ticker)
-  
 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
@@ -7743,14 +7958,19 @@ with col_right:
                     rsi_val = calc_rsi_manual(df['Close']).iloc[-1]
                     if rsi_val > 55: is_powerful = True
 
-                # --- KRİTER 2: KONUM (DISCOUNT / UCUZLUK) ---
-                high_20 = df['High'].rolling(20).max().iloc[-1]
-                low_20 = df['Low'].rolling(20).min().iloc[-1]
-                range_diff = high_20 - low_20
+                # --- KRİTER 2: KONUM (3 AYLIK DÜZELTME) ---
+                high_60 = df['High'].rolling(60).max().iloc[-1]
+                low_60 = df['Low'].rolling(60).min().iloc[-1]
+                range_diff = high_60 - low_60
+                
                 is_discount = False
                 if range_diff > 0:
-                    loc_ratio = (current_price - low_20) / range_diff
-                    if loc_ratio < 0.6: is_discount = True 
+                    # Fiyat 3 aylık bandın neresinde?
+                    loc_ratio = (current_price - low_60) / range_diff
+                    
+                    # 3 aylık bandın alt %50'sindeyse kabul et
+                    if loc_ratio < 0.5: 
+                        is_discount = True
 
                 # --- KRİTER 3: ENERJİ (HACİM / MOMENTUM) - GÜNCELLENDİ ---
                 vol_sma20 = df['Volume'].rolling(20).mean().iloc[-1]
@@ -7791,7 +8011,7 @@ with col_right:
                     is_structure_solid = current_price > sma50
 
                     # Royal Şart 3: RSI Güvenli Bölge (Aşırı şişmemiş)
-                    is_safe_entry = rsi_now < 75
+                    is_safe_entry = rsi_now < 70
 
                     if is_bull_trend and is_structure_solid and is_safe_entry:
                         # 2. ROYAL LİSTEYE DE EKLE
@@ -7865,7 +8085,7 @@ with col_right:
     if st.session_state.royal_results is not None and not st.session_state.royal_results.empty:
         st.markdown("---")
         st.markdown(f"<div style='background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:6px; padding:8px; margin-bottom:10px; font-size:1rem; font-weight:bold; color:white; text-align:center;'>♠️ ROYAL FLUSH (ELİTLER) ({len(st.session_state.royal_results)})</div>", unsafe_allow_html=True)
-        st.caption("Kriterler: Boğa Trendi (SMA200) + Sağlam Yapı + Güvenli Giriş + RS Gücü")
+        st.caption("Kriterler: SMA200 üzerinde + SMA50 üzerinde + Şişmemiş RSI<70")
 
         cols_royal = st.columns(3)
         for index, row in st.session_state.royal_results.head(6).iterrows():
@@ -7885,7 +8105,7 @@ with col_right:
     if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
         st.markdown("---")
         st.markdown(f"<div style='background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:5px; margin-bottom:10px; font-size:0.9rem; color:#92400e; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-        st.caption("Kriterler: RS Gücü + Ucuz Konum + Hacim/Enerji")
+        st.caption("Kriterler: Son 10 gün Endeksten Güçlü + Son 60 güne göre Ucuz sayılır + Hacim/Enerji")
 
         cols_gold = st.columns(3)
         for index, row in st.session_state.golden_results.head(12).iterrows():
