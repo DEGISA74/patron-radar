@@ -282,7 +282,7 @@ raw_nasdaq = [
     "INTC", "SGEN", "ILMN", "IDXX", "ODFL", "EXC", "ADSK", "PAYX", "CHTR", "MRVL", 
     "KDP", "XEL", "LULU", "ALGN", "VRSK", "CDW", "DLTR", "SIRI", "JBHT", "WBA", 
     "PDD", "JD", "BIDU", "NTES", "NXST", "MTCH", "UAL", "SPLK", "ANSS", "SWKS", 
-    "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP"
+    "QRVO", "AVTR", "FTNT", "ENPH", "SEDG", "BIIB", "CSGP", "ASTS"
 ]
 raw_nasdaq = sorted(list(set(raw_nasdaq)))
 
@@ -320,7 +320,7 @@ raw_bist_stocks = [
     "RALYH.IS", "RAYSG.IS", "REEDR.IS", "RGYAS.IS", "RNPOL.IS", "RODRG.IS", "ROYAL.IS", "RTALB.IS", "RUBNS.IS", "RYGYO.IS", "RYSAS.IS",
     "SAFKR.IS", "SAHOL.IS", "SAMAT.IS", "SANEL.IS", "SANFM.IS", "SANKO.IS", "SARKY.IS", "SASA.IS", "SAYAS.IS", "SDTTR.IS", "SEGYO.IS", "SEKFK.IS", "SEKUR.IS", "SELEC.IS", "SELGD.IS", "SELVA.IS", "SEYKM.IS", "SILVR.IS", "SISE.IS", "SKBNK.IS", "SKTAS.IS", "SKYMD.IS", "SMART.IS", "SMRTG.IS", "SNGYO.IS", "SNICA.IS", "SNKRN.IS", "SNPAM.IS", "SODSN.IS", "SOKE.IS", "SOKM.IS", "SONME.IS", "SRVGY.IS", "SUMAS.IS", "SUNTK.IS", "SURGY.IS", "SUWEN.IS", "SYS.IS",
     "TABGD.IS", "TARAF.IS", "TATGD.IS", "TAVHL.IS", "TBORG.IS", "TCELL.IS", "TDGYO.IS", "TEKTU.IS", "TERA.IS", "TETMT.IS", "TEZOL.IS", "TGSAS.IS", "THYAO.IS", "TKFEN.IS", "TKNSA.IS", "TLMAN.IS", "TMPOL.IS", "TMSN.IS", "TNZTP.IS", "TOASO.IS", "TRCAS.IS", "TRGYO.IS", "TRILC.IS", "TSGYO.IS", "TSKB.IS", "TSPOR.IS", "TTKOM.IS", "TTRAK.IS", "TUCLK.IS", "TUKAS.IS", "TUPRS.IS", "TUREX.IS", "TURGG.IS", "TURSG.IS",
-    "UFUK.IS", "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "UZERB.IS",
+    "UFUK.IS", "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "UZERB.IS", "TATEN.IS",
     "VAKBN.IS", "VAKFN.IS", "VAKKO.IS", "VANGD.IS", "VBTYZ.IS", "VERUS.IS", "VESBE.IS", "VESTL.IS", "VKFYO.IS", "VKGYO.IS", "VKING.IS", "VRGYO.IS",
     "YAPRK.IS", "YATAS.IS", "YAYLA.IS", "YBTAS.IS", "YEOTK.IS", "YESIL.IS", "YGGYO.IS", "YGYO.IS", "YKBNK.IS", "YKSLN.IS", "YONGA.IS", "YUNSA.IS", "YYAPI.IS", "YYLGD.IS",
     "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS", "PAHOL.IS", "MARMR.IS", "BIGEN.IS", "GLRMK.IS", "TRHOL.IS"
@@ -625,6 +625,58 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
     except Exception as e:
         return None
 
+def calculate_harsi(df, period=14):
+    """
+    Heikin Ashi RSI (HARSI) Hesaplayıcı
+    Dönüş: (HA_Open, HA_Close, Renk)
+    """
+    try:
+        # 1. Standart RSI Hesapla
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        # 2. Heikin Ashi Dönüşümü
+        # Not: Vektörize hesaplama için başlangıç değerlerini ata
+        ha_close = rsi.copy()
+        ha_open = rsi.shift(1).fillna(rsi)
+        
+        # HA formülü gereği iteratif hesaplama (Hassas sonuç için)
+        ha_open_vals = np.zeros(len(rsi))
+        ha_close_vals = np.zeros(len(rsi))
+        
+        for i in range(len(rsi)):
+            if i == 0:
+                ha_open_vals[i] = rsi.iloc[i]
+                ha_close_vals[i] = rsi.iloc[i]
+            else:
+                ha_open_vals[i] = (ha_open_vals[i-1] + ha_close_vals[i-1]) / 2
+                ha_close_vals[i] = (rsi.iloc[i] + ha_open_vals[i] + 
+                                    max(rsi.iloc[i], ha_open_vals[i]) + 
+                                    min(rsi.iloc[i], ha_open_vals[i])) / 4
+        
+        last_ha_open = ha_open_vals[-1]
+        last_ha_close = ha_close_vals[-1]
+        prev_ha_close = ha_close_vals[-2]
+        
+        # Renk ve Durum Belirle
+        is_green = last_ha_close > last_ha_open
+        color = "#16a34a" if is_green else "#dc2626"
+        trend_status = "BOĞA MOMENTUMU" if is_green else "AYI MOMENTUMU"
+        
+        return {
+            "ha_open": last_ha_open,
+            "ha_close": last_ha_close,
+            "is_green": is_green,
+            "color": color,
+            "status": trend_status,
+            "change": last_ha_close > prev_ha_close
+        }
+    except:
+        return None
+    
 def check_lazybear_squeeze_breakout(df):
     """
     Hem BUGÜNÜ hem DÜNÜ kontrol eder.
@@ -2604,112 +2656,165 @@ def detect_supply_demand_zones(df):
         return None
     
 # ==============================================================================
-# 🦅 YENİ: ICT SNIPER TARAMA MOTORU (5 ŞARTLI DEDEKTÖR)
+# 🦅 YENİ: ICT SNIPER TARAMA MOTORU (4 ŞARTLI DEDEKTÖR)
 # ==============================================================================
 def process_single_ict_setup(symbol, df):
     """
-    ICT 2022 Mentorship Model (LONG ve SHORT) Tarayıcısı.
-    Hem Alış (Discount) hem Satış (Premium) fırsatlarını aynı anda arar.
+    ICT 2022 Mentorship Model - MAXIMUM WIN RATE (KESKİN NİŞANCI AJANI)
+    Özellikler:
+    1. FVG %50 (Consequent Encroachment) Girişi (Dar Stop, Yüksek Win Rate)
+    2. 7-Mumluk Güçlendirilmiş Fraktal Likidite (Daha Zor Kırılan Tepeler)
+    3. Hacim Onaylı Displacement (> %130)
+    4. RRR >= 2.5 Asimetrik Giyotini
     """
     try:
         if df.empty or len(df) < 50: return None
         
-        # Son veriler
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         current_price = float(close.iloc[-1])
         
-        # --- 1. ADIM: DEALING RANGE (OYUN SAHASI) ---
-        lookback = 40
-        recent_high = high.tail(lookback).max()
-        recent_low = low.tail(lookback).min()
+        # --- 1. HACİM VE GÖVDE (Displacement Teyidi) ---
+        has_vol = 'Volume' in df.columns and not df['Volume'].isnull().all()
+        volume = df['Volume'] if has_vol else pd.Series([1]*len(df), index=df.index)
+        avg_vol = volume.rolling(20).mean()
         
-        range_size = recent_high - recent_low
-        equilibrium = recent_low + (range_size * 0.5) # %50 Seviyesi
-        
-        # Karar: Fiyat Nerede?
-        is_discount = current_price < equilibrium # Ucuz (Long Aranır)
-        is_premium = current_price > equilibrium  # Pahalı (Short Aranır)
-
-        # --- ORTAK HESAPLAMALAR ---
-        # Displacement (Gövde Gücü) Kontrolü
         body_sizes = abs(close - open_)
-        avg_body = body_sizes.rolling(20).mean().iloc[-1]
+        avg_body = body_sizes.rolling(20).mean()
         
-        # Son 5 mumdaki en büyük YEŞİL ve KIRMIZI gövdeleri ayırt ediyoruz
-        green_bodies = body_sizes.where(close > open_, 0)
-        red_bodies = body_sizes.where(close < open_, 0)
+        # --- 2. GÜÇLENDİRİLMİŞ FRAKTAL LİKİDİTE (Win Rate Hack 1) ---
+        # 5 mumluk değil, sağında ve solunda 3'er mum olan 7-mumluk "Majör" swingleri arıyoruz.
+        sw_highs = []; sw_lows = []
+        for i in range(len(df)-40, len(df)-3): 
+            if i < 3: continue
+            if high.iloc[i] == max(high.iloc[i-3:i+4]):
+                sw_highs.append((df.index[i], high.iloc[i], i))
+            if low.iloc[i] == min(low.iloc[i-3:i+4]):
+                sw_lows.append((df.index[i], low.iloc[i], i))
         
-        max_green_body = green_bodies.tail(5).max()
-        max_red_body = red_bodies.tail(5).max()
+        if not sw_highs or not sw_lows: return None
+        
+        last_sh_val = sw_highs[-1][1]
+        last_sl_val = sw_lows[-1][1]
+        
+        # --- 3. HTF TREND FİLTRESİ ---
+        sma_50 = close.rolling(50).mean().iloc[-1]
+        htf_bullish = current_price > sma_50
+        htf_bearish = current_price < sma_50
 
         # =========================================================
-        # SENARYO A: LONG (BOĞA) ARANIYOR (Discount Bölgesi)
+        # SENARYO A: LONG (BOĞA) SETUP ARANIYOR
         # =========================================================
-        if is_discount:
-            # KURAL 1: LONG için enerjinin (displacement) kesinlikle YEŞİL mumla olması şarttır! (Kırmızı şelale geçersizdir)
-            if max_green_body < (avg_body * 1.5): return None
+        if htf_bullish:
+            # Likidite Avı
+            recent_low = low.iloc[-10:].min()
+            sweep_lows = [sl for sl in sw_lows[:-1] if recent_low < sl[1]] 
             
-            # KURAL 2 (ICT ACİL DURUM KALKANI): Son 3 günde %5'ten fazla düşmüşse (Bıçak düşüyorsa) Setup İPTAL!
-            if close.iloc[-1] < close.iloc[-3] * 0.95: return None
-
-            # 1. Likidite Alımı (SSL Taken): Son 20 günde, önceki dipler ihlal edildi mi?
-            prev_low_20 = low.iloc[-40:-20].min()
-            curr_low_20 = low.iloc[-20:].min()
-            
-            if curr_low_20 < prev_low_20: # Dip temizliği var
-                # 2. MSS (Market Yapı Kırılımı): Yukarı dönüş var mı?
-                short_term_high = high.iloc[-20:-5].max()
-                if close.iloc[-1] > short_term_high: # Kırılım gerçekleşti
+            if sweep_lows:
+                # MSS (Market Structure Shift)
+                if close.iloc[-1] > last_sh_val or close.iloc[-2] > last_sh_val:
                     
-                    # 3. FVG Kontrolü (Bullish)
-                    for i in range(len(df)-1, len(df)-10, -1):
-                        if low.iloc[i] > high.iloc[i-2]: # Gap Var
-                            fvg_top = low.iloc[i]; fvg_bot = high.iloc[i-2]
-                            # Fiyata yakın mı?
-                            if current_price <= (fvg_top * 1.02) and current_price >= (fvg_bot * 0.98):
-                                return {
-                                    "Sembol": symbol, "Fiyat": current_price,
-                                    "Yön": "LONG", "İkon": "🐂", "Renk": "#16a34a",
-                                    "Durum": "OTE (Ucuzluk Bölgesi)",
-                                    "Stop_Loss": f"{curr_low_20:.2f}",
-                                    "Skor": 95
-                                }
-
-        # =========================================================
-        # SENARYO B: SHORT (AYI) ARANIYOR (Premium Bölgesi)
-        # =========================================================
-        elif is_premium:
-            # KURAL 1: SHORT için enerjinin (displacement) kesinlikle KIRMIZI mumla olması şarttır!
-            if max_red_body < (avg_body * 1.5): return None
-            
-            # KURAL 2 (ICT ACİL DURUM KALKANI): Son 3 günde %5'ten fazla fırlamışsa (Roket uçuyorsa) Short İPTAL!
-            if close.iloc[-1] > close.iloc[-3] * 1.05: return None
-
-            # 1. Likidite Alımı (BSL Taken): Son 20 günde, önceki tepeler ihlal edildi mi?
-            prev_high_20 = high.iloc[-40:-20].max()
-            curr_high_20 = high.iloc[-20:].max()
-            
-            if curr_high_20 > prev_high_20: # Tepe temizliği var
-                # 2. MSS (Market Yapı Kırılımı): Aşağı dönüş var mı?
-                short_term_low = low.iloc[-20:-5].min()
-                if close.iloc[-1] < short_term_low: # Aşağı kırılım gerçekleşti
+                    # Hacimli Yeşil Mum (Displacement)
+                    green_bodies = body_sizes.where(close > open_, 0)
+                    max_green_recent = green_bodies.iloc[-5:].max()
+                    idx_max_green = green_bodies.iloc[-5:].idxmax()
                     
-                    # 3. FVG Kontrolü (Bearish)
-                    # Bearish FVG: Mum(i) High < Mum(i-2) Low
-                    for i in range(len(df)-1, len(df)-10, -1):
-                        if high.iloc[i] < low.iloc[i-2]: # Gap Var
-                            fvg_top = low.iloc[i-2]; fvg_bot = high.iloc[i]
-                            # Fiyata yakın mı?
-                            if current_price >= (fvg_bot * 0.98) and current_price <= (fvg_top * 1.02):
-                                return {
-                                    "Sembol": symbol, "Fiyat": current_price,
-                                    "Yön": "SHORT", "İkon": "🐻", "Renk": "#dc2626",
-                                    "Durum": "OTE (Pahalılık Bölgesi)",
-                                    "Stop_Loss": f"{curr_high_20:.2f}",
-                                    "Skor": 95
-                                }
+                    vol_check = volume[idx_max_green] > (avg_vol[idx_max_green] * 1.3) if has_vol else True
+                    
+                    if max_green_recent > (avg_body.iloc[-1] * 1.5) and vol_check:
+                        
+                        # FVG Tespiti
+                        for i in range(len(df)-1, len(df)-5, -1):
+                            if low.iloc[i] > high.iloc[i-2]: # Bullish FVG
+                                fvg_top = low.iloc[i]
+                                fvg_bot = high.iloc[i-2]
+                                
+                                # --- 4. WIN RATE HACK 2: Consequent Encroachment (CE) ---
+                                # FVG'nin tam %50 orta noktasını hesapla
+                                fvg_ce = fvg_bot + ((fvg_top - fvg_bot) * 0.5)
+                                
+                                # Fiyat FVG'nin tepesinden değil, %50 indirimli ortasından (CE) tepki almalı
+                                if current_price <= (fvg_ce * 1.01) and current_price >= (fvg_bot * 0.99):
+                                    
+                                    stop_loss = recent_low * 0.99 # Sweep ucunun %1 altı
+                                    entry_price = current_price
+                                    risk = entry_price - stop_loss
+                                    if risk <= 0: continue
+                                    
+                                    # Hedef
+                                    targets = [sh[1] for sh in sw_highs if sh[1] > entry_price * 1.02]
+                                    if not targets: continue
+                                    target_price = min(targets) 
+                                    
+                                    reward = target_price - entry_price
+                                    rrr = reward / risk
+                                    
+                                    # VETO Giyotini (Giriş CE'de olduğu için RRR rahatça 2.5'i geçer)
+                                    if rrr >= 2.5:
+                                        return {
+                                            "Sembol": symbol, "Fiyat": current_price,
+                                            "Yön": "LONG", "İkon": "🎯", "Renk": "#16a34a",
+                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: ${target_price:.2f}",
+                                            "Stop_Loss": f"{stop_loss:.2f}",
+                                            "Skor": 99
+                                        }
 
-        return None # Hiçbir şarta uymadı
+        # =========================================================
+        # SENARYO B: SHORT (AYI) SETUP ARANIYOR
+        # =========================================================
+        elif htf_bearish:
+            # Likidite Avı
+            recent_high = high.iloc[-10:].max()
+            sweep_highs = [sh for sh in sw_highs[:-1] if recent_high > sh[1]]
+            
+            if sweep_highs:
+                # MSS (Market Structure Shift)
+                if close.iloc[-1] < last_sl_val or close.iloc[-2] < last_sl_val:
+                    
+                    # Hacimli Kırmızı Mum (Displacement)
+                    red_bodies = body_sizes.where(close < open_, 0)
+                    max_red_recent = red_bodies.iloc[-5:].max()
+                    idx_max_red = red_bodies.iloc[-5:].idxmax()
+                    
+                    vol_check = volume[idx_max_red] > (avg_vol[idx_max_red] * 1.3) if has_vol else True
+                    
+                    if max_red_recent > (avg_body.iloc[-1] * 1.5) and vol_check:
+                        
+                        # FVG Tespiti
+                        for i in range(len(df)-1, len(df)-5, -1):
+                            if high.iloc[i] < low.iloc[i-2]: # Bearish FVG
+                                fvg_top = low.iloc[i-2]
+                                fvg_bot = high.iloc[i]
+                                
+                                # --- 4. WIN RATE HACK 2: Consequent Encroachment (CE) ---
+                                fvg_ce = fvg_bot + ((fvg_top - fvg_bot) * 0.5)
+                                
+                                # Fiyat CE bölgesinden tepki almalı
+                                if current_price >= (fvg_ce * 0.99) and current_price <= (fvg_top * 1.01):
+                                    
+                                    stop_loss = recent_high * 1.01 # Sweep ucunun %1 üstü
+                                    entry_price = current_price
+                                    risk = stop_loss - entry_price
+                                    if risk <= 0: continue
+                                    
+                                    # Hedef
+                                    targets = [sl[1] for sl in sw_lows if sl[1] < entry_price * 0.98]
+                                    if not targets: continue
+                                    target_price = max(targets)
+                                    
+                                    reward = entry_price - target_price
+                                    rrr = reward / risk
+                                    
+                                    # VETO Giyotini
+                                    if rrr >= 2.5:
+                                        return {
+                                            "Sembol": symbol, "Fiyat": current_price,
+                                            "Yön": "SHORT", "İkon": "🎯", "Renk": "#dc2626",
+                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: ${target_price:.2f}",
+                                            "Stop_Loss": f"{stop_loss:.2f}",
+                                            "Skor": 99
+                                        }
+
+        return None
 
     except Exception:
         return None
@@ -4865,7 +4970,7 @@ def render_synthetic_sentiment_panel(data):
     <div class="info-card" style="border-top: 3px solid {header_color}; margin-bottom:15px;">
         <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:1.1rem;">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</span>
-            <span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; background:#eff6ff; padding:2px 8px; border-radius:4px; font-size:1rem;">
+            <span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; background:#eff6ff; padding:2px 8px; border-radius:4px; font-size:1.25rem;">
                 {current_price:.2f}
             </span>
         </div>
@@ -6135,7 +6240,15 @@ if st.session_state.generate_prompt:
         if alpha_val > 1.0: rs_ai_txt = "LİDER (Endeksi Yeniyor - Güçlü)"
         elif alpha_val < -1.0: rs_ai_txt = "ZAYIF (Endeksin Gerisinde - İlgi Yok)"
         else: rs_ai_txt = "NÖTR (Endeksle Paralel)"
-    
+    # --- HARSI ANALİZİ (AI PROMPT İÇİN) ---
+    harsi_prompt_data = calculate_harsi(df_hist)
+    harsi_txt = "Veri Yok"
+    if harsi_prompt_data:
+        harsi_txt = f"{harsi_prompt_data['status']} (HA-RSI Değeri: {harsi_prompt_data['ha_close']:.2f})"
+        if harsi_prompt_data['is_green']:
+            harsi_txt += " | Görünüm: POZİTİF (Yeşil Bar - Momentum Artıyor)"
+        else:
+            harsi_txt += " | Görünüm: NEGATİF (Kırmızı Bar - Momentum Kayboluyor)"
     # Diğer Metin Hazırlıkları
     radar_val = "Veri Yok"; radar_setup = "Belirsiz"
     r1_txt = "Veri Yok"
@@ -6393,7 +6506,8 @@ if st.session_state.generate_prompt:
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
-Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, basit bir dille anlat. Teknik terimleri parantez içinde global kısaltmalarıyla (örneğin: Fiyat Boşluğu deyip ama yanına (FVG) yaz) kullan ama anlatımı tamamen Türkçe ve yalın yap.
+Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, basit bir dille anlat. 
+Teknik terimleri parantez içinde global kısaltmalarıyla (örneğin: Fiyat Boşluğu deyip ama yanına (FVG) yaz) kullan ama anlatımı tamamen Türkçe ve yalın yap.
 
 *** 🚨 DURUM RAPORU: {ai_scenario_title} ***
 (Analizini bu senaryo ve talimat üzerine kur!)
@@ -6411,7 +6525,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - ALTIN FIRSAT (GOLDEN TRIO) DURUMU: {is_golden}
 - ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
 
-*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Amam bunların GECİKMELİ VERİLER olduğunu unutma***
+*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Ama bunların GECİKMELİ VERİLER olduğunu unutma***
 - YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
 - HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
 - TREND: {sent_trend} (Ortalamaların durumu ve kısa vadeli trend için EMA 8/13 üstünde olup olmadığı)
@@ -6420,6 +6534,7 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
 
 *** 1. TREND VE GÜÇ ***
+- HARSI Durumu (Heikin Ashi RSI): {harsi_txt}
 - SuperTrend (son 60 günlük Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 [TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
@@ -6455,7 +6570,7 @@ EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
 - Güncel Fiyat: {guncel_fiyat}
 ANALİZ TALİMATLARI:
 1. Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-2. Smart Money Hacim Durumundaki o güne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada o gün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+2. Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
 3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f}
@@ -6471,14 +6586,14 @@ Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca T�
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
-   - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 8 maddelik bir liste oluştur. Zorlama madde ekleme! 3 kritik sinyal varsa 3 madde yaz.
+   - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 8 maddelik bir liste oluştur. Zorlama madde ekleme! 3 kritik sinyal varsa 3 madde yaz. 
    - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
-        - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (#RS), kurumsal toplama bölgesinde olduğunu (#ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
+        - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
         - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
    - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
-   - Her maddeyi yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
+   - Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? Emir kipi kullanmadan ("edilebilir", "beklenebilir") Trend/Destek kırılımına göre risk yönetimi çiz. İzsüren stop (Trailing Stop) seviyesi öner.
@@ -6487,7 +6602,10 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
-4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
+4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
+Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
+HARSI (Heikin Ashi RSI) verisine özel önem ver. Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
+Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
