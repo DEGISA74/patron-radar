@@ -5633,31 +5633,40 @@ with st.sidebar:
                     else:
                         return f"🔴 <b>{val_str}</b>"
 
-                # DİKKAT: HTML etiketleri en sola dayalı olmalı!
+                # YENİ EKLENEN: Sembolü temizleme (Örn: XU100.IS -> XU100)
+                # Noktadan (.) bölüp ilk kısmı alıyoruz ve her ihtimale karşı büyük harfe çeviriyoruz.
+                clean_ticker = st.session_state.ticker.split('.')[0].upper()
+
+                # DİKKAT: Üç tırnaktan sonraki HTML etiketleri tamamen en sola dayalı olmalıdır!
                 st.markdown(f"""
 <div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-    <div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 6px; text-align: center; font-weight: 700; font-size: 0.9rem;">
-        📊 TEKNİK SEVİYELER
-    </div>
-    <div style="display: flex; padding: 10px 5px; background-color: transparent;">
-        <div style="flex: 1; padding-right: 10px; border-right: 1px solid #4b5563;">
-            <div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">📉 KISA VADE</div>
-            <div style="font-size: 0.85rem; line-height: 1.6;">
-                EMA 5: {ma_status(ema5, current_price)}<br>
-                EMA 8: {ma_status(ema8, current_price)}<br>
-                EMA 13: {ma_status(ema13, current_price)}
-            </div>
-        </div>
-        <div style="flex: 1; padding-left: 10px;">
-            <div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">🔭 ORTA/UZUN VADE</div>
-            <div style="font-size: 0.85rem; line-height: 1.6;">
-                SMA 50: {ma_status(sma50, current_price)}<br>
-                SMA 100: {ma_status(sma100, current_price)}<br>
-                SMA 200: {ma_status(sma200, current_price)}<br>
-                EMA 144: {ma_status(ema144, current_price)}
-            </div>
-        </div>
-    </div>
+<div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 6px; text-align: center; font-weight: 700; font-size: 0.9rem;">
+📊 TEKNİK SEVİYELER
+</div>
+<div style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 6px; text-align: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+<span style="font-weight: 800; font-size: 0.95rem; color: #0f172a; letter-spacing: 0.5px;">{clean_ticker}</span>
+<span style="color: #64748b; margin: 0 8px; font-weight: 400;">—</span>
+<span style="font-weight: 700; font-size: 0.95rem; color: #0284c7;">{current_price:,.2f}</span>
+</div>
+<div style="display: flex; padding: 10px 5px; background-color: transparent;">
+<div style="flex: 1; padding-right: 10px; border-right: 1px solid #4b5563;">
+<div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">📉 KISA VADE</div>
+<div style="font-size: 0.85rem; line-height: 1.6;">
+EMA 5: {ma_status(ema5, current_price)}<br>
+EMA 8: {ma_status(ema8, current_price)}<br>
+EMA 13: {ma_status(ema13, current_price)}
+</div>
+</div>
+<div style="flex: 1; padding-left: 10px;">
+<div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">🔭 ORTA/UZUN VADE</div>
+<div style="font-size: 0.85rem; line-height: 1.6;">
+SMA 50: {ma_status(sma50, current_price)}<br>
+SMA 100: {ma_status(sma100, current_price)}<br>
+SMA 200: {ma_status(sma200, current_price)}<br>
+EMA 144: {ma_status(ema144, current_price)}
+</div>
+</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
                 
