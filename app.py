@@ -719,7 +719,41 @@ def check_lazybear_squeeze_breakout(df):
     except Exception:
         return False, False
 
-
+@st.cache_data(ttl=900)
+def get_ma_data_for_ui(ticker):
+    """Arayüzdeki 4. sütun için hızlıca EMA ve SMA verilerini hesaplar."""
+    try:
+        # Son 1 yıllık veriyi hızlıca çek
+        df = yf.download(ticker, period="1y", interval="1d", progress=False)
+        if df.empty: 
+            return None
+        
+        # yfinance bazen MultiIndex döndürebilir, bunu güvenli hale getirelim
+        if isinstance(df.columns, pd.MultiIndex):
+            close_col = df['Close'][ticker] if ticker in df['Close'] else df['Close'].iloc[:, 0]
+        else:
+            close_col = df['Close']
+            
+        close = float(close_col.iloc[-1])
+        
+        # EMA Hesaplamaları
+        ema5 = float(close_col.ewm(span=5, adjust=False).mean().iloc[-1])
+        ema8 = float(close_col.ewm(span=8, adjust=False).mean().iloc[-1])
+        ema13 = float(close_col.ewm(span=13, adjust=False).mean().iloc[-1])
+        
+        # SMA Hesaplamaları
+        sma50 = float(close_col.rolling(window=50).mean().iloc[-1])
+        sma100 = float(close_col.rolling(window=100).mean().iloc[-1])
+        sma200 = float(close_col.rolling(window=200).mean().iloc[-1])
+        
+        return {
+            "close": close,
+            "ema5": ema5, "ema8": ema8, "ema13": ema13,
+            "sma50": sma50, "sma100": sma100, "sma200": sma200
+        }
+    except Exception as e:
+        return None
+    
 @st.cache_data(ttl=300)
 def fetch_stock_info(ticker):
     try:
@@ -1929,64 +1963,108 @@ def calculate_volume_delta(df):
     return df
 
 def calculate_volume_profile_poc(df, lookback=20, bins=20):
-    """Belirtilen periyotta en çok hacmin yığıldığı fiyatı (POC) bulur."""
+    """Belirtilen periyotta en çok hacmin yığıldığı fiyatı (POC) orantısal olarak bulur."""
     if len(df) < lookback:
         lookback = len(df)
         
     recent_df = df.tail(lookback).copy()
-    min_price = recent_df['Low'].min()
-    max_price = recent_df['High'].max()
+    min_price = float(recent_df['Low'].min())
+    max_price = float(recent_df['High'].max())
     
     if min_price == max_price: # Fiyat hiç değişmemişse
         return min_price
         
-    price_bins = np.linspace(min_price, max_price, bins)
-    recent_df['Typical_Price'] = (recent_df['High'] + recent_df['Low'] + recent_df['Close']) / 3
-    recent_df['Bin_Index'] = np.digitize(recent_df['Typical_Price'], price_bins)
+    # Fiyat dilimlerini (bins) oluştur (Kenar noktaları için bins + 1 kullanıyoruz)
+    price_bins = np.linspace(min_price, max_price, bins + 1)
+    volume_profile = np.zeros(bins)
     
-    volume_by_price = recent_df.groupby('Bin_Index')['Volume'].sum()
-    poc_index = volume_by_price.idxmax()
-    
-    if poc_index - 1 < len(price_bins):
-        poc_price = price_bins[poc_index - 1]
-    else:
-        poc_price = price_bins[-1]
+    # Her bir mumun hacmini, geçtiği dilimlere adil (orantısal) şekilde ekle
+    for _, row in recent_df.iterrows():
+        high = float(row['High'])
+        low = float(row['Low'])
+        vol = float(row['Volume'])
+        candle_range = high - low
         
+        if candle_range <= 0:
+            # Doji mumu ise hacmi tek bir dilime at
+            idx = np.digitize((high + low) / 2, price_bins) - 1
+            idx = min(max(idx, 0), bins - 1)
+            volume_profile[idx] += vol
+            continue
+            
+        for i in range(bins):
+            bin_bottom = price_bins[i]
+            bin_top = price_bins[i+1]
+            
+            # Mum bu fiyat diliminden geçmiş mi?
+            if high >= bin_bottom and low <= bin_top:
+                overlap_top = min(high, bin_top)
+                overlap_bottom = max(low, bin_bottom)
+                overlap_range = overlap_top - overlap_bottom
+                
+                if overlap_range > 0:
+                    # Kesiştiği alanın yüksekliğine göre hacmi bölüştür
+                    volume_profile[i] += vol * (overlap_range / candle_range)
+                    
+    # En yüksek hacme sahip dilimi bul
+    poc_index = np.argmax(volume_profile)
+    
+    # POC fiyatını dilimin TAM ORTASI olarak belirle (eski koddaki gibi alt sınır değil)
+    poc_price = (price_bins[poc_index] + price_bins[poc_index + 1]) / 2.0
+    
     return poc_price
 
 def calculate_volume_profile(df, lookback=50, bins=20):
     """
     Son 'lookback' kadar mumu alır, fiyatı 'bins' kadar parçaya böler 
-    ve en çok hacmin döndüğü fiyatı (Point of Control) bulur.
+    ve en çok hacmin döndüğü fiyatı (Point of Control) orantısal dağılımla bulur.
     """
     if len(df) < lookback:
         lookback = len(df)
         
     recent_df = df.tail(lookback).copy()
     
-    # Fiyatı min ve max arasında belirli dilimlere (bins) böl
-    min_price = recent_df['Low'].min()
-    max_price = recent_df['High'].max()
+    # Fiyatı min ve max arasında belirle
+    min_price = float(recent_df['Low'].min())
+    max_price = float(recent_df['High'].max())
     
+    if min_price == max_price: 
+        return min_price
+        
     # Fiyat dilimlerini oluştur
-    price_bins = np.linspace(min_price, max_price, bins)
+    price_bins = np.linspace(min_price, max_price, bins + 1)
+    volume_profile = np.zeros(bins)
     
-    # Her bir mumun hacmini, o mumun ortalama fiyatına göre ilgili dilime ekle
-    recent_df['Typical_Price'] = (recent_df['High'] + recent_df['Low'] + recent_df['Close']) / 3
-    recent_df['Bin_Index'] = np.digitize(recent_df['Typical_Price'], price_bins)
-    
-    # Dilimlerdeki toplam hacmi hesapla
-    volume_by_price = recent_df.groupby('Bin_Index')['Volume'].sum()
-    
+    # Typical_Price yerine Orantısal Dağılım Döngüsü
+    for _, row in recent_df.iterrows():
+        high = float(row['High'])
+        low = float(row['Low'])
+        vol = float(row['Volume'])
+        candle_range = high - low
+        
+        if candle_range <= 0:
+            idx = np.digitize((high + low) / 2, price_bins) - 1
+            idx = min(max(idx, 0), bins - 1)
+            volume_profile[idx] += vol
+            continue
+            
+        for i in range(bins):
+            bin_bottom = price_bins[i]
+            bin_top = price_bins[i+1]
+            
+            if high >= bin_bottom and low <= bin_top:
+                overlap_top = min(high, bin_top)
+                overlap_bottom = max(low, bin_bottom)
+                overlap_range = overlap_top - overlap_bottom
+                
+                if overlap_range > 0:
+                    volume_profile[i] += vol * (overlap_range / candle_range)
+                    
     # En yüksek hacme sahip dilimi (POC) bul
-    poc_index = volume_by_price.idxmax()
+    poc_index = np.argmax(volume_profile)
     
-    # POC Fiyatını belirle (o dilimin fiyatı)
-    # digitize indexleri 1'den başlar, bu yüzden -1 yapıyoruz
-    if poc_index - 1 < len(price_bins):
-        poc_price = price_bins[poc_index - 1]
-    else:
-        poc_price = price_bins[-1]
+    # POC Fiyatını belirle
+    poc_price = (price_bins[poc_index] + price_bins[poc_index + 1]) / 2.0
         
     return poc_price
     
@@ -2427,10 +2505,9 @@ def get_fundamental_score(ticker):
 @st.cache_data(ttl=900)
 def calculate_master_score(ticker):
     """
-    FİNAL MASTER SKOR (Şeffaf & Kurumsal Motor):
-    Orijinal hata tolere eden mantık korunur, ancak Dürüst Karne UI'ı için 
-    ağırlıklandırılmış net puanlar (Fiş/Fatura gibi) şeffafça metne dökülür.
-    Böylece kutulardaki puanların toplamı, her zaman ana skoru tam verir.
+    PSİKOLOJİK OLARAK DOĞRU & GERÇEKÇİ MASTER SKOR:
+    Puan kazandıran (1 bile olsa) her şey "Artılar" (Pros) listesine gider (Uyarı emojisiyle).
+    Sadece 0 puan alıp sınıfta kalanlar "Eksiler" (Cons) listesine gider.
     """
     # 1. VERİLERİ TOPLA
     mini_data = calculate_minervini_sepa(ticker)
@@ -2453,22 +2530,20 @@ def calculate_master_score(ticker):
 
     is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
 
-    # AĞIRLIKLAR (Kurumsal Dağılım)
+    # AĞIRLIKLAR
     w_trend = 0.40 if is_index else 0.30
     w_fund = 0.0 if is_index else 0.30
     w_mom = 0.30 if is_index else 0.20
     w_ict = 0.15 if is_index else 0.10
     w_r2 = 0.15 if is_index else 0.10
 
-    pros = [] # Artılar
-    cons = [] # Eksiler
+    pros = []; cons = []
 
     def format_pt(val):
-        """Küsüratları temizleyip formatlar (Örn: 15.0 -> +15)"""
-        return f"+{int(val)}" if val.is_integer() else f"+{val:.1f}"
+        return f"+{int(val)}" if val > 0 and val.is_integer() else (f"+{val:.1f}" if val > 0 else f"{val:.1f}")
 
     # ---------------------------------------------------
-    # A. TREND 
+    # A. TREND - KADEMELİ CEZA SİSTEMİ
     # ---------------------------------------------------
     s_trend = 0
     if tech:
@@ -2476,55 +2551,69 @@ def calculate_master_score(ticker):
         sma200 = tech.get('sma200', 0)
         sma50 = tech.get('sma50', 0)
         
-        # SMA 200 (Kategoride 50 Puanlık kısım)
-        if close > sma200: 
-            s_trend += 50
-            pros.append(f"Ana Trend Boğa: Fiyat SMA200 üzerinde ({format_pt(50 * w_trend)} Puan)")
-        elif close > sma200 * 0.95: 
-            s_trend += 30
-            cons.append(f"Ana Trend Sınırda: Fiyat SMA200'e yakın ({format_pt(30 * w_trend)} Puan)")
-        else:
-            cons.append(f"Ana Trend Zayıf: Fiyat SMA200 altında (+0 Puan)")
+        # 1. Ana Trend
+        if sma200 > 0:
+            if close > sma200:
+                uzaklik = ((close - sma200) / sma200) * 100
+                
+                if uzaklik <= 15:
+                    s_trend += 40
+                    pros.append(f"✅ Ana Trend İdeal: SMA200'e güvenli mesafede ({format_pt(40 * w_trend)} Puan)")
+                elif uzaklik <= 30:
+                    s_trend += 30
+                    # Puan veriyor ama uyarıyor (Kırmızıya atmıyoruz)
+                    pros.append(f"⚠️ Trend Isınıyor: SMA200'den %{int(uzaklik)} uzaklaştı ({format_pt(30 * w_trend)} Puan)")
+                elif uzaklik <= 50:
+                    s_trend += 20
+                    pros.append(f"⚠️ Trend Çok Primli: Ortalamadan %{int(uzaklik)} koptu ({format_pt(20 * w_trend)} Puan)")
+                else:
+                    s_trend += 10
+                    pros.append(f"🚨 Köpük Riski: Fiyat SMA200'e göre %{int(uzaklik)} şişkin ({format_pt(10 * w_trend)} Puan)")
+            else:
+                # 0 Puan aldığı için kesinlikle kırmızı kutuya (cons) gider
+                cons.append(f"Ana Trend Negatif: Fiyat SMA200 altında (0 Puan)")
+
+        # 2. Orta/Kısa Vade 
+        if sma50 > 0:
+            if close > sma50: 
+                s_trend += 40
+                pros.append(f"✅ Kısa Vade İvmesi: Fiyat SMA50 üzerinde ({format_pt(40 * w_trend)} Puan)")
+            else:
+                cons.append(f"Kısa Vade Zayıf: SMA50 altında baskı var (0 Puan)")
         
-        # SMA 50 (Kategoride 30 Puanlık kısım)
-        if close > sma50: 
-            s_trend += 30
-            pros.append(f"Orta Vade Güçlü: Fiyat SMA50 üzerinde ({format_pt(30 * w_trend)} Puan)")
-        else:
-            cons.append(f"Orta Vade Zayıf: Fiyat SMA50 altında (+0 Puan)")
-        
-        # Minervini Onayı (Kategoride 20 Puanlık kısım)
+        # 3. Minervini Onayı
         if mini_data and mini_data.get('score', 0) > 50: 
             s_trend += 20
-            pros.append(f"Teknik Şablon: Minervini Onayı ({format_pt(20 * w_trend)} Puan)")
+            pros.append(f"✅ Trend Şablonu: Minervini Kriterleri Sağlanıyor ({format_pt(20 * w_trend)} Puan)")
     else:
-        cons.append(f"Teknik Veri Okunamadı (+0 Puan)")
+        cons.append(f"Teknik Veri Hatası (0 Puan)")
         
     s_trend = min(s_trend, 100)
 
     # ---------------------------------------------------
-    # B. MOMENTUM
+    # B. MOMENTUM 
     # ---------------------------------------------------
     sent_raw = sent_data.get('total', 50) if sent_data else 50
     rsi_val = sent_data.get('raw_rsi', 50) if sent_data else 50
     
-    s_mom = (sent_raw * 0.6) + (rsi_val * 0.4)
-    
-    # Sentiment Katkısı
-    sent_pt = sent_raw * 0.6 * w_mom
+    s_mom = 0
     if sent_raw >= 60: 
-        pros.append(f"Akıllı Para Duyarlılığı Güçlü ({format_pt(sent_pt)} Puan)")
+        s_mom += 60
+        pros.append(f"✅ Net Para Girişi: Kurumsal duyarlılık yüksek ({format_pt(60 * w_mom)} Puan)")
     elif sent_raw <= 40: 
-        cons.append(f"Akıllı Para Duyarlılığı Zayıf ({format_pt(sent_pt)} Puan)")
+        cons.append(f"Para Çıkışı: Kurumsal duyarlılık zayıf (0 Puan)")
     else:
-        pros.append(f"Akıllı Para Duyarlılığı Nötr ({format_pt(sent_pt)} Puan)")
+        s_mom += 20 
+        pros.append(f"⚖️ Momentum Nötr: Net bir yön yok ({format_pt(20 * w_mom)} Puan)")
         
-    # RSI Katkısı
-    rsi_pt = rsi_val * 0.4 * w_mom
-    if rsi_val > 50: 
-        pros.append(f"RSI Pozitif Bölgede ({format_pt(rsi_pt)} Puan)")
+    if rsi_val > 60: 
+        s_mom += 40
+        pros.append(f"✅ RSI Güçlü: Alım iştahı yüksek ({format_pt(40 * w_mom)} Puan)")
+    elif rsi_val > 45:
+        s_mom += 15
+        pros.append(f"⚖️ RSI Toparlanıyor: Aşırı satımdan çıkış ({format_pt(15 * w_mom)} Puan)")
     else: 
-        cons.append(f"RSI Negatif Bölgede ({format_pt(rsi_pt)} Puan)")
+        cons.append(f"RSI Zayıf: Satış baskısı devam ediyor (0 Puan)")
 
     # ---------------------------------------------------
     # C. TEMEL ANALİZ
@@ -2533,43 +2622,37 @@ def calculate_master_score(ticker):
     fund_pt = s_fund * w_fund
     
     if not is_index:
-        if s_fund >= 60: 
-            pros.append(f"Temel Veriler Güçlü (Büyüme/Kalite) ({format_pt(fund_pt)} Puan)")
+        if s_fund >= 65: 
+            pros.append(f"✅ Temel: Büyüme ve kârlılık olumlu ({format_pt(fund_pt)} Puan)")
         elif s_fund <= 40: 
-            cons.append(f"Temel Veriler Zayıf/Yetersiz ({format_pt(fund_pt)} Puan)")
+            # Puan katkısı var ama zayıf, bu yüzden pros listesinde uyarı ile gösteriyoruz
+            pros.append(f"⚠️ Temel: Temel veriler zayıf ({format_pt(fund_pt)} Puan)")
         else:
-            pros.append(f"Temel Veriler Ortalama/Nötr ({format_pt(fund_pt)} Puan)")
-            
-        # Alt detayları (puan matematiğini bozmaması için sadece bilgi olarak ekliyoruz)
-        for d in fund_data.get('details', []):
-            pros.append(f"📊 Temel Detay: {d}")
+            pros.append(f"⚖️ Temel: Sektörel olarak nötr ({format_pt(fund_pt)} Puan)")
 
     # ---------------------------------------------------
     # D. SMART MONEY / ICT
     # ---------------------------------------------------
-    s_ict = 50 # Nötr Sistem Tabanı
-    ict_base_pt = 50 * w_ict
-    
+    s_ict = 0
     if ict_data:
-        pros.append(f"ICT Nötr Taban Puanı ({format_pt(ict_base_pt)} Puan)")
-        
         if "bullish" in ict_data.get('bias', ''): 
-            s_ict += 20
-            pros.append(f"ICT Yapısı: Boğa (Bullish) ({format_pt(20 * w_ict)} Puan)")
+            s_ict += 40
+            pros.append(f"✅ Smart Money: Yön Yukarı (Bullish) ({format_pt(40 * w_ict)} Puan)")
         elif "bearish" in ict_data.get('bias', ''):
-            cons.append(f"ICT Yapısı: Ayı (Bearish) (+0 Puan)")
+            cons.append(f"Smart Money: Yön Aşağı (Bearish) (0 Puan)")
             
         if "Güçlü" in ict_data.get('displacement', ''): 
-            s_ict += 20
-            pros.append(f"ICT Enerji: Güçlü Hacim/Displacement ({format_pt(20 * w_ict)} Puan)")
-        else:
-            cons.append(f"ICT Enerji: Zayıf/Hacimsiz Hareket (+0 Puan)")
+            s_ict += 40
+            pros.append(f"✅ ICT Hacim: Güçlü Kurumsal Mum ({format_pt(40 * w_ict)} Puan)")
             
         if "Ucuz" in ict_data.get('zone', ''): 
-            s_ict += 10
-            pros.append(f"ICT Konum: Ucuzluk (Discount) Bölgesi ({format_pt(10 * w_ict)} Puan)")
+            s_ict += 20
+            pros.append(f"✅ ICT Konum: Fiyat Ucuzluk Bölgesinde ({format_pt(20 * w_ict)} Puan)")
+            
+        if s_ict == 0:
+            cons.append(f"ICT Setup Yok: Kurumsal iz bulunamadı (0 Puan)")
     else:
-        cons.append(f"ICT Verisi Okunamadı ({format_pt(ict_base_pt)} Puan)")
+        cons.append(f"ICT Verisi Yok (0 Puan)")
         
     s_ict = min(s_ict, 100)
 
@@ -2580,20 +2663,22 @@ def calculate_master_score(ticker):
     r2_pt = s_r2_norm * w_r2
     
     if r2_score >= 4: 
-        pros.append(f"Radar-2 Onayı: Setup Mevcut ({format_pt(r2_pt)} Puan)")
+        pros.append(f"✅ Formasyon: Radar-2 Setup Onaylandı ({format_pt(r2_pt)} Puan)")
+    elif r2_score > 0:
+        pros.append(f"⚠️ Zayıf Formasyon: Radar-2 Sinyali Eksik ({format_pt(r2_pt)} Puan)")
     else: 
-        cons.append(f"Radar-2 Onayı: Net Setup Yok ({format_pt(r2_pt)} Puan)")
+        cons.append(f"Formasyon Yok: Radar-2 temiz (0 Puan)")
 
     # ---------------------------------------------------
     # FİNAL HESAPLAMA VE KORUMA SİSTEMİ
     # ---------------------------------------------------
     final = (s_trend * w_trend) + (s_fund * w_fund) + (s_mom * w_mom) + (s_ict * w_ict) + (s_r2_norm * w_r2)
 
-    # Mavi Çip Koruması (Blue Chip Shield)
-    if not is_index and s_fund >= 80 and final < 50:
-        fark = 50 - final
-        final = 50
-        pros.append(f"🛡️ Mavi Çip Kalkanı: Güçlü Bilanço Koruması ({format_pt(fark)} Puan)")
+    # Mavi Çip Koruması
+    if not is_index and s_fund >= 80 and final < 30:
+        fark = 30 - final
+        final = 30
+        pros.append(f"🛡️ Şirket Değeri Koruması: Aşırı satım (Alt Limit 30) ({format_pt(fark)} Puan)")
 
     return int(final), pros, cons
 
@@ -7200,62 +7285,131 @@ with col_left:
     
     # 2. ANA SKOR PANELİ (İKİNCİ SIRA)
     st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-    # --- YENİ 3 SÜTUNLU AND SKOR DÜZENi (SOL KOKPİT - RENKLİ VERSİYON) ---
-    c_gauge, c_pos, c_neg = st.columns([1.2, 2, 2], vertical_alignment="center")
+    # --- YENİ 4 SÜTUNLU ANA SKOR DÜZENİ ---
+    # Oranları 4 sütuna göre dengeledik: Hız göstergesi(1.2), Artılar(1.8), Eksiler(1.8), Ortalamalar(1.4)
+    c_gauge, c_pos, c_neg, c_ma = st.columns([1.2, 1.8, 1.8, 1.4], vertical_alignment="center")
     
-    # SÜTUN 1: HIZ GÖSTERGESİ (SOL - Başlıksız, Sadece Grafik)
+    # CSS: Özel ve İnce Kaydırma Çubuğu (Custom Scrollbar)
+    custom_scrollbar_css = """
+    <style>
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
+    .custom-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.3); }
+    </style>
+    """
+    st.markdown(custom_scrollbar_css, unsafe_allow_html=True)
+
+    # 1. SÜTUN: HIZ GÖSTERGESİ
     with c_gauge:
-        # HİLE: Sağı ve solu EŞİT boşlukla sıkıştırıyoruz (Tam Orta)
-        bosluk_sol, grafik_alani, bosluk_sag = st.columns([0.4, 1, 0.4]) 
+        bosluk_sol, grafik_alani, bosluk_sag = st.columns([0.2, 1, 0.2]) 
         with grafik_alani:
             render_gauge_chart(master_score)
 
-    # SÜTUN 2: POZİTİF ETKENLER (YEŞİL KUTU - YÜKSEKLİK ARTIRILDI)
+    # 2. SÜTUN: POZİTİF ETKENLER (YEŞİL KUTU)
     with c_pos:
-        # Liste HTML'ini Hazırla
         pos_items_html = ""
         if score_pros:
             for p in score_pros:
-                # border-bottom stilini kaldırdım ki daha temiz görünsün, satır aralığını artırdım
-                pos_items_html += f"<div style='font-size:0.75rem; color:#14532d; margin-bottom:2px; padding:2px;'>✅ {p}</div>"
+                # DİKKAT: Baştaki hardcoded ✅ işaretini kaldırdık, çünkü fonksiyondan geliyor!
+                pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:4px; padding:6px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
         else:
-            pos_items_html = "<div style='font-size:0.75rem; color:#14532d;'>Belirgin pozitif etken yok.</div>"
+            pos_items_html = "<div style='font-size:0.8rem; color:#14532d; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
 
-        # HTML Kutu (height: 160px yapıldı ve z-index eklendi)
         st.markdown(f"""
-        <div style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:160px; overflow-y:auto; position:relative;">
-            <div style="font-weight:800; font-size:0.8rem; color:#15803d; background-color:#f0fdf4; padding:10px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10;">
-                POZİTİF ETKENLER ({len(score_pros)})
+        <div class="custom-scroll" style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);">
+            <div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:10px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;">
+                <span>POZİTİF ETKENLER</span>
+                <span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span>
             </div>
-            <div style="padding:10px;">
+            <div style="padding:8px 12px;">
                 {pos_items_html}
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-    # SÜTUN 3: NEGATİF ETKENLER (KIRMIZI KUTU - YÜKSEKLİK ARTIRILDI)
+    # 3. SÜTUN: NEGATİF ETKENLER (KIRMIZI KUTU)
     with c_neg:
-        # Liste HTML'ini Hazırla
         neg_items_html = ""
         if score_cons:
             for c in score_cons:
-                neg_items_html += f"<div style='font-size:0.75rem; color:#7f1d1d; margin-bottom:2px; padding:2px;'>❌ {c}</div>"
+                # DİKKAT: Baştaki hardcoded ❌ işaretini kaldırdık, çünkü cons listesine sadece 0 alanları attık.
+                # Arayüzde net bir kırmızı çarpı görünmesi için buraya sadece ❌ ekliyoruz.
+                neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:4px; padding:6px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
         else:
-            neg_items_html = "<div style='font-size:0.75rem; color:#7f1d1d;'>Belirgin negatif etken yok.</div>"
+            neg_items_html = "<div style='font-size:0.8rem; color:#7f1d1d; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
 
-        # HTML Kutu (height: 160px yapıldı ve z-index eklendi)
         st.markdown(f"""
-        <div style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:160px; overflow-y:auto; position:relative;">
-            <div style="font-weight:800; font-size:0.8rem; color:#b91c1c; background-color:#fef2f2; padding:10px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10;">
-                NEGATİF ETKENLER ({len(score_cons)})
+        <div class="custom-scroll" style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
+            <div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:10px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;">
+                <span>NEGATİF ETKENLER</span>
+                <span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span>
             </div>
-            <div style="padding:10px;">
+            <div style="padding:8px 12px;">
                 {neg_items_html}
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+    # 4. SÜTUN: HAREKETLİ ORTALAMALAR (YENİ - MAVİ KUTU / 2 SÜTUNLU)
+    with c_ma:
+        ma_data = get_ma_data_for_ui(st.session_state.ticker)
+        
+        if ma_data:
+            c = ma_data["close"]
+            
+            def render_ma_row(name, val, current_price):
+                if pd.isna(val) or val == 0: return ""
+                
+                # Fiyat üstündeyse yeşil, altındaysa kırmızı daire
+                color_icon = "🟢" if current_price > val else "🔴"
+                
+                # 1000 ve üzeri değerlerde ondalık kısmı at, virgülle ayır (Örn: 13,915)
+                # 1000 altı değerlerde ise 2 küsurat bırak (Örn: 15.42)
+                if val >= 1000:
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.2f}"
+                
+                # İki sütuna sığması için font-size'ı 0.8rem'den 0.75rem'e düşürdük
+                return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
+            
+            # EMA'ları ve SMA'ları ayrı ayrı HTML değişkenlerine alıyoruz
+            ema_html = ""
+            ema_html += render_ma_row("EMA 5", ma_data["ema5"], c)
+            ema_html += render_ma_row("EMA 8", ma_data["ema8"], c)
+            ema_html += render_ma_row("EMA 13", ma_data["ema13"], c)
+            
+            sma_html = ""
+            sma_html += render_ma_row("SMA 50", ma_data["sma50"], c)
+            sma_html += render_ma_row("SMA 100", ma_data["sma100"], c)
+            sma_html += render_ma_row("SMA 200", ma_data["sma200"], c)
+            
+            # CSS Grid (display: grid; grid-template-columns: 1fr 1fr;) ile ikiye bölüyoruz
+            # Streamlit hatası almamak için HTML bloğunu TAMAMEN sola yaslıyoruz
+            final_html = f"""
+<div class="custom-scroll" style="background-color:#f8fafc; border:1px solid #94a3b8; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(148, 163, 184, 0.1);">
+<div style="font-weight:800; font-size:0.85rem; color:#334155; background-color:#e2e8f0; padding:10px 12px; border-bottom:2px solid #94a3b8; position:sticky; top:0; z-index:10; text-align:center;">
+HAREKETLİ ORTALAMALAR 
+</div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px;">
+<div>
+{ema_html}
+</div>
+<div>
+{sma_html}
+</div>
+</div>
+</div>
+"""
+            st.markdown(final_html, unsafe_allow_html=True)
+            
+        else:
+            st.markdown("<div style='font-size:0.8rem; color:#64748b; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
+
 
 
     # 3. ICT SMART MONEY ANALİZİ (YENİ YERİ: ANA SKOR ALTINDA)
