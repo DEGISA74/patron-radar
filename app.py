@@ -7289,8 +7289,8 @@ with col_left:
     master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
     # --- YENİ 4 SÜTUNLU ANA SKOR DÜZENİ ---
-    # Oranları 4 sütuna göre dengeledik: Hız göstergesi(1.2), Artılar(1.8), Eksiler(1.8), Ortalamalar(1.4)
-    c_gauge, c_pos, c_neg, c_ma = st.columns([1.2, 1.8, 1.8, 1.4], vertical_alignment="center")
+    # Oranları 4 sütuna göre dengeledik: Hız göstergesi(1.2), Artılar(1.9, Eksiler(1.9), Ortalamalar(1.4)
+    c_gauge, c_pos, c_neg, c_ma = st.columns([1.2, 1.9, 1.9, 1.4], vertical_alignment="center")
     
     # CSS: Özel ve İnce Kaydırma Çubuğu (Custom Scrollbar)
     custom_scrollbar_css = """
@@ -7315,7 +7315,7 @@ with col_left:
         if score_pros:
             for p in score_pros:
                 # DİKKAT: Baştaki hardcoded ✅ işaretini kaldırdık, çünkü fonksiyondan geliyor!
-                pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:4px; padding:6px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
+                pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
         else:
             pos_items_html = "<div style='font-size:0.8rem; color:#14532d; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
 
@@ -7338,7 +7338,7 @@ with col_left:
             for c in score_cons:
                 # DİKKAT: Baştaki hardcoded ❌ işaretini kaldırdık, çünkü cons listesine sadece 0 alanları attık.
                 # Arayüzde net bir kırmızı çarpı görünmesi için buraya sadece ❌ ekliyoruz.
-                neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:4px; padding:6px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
+                neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
         else:
             neg_items_html = "<div style='font-size:0.8rem; color:#7f1d1d; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
 
