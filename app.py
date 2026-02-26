@@ -2424,11 +2424,13 @@ def get_fundamental_score(ticker):
     except Exception:
         return {"score": 50, "details": ["Veri Hatası"], "valid": False}
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=900)
 def calculate_master_score(ticker):
     """
-    FİNAL MASTER SKOR (Gelişmiş Raporlu):
-    Puanı hesaplarken nedenlerini (Artı/Eksi) kaydeder.
+    FİNAL MASTER SKOR (Şeffaf & Kurumsal Motor):
+    Orijinal hata tolere eden mantık korunur, ancak Dürüst Karne UI'ı için 
+    ağırlıklandırılmış net puanlar (Fiş/Fatura gibi) şeffafça metne dökülür.
+    Böylece kutulardaki puanların toplamı, her zaman ana skoru tam verir.
     """
     # 1. VERİLERİ TOPLA
     mini_data = calculate_minervini_sepa(ticker)
@@ -2438,7 +2440,7 @@ def calculate_master_score(ticker):
     tech = get_tech_card_data(ticker)
     
     # Radar Puanlarını Al
-    r1_score = 0; r2_score = 0
+    r1_score = 0.0; r2_score = 0.0
     scan_df = st.session_state.get('scan_data')
     if scan_df is not None and not scan_df.empty and 'Sembol' in scan_df.columns:
         row = scan_df[scan_df['Sembol'] == ticker]
@@ -2449,107 +2451,149 @@ def calculate_master_score(ticker):
         row = radar2_df[radar2_df['Sembol'] == ticker]
         if not row.empty: r2_score = float(row.iloc[0]['Skor'])
 
-    # RAPOR LİSTELERİ
+    is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
+
+    # AĞIRLIKLAR (Kurumsal Dağılım)
+    w_trend = 0.40 if is_index else 0.30
+    w_fund = 0.0 if is_index else 0.30
+    w_mom = 0.30 if is_index else 0.20
+    w_ict = 0.15 if is_index else 0.10
+    w_r2 = 0.15 if is_index else 0.10
+
     pros = [] # Artılar
-    cons = [] # Eksiler (Puan kırılan yerler)
+    cons = [] # Eksiler
+
+    def format_pt(val):
+        """Küsüratları temizleyip formatlar (Örn: 15.0 -> +15)"""
+        return f"+{int(val)}" if val.is_integer() else f"+{val:.1f}"
 
     # ---------------------------------------------------
-    # A. TREND (%30)
+    # A. TREND 
     # ---------------------------------------------------
     s_trend = 0
     if tech:
-        close = tech['close_last']
-        sma200 = tech['sma200']; sma50 = tech['sma50']
+        close = tech.get('close_last', 0)
+        sma200 = tech.get('sma200', 0)
+        sma50 = tech.get('sma50', 0)
         
-        # Ana Trend (SMA200)
+        # SMA 200 (Kategoride 50 Puanlık kısım)
         if close > sma200: 
             s_trend += 50
-            pros.append("Fiyat SMA200 üzerinde (Ana Trend Boğa)")
+            pros.append(f"Ana Trend Boğa: Fiyat SMA200 üzerinde ({format_pt(50 * w_trend)} Puan)")
         elif close > sma200 * 0.95: 
             s_trend += 30
-            cons.append("Fiyat SMA200 altında ama yakın (Tolerans)")
+            cons.append(f"Ana Trend Sınırda: Fiyat SMA200'e yakın ({format_pt(30 * w_trend)} Puan)")
         else:
-            cons.append("Ana Trend Zayıf (Fiyat < SMA200)")
+            cons.append(f"Ana Trend Zayıf: Fiyat SMA200 altında (+0 Puan)")
         
-        # Orta Vade (SMA50)
+        # SMA 50 (Kategoride 30 Puanlık kısım)
         if close > sma50: 
             s_trend += 30
-            pros.append("Fiyat SMA50 üzerinde (Orta Vade Güçlü)")
+            pros.append(f"Orta Vade Güçlü: Fiyat SMA50 üzerinde ({format_pt(30 * w_trend)} Puan)")
         else:
-            cons.append("Orta Vade Zayıf (Fiyat < SMA50)")
+            cons.append(f"Orta Vade Zayıf: Fiyat SMA50 altında (+0 Puan)")
         
-        # Minervini Onayı
+        # Minervini Onayı (Kategoride 20 Puanlık kısım)
         if mini_data and mini_data.get('score', 0) > 50: 
             s_trend += 20
-            pros.append("Minervini Trend Şablonuna Uygun")
-    
+            pros.append(f"Teknik Şablon: Minervini Onayı ({format_pt(20 * w_trend)} Puan)")
+    else:
+        cons.append(f"Teknik Veri Okunamadı (+0 Puan)")
+        
     s_trend = min(s_trend, 100)
 
     # ---------------------------------------------------
-    # B. MOMENTUM (%20)
+    # B. MOMENTUM
     # ---------------------------------------------------
     sent_raw = sent_data.get('total', 50) if sent_data else 50
     rsi_val = sent_data.get('raw_rsi', 50) if sent_data else 50
     
     s_mom = (sent_raw * 0.6) + (rsi_val * 0.4)
     
-    if sent_raw >= 60: pros.append(f"Smart Money Sentiment Güçlü ({sent_raw}/100)")
-    elif sent_raw <= 40: cons.append(f"Smart Money Sentiment Zayıf ({sent_raw}/100)")
-    
-    if rsi_val > 50: pros.append(f"RSI Pozitif Bölgede ({int(rsi_val)})")
-    else: cons.append(f"RSI Negatif Bölgede ({int(rsi_val)})")
+    # Sentiment Katkısı
+    sent_pt = sent_raw * 0.6 * w_mom
+    if sent_raw >= 60: 
+        pros.append(f"Akıllı Para Duyarlılığı Güçlü ({format_pt(sent_pt)} Puan)")
+    elif sent_raw <= 40: 
+        cons.append(f"Akıllı Para Duyarlılığı Zayıf ({format_pt(sent_pt)} Puan)")
+    else:
+        pros.append(f"Akıllı Para Duyarlılığı Nötr ({format_pt(sent_pt)} Puan)")
+        
+    # RSI Katkısı
+    rsi_pt = rsi_val * 0.4 * w_mom
+    if rsi_val > 50: 
+        pros.append(f"RSI Pozitif Bölgede ({format_pt(rsi_pt)} Puan)")
+    else: 
+        cons.append(f"RSI Negatif Bölgede ({format_pt(rsi_pt)} Puan)")
 
     # ---------------------------------------------------
-    # C. TEMEL (%30) - Endeks değilse
+    # C. TEMEL ANALİZ
     # ---------------------------------------------------
-    s_fund = fund_data.get('score', 50)
-    is_index = ticker.startswith("^") or "XU" in ticker or "-USD" in ticker
+    s_fund = fund_data.get('score', 50) if fund_data else 50
+    fund_pt = s_fund * w_fund
     
     if not is_index:
-        if s_fund >= 60: pros.append("Temel Veriler Güçlü (Büyüme/Kalite)")
-        elif s_fund <= 40: cons.append("Temel Veriler Zayıf/Yetersiz")
-        
-        # Detaylardan gelenleri ekle
+        if s_fund >= 60: 
+            pros.append(f"Temel Veriler Güçlü (Büyüme/Kalite) ({format_pt(fund_pt)} Puan)")
+        elif s_fund <= 40: 
+            cons.append(f"Temel Veriler Zayıf/Yetersiz ({format_pt(fund_pt)} Puan)")
+        else:
+            pros.append(f"Temel Veriler Ortalama/Nötr ({format_pt(fund_pt)} Puan)")
+            
+        # Alt detayları (puan matematiğini bozmaması için sadece bilgi olarak ekliyoruz)
         for d in fund_data.get('details', []):
-            pros.append(f"Temel: {d}")
+            pros.append(f"📊 Temel Detay: {d}")
 
     # ---------------------------------------------------
-    # D. SMART / TEKNİK (%20)
+    # D. SMART MONEY / ICT
     # ---------------------------------------------------
-    # ICT (%10)
-    s_ict = 50
+    s_ict = 50 # Nötr Sistem Tabanı
+    ict_base_pt = 50 * w_ict
+    
     if ict_data:
+        pros.append(f"ICT Nötr Taban Puanı ({format_pt(ict_base_pt)} Puan)")
+        
         if "bullish" in ict_data.get('bias', ''): 
-            s_ict += 20; pros.append("ICT Yapısı: Bullish (Boğa)")
+            s_ict += 20
+            pros.append(f"ICT Yapısı: Boğa (Bullish) ({format_pt(20 * w_ict)} Puan)")
         elif "bearish" in ict_data.get('bias', ''):
-            cons.append("ICT Yapısı: Bearish (Ayı)")
+            cons.append(f"ICT Yapısı: Ayı (Bearish) (+0 Puan)")
             
         if "Güçlü" in ict_data.get('displacement', ''): 
-            s_ict += 20; pros.append("Güçlü Hacim/Enerji (Displacement)")
+            s_ict += 20
+            pros.append(f"ICT Enerji: Güçlü Hacim/Displacement ({format_pt(20 * w_ict)} Puan)")
         else:
-            cons.append("Hacim/Enerji Zayıf")
+            cons.append(f"ICT Enerji: Zayıf/Hacimsiz Hareket (+0 Puan)")
             
         if "Ucuz" in ict_data.get('zone', ''): 
-            s_ict += 10; pros.append("Fiyat Ucuzluk (Discount) Bölgesinde")
+            s_ict += 10
+            pros.append(f"ICT Konum: Ucuzluk (Discount) Bölgesi ({format_pt(10 * w_ict)} Puan)")
+    else:
+        cons.append(f"ICT Verisi Okunamadı ({format_pt(ict_base_pt)} Puan)")
+        
     s_ict = min(s_ict, 100)
 
-    # Radar 2 (%10)
+    # ---------------------------------------------------
+    # E. RADAR 2
+    # ---------------------------------------------------
     s_r2_norm = (r2_score / 7) * 100
-    if r2_score >= 4: pros.append("Radar-2 Setup Onayı Mevcut")
-    else: cons.append("Net bir Radar-2 Setup Formasyonu Yok")
+    r2_pt = s_r2_norm * w_r2
+    
+    if r2_score >= 4: 
+        pros.append(f"Radar-2 Onayı: Setup Mevcut ({format_pt(r2_pt)} Puan)")
+    else: 
+        cons.append(f"Radar-2 Onayı: Net Setup Yok ({format_pt(r2_pt)} Puan)")
 
     # ---------------------------------------------------
-    # FİNAL HESAPLAMA
+    # FİNAL HESAPLAMA VE KORUMA SİSTEMİ
     # ---------------------------------------------------
-    if is_index:
-        final = (s_trend * 0.40) + (s_mom * 0.30) + (s_ict * 0.15) + (s_r2_norm * 0.15)
-    else:
-        final = (s_trend * 0.30) + (s_fund * 0.30) + (s_mom * 0.20) + (s_ict * 0.10) + (s_r2_norm * 0.10)
+    final = (s_trend * w_trend) + (s_fund * w_fund) + (s_mom * w_mom) + (s_ict * w_ict) + (s_r2_norm * w_r2)
 
-    # Mavi Çip Koruması
+    # Mavi Çip Koruması (Blue Chip Shield)
     if not is_index and s_fund >= 80 and final < 50:
+        fark = 50 - final
         final = 50
-        pros.append("🛡️ Mavi Çip Koruması (Temel çok güçlü olduğu için puan yükseltildi)")
+        pros.append(f"🛡️ Mavi Çip Kalkanı: Güçlü Bilanço Koruması ({format_pt(fark)} Puan)")
 
     return int(final), pros, cons
 
@@ -6543,16 +6587,17 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
 
 *** 1. TREND VE GÜÇ ***
+KISA VADELİ TREND GÖSTERGELERİ:
 - HARSI Durumu (Heikin Ashi RSI): {harsi_txt}
+- EMA Durumu (8/13): {ema_txt} (eğer hisse EMA8/13 altına düştüyse ve HARSI de negatifse kısa vadeli trend kırılmış olabilir)
+[ORTA VADELİ TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
 - SuperTrend (son 60 günlük Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
-[TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
 - SMA50 Durumu: {sma50_str}
 - SMA 50 (Orta Vade): {sma50_val:.2f}
 - SMA 100 (Ana Destek): {sma100_val:.2f}
 - SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
 - EMA 144 (Fibonacci/Robotik Seviye): {ema144_val:.2f}
-- EMA Durumu (8/13): {ema_txt}
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
 *** 2. PRICE ACTION / ARZ-TALEP BÖLGELERİ / SMART MONEY LİKİDİTE & ICT YAPISI ***
@@ -6579,7 +6624,7 @@ EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
 - Güncel Fiyat: {guncel_fiyat}
 ANALİZ TALİMATLARI:
 1. Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-2. Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %20'nin üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+2. Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
 3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f}
@@ -6591,7 +6636,7 @@ ANALİZ TALİMATLARI:
 {lorentzian_bilgisi} 
 *** GÖREVİN *** 
 Görevin; tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
-Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak (teknik terimleri parantez içinde global kodlarıyla belirterek) sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
+Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
@@ -6613,7 +6658,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş.
 4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
 Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
-HARSI (Heikin Ashi RSI) verisine özel önem ver. Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
+HARSI (Heikin Ashi RSI) verisine de dikkati çek. Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
 Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
