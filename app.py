@@ -2562,7 +2562,7 @@ def calculate_master_score(ticker):
                 elif uzaklik <= 30:
                     s_trend += 30
                     # Puan veriyor ama uyarıyor (Kırmızıya atmıyoruz)
-                    pros.append(f"⚠️ Trend Isınıyor: SMA200'den %{int(uzaklik)} uzaklaştı ({format_pt(30 * w_trend)} Puan)")
+                    pros.append(f"⚠️ Trend Yukarıda: SMA200'den %{int(uzaklik)} uzaklaştı ({format_pt(30 * w_trend)} Puan)")
                 elif uzaklik <= 50:
                     s_trend += 20
                     pros.append(f"⚠️ Trend Çok Primli: Ortalamadan %{int(uzaklik)} koptu ({format_pt(20 * w_trend)} Puan)")
@@ -2577,7 +2577,7 @@ def calculate_master_score(ticker):
         if sma50 > 0:
             if close > sma50: 
                 s_trend += 40
-                pros.append(f"✅ Kısa Vade İvmesi: Fiyat SMA50 üzerinde ({format_pt(40 * w_trend)} Puan)")
+                pros.append(f"✅ Kısa Vadeli İvme: Fiyat SMA50 üzerinde ({format_pt(40 * w_trend)} Puan)")
             else:
                 cons.append(f"Kısa Vade Zayıf: SMA50 altında baskı var (0 Puan)")
         
@@ -6664,18 +6664,18 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
 
 *** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Ama bunların GECİKMELİ VERİLER olduğunu unutma***
-- YAPI (Structure): {sent_yapi} (Market yapısı Bullish mi?)
-- HACİM (Volume): {sent_hacim} (Yükselişi destekliyor mu?)
-- TREND: {sent_trend} (Ortalamaların durumu ve kısa vadeli trend için EMA 8/13 üstünde olup olmadığı)
-- MOMENTUM: {sent_mom} (RSI ve MACD gücü)
-- VOLATİLİTE: {sent_vola} (Sıkışma var mı?)
-- MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt}
+- YAPI (Structure): {sent_yapi} (Market yapısı puanları şöyle: Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8))
+- HACİM (Volume): {sent_hacim} (Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8))
+- TREND: {sent_trend} (Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4))
+- MOMENTUM: {sent_mom} (RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5))
+- VOLATİLİTE: {sent_vola} (Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10))
+- MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt} (Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5))
 
 *** 1. TREND VE GÜÇ ***
 KISA VADELİ TREND GÖSTERGELERİ:
-- HARSI Durumu (Heikin Ashi RSI): {harsi_txt}
+- HARSI Durumu (Heikin Ashi RSI): {harsi_txt} (son 14 günlük hafızayı kullanır, RSI üzerindeki gürültüyü temizleyerek, momentumun mevcut trend yönünü ve kalıcılığını ölçer.)
 - EMA Durumu (8/13): {ema_txt} (eğer hisse EMA8/13 altına düştüyse ve HARSI de negatifse kısa vadeli trend kırılmış olabilir)
-[ORTA VADELİ TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER]
+ORTA VADELİ TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER:
 - SuperTrend (son 60 günlük Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
 - SMA50 Durumu: {sma50_str}
@@ -6683,6 +6683,7 @@ KISA VADELİ TREND GÖSTERGELERİ:
 - SMA 100 (Ana Destek): {sma100_val:.2f}
 - SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
 - EMA 144 (Fibonacci/Robotik Seviye): {ema144_val:.2f}
+Son bir kaç gündür bu hareketli ortalamalardan en az birinden tepki alıp almadığını incele.
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
 *** 2. PRICE ACTION / ARZ-TALEP BÖLGELERİ / SMART MONEY LİKİDİTE & ICT YAPISI ***
@@ -6691,7 +6692,7 @@ KISA VADELİ TREND GÖSTERGELERİ:
 - LİKİDİTE HAVUZLARI (Mıknatıs): {havuz_ai}
 - LİKİDİTE AVI (Sweep/Silkeleme): {sweep_ai}
 - Balina Ayak İzi (Taze Arz-Talep Bölgesi): {sd_txt_ai}
-- Gizli Para Akışı (10G WMA): {para_akisi_txt}
+- Kısa Vadeli Trend Hassasiyeti (10G WMA): {para_akisi_txt} (Son günlerin fiyat hareketine daha fazla ağırlık vererek, trenddeki taze değişimleri ölçer.)
 - Aktif FVG: {ict_data.get('fvg_txt', 'Yok')}
 - Aktif Order Block: {ict_data.get('ob_txt', 'Yok')}
 - HEDEF LİKİDİTE (Mıknatıs): {ict_data.get('target', 0)}
@@ -6703,19 +6704,18 @@ KISA VADELİ TREND GÖSTERGELERİ:
 - Direnç (Hedef): {fib_res}
 - Destek (Stop): {fib_sup}
 - Hedef Likidite: {liq_str}
-EK TEKNİK VERİLER (SMART MONEY METRİKLERİ):
+*** 4. EK TEKNİK VERİLER (SMART MONEY METRİKLERİ) ***
 - Smart Money Hacim Durumu: {delta_durumu}
 - Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
 - Güncel Fiyat: {guncel_fiyat}
-ANALİZ TALİMATLARI:
-1. Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-2. Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
-3. Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
+- Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
+- Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+-Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
-- VWAP (Adil Değer): {v_val:.2f}
-- Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında.
-- VWAP DURUMU: {vwap_ai_txt}
-- RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f})
+- VWAP (Adil Değer): {v_val:.2f} (Günün hacim ağırlıklı ortalama fiyatıdır; piyasa yapıcıların ve akıllı paranın 'denge' kabul ettiği ana maliyet merkezini ölçer.)
+- Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında. (Fiyatın kurumsal maliyetten ne kadar uzaklaştığını ölçer; %5 ve üzeri sapmalar 'lastik etkisi' yaratarak geri çekilme riskini (mean reversion) tetikleyebilir.)
+- VWAP DURUMU: {vwap_ai_txt} (Momentumun kalitesini ölçer; ralli modu sağlıklı kurumsal alımı, parabolik ise perakende yatırımcının yarattığı tehlikeli aşırı ısınmayı simgeler.)
+- RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f}) (Hissenin endeksten bağımsız 'ayrışma' gücünü ölçer; pozitif Alpha, piyasa düşerken bile ayakta kalan lider 'at' olduğunu kanıtlar.)
 (NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi öner.)
 *** 6. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
