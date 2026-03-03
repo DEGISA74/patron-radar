@@ -6165,6 +6165,16 @@ if st.session_state.generate_prompt:
     info = fetch_stock_info(t)
     df_hist = get_safe_historical_data(t) # Ana veri
     
+    # --- Para Akışı İvmesi ve Fiyat Dengesi VERİLERİNİ AI İÇİN HAM VERİYE DÖNÜŞTÜRME ---
+    son_satir = synth_data.iloc[-1]
+    guncel_ivme = float(son_satir['MF_Smooth']) # Grafikteki o mavi/kırmızı barların değeri
+    guncel_stp = float(son_satir['STP'])        # Grafikteki sarı denge çizgisi
+    guncel_fiyat = float(son_satir['Price'])    # Grafikteki mavi fiyat çizgisi
+    # Fiyatın dengeye (sarı çizgiye) olan uzaklığı (%)
+    denge_sapmasi = ((guncel_fiyat / guncel_stp) - 1) * 100
+    # İvme yönünü belirleyelim (Grafikteki barların rengi gibi)
+    ivme_yonu = "YÜKSELİŞ (Pozitif)" if guncel_ivme > 0 else "DÜŞÜŞ (Negatif)"
+
     # EKSİK OLAN TANIMLAMALAR EKLENDİ (bench_series ve idx_data)
     cat_for_bench = st.session_state.category
     bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
@@ -6468,7 +6478,7 @@ if st.session_state.generate_prompt:
     
     st_txt = f"{'YÜKSELİŞ' if levels_data.get('st_dir')==1 else 'DÜŞÜŞ'} | {levels_data.get('st_val',0):.2f}" if levels_data else "-"
     # ==============================================================================
-    # 🧠 ALGORİTMİK KARAR MATRİSİ V2.0 (SCENARIO DETECTOR)
+    # 🧠 ALGORİTMİK KARAR MATRİSİ V3.0 (FULL-CYCLE SCENARIO DETECTOR)
     # ==============================================================================
     # 1. TEMEL METRİKLERİN HESAPLANMASI
     # ---------------------------------------------------------
@@ -6477,18 +6487,17 @@ if st.session_state.generate_prompt:
         p_now = info.get('price', 0)
         p_change_pct = info.get('change_pct', 0) # Günlük Yüzde Değişim
         
-        # Trend Gücü (SMA50 Referansı)
+        # Trend Gücü (SMA50 Referansı) ve Yönü
         sma50_val = tech_data.get('sma50', 0)
         trend_ratio = (p_now / sma50_val) if sma50_val > 0 else 1.0
+        # Trendin Eğimi (Pozitif: Yukarı yönlü, Negatif: Aşağı yönlü)
+        sma50_slope = tech_data.get('sma50_slope', 1) 
         
         # Hacim Oranı (20 Günlük Ortalamaya Göre)
         vol_ratio = 1.0
         if df_hist is not None and len(df_hist) > 20:
             v_curr = float(df_hist['Volume'].iloc[-1])
             v_avg = float(df_hist['Volume'].rolling(20).mean().iloc[-1])
-            # Zaman ayarlı (Projection) düzeltme yapalım ki sabah seansı yanıltmasın
-            # Basitçe: Eğer seans devam ediyorsa hacmi 1.0 kabul et veya mevcut projection'ı kullan
-            # Ama burada df_hist son satırı kullandığımız için ham veriye bakalım:
             if v_avg > 0: vol_ratio = v_curr / v_avg
 
         # STP Durumu (Momentum)
@@ -6498,109 +6507,132 @@ if st.session_state.generate_prompt:
             l_s = float(synth_data.iloc[-1]['STP'])
             if l_p < l_s: is_stp_broken = True
             
-        # RSI Durumu
+        # RSI Durumu (Negatif ve Pozitif Uyumsuzluklar)
         rsi_val_now = sent_data.get('raw_rsi', 50)
-        is_rsi_div_neg = "NEGATİF" in str(pa_data.get('div', {}).get('title', ''))
+        is_rsi_div_neg = "NEGATİF" in str(pa_data.get('div', {}).get('title', '')).upper()
+        is_rsi_div_pos = "POZİTİF" in str(pa_data.get('div', {}).get('title', '')).upper()
         
-        # Mum Durumu
+        # Mum Durumu (İyi ve Kötü Formasyonlar)
+        mum_str = str(mum_desc)
         bad_candles = ["Black Crows", "Bearish Engulfing", "Shooting Star", "Marubozu 🔻"]
-        has_bad_candle = any(x in str(mum_desc) for x in bad_candles)
+        has_bad_candle = any(x in mum_str for x in bad_candles)
+        good_candles = ["Hammer", "Bullish Engulfing", "Morning Star", "Marubozu 🔺", "Doji 🟢"]
+        has_good_candle = any(x in mum_str for x in good_candles)
 
     except:
-        # Veri hatası olursa varsayılan değerler
+        # Veri hatası olursa çökmemesi için tüm varsayılan değerler
         p_change_pct = 0; trend_ratio = 1.0; vol_ratio = 1.0; is_stp_broken = False; rsi_val_now = 50
+        is_rsi_div_neg = False; is_rsi_div_pos = False; has_bad_candle = False; has_good_candle = False; sma50_slope = 1
 
-    # 2. SENARYO TESPİT MOTORU
+    # 2. SENARYO TESPİT MOTORU (12 SENARYO - TAM DÖNGÜ)
     # ---------------------------------------------------------
     ai_scenario_title = "NORMAL PİYASA AKIŞI"
-    ai_mood_instruction = "Veriler nötr/karışık. Her iki yönü de (Destek/Direnç) dengeli anlat."
+    ai_mood_instruction = "Veriler nötr/karışık. Yön tayini zor. Her iki yönü de (Destek/Direnç) dengeli anlat."
     
-    # SENARYO 1: 🟢 DİNLENEN BOĞA (FIRSAT)
-    # Şartlar: Hafif Düşüş + Düşük Hacim + Güçlü Trend
-    if (-3.5 <= p_change_pct <= -0.5) and (vol_ratio < 0.85) and (trend_ratio > 1.03):
-        ai_scenario_title = "🟢 SENARYO: DİNLENEN BOĞA (HEALTHY PULLBACK)"
+    # --- 1. EN UÇ SENARYOLAR (AŞIRILIKLAR) ---
+    
+    # SENARYO 1: 🚀 AŞIRI ALIM ÇILGINLIĞI (FOMO)
+    if (p_change_pct > 4.0) and (vol_ratio > 1.5) and (trend_ratio > 1.10) and (rsi_val_now > 75):
+        ai_scenario_title = "🚀 SENARYO: AŞIRI ALIM ÇILGINLIĞI (FOMO)"
         ai_mood_instruction = """
-        DURUM: Fiyat düşüyor (%1-%3 arası) FAKAT Hacim çok düşük (Satıcılar isteksiz).
-        Trend (SMA50) desteğinin %3 üzerindeyiz, yani ana yapı çok güçlü.
-        
-        TALİMAT:
-        1. Asla "Çöküş" veya "Trend Bitti" deme.
-        2. Bunu "Sağlıklı bir soluklanma" ve "Köpük alma" olarak yorumla.
-        3. Yatırımcıyı panik satışına karşı uyar, desteklerin çalışma ihtimalini vurgula.
-        4. "Fırsat" kelimesini (risk uyarısıyla birlikte) kullanabilirsin.
+        DURUM: Fiyat parabolik uçuyor. Hacim coşmuş, RSI aşırı alımda ve fiyat SMA50'den çok uzak (Köpük).
+        TALİMAT: Yeni alım yapmanın (FOMO) çok riskli olduğunu belirt. Kâr al seviyelerini yukarı taşıma (Trailing Stop) mantığını anlat.
         """
 
-    # SENARYO 2: 🟡 KÂR REALİZASYONU (İZLE)
-    # Şartlar: Orta Düşüş + Normal Hacim + Güçlü Trend + STP Kırık
+    # SENARYO 2: 🩸 KAPİTÜLASYON (PANİK SATIŞI)
+    elif (p_change_pct < -5.0) and (vol_ratio > 1.8) and (rsi_val_now < 30):
+        ai_scenario_title = "🩸 SENARYO: KAPİTÜLASYON (PANIC SELLING)"
+        ai_mood_instruction = """
+        DURUM: Tam bir kan banyosu. İnanılmaz yüksek hacimle fiyat çöküyor. Ancak RSI aşırı satımda diplerde.
+        TALİMAT: "Akıllı Para"nın dipten toplama fırsatı olabileceğini hissettir. "Düşen bıçak tutulmaz" de ama fırsat penceresini de arala.
+        """
+
+    # --- 2. DÖNÜŞ VE ANOMALİ SENARYOLARI ---
+
+    # SENARYO 3: 🟢 DİPTEN DÖNÜŞ TEYİDİ (YENİ)
+    # Şart: Fiyat dipte (trend_ratio < 0.98), %1.5'ten fazla yükselmiş, hacim iyi ve pozitif bir emare var.
+    elif (p_change_pct >= 1.5) and (vol_ratio >= 1.2) and (trend_ratio < 0.98) and (has_good_candle or is_rsi_div_pos):
+        ai_scenario_title = "🟢 SENARYO: DİPTEN DÖNÜŞ (RECOVERY)"
+        ai_mood_instruction = """
+        DURUM: Fiyat ana trendin çok altındaydı ama bugün güçlü bir hacim ve iyi bir mumla yukarı tepki verdi.
+        TALİMAT: Bu hareketin bir "Dipten Dönüş" sinyali olabileceğini, akıllı paranın alıma geçtmiş olabileceğini, umut verici ama temkinli bir dille anlat.
+        """
+
+    # SENARYO 4: ⚫ TREND ÇÖKÜŞÜ (STOP-OUT)
+    elif (p_change_pct < -2.5) and (vol_ratio > 1.1) and (trend_ratio < 0.99) and is_stp_broken and (sma50_slope <= 0 or has_bad_candle):
+        ai_scenario_title = "⚫ SENARYO: TREND ÇÖKÜŞÜ (REVERSAL)"
+        ai_mood_instruction = """
+        DURUM: Sert ve hacimli bir düşüşle ana trend (SMA50) kırıldı. Ayılar kontrolü aldı.
+        TALİMAT: Umut verme. "STOP-OUT" seviyesinin delindiğini belirt. En korumacı senaryoyu yaz.
+        """ 
+
+    # SENARYO 5: 🔴 DAĞITIM / CHURNING (GİZLİ SATIŞ)
+    elif (abs(p_change_pct) < 1.5) and (vol_ratio > 1.3) and (trend_ratio > 1.05) and has_bad_candle:
+        ai_scenario_title = "🔴 SENARYO: DAĞITIM / CHURNING (GİZLİ SATIŞ)"
+        ai_mood_instruction = """
+        DURUM: Hacim patlamış ama fiyat gitmiyor, üstelik satıcılı (kötü) bir mum var. (Patinaj)
+        TALİMAT: "Hacim yüksek ama fiyat yerinde sayıyor, bu hayra alamet değil" de. Büyüklerin mal devrediyor olabileceğini uyar.
+        """
+
+    # SENARYO 6: ⚪ SIKIŞMA (CONSOLIDATION)
+    elif (abs(p_change_pct) < 0.5) and (vol_ratio < 0.6) and (0.98 < trend_ratio < 1.02):
+        ai_scenario_title = "⚪ SENARYO: SIKIŞMA (CONSOLIDATION / SQUEEZE)"
+        ai_mood_instruction = """
+        DURUM: Piyasada yaprak kımıldamıyor. Fiyat SMA50 civarında yataya bağlamış, hacim kurumuş.
+        TALİMAT: "Fırtına öncesi sessizlik" temasını kullan. Yön tahmini yapma, büyük bir kırılımın yaklaştığını belirt.
+        """
+
+    # --- 3. TREND VE DÜZELTME SENARYOLARI ---
+
+    # SENARYO 7: 📈 İSTİKRARLI YÜKSELİŞ (YENİ)
+    # Şart: Sağlıklı yükseliş (%1 - %4 arası), hacim fena değil, trend yukarı bakıyor, kötü mum yok.
+    elif (1.0 <= p_change_pct <= 4.0) and (vol_ratio >= 0.9) and (trend_ratio > 1.02) and (sma50_slope > 0) and not has_bad_candle:
+        ai_scenario_title = "📈 SENARYO: İSTİKRARLI YÜKSELİŞ (MARKUP)"
+        ai_mood_instruction = """
+        DURUM: Trend yönü yukarı, hacim destekliyor ve fiyat istikrarlı şekilde yükseliyor. Kötü bir emare şimdilik yok.
+        TALİMAT: Boğaların kontrolü elinde tuttuğunu, her şeyin yolunda olduğunu, desteklerin yukarı çekilerek (iz sürerek) trendin takip edilmesi gerektiğini söyle.
+        """
+
+    # SENARYO 8: 🐻 ÖLÜ KEDİ SIÇRAMASI (YENİ)
+    # Şart: Trend aşağı bakıyor, fiyat SMA50 altında, fiyat yükselmiş AMA hacim çok düşük!
+    elif (p_change_pct >= 1.0) and (trend_ratio < 0.98) and (sma50_slope <= 0) and (vol_ratio < 0.85):
+        ai_scenario_title = "🐻 SENARYO: ÖLÜ KEDİ SIÇRAMASI (DEAD CAT BOUNCE)"
+        ai_mood_instruction = """
+        DURUM: Ana trend aşağı yönlü. Bugün fiyat yükseliyor gibi görünse de hacim çok zayıf.
+        TALİMAT: Acemi yatırımcıyı uyar. Bunun kalıcı bir yükseliş değil, "Ölü Kedi Sıçraması" (Sahte yükseliş) olma ihtimalinin yüksek olduğunu vurgula.
+        """
+
+    # SENARYO 9: 🟡 KÂR REALİZASYONU (PROFIT TAKING)
     elif (-5.0 <= p_change_pct <= -1.5) and (0.85 <= vol_ratio <= 1.25) and (trend_ratio > 1.03) and is_stp_broken:
         ai_scenario_title = "🟡 SENARYO: KÂR REALİZASYONU (PROFIT TAKING)"
         ai_mood_instruction = """
-        DURUM: Kısa vadeli momentum (STP) kırıldı ve fiyat düşüyor. Hacim normal seviyede.
-        Ancak Ana Trend (SMA50) hala çok aşağıda (Güvenli mesafede).
-        
-        TALİMAT:
-        1. "Kısa vadeli düzeltme derinleşebilir" uyarısı yap.
-        2. "Ana trend bozulmadı ama kısa vade zayıfladı" ayrımını net yap.
-        3. Acele etmemek iyi olabilir, dönüş sinyali (Yeşil Mum/STP Kesişimi) beklenmesi iyi olur, tarzından yorumla. asla kesin konuşma. direkt tavsiye verme.
+        DURUM: Kısa vadeli momentum kırıldı. Ancak Ana Trend (SMA50) hala güvende.
+        TALİMAT: Kısa vadeli düzeltmenin derinleşebileceğini, acele etmemek gerektiğini ve dönüş sinyali beklenmesini tavsiye et.
         """
 
-    # SENARYO 3: 🟠 YORGUN BOĞA (TUZAK RİSKİ)
-    # Şartlar: Fiyat Tepede/Yatay + Hacimsiz + Negatif Uyumsuzluk
-    elif (p_change_pct > -1.0) and (trend_ratio > 1.05) and (is_rsi_div_neg or (rsi_val_now > 70 and vol_ratio < 0.7)):
-        ai_scenario_title = "🟠 SENARYO: YORGUN BOĞA (EXHAUSTION)"
+    # SENARYO 10: 🟢 DİNLENEN BOĞA (HEALTHY PULLBACK)
+    elif (-3.5 <= p_change_pct <= -0.5) and (vol_ratio < 0.85) and (trend_ratio > 1.03) and (sma50_slope > 0) and not has_bad_candle:
+        ai_scenario_title = "🟢 SENARYO: DİNLENEN BOĞA (HEALTHY PULLBACK)"
         ai_mood_instruction = """
-        DURUM: Fiyat tepede veya yükseliyor GİBİ görünüyor AMA yakıt (Hacim) bitmiş.
-        RSI Negatif Uyumsuzluk veriyor veya aşırı şişmiş.
-        
-        TALİMAT:
-        1. Sentiment puanının yüksekliğine (Yeşil olmasına) aldanma, onlar gecikmeli veriler.
-        2. Kullanıcıyı "Gel-Gel Tuzağı" (Bull Trap) konusunda uyarabilirsin
-        3. "Yükselişler satış fırsatı olabilir", "Stoplar yaklaştırılırsa iyi olur" tonunu kullan. asla kesin konuşma. direkt tavsiye verme.
-        4. Coşku verme, şüphe uyandır. Halüsinasyon görüyor olabilirsin.
+        DURUM: Fiyat düşüyor FAKAT Hacim çok düşük ve trend yönü hala yukarı. Kötü bir mum yok.
+        TALİMAT: Asla "Çöküş" deme. Bunun "Düzeltme" olabileceğini yorumlar, sağlıklı düzeltme için gerekli şartların neler olduğunu sırala. Sabırlı olunması gerektiğini vurgula.
         """
 
-    # SENARYO 4: 🟠 TREND SAVAŞI (KARAR ANI)
-    # Şartlar: Fiyat SMA50'ye çok yakın (+-%1.5) + STP Kırık
+    # SENARYO 11: 🟠 TREND SAVAŞI (MAJOR TEST)
     elif (0.985 <= trend_ratio <= 1.015) and is_stp_broken:
         ai_scenario_title = "🟠 SENARYO: TREND SAVAŞI (MAJOR TEST)"
         ai_mood_instruction = """
-        DURUM: Fiyat "Son Kale" olan SMA50 ortalamasına dayandı.
-        Buradan ya dönecek (Destek) ya da yıkılacak (Çöküş). Tam bıçak sırtı durum.
-        
-        TALİMAT:
-        1. Çok ciddi ve profesyonel konuş. Tahmin yapma, seviyeleri ver.
-        2. "SMA50 (Verdiğimiz seviye) altı kapanış stop, üstü devam" stratejisini kur.
-        3. Şu an işlem yapmanın "Yazı Tura" atmak olduğunu hissettir. Kapanışı beklet.
+        DURUM: Fiyat "Son Kale" olan SMA50 ortalamasına dayandı. Tam bıçak sırtı durum.
+        TALİMAT: Çok ciddi ve profesyonel konuş. Tahmin yapma. "SMA50 altı kapanış stop, üstü devam" de.
         """
 
-    # SENARYO 5: 🔴 DAĞITIM / CHURNING (GİZLİ SATIŞ)
-    # Şartlar: Fiyat Gitmiyor (Doji/Pinbar) + Hacim Patlamış
-    elif (abs(p_change_pct) < 1.5) and (vol_ratio > 1.3) and (trend_ratio > 1.05):
-        ai_scenario_title = "🔴 SENARYO: DAĞITIM / CHURNING (GİZLİ SATIŞ)"
+    # SENARYO 12: 🟠 YORGUN BOĞA (TUZAK RİSKİ)
+    elif (p_change_pct > -1.0) and (trend_ratio > 1.05) and (is_rsi_div_neg or has_bad_candle or (rsi_val_now > 70 and vol_ratio < 0.7)):
+        ai_scenario_title = "🟠 SENARYO: YORGUN BOĞA (EXHAUSTION)"
         ai_mood_instruction = """
-        DURUM: Çok kritik bir anomali var! Hacim patlamış (Ortalamanın %30 üstü) ama fiyat gitmiyor.
-        Bu "Churning" yani patinaj gibi görünüyor. Büyük oyuncular mal devrediyor olabilir.
-        
-        TALİMAT:
-        1. "Hacim yüksek ama fiyat yerinde sayıyor, bu hayra alamet değil" diyebilirsin. "Dağıtım" ve "Churning" kavramlarını anlat.
-        2. Gizli bir satış baskısı olduğunu düşünüyorsan, vurgula.
-        3. Puan yüksek olsa bile "Risk Masadan Kalkmalı" imasında bulunabilirsin. asla kesin konuşma. direkt tavsiye verme.
+        DURUM: Fiyat yükseliyor GİBİ görünüyor AMA yakıt bitmiş. Negatif uyumsuzluk veya kötü mum var.
+        TALİMAT: Kullanıcıyı "Gel-Gel Tuzağı" (Bull Trap) konusunda uyar. Yükselişlerin satış fırsatı olabileceğini söyle.
         """
-
-    # SENARYO 6: ⚫ TREND ÇÖKÜŞÜ (STOP-OUT)
-    # Şartlar: Sert Düşüş + Yüksek Hacim + SMA50 Kırılmış + STP Kırık
-    elif (p_change_pct < -2.5) and (vol_ratio > 1.1) and (trend_ratio < 0.99) and is_stp_broken:
-        ai_scenario_title = "⚫ SENARYO: TREND ÇÖKÜŞÜ (REVERSAL)"
-        ai_mood_instruction = """
-        DURUM: Oyun bitti. Sert ve hacimli bir düşüşle ana trend (SMA50) kırıldı.
-        Ayılar kontrolü tamamen ele aldı.
-        
-        TALİMAT:
-        1. Umut verme. "Dönerse senindir" deme.
-        2. Teknik olarak "STOP-OUT" (Zarar Kes) seviyesinin delindiğini belirt.
-        3. "Nakite geçip kenarda bekleme zamanı" olduğunu (tavsiye vermeden) ima et.
-        4. En karamsar ve korumacı senaryoyu yaz.
-        """    
     # --- YENİ: AI İÇİN S&D VE LİKİDİTE VERİLERİ ÇEKİMİ ---
     try: 
         sd_data = detect_supply_demand_zones(df_hist)
@@ -6663,15 +6695,17 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - Temel Artılar: {pros_txt}
 - ALTIN FIRSAT (GOLDEN TRIO) DURUMU: {is_golden}
 - ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
-
-*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Ama bunların GECİKMELİ VERİLER olduğunu unutma***
+*** SMART MONEY SENTIMENT KARNESİ (Detaylı Puanlar) Ama bunların GECİKMELİ VERİLER olduğunu unutma. Analize ekleyeceksen 'son kaç günün verileri' olduğunu belirt***
 - YAPI (Structure): {sent_yapi} (Market yapısı puanları şöyle: Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8))
 - HACİM (Volume): {sent_hacim} (Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8))
 - TREND: {sent_trend} (Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4))
 - MOMENTUM: {sent_mom} (RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5))
 - VOLATİLİTE: {sent_vola} (Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10))
 - MOMENTUM DURUMU (Özel Sinyal): {momentum_analiz_txt} (Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5))
-
+*** GELİŞMİŞ MOMENTUM VE FİYAT DENGESİ (GRAFİK VERİLERİ) ***
+- Para Akış İvmesi Değeri: {guncel_ivme:.4f} ({ivme_yonu}) -> (Not: Bu değer 0'ın ne kadar üzerindeyse kurumsal momentum o kadar tazedir.. Tam tersi durum için ise durum kötüdür)
+- Fiyat Dengesi (Denge Seviyesi): {guncel_stp:.2f}
+- Fiyat/Denge Sapması: %{denge_sapmasi:.2f} -> (Not: Eğer fiyat sarı denge çizgisinden (STP) %10'dan fazla uzaklaşmışsa 'Isınma' uyarısı yap.)
 *** 1. TREND VE GÜÇ ***
 KISA VADELİ TREND GÖSTERGELERİ:
 - HARSI Durumu (Heikin Ashi RSI): {harsi_txt} (son 14 günlük hafızayı kullanır, RSI üzerindeki gürültüyü temizleyerek, momentumun mevcut trend yönünü ve kalıcılığını ölçer.)
@@ -6712,8 +6746,8 @@ Kısa vadeli momentumun (HARSI/EMA8), ana trend (SMA200/SuperTrend) ile uyumunu 
 - Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
 - Güncel Fiyat: {guncel_fiyat}
 - Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-- Smart Money Hacim Durumundaki bugüne ait "Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
--Net Baskınlık ile Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
+- Smart Money Hacim Durumundaki "bugüne ait Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+-"Net Baskınlık" sadece bugüne ait veridir, bunu unutma. Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 Veriler arasındaki uyumu (Confluence) ve çelişkiyi (Divergence) sorgula. Eğer Momentum (RSI/MACD) yükselirken Akıllı Para Hacmi (Delta) düşüyorsa, bunu 'Zayıf El Alımı' olarak işaretle. Fiyat VWAP'tan çok uzaksa (Parabolik), Golden Trio olsa bile kurumsalın perakende yatırımcıyı 'Çıkış Likiditesi' (Exit Liquidity) olarak kullanıp kullanmadığını dürüstçe değerlendir.
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f} (Günün hacim ağırlıklı ortalama fiyatıdır; piyasa yapıcıların ve akıllı paranın 'denge' kabul ettiği ana maliyet merkezini ölçer.)
@@ -6730,24 +6764,23 @@ Bir veri noktası 'Bilinmiyor' gelirse onu yok say, ancak eldeki verilerle bir '
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
-   - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 8 maddelik bir liste oluştur. Zorlama madde ekleme! 3 kritik sinyal varsa 3 madde yaz. 
-   - SIRALAMA KURALI: Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
+   - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
+   - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
+   - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. Olumlu maddeleri alt alta OLumsuz maddeleri de alt alta yaz. karıştırma.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
         - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
    - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
-   - Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. 
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
    - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? Emir kipi kullanmadan ("edilebilir", "beklenebilir") Trend/Destek kırılımına göre risk yönetimi çiz. İzsüren stop (Trailing Stop) seviyesi öner.
    - İzsüren Stop (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
-   - Tezin İptal Noktası: Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
-   - Tezin İptal Noktası: Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
+   - Tezin İptal Noktası (sadece Senaryo B için geçerli): Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
 4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
 Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
 HARSI (Heikin Ashi RSI) verisine de şu şartlar sağlanıyorsa dikkati çek: 1) Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. 2) Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
