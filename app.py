@@ -3968,21 +3968,54 @@ def calculate_price_action_dna(ticker):
     try:
         df = get_safe_historical_data(ticker, period="6mo") 
         if df is None or len(df) < 50: return None
-# --- YENİ HACİM HESAPLAMALARI (ADIM 2) BURAYA EKLENDİ ---
+        # --- YENİ HACİM HESAPLAMALARI (ADIM 2) BURAYA EKLENDİ ---
+        df = df[df['Volume'] > 0].copy() 
+        if len(df) < 20: return None
         df = calculate_volume_delta(df)
         poc_price = calculate_volume_profile_poc(df, lookback=20, bins=20)
         # --------------------------------------------------------
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
         # --- VERİ HAZIRLIĞI (SON 3 GÜN) ---
-        c1_o, c1_h, c1_l, c1_c = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1]) # Bugün
+        # Şimdi iloc[-1] dediğinde her zaman hacmi olan EN SON GERÇEK günü alacak
+        c1_o, c1_h, c1_l, c1_c = float(o.iloc[-1]), float(h.iloc[-1]), float(l.iloc[-1]), float(c.iloc[-1]) 
+        c1_v = float(v.iloc[-1])
         c2_o, c2_h, c2_l, c2_c = float(o.iloc[-2]), float(h.iloc[-2]), float(l.iloc[-2]), float(c.iloc[-2]) # Dün
         c3_o, c3_h, c3_l, c3_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3]) # Önceki Gün
         
         c1_v = float(v.iloc[-1])
         avg_v = float(v.rolling(20).mean().iloc[-1]) 
         sma50 = c.rolling(50).mean().iloc[-1]
+        # --- [YENİ] GELİŞMİŞ HACİM ANALİZİ DEĞİŞKENLERİ ---
+        rvol = c1_v / avg_v if avg_v > 0 else 1.0
         
+        # RSI Serisi
+        delta = c.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs_calc = gain / loss
+        rsi_series = 100 - (100 / (1 + rs_calc))
+        rsi_val = rsi_series.iloc[-1]
+
+        # Mum Geometrisi
+        body = abs(c1_c - c1_o)
+        total_len = c1_h - c1_l if (c1_h - c1_l) > 0 else 0.01
+        u_wick = c1_h - max(c1_o, c1_c)
+        l_wick = min(c1_o, c1_c) - c1_l
+        is_green = c1_c > c1_o
+        is_red = c1_c < c1_o
+        
+        # --- [YENİ] STOPPING & CLIMAX KONTROLLERİ ---
+        stop_vol_msg = "Yok"
+        if c1_v > (avg_v * 1.5) and body < (total_len * 0.3) and l_wick > (total_len * 0.5):
+            stop_vol_msg = "VAR 🔥 (Dipten kurumsal toplama emaresi!)"
+
+        climax_msg = "Yok"
+        ema20_tmp = c.ewm(span=20).mean().iloc[-1]
+        price_dist_tmp = (c1_c / ema20_tmp) - 1
+        if c1_v == v.tail(50).max() and price_dist_tmp > 0.10:
+            climax_msg = "VAR ⚠️ (Trend sonu tahliye/FOMO riski!)"
+
         # RSI Serisi (Uyumsuzluk için)
         delta = c.diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
@@ -4290,9 +4323,27 @@ def calculate_price_action_dna(ticker):
                 alpha_val = stock_chg - bench_chg
         except:
             pass
-        
         # ======================================================
-        # 9. HACİM DELTASI VE POC İLİŞKİSİ (YENİ FORMAT + YÜZDE)
+        # 9. GELİŞMİŞ HACİM ANALİZİ (SMART VOLUME)
+        # ======================================================
+        std_v_20 = float(v.rolling(20).std().iloc[-1])
+        c_std = std_v_20 if std_v_20 > 0 else 1.0
+        rvol = c1_v / avg_v if avg_v > 0 else 1.0
+        
+        # Stopping Volume: Fiyat dipteyken gelen devasa karşılayıcı hacim
+        stop_vol_msg = "Yok"
+        if c1_v > (avg_v * 1.5) and body < (total_len * 0.3) and l_wick > (total_len * 0.5):
+            stop_vol_msg = "VAR 🔥 (Dipten kurumsal toplama emaresi!)"
+
+        # Climax Volume: Trend sonunda gelen aşırı şişkin hacim
+        climax_msg = "Yok"
+        ema20_val = c.ewm(span=20).mean().iloc[-1]
+        price_dist_ema20 = (c1_c / ema20_val) - 1
+        if c1_v == v.tail(50).max() and price_dist_ema20 > 0.10:
+            climax_msg = "VAR ⚠️ (Trend sonu tahliye/FOMO riski!)"
+
+        # ======================================================
+        # 10. HACİM DELTASI VE POC İLİŞKİSİ (YENİ FORMAT + YÜZDE)
         # ======================================================
         son_mum = df.iloc[-1]
         onceki_mum = df.iloc[-2]
@@ -4317,10 +4368,22 @@ def calculate_price_action_dna(ticker):
             delta_title = "⚠️ Point of Control ALTINDA"
             yon_metni = "altında"
             
+        # Uyumsuzluk (Divergence) Kontrolü - Hacim Şiddeti Filtreli
         if fiyat > onceki_mum['Close'] and delta_val < 0:
-            delta_title += " (🚨 Gizli Satıcı Baskısı)"
+            if delta_yuzde >= 60.0:
+                delta_title += " (🚨 Gizli Satış)"
+            elif delta_yuzde >= 55.0:
+                delta_title += " (🟠 Zayıf Gizli Satış - Teyit Bekliyor)"
+            else:
+                delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
+                
         elif fiyat < onceki_mum['Close'] and delta_val > 0:
-            delta_title += " (🟢 Gizli Alım)"
+            if delta_yuzde >= 60.0:
+                delta_title += " (🟢 Gizli Alım)"
+            elif delta_yuzde >= 55.0:
+                delta_title += " (🟠 Zayıf Gizli Alım - Teyit Bekliyor)"
+            else:
+                delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
             
         # İstediğin formatta Edu-Note Açıklaması
         delta_desc = f"Fiyat son 20 mumun hacim merkezi (yani alıcı ve satıcıların en çok işlem yaptığı yer) olan <b>{poc_price:.2f}</b>, %{fark_yuzde:.2f} {yon_metni}."
@@ -4340,7 +4403,10 @@ def calculate_price_action_dna(ticker):
                 "desc": delta_desc, 
                 "poc": poc_price, 
                 "delta": delta_val, 
-                "delta_yuzde": delta_gucu_yuzde
+                "delta_yuzde": delta_gucu_yuzde,
+                "rvol": round(rvol, 2),      
+                "stopping": stop_vol_msg,    
+                "climax": climax_msg         
             }
         }
     except Exception: return None
@@ -5279,17 +5345,29 @@ def render_price_action_panel(ticker):
         if is_index:
             # Sembol bir ENDEKS ise YÜZDE GÖSTERME
             if delta_val < 0:
-                baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Net Satıcı Baskısı</span>"
+                if delta_yuzde >= 60.0:
+                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Agresif Satıcı Baskısı</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Sığ Satış (Gürültü)</span>"
             elif delta_val > 0:
-                baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Net Alıcı Baskısı</span>"
+                if delta_yuzde >= 60.0:
+                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Agresif Alıcı Baskısı</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Pasif Alım (Gürültü)</span>"
             else:
                 baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge</span>"
         else:
             # Sembol bir HİSSE ise YÜZDEYİ GÖSTER
             if delta_val < 0:
-                baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>%{delta_yuzde:.1f} Net Satıcı Baskısı</span>"
+                if delta_yuzde >= 60.0:
+                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
             elif delta_val > 0:
-                baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>%{delta_yuzde:.1f} Net Alıcı Baskısı</span>"
+                if delta_yuzde >= 60.0:
+                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
             else:
                 baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
             
@@ -6446,9 +6524,9 @@ if st.session_state.generate_prompt:
              # Fiyat düşüyor ama RSI hala tepedeyse bu giriş değil, "Mal Yedirme" olabilir.
              para_akisi_txt = "⚠️ ZİRVE BASKISI (Dağıtım Riski - RSI Şişkin)"
         elif price_trend == "AŞAĞI" and obv_trend == "YUKARI":
-            para_akisi_txt = "🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk - Fiyat Düşerken Mal Toplanıyor)"
+            para_akisi_txt = "🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk - Fiyat Düşerken Mal Toplanıyor olabilir)"
         elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
-            para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk - Fiyat Çıkarken Mal Çakılıyor)"
+            para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk - Fiyat Çıkarken Mal Çakılıyor olabilir)"
         elif obv_trend == "YUKARI":
             para_akisi_txt = "Pozitif (Para Girişi Fiyatı Destekliyor)"
         else:
@@ -6648,6 +6726,11 @@ if st.session_state.generate_prompt:
     # calculate_price_action_dna'dan dönen veriyi (örneğin dna değişkeni) kontrol ediyoruz:
     df = get_safe_historical_data(t, period="6mo") 
     dna = calculate_price_action_dna(t)
+    # Prompt oluşturulmadan hemen önce bu verileri çekiyoruz
+    sv_extra = pa_data.get('smart_volume', {})
+    rvol_val = sv_extra.get('rvol', 1.0)
+    stop_vol_val = sv_extra.get('stopping', 'Yok')
+    climax_vol_val = sv_extra.get('climax', 'Yok')
     # --- PROMPT İÇİN POC VERİLERİNİ HAZIRLAMA ---
     if dna and "smart_volume" in dna:
         sv = dna["smart_volume"]
@@ -6656,9 +6739,15 @@ if st.session_state.generate_prompt:
         delta_yuzde = sv.get("delta_yuzde", 0)
         
         if delta_val < 0:
-            baskinlik = f"-%{delta_yuzde:.1f} (Satıcılar Baskın)"
+            if delta_yuzde >= 60.0:
+                baskinlik = f"-%{delta_yuzde:.1f} (Agresif Satıcılar Baskın)"
+            else:
+                baskinlik = f"-%{delta_yuzde:.1f} (Nötr/Gürültü - Sığ Satış)"
         elif delta_val > 0:
-            baskinlik = f"+%{delta_yuzde:.1f} (Alıcılar Baskın)"
+            if delta_yuzde >= 60.0:
+                baskinlik = f"+%{delta_yuzde:.1f} (Agresif Alıcılar Baskın)"
+            else:
+                baskinlik = f"+%{delta_yuzde:.1f} (Nötr/Gürültü - Pasif Limit Emirler)"
         else:
             baskinlik = "Kusursuz Denge (%0)"
             
@@ -6720,7 +6809,7 @@ ORTA VADELİ TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER:
 - SMA 100 (Ana Destek): {sma100_val:.2f}
 - SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
 - EMA 144 (Fibonacci/Robotik Seviye): {ema144_val:.2f}
-Son bir kaç gündür bu hareketli ortalamalardan en az birinden tepki alıp almadığını incele.
+Son birkaç gündür bu hareketli ortalamalardan en az birinden tepki alıp almadığını incele.
 - RADAR 1 (Momentum/Hacim): {r1_txt}
 - RADAR 2 (Trend/Setup): {r2_txt}
 Kısa vadeli momentumun (HARSI/EMA8), ana trend (SMA200/SuperTrend) ile uyumunu kontrol et. Eğer kısa vadeli sinyal ana trendin tersineyse, bunu bir 'Trend Dönüş Başlangıcı' mı yoksa 'Yüksek Riskli Bir Tepki Yükselişi' mi olduğunu netleştir.
@@ -6729,6 +6818,7 @@ Kısa vadeli momentumun (HARSI/EMA8), ana trend (SMA200/SuperTrend) ile uyumunu 
 - Konum (Zone): {ict_data.get('zone', 'Bilinmiyor')}
 - LİKİDİTE HAVUZLARI (Mıknatıs): {havuz_ai}
 - LİKİDİTE AVI (Sweep/Silkeleme): {sweep_ai}
+Likidite havuzlarına bakarak, perakende yatırımcıların nerede 'terste kalmış' olabileceğini ve Akıllı Para'nın bu likiditeyi nasıl kullanmak isteyeceğini yorumla
 - Balina Ayak İzi (Taze Arz-Talep Bölgesi): {sd_txt_ai}
 - Kısa Vadeli Trend Hassasiyeti (10G WMA): {para_akisi_txt} (Son günlerin fiyat hareketine daha fazla ağırlık vererek, trenddeki taze değişimleri ölçer.)
 - Aktif FVG: {ict_data.get('fvg_txt', 'Yok')}
@@ -6744,49 +6834,58 @@ Kısa vadeli momentumun (HARSI/EMA8), ana trend (SMA200/SuperTrend) ile uyumunu 
 - Hedef Likidite: {liq_str}
 - İptal Seviyesi (Invalidation Point): Bu teknik tezin (Boğa/Ayı) tamamen çökeceği, piyasanın 'yanıldık' diyeceği o kritik likidite seviyesi veya yapı kırılımı (BOS) noktası neresidir? Tüm verilere bakarak net bir fiyat seviyesi olarak belirle.
 *** 4. EK TEKNİK VERİLER (SMART MONEY METRİKLERİ) ***
-- Smart Money Hacim Durumu: {delta_durumu}
+- Bugüne ait Smart Money Hacim Durumu: {delta_durumu}
 - Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
 - Güncel Fiyat: {guncel_fiyat}
 - Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
-- Smart Money Hacim Durumundaki "bugüne ait Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için  ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
+- Bugüne ait Smart Money Hacim Durumundaki "Bugüne ait Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
 -"Net Baskınlık" sadece bugüne ait veridir, bunu unutma. Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar.
 Veriler arasındaki uyumu (Confluence) ve çelişkiyi (Divergence) sorgula. Eğer Momentum (RSI/MACD) yükselirken Akıllı Para Hacmi (Delta) düşüyorsa, bunu 'Zayıf El Alımı' olarak işaretle. Fiyat VWAP'tan çok uzaksa (Parabolik), Golden Trio olsa bile kurumsalın perakende yatırımcıyı 'Çıkış Likiditesi' (Exit Liquidity) olarak kullanıp kullanmadığını dürüstçe değerlendir.
+*** AKILLI PARA HACİM ANOMALİLERİ ***
+- Göreceli Hacim (RVOL): {rvol_val}
+- Stopping Volume (Frenleme): {stop_vol_val}
+- Climax Volume (Tahliye): {climax_vol_val}
+RVOL yüksekken fiyatın hareket etmemesi (Churning) bir dağıtım (Distribution) sinyali olması ihtimalini gösterir; RVOL yüksekken sert bir kırılım gelmesi ise gerçek bir kurumsal katılımdır. Bu ikisi arasındaki farkı mutlaka analiz et.
+Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' veya 'Dağıtım' olabilir. Hacim düşerken fiyatın yükselmesi 'Zayıf El Yükselişi'dir. Bu uyumsuzlukları mutlaka vurgula
 *** 5. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f} (Günün hacim ağırlıklı ortalama fiyatıdır; piyasa yapıcıların ve akıllı paranın 'denge' kabul ettiği ana maliyet merkezini ölçer.)
 - Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında. (Fiyatın kurumsal maliyetten ne kadar uzaklaştığını ölçer)
 - VWAP DURUMU: {vwap_ai_txt} (Momentumun kalitesini ölçer; ralli modu sağlıklı kurumsal alımı, parabolik ise perakende yatırımcının yarattığı tehlikeli aşırı ısınmayı simgeler.)
 - RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f}) (Hissenin endeksten bağımsız 'ayrışma' gücünü ölçer; pozitif Alpha, piyasa düşerken bile ayakta kalan lider 'at' olduğunu kanıtlar.)
-(NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi öner.)
+(NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise kar realizasyonu uyarısı yap. 'RALLİ MODU' ise trendi sürmeyi önerebilirsin.)
 *** 6. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
 *** GÖREVİN *** 
 Görevin; tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
+Teknik terimleri sadece ilk geçtiği yerde kısaltmasıyla ver, sonraki anlatımlarda akıcılığı bozmamak için sadeleştir.
+Analizinde 'Retail Sentiment' (Küçük Yatırımcı Psikolojisi) ile 'Institutional Intent' (Kurumsal Niyet) arasındaki farka odaklan. Verilerdeki anormallikleri (örneğin: RSI düşerken fiyatın yatay kalması veya düşük hacimli kırılımlar) birer 'ipucu' olarak kabul et ve bu ipuçlarını birleştirerek piyasa yapıcının bir sonraki hamlesini tahmin etmeye çalış.
 Bir veri noktası 'Bilinmiyor' gelirse onu yok say, ancak eldeki verilerle bir 'Olasılık Matrisi' kur. Asla tek yönlü (sadece olumlu) bir tablo çizme; 'Madalyonun Öteki Yüzü'nü her zaman göster. Savunma mekanizman 'analizi haklı çıkarmak' değil, 'riski bulmak' olsun.
+Herhangi bir veri alanı boş veya süslü parantez içinde {...} şeklinde ham halde gelmişse, o verinin teknik bir arıza nedeniyle okunamadığını varsay ve mevcut diğer verilerle analizi tamamla. Asla "Veri Yok" veya "Bilinmiyor" yazan bir alanı yorumlamaya zorlama, sadece mevcut verilerle en iyi sentezi yapmaya çalış.
 En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📷" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
    - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
-   - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. Olumlu maddeleri alt alta OLumsuz maddeleri de alt alta yaz. karıştırma.
+   - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. Olumlu maddeleri alt alta Olumsuz maddeleri de alt alta yaz. Karıştırma.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
         - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
-   - UYARI: Listeyi 8 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
+   - UYARI: Listeyi 6 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
    - Yöntem: [TUTULABİLİR / EKLENEBİLİR / SATILABİLİR / KAR ALINABİLİR]
-   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? Emir kipi kullanmadan ("edilebilir", "beklenebilir") Trend/Destek kırılımına göre risk yönetimi çiz. İzsüren stop (Trailing Stop) seviyesi öner.
-   - İzsüren Stop (Trailing Stop): Stop seviyesi nereye yükseltilebilir?
+   - Strateji: Trend bozulmadığı sürece taşınabilir mi? Kar realizasyonu için hangi (BOS/Fibonacci/EMA8/EMA13) seviyesi beklenebilir? Emir kipi kullanmadan ("edilebilir", "beklenebilir") Trend/Destek kırılımına göre risk yönetimi çiz. İzsüren stop seviyesi öner.
+   - İzsüren Stop: Stop seviyesi nereye yükseltilebilir?
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
-   - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz??
+   - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
    - Tezin İptal Noktası (sadece Senaryo B için geçerli): Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
 4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
-Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizlisatışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
+Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizli satışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
 HARSI (Heikin Ashi RSI) verisine de şu şartlar sağlanıyorsa dikkati çek: 1) Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. 2) Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
-Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altına " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
+Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
