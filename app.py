@@ -4370,17 +4370,17 @@ def calculate_price_action_dna(ticker):
             
         # Uyumsuzluk (Divergence) Kontrolü - Hacim Şiddeti Filtreli
         if fiyat > onceki_mum['Close'] and delta_val < 0:
-            if delta_yuzde >= 60.0:
+            if delta_gucu_yuzde >= 60.0:
                 delta_title += " (🚨 Gizli Satış)"
-            elif delta_yuzde >= 55.0:
+            elif delta_gucu_yuzde >= 55.0:
                 delta_title += " (🟠 Zayıf Gizli Satış - Teyit Bekliyor)"
             else:
                 delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
                 
         elif fiyat < onceki_mum['Close'] and delta_val > 0:
-            if delta_yuzde >= 60.0:
+            if delta_gucu_yuzde >= 60.0:
                 delta_title += " (🟢 Gizli Alım)"
-            elif delta_yuzde >= 55.0:
+            elif delta_gucu_yuzde >= 55.0:
                 delta_title += " (🟠 Zayıf Gizli Alım - Teyit Bekliyor)"
             else:
                 delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
