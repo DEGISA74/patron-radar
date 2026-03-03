@@ -6165,16 +6165,6 @@ if st.session_state.generate_prompt:
     info = fetch_stock_info(t)
     df_hist = get_safe_historical_data(t) # Ana veri
     
-    # --- Para Akışı İvmesi ve Fiyat Dengesi VERİLERİNİ AI İÇİN HAM VERİYE DÖNÜŞTÜRME ---
-    son_satir = synth_data.iloc[-1]
-    guncel_ivme = float(son_satir['MF_Smooth']) # Grafikteki o mavi/kırmızı barların değeri
-    guncel_stp = float(son_satir['STP'])        # Grafikteki sarı denge çizgisi
-    guncel_fiyat = float(son_satir['Price'])    # Grafikteki mavi fiyat çizgisi
-    # Fiyatın dengeye (sarı çizgiye) olan uzaklığı (%)
-    denge_sapmasi = ((guncel_fiyat / guncel_stp) - 1) * 100
-    # İvme yönünü belirleyelim (Grafikteki barların rengi gibi)
-    ivme_yonu = "YÜKSELİŞ (Pozitif)" if guncel_ivme > 0 else "DÜŞÜŞ (Negatif)"
-
     # EKSİK OLAN TANIMLAMALAR EKLENDİ (bench_series ve idx_data)
     cat_for_bench = st.session_state.category
     bench_ticker = "XU100.IS" if "BIST" in cat_for_bench else "^GSPC"
@@ -6199,7 +6189,19 @@ if st.session_state.generate_prompt:
     tech_data = get_tech_card_data(t) or {}
     pa_data = calculate_price_action_dna(t) or {}
     levels_data = get_advanced_levels_data(t) or {}
-    synth_data = calculate_synthetic_sentiment(t) 
+    synth_data = calculate_synthetic_sentiment(t)
+
+    # --- Arada verileri çekebiliriz Para Akışı İvmesi ---
+    if synth_data is not None and not synth_data.empty:
+        son_satir = synth_data.iloc[-1]
+        guncel_ivme = float(son_satir['MF_Smooth'])
+        guncel_stp = float(son_satir['STP'])
+        guncel_fiyat = float(son_satir['Price'])
+        denge_sapmasi = ((guncel_fiyat / guncel_stp) - 1) * 100
+        ivme_yonu = "YÜKSELİŞ (Pozitif)" if guncel_ivme > 0 else "DÜŞÜŞ (Negatif)"
+    else:
+        # Veri gelmezse AI hata almasın diye varsayılan değerler
+        guncel_ivme = 0; guncel_stp = 0; guncel_fiyat = 0; denge_sapmasi = 0; ivme_yonu = "Bilinmiyor"
     mini_data = calculate_minervini_sepa(t) or {} 
     master_score, pros, cons = calculate_master_score(t)
     lorentzian_bilgisi = render_lorentzian_panel(t, just_text=True)
