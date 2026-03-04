@@ -316,7 +316,7 @@ raw_bist_stocks = [
     "NATEN.IS", "NETAS.IS", "NIBAS.IS", "NTGAZ.IS", "NUGYO.IS", "NUHCM.IS",
     "OBASE.IS", "OBAMS.IS", "ODAS.IS", "ODINE.IS", "OFSYM.IS", "ONCSM.IS", "ORCA.IS", "ORGE.IS", "ORMA.IS", "OSMEN.IS", "OSTIM.IS", "OTKAR.IS", "OTTO.IS", "OYAKC.IS", "OYAYO.IS", "OYLUM.IS", "OYYAT.IS", "OZGYO.IS", "OZKGY.IS", "OZRDN.IS", "OZSUB.IS",
     "PAGYO.IS", "PAMEL.IS", "PAPIL.IS", "PARSN.IS", "PASEU.IS", "PCILT.IS", "PEGYO.IS", "PEKGY.IS", "PENGD.IS", "PENTA.IS", "PETKM.IS", "PETUN.IS", "PGSUS.IS", "PINSU.IS", "PKART.IS", "PKENT.IS", "PLAT.IS", "PNLSN.IS", "POLHO.IS", "POLTK.IS", "PRDGS.IS", "PRKAB.IS", "PRKME.IS", "PRZMA.IS", "PSDTC.IS", "PSGYO.IS", "PTEK.IS",
-    "QNBFB.IS", "QNBFL.IS", "QUAGR.IS",
+    "QNBFB.IS", "QNBFL.IS", "QUAGR.IS", "PLTUR.IS",
     "RALYH.IS", "RAYSG.IS", "REEDR.IS", "RGYAS.IS", "RNPOL.IS", "RODRG.IS", "ROYAL.IS", "RTALB.IS", "RUBNS.IS", "RYGYO.IS", "RYSAS.IS",
     "SAFKR.IS", "SAHOL.IS", "SAMAT.IS", "SANEL.IS", "SANFM.IS", "SANKO.IS", "SARKY.IS", "SASA.IS", "SAYAS.IS", "SDTTR.IS", "SEGYO.IS", "SEKFK.IS", "SEKUR.IS", "SELEC.IS", "SELGD.IS", "SELVA.IS", "SEYKM.IS", "SILVR.IS", "SISE.IS", "SKBNK.IS", "SKTAS.IS", "SKYMD.IS", "SMART.IS", "SMRTG.IS", "SNGYO.IS", "SNICA.IS", "SNKRN.IS", "SNPAM.IS", "SODSN.IS", "SOKE.IS", "SOKM.IS", "SONME.IS", "SRVGY.IS", "SUMAS.IS", "SUNTK.IS", "SURGY.IS", "SUWEN.IS", "SYS.IS",
     "TABGD.IS", "TARAF.IS", "TATGD.IS", "TAVHL.IS", "TBORG.IS", "TCELL.IS", "TDGYO.IS", "TEKTU.IS", "TERA.IS", "TETMT.IS", "TEZOL.IS", "TGSAS.IS", "THYAO.IS", "TKFEN.IS", "TKNSA.IS", "TLMAN.IS", "TMPOL.IS", "TMSN.IS", "TNZTP.IS", "TOASO.IS", "TRCAS.IS", "TRGYO.IS", "TRILC.IS", "TSGYO.IS", "TSKB.IS", "TSPOR.IS", "TTKOM.IS", "TTRAK.IS", "TUCLK.IS", "TUKAS.IS", "TUPRS.IS", "TUREX.IS", "TURGG.IS", "TURSG.IS",
@@ -4561,9 +4561,11 @@ def calculate_supertrend(df, period=10, multiplier=3.0):
     except Exception:
         return 0, 0
 
-def calculate_fib_levels(df, period=144):
+# --- YENİ KOD: Dinamik Makro Döngü Fibonacci Motoru ---
+def calculate_fib_levels(df, st_dir=1, period=144):
     """
-    Trend yönüne göre Dinamik Fibonacci Hesaplama
+    Dinamik Makro Döngü (Macro Cycle) Fibonacci Hesaplama
+    Trend yönüne göre anlık sekmeleri değil, GEÇMİŞ MAKRO DALGAYI referans alır.
     """
     try:
         if len(df) < period: period = len(df)
@@ -4573,44 +4575,44 @@ def calculate_fib_levels(df, period=144):
         min_l = recent_data['Low'].min()
         diff = max_h - min_l
         
-        # Trend Yönünü Basitçe Bulalım (Son fiyat ortalamanın üstünde mi?)
-        close = df['Close'].iloc[-1]
-        sma50 = df['Close'].rolling(50).mean().iloc[-1]
-        is_uptrend = close > sma50 
+        # Trend yönü doğrudan SuperTrend'den alınır.
+        is_uptrend = (st_dir == 1)
         
         levels = {}
         
         if is_uptrend:
-            # YÜKSELİŞ TRENDİ (Dipten Tepeye Referans)
-            # Golden Pocket AŞAĞIDA (Destek) olmalı
+            # YÜKSELİŞ SENARYOSU: Geçmiş makro düşüşü ölçüyoruz.
+            # (Tepeden Dibe Çekilen Fibonacci) 
+            # 0 noktası Dipte. Fiyat dipten yukarı çıkarken Premium dirençleri test eder.
             levels = {
-                "1.618 (Hedef)": max_h + (diff * 0.618),
-                "1.236 (Kırılım Hedefi)": max_h + (diff * 0.236), # YENİ EKLENEN SEVİYE
+                "-0.618 (Hedef)": max_h + (diff * 0.618),
+                "-0.236 (Kırılım Hedefi)": max_h + (diff * 0.236),
+                "1 (Tepe)": max_h,
+                "0.618 (Golden - Satış)": min_l + (diff * 0.618), # OTE Direnci (Akıllı Para Short)
+                "0.5 (Orta)": min_l + (diff * 0.5),
+                "0.382": min_l + (diff * 0.382),
+                "0.236": min_l + (diff * 0.236),
+                "0 (Dip)": min_l
+            }
+        else:
+            # DÜŞÜŞ SENARYOSU: Geçmiş makro yükselişi ölçüyoruz.
+            # (Dipten Tepeye Çekilen Fibonacci)
+            # 0 noktası Tepede. Fiyat zirveden aşağı düşerken Discount destekleri test eder.
+            levels = {
                 "0 (Tepe)": max_h,
                 "0.236": max_h - (diff * 0.236),
                 "0.382": max_h - (diff * 0.382),
                 "0.5 (Orta)": max_h - (diff * 0.5),
-                "0.618 (Golden - Alım)": max_h - (diff * 0.618), # Fiyatın altında kalır
-                "1 (Dip)": min_l
-            }
-        else:
-            # DÜŞÜŞ TRENDİ (Tepeden Dibe Referans)
-            # Golden Pocket YUKARIDA (Direnç/Short) olmalı
-            levels = {
-                "1 (Tepe)": max_h,
-                "0.618 (Golden - Satış)": min_l + (diff * 0.618), # Fiyatın üstünde kalır
-                "0.5 (Orta)": min_l + (diff * 0.5),
-                "0.382": min_l + (diff * 0.382),
-                "0.236": min_l + (diff * 0.236),
-                "0 (Dip)": min_l,
-                "-0.236 (Kırılım Hedefi)": min_l - (diff * 0.236), # YENİ EKLENEN SEVİYE
-                "-0.618 (Hedef)": min_l - (diff * 0.618)
+                "0.618 (Golden - Alım)": max_h - (diff * 0.618), # Makro Destek (11764 - Akıllı Para Long)
+                "1 (Dip)": min_l,
+                "1.236 (Kırılım Hedefi)": min_l - (diff * 0.236),
+                "1.618 (Hedef)": min_l - (diff * 0.618)
             }
             
         return levels
     except:
         return {}
-
+    
 def calculate_z_score_live(df, period=20):
     try:
         if len(df) < period: return 0
@@ -4645,8 +4647,8 @@ def get_advanced_levels_data(ticker):
     # 1. SuperTrend
     st_val, st_dir = calculate_supertrend(df)
     
-    # 2. Fibonacci
-    fibs = calculate_fib_levels(df, period=120)
+    # 2. Fibonacci (DÜZELTME: st_dir pusulası motora gönderildi)
+    fibs = calculate_fib_levels(df, st_dir=st_dir, period=120)
     
     curr_price = float(df['Close'].iloc[-1])
     
@@ -5643,6 +5645,12 @@ def render_levels_card(ticker):
         # Golden Pocket Metni (Yükseliş)
         gp_desc_text = "Kurumsal alım bölgesi (İdeal Giriş/Destek)."
         gp_desc_color = "#92400e" # Amber/Kahve
+        
+        # Dinamik Kutu Metinleri (Yükseliş)
+        res_ui_label = "EN YAKIN DİRENÇ 🚧"
+        res_ui_desc = "Zorlu tavan. Geçilirse yükseliş hızlanır."
+        sup_ui_label = "EN YAKIN DESTEK 🛡️"
+        sup_ui_desc = "İlk savunma hattı. Düşüşü tutmalı."
     else:
         # Düşüş Senaryosu
         st_label = "Trend Dönüşü (Direnç)"
@@ -5651,6 +5659,12 @@ def render_levels_card(ticker):
         # Golden Pocket Metni (Düşüş)
         gp_desc_text = "⚠️ Güçlü Direnç / Tepki Satış Bölgesi (Short)."
         gp_desc_color = "#b91c1c" # Kırmızı
+        
+        # Dinamik Kutu Metinleri (Düşüş - ICT Uyumlu)
+        res_ui_label = "O.T.E. DİRENCİ"
+        res_ui_desc = "Akıllı Para short arar. Trend yönünde satış bölgesidir."
+        sup_ui_label = "AŞAĞIDAKİ LİKİDİTE HEDEFİ"
+        sup_ui_desc = "Düşüş trendinde destek aranmaz, kırılması beklenir."
     
     # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
@@ -5659,10 +5673,10 @@ def render_levels_card(ticker):
     # --- GÖRSEL DÜZELTME ---
     if res_lbl == "ZİRVE AŞIMI":
         res_display = "---"
-        res_desc = "🚀 Fiyat tüm dirençleri kırdı (Price Discovery)."
+        res_desc_final = "🚀 Fiyat tüm dirençleri kırdı (Price Discovery)."
     else:
         res_display = f"{res_val:.2f}"
-        res_desc = "Zorlu tavan. Geçilirse yükseliş hızlanır."
+        res_desc_final = res_ui_desc
 
     # --- GOLDEN POCKET DEĞERİ ---
     gp_key = next((k for k in data['fibs'].keys() if "Golden" in k), "0.618 (Golden)")
@@ -5687,17 +5701,17 @@ def render_levels_card(ticker):
 
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
             <div style="background:#f0fdf4; padding:6px; border-radius:4px; border:1px solid #bbf7d0;">
-                <div style="font-size:0.65rem; color:#166534; font-weight:700;">EN YAKIN DİRENÇ 🚧</div>
+                <div style="font-size:0.65rem; color:#166534; font-weight:700;">{res_ui_label}</div>
                 <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_display}</div>
                 <div style="font-size:0.6rem; color:#166534; margin-bottom:2px;">Fib {res_lbl}</div>
-                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{res_desc}</div>
+                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{res_desc_final}</div>
             </div>
             
             <div style="background:#fef2f2; padding:6px; border-radius:4px; border:1px solid #fecaca;">
-                <div style="font-size:0.65rem; color:#991b1b; font-weight:700;">EN YAKIN DESTEK 🛡️</div>
+                <div style="font-size:0.65rem; color:#991b1b; font-weight:700;">{sup_ui_label}</div>
                 <div style="font-family:'JetBrains Mono'; font-weight:700; color:#b91c1c; font-size:0.85rem;">{sup_val:.2f}</div>
                 <div style="font-size:0.6rem; color:#991b1b; margin-bottom:2px;">Fib {sup_lbl}</div>
-                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">İlk savunma hattı. Düşüşü tutmalı.</div>
+                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{sup_ui_desc}</div>
             </div>
         </div>
         
@@ -6867,7 +6881,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
    - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
-   - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅", olumsuz/nötr maddelerin başına " 📍 " koy. Olumlu maddeleri alt alta Olumsuz maddeleri de alt alta yaz. Karıştırma.
+   - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅" ve verdiğin puanı, olumsuz/nötr maddelerin başına " 📍 " ve verdiğin puanı koy. Olumlu maddeleri alt alta Olumsuz maddeleri de alt alta yaz. Karıştırma.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
         - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
