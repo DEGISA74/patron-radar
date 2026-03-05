@@ -982,7 +982,7 @@ def process_single_stock_stp(symbol, df):
         
         if c_prev <= s_prev and c_last > s_last:
             result = {
-                "type": "cross",
+                "type": "cross_up",
                 "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume}
             }
             sma_val = float(sma200.iloc[-1])
@@ -992,13 +992,21 @@ def process_single_stock_stp(symbol, df):
             else:
                 result["is_filtered"] = False
 
+        # --- YENİ: AŞAĞI KESİŞİM (SAT) ---
+        elif c_prev >= s_prev and c_last < s_last:
+            result = {
+                "type": "cross_down",
+                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume}
+            }
+
+        # YUKARI TREND
         elif c_prev > s_prev and c_last > s_last:
             above = close > stp
             streak = (above != above.shift()).cumsum()
             streak_count = above.groupby(streak).sum().iloc[-1]
             
             result = {
-                "type": "trend",
+                "type": "trend_up",
                 "data": {
                     "Sembol": symbol, 
                     "Fiyat": c_last, 
@@ -1008,6 +1016,25 @@ def process_single_stock_stp(symbol, df):
                     "Hacim": volume
                 }
             }
+
+        # --- YENİ: AŞAĞI TREND ---
+        elif c_prev < s_prev and c_last < s_last:
+            below = close < stp
+            streak = (below != below.shift()).cumsum()
+            streak_count = below.groupby(streak).sum().iloc[-1]
+            
+            result = {
+                "type": "trend_down",
+                "data": {
+                    "Sembol": symbol, 
+                    "Fiyat": c_last, 
+                    "STP": s_last, 
+                    "Fark": ((c_last/s_last)-1)*100,
+                    "Gun": int(streak_count),
+                    "Hacim": volume
+                }
+            }
+            
         return result
     except Exception: return None
 
@@ -6362,38 +6389,82 @@ if st.session_state.generate_prompt:
     bt_res = process_single_bear_trap_live(df_hist)                  
     r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0)
 
-    # --- 3. METİN ÖZETLEME (SCAN SUMMARY) ---
+    # --- 3. SICAK İSTİHBARAT ÖZETİ (AI SİNYAL KUTUSU - DERİNLEŞTİRİLMİŞ) ---
     scan_box_txt = []
     
-    # A. STP
-    if stp_res:
-        if stp_res['type'] == 'cross': scan_box_txt.append("STP: Kesişim (AL Sinyali)")
-        elif stp_res['type'] == 'trend': scan_box_txt.append(f"STP: Trend ({stp_res['data'].get('Gun','?')} Gündür)")
-    else: scan_box_txt.append("STP: Nötr")
-    
-    # B. Akıllı Para
+    # A. ELİT KURULUMLAR (Sistemin En Tepesi)
+    if is_royal != "HAYIR": 
+        scan_box_txt.append("👑 ELİT KURULUM: ROYAL FLUSH (4/4 Onay. Algoritmik kusursuzluk! Kurumsal fonların en sevdiği, başarı ihtimali en yüksek asimetrik risk/ödül noktası olabilir.)")
+    elif is_golden != "HAYIR": 
+        scan_box_txt.append("🏆 ALTIN FIRSAT: Golden Trio Onaylandı (Fiyat ucuz, trend güçlü, hacim destekliyor. Büyük bir hareketin arifesinde olabilir.)")
+
+    # B. ICT & MARKET YAPISI (Kurumsal Ayak İzleri)
+    if ict_data and ict_data.get('status') != 'Error':
+        struct_txt = ict_data.get('structure', '')
+        if "MSS" in struct_txt or "BOS" in struct_txt:
+            scan_box_txt.append(f"🦅 YAPI KIRILIMI (ICT): {struct_txt} (KRİTİK: Akıllı para piyasa yapısını kırmış görünüyor. Önceki trend bozuldu, yeni bir likidite arayışı başlıyor.)")
+
+    # C. SMART MONEY (Sessiz Toplama / Hacim Patlaması)
     if acc_res:
-        acc_txt = "Pocket Pivot" if acc_res.get('Pocket_Pivot') else "Sessiz Toplama"
-        scan_box_txt.append(f"Akıllı Para: {acc_txt}")
-    
-    # C. Formasyon
+        if acc_res.get('Pocket_Pivot', False):
+            scan_box_txt.append("⚡ AKILLI PARA: Pocket Pivot (Hacimli Kurumsal Alım. Küçük yatırımcı uyurken tahtaya para girişi yapılmış gibi görünüyor.)")
+        else:
+            scan_box_txt.append("🤫 AKILLI PARA: Sessiz Toplama (Fiyat yatay veya baskılı görünse de arka planda sinsi bir fon alımı var. Kırılım hazırlığı..)")
+
+    # D. STP MOMENTUM (Kısa Vadeli İvme ve Duygu Durumu)
+    if stp_res:
+        if stp_res['type'] == 'cross_up': 
+            scan_box_txt.append("🟢 STP MOMENTUM: Denge Yukarı Kırıldı (Kısa vadeli alıcılar iştahlandı, taze bir yükseliş ivmesi tetiklendi.)")
+        elif stp_res['type'] == 'cross_down': 
+            scan_box_txt.append("🔴 STP MOMENTUM: Denge Aşağı Kırıldı (Kısa vadeli likidite çıkışı var, satıcı baskısı an itibariyle taze ve tehlikeli.)")
+        elif stp_res['type'] == 'trend_up': 
+            scan_box_txt.append(f"📈 STP MOMENTUM: Pozitif Trend ({stp_res['data'].get('Gun','?')} Gündür trend alıcıların kontrolünde görünüyor.)")
+        elif stp_res['type'] == 'trend_down': 
+            scan_box_txt.append(f"📉 STP MOMENTUM: Negatif Trend ({stp_res['data'].get('Gun','?')} Gündür ayılar tahtayı baskılıyor)")
+
+    # E. FORMASYON (Geometrik Yapılar)
     if not pat_df.empty:
-        scan_box_txt.append(f"Formasyon: {pat_df.iloc[0]['Formasyon']}")
-    
-    # D. Radar 2
-    if r2_res and r2_res['Skor'] >= 4:
-        scan_box_txt.append(f"Radar 2: {r2_res['Setup']} ({r2_res['Skor']}/7)")
+        scan_box_txt.append(f"📐 GEOMETRİK YAPI: {pat_df.iloc[0]['Formasyon']} (Teknik analistlerin ve algoritmaların ekranına düşecek bir formasyon.)")
 
-    # E. Bear Trap
-    bt_txt = "Yok / Temiz"
+    # F. TUZAKLAR VE LİKİDİTE AVI (Veto Sebepleri)
     if bt_res:
-        bt_txt = f"VAR ({bt_res['Zaman']} oluştu, Hacim: {bt_res['Hacim_Kat']})"
-        scan_box_txt.append(f"BEAR TRAP: {bt_txt}")
+        scan_box_txt.append(f"🪤 LİKİDİTE AVI (Bear Trap): {bt_res['Zaman']} oluştu. (Panikleyen retail yatırımcının stopları patlatılmış ve ucuz mal kurumsallar tarafından süpürülmüş olabilir. Vol: {bt_res['Hacim_Kat']})")
 
-    # F. Breakout
+    # G. BREAKOUT (Kırılım Ajanı)
     if bo_res:
-        bo_status = "KIRILIM" if ("TETİKLENDİ" in bo_res['Zirveye Yakınlık']) else "Hazırlık"
-        scan_box_txt.append(f"Breakout: {bo_status}")
+        if "TETİKLENDİ" in bo_res['Zirveye Yakınlık']:
+            scan_box_txt.append("🔨 DİRENÇ KIRILIMI: Breakout Tetiklendi! (Önemli bir direnç hacimle aşıldı, 'Fiyat Keşfi' moduna geçiliyor olabilir.)")
+        elif "Sıkışma" in bo_res['Zirveye Yakınlık']:
+            scan_box_txt.append("💣 VOLATİLİTE DARALMASI: Bir Sıkışma (Squeeze) var. (Enerji birikti, yay gerildi. Her an sert bir yön patlaması gelebilir.)")
+
+    # H. İSTATİSTİKSEL ANOMALİLER (Z-Score Aşırılıkları)
+    try:
+        z_val = calculate_z_score_live(df_hist)
+        if z_val >= 2.0: 
+            scan_box_txt.append(f"🚨 İSTATİSTİKSEL ANOMALİ: Z-Score +{z_val:.1f} (DİKKAT: Fiyat ortalamalardan matematiksel olarak saptı. 'Mean Reversion' yani aşağı yönlü düzeltme riski masada!)")
+        elif z_val <= -2.0: 
+            scan_box_txt.append(f"🚨 İSTATİSTİKSEL ANOMALİ: Z-Score {z_val:.1f} (DİKKAT: Aşırı satım bölgesi. Fiyat o kadar ucuzladı ki, istatistiksel bir yukarı tepki sıçraması ihtimali artıyor.)")
+    except: pass
+
+    # I. GİZLİ YALANLAR: RSI Uyumsuzluk ve Smart Volume Anomalileri
+    if pa_data:
+        # Uyumsuzluk
+        div_type = pa_data.get('div', {}).get('type', 'neutral')
+        if div_type == 'bearish': 
+            scan_box_txt.append("⚠️ GİZLİ YALAN (Negatif Uyumsuzluk): Fiyat yeni zirve yapıyor ama RSI (Momentum) düşüyor. (Yorgun boğa! Fiyat çıkarken mal dağıtılıyor olabilir.)")
+        elif div_type == 'bullish': 
+            scan_box_txt.append("💎 GİZLİ GÜÇ (Pozitif Uyumsuzluk): Fiyat yeni dip yapıyor ama RSI yükseliyor. (Satıcılar yorulmuş görünüyor, büyükler dipten topluyor olabilir.)")
+        
+        # Hacim Anomalisi (Stopping / Climax)
+        sv_data = pa_data.get('smart_volume', {})
+        if sv_data.get('stopping') != 'Yok': 
+            scan_box_txt.append("🐋 BALİNA İZİ (Stopping Volume): Düşüş nihayet yüksek bir hacimle karşılanmış görünüyor. (Kurumsal fren mekanizması devrede, düşüş durduruluyor olabilir.)")
+        if sv_data.get('climax') != 'Yok': 
+            scan_box_txt.append("🌋 BALİNA İZİ (Climax Volume): Rallinin zirvesinde anormal bir hacim var. (Müzik durmak üzere ve akıllı para malı küçük yatırımcıya boşaltıyor olabilir!)")
+
+    # Eğer hiçbir sıcak sinyal yoksa:
+    if not scan_box_txt:
+        scan_box_txt.append("⚖️ PİYASA DURUMU NÖTR: An itibariyle sıcak bir kırılım, anomali veya tuzak tespit edilmedi. Standart fiyat hareketi (Konsolidasyon) devam ediyor.")
 
     scan_summary_str = "\n".join([f"- {s}" for s in scan_box_txt])
 
@@ -6870,6 +6941,14 @@ Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' ve
 (NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise bu durumu teşhis et ve hatırlat. 'RALLİ MODU' ise trendi sürmeyi önerebilirsin.)
 *** 6. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
+
+*** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
+Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
+1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket" gibi abartılı, duygusal ve kesinlik bildiren sıfatları ASLA KULLANMAYACAKSIN.
+2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
+3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar.
+4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
+Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
 
 *** İKİ GÖREVİN VAR *** 
 
