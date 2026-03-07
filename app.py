@@ -627,23 +627,29 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
 
 def calculate_harsi(df, period=14):
     """
-    Heikin Ashi RSI (HARSI) Hesaplayıcı
-    Dönüş: (HA_Open, HA_Close, Renk)
+    Heikin Ashi RSI (HARSI) Hesaplayıcı - NaN HATASI GİDERİLMİŞ VERSİYON
     """
     try:
         # 1. Standart RSI Hesapla
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+        
+        # 🚨 KORUMA 1: Sıfıra bölünme (ZeroDivision) hatasını önlemek için
+        loss = loss.replace(0, 0.00001) 
+        
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         
-        # 2. Heikin Ashi Dönüşümü
-        # Not: Vektörize hesaplama için başlangıç değerlerini ata
-        ha_close = rsi.copy()
-        ha_open = rsi.shift(1).fillna(rsi)
+        # 🚨 KORUMA 2: İlk 14 günün NaN değerlerini döngüye sokmadan önce ÇÖPE AT
+        # Böylece zehirli veri Heikin Ashi döngüsünü bozamaz.
+        rsi = rsi.dropna()
         
-        # HA formülü gereği iteratif hesaplama (Hassas sonuç için)
+        # Eğer NaN'lar atıldıktan sonra geriye hesap yapacak veri kalmadıysa çık
+        if len(rsi) < 2:
+            return None
+        
+        # 2. Heikin Ashi Dönüşümü (İteratif hesaplama)
         ha_open_vals = np.zeros(len(rsi))
         ha_close_vals = np.zeros(len(rsi))
         
@@ -674,7 +680,7 @@ def calculate_harsi(df, period=14):
             "status": trend_status,
             "change": last_ha_close > prev_ha_close
         }
-    except:
+    except Exception as e:
         return None
     
 def check_lazybear_squeeze_breakout(df):
@@ -3996,7 +4002,7 @@ def calculate_price_action_dna(ticker):
         df = get_safe_historical_data(ticker, period="6mo") 
         if df is None or len(df) < 50: return None
         # --- YENİ HACİM HESAPLAMALARI (ADIM 2) BURAYA EKLENDİ ---
-        df = df[df['Volume'] > 0].copy() 
+        df = df[df['Close'] > 0].copy() # Sadece hacmi olan günleri değil, fiyatı olan her günü al (Canlı mumu yakalamak için) 
         if len(df) < 20: return None
         df = calculate_volume_delta(df)
         poc_price = calculate_volume_profile_poc(df, lookback=20, bins=20)
@@ -4117,7 +4123,7 @@ def calculate_price_action_dna(ticker):
                     neutrals.append("Pinbar (Alttan Destek) 📌")
 
             # C) MARUBOZU (Gövde Baskın - Güçlü Mum)
-            elif body > total_len * 0.85:
+            elif body > total_len * 0.80:
                 is_identified = True
                 if is_green: 
                     add_signal(bulls, "Marubozu (Güçlü Boğa) 🚀", True)
@@ -4169,13 +4175,14 @@ def calculate_price_action_dna(ticker):
         
         # Morning Star (Sabah Yıldızı - Dipten Dönüş)
         # 1. Kırmızı, 2. Küçük Gövde, 3. Yeşil (ilk mumun yarısını geçen)
-        if (c3_c < c3_o) and (abs(c2_c - c2_o) < total_len * 0.3) and is_green and (c1_c > (c3_o + c3_c)/2):
-             if is_oversold or trend_dir == "DÜŞÜŞ": add_signal(bulls, "Morning Star ⭐", True)
+        c2_range = (c2_h - c2_l) if (c2_h - c2_l) > 0 else 0.01
+        if (c3_c < c3_o) and (abs(c2_c - c2_o) < c2_range * 0.4) and is_green and (c1_c > (c3_o + c3_c)/2):
+            add_signal(bulls, "Morning Star (Dipten Dönüş) ⭐", True)
 
-        # [EKLENEN EKSİK PARÇA] Evening Star (Akşam Yıldızı - Tepeden Dönüş)
-        # 1. Yeşil, 2. Küçük Gövde, 3. Kırmızı (ilk mumun yarısını aşağı geçen)
-        if (c3_c > c3_o) and (abs(c2_c - c2_o) < total_len * 0.3) and is_red and (c1_c < (c3_o + c3_c)/2):
-             if is_overbought or trend_dir == "YÜKSELİŞ": add_signal(bears, "Evening Star 🌆", False)
+        # [GÜNCELLENMİŞ] Evening Star (Akşam Yıldızı - Tepeden Dönüş)
+        c2_range = (c2_h - c2_l) if (c2_h - c2_l) > 0 else 0.01
+        if (c3_c > c3_o) and (abs(c2_c - c2_o) < c2_range * 0.4) and is_red and (c1_c < (c3_o + c3_c)/2):
+             add_signal(bears, "Evening Star (Trend Dönüş Risk) 🌆", False)
 
         # 3 White Soldiers
         if (c1_c > c1_o) and (c2_c > c2_o) and (c3_c > c3_o) and (c1_c > c2_c > c3_c):
@@ -4334,22 +4341,34 @@ def calculate_price_action_dna(ticker):
         # --- 8. RS (PİYASA GÜCÜ / ALPHA) ---
         alpha_val = 0.0
         try:
-            # Hissenin ait olduğu endeksi bul
             bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
-            # Endeks verisini çek (Cache'den gelir, hızlıdır)
             df_bench = get_safe_historical_data(bench_ticker, period="1mo")
-            
+
             if df_bench is not None and not df_bench.empty:
-                # Günlük Değişimleri Hesapla (Son gün)
-                stock_chg = ((c1_c - c2_c) / c2_c) * 100
+                # 1. Verileri kopyala ve tarih formatlarını (Timezone) temizle
+                s_series = df['Close'].copy()
+                b_series = df_bench['Close'].copy()
+                s_series.index = s_series.index.tz_localize(None)
+                b_series.index = b_series.index.tz_localize(None)
+
+                # 2. Tarih bazlı senkronize birleştirme
+                combined = pd.concat([s_series, b_series], axis=1, keys=['Stock', 'Bench']).sort_index().dropna()
                 
-                b_close = df_bench['Close']
-                bench_chg = ((b_close.iloc[-1] - b_close.iloc[-2]) / b_close.iloc[-2]) * 100
-                
-                # Alpha (Fark): Hisse %3 arttı, Endeks %1 arttıysa -> Alpha +2 (Güçlü)
-                alpha_val = stock_chg - bench_chg
-        except:
-            pass
+                # 3. Eğer bugün (en son satır) her iki veri de mevcutsa:
+                if len(combined) >= 2:
+                    s_now = combined['Stock'].iloc[-1]; s_prev = combined['Stock'].iloc[-2]
+                    b_now = combined['Bench'].iloc[-1]; b_prev = combined['Bench'].iloc[-2]
+                    
+                    stock_chg = ((s_now - s_prev) / s_prev) * 100
+                    bench_chg = ((b_now - b_prev) / b_prev) * 100
+                    alpha_val = stock_chg - bench_chg
+                else:
+                    # Veri eşleşmediyse (Lag varsa) direkt son değerleri zorla kıyasla
+                    s_chg_forced = ((c1_c - c2_c) / c2_c) * 100
+                    b_last_chg = ((df_bench['Close'].iloc[-1] - df_bench['Close'].iloc[-2]) / df_bench['Close'].iloc[-2]) * 100
+                    alpha_val = s_chg_forced - b_last_chg
+        except Exception as e:
+            alpha_val = 0.0 # Güvenli çıkış
         # ======================================================
         # 9. GELİŞMİŞ HACİM ANALİZİ (SMART VOLUME)
         # ======================================================
@@ -6468,31 +6487,50 @@ if st.session_state.generate_prompt:
 
     scan_summary_str = "\n".join([f"- {s}" for s in scan_box_txt])
 
-    # --- 4. DEĞİŞKEN TANIMLAMA (HATAYI ÇÖZEN KISIM) ---
-    # Kodun eski halinde bu değişkenler tanımlanmadığı için NameError veriyordu.
-    
-    # SMA50 Durumu
+    # --- 4. DEĞİŞKEN TANIMLAMA VE GÜN SAYISI (STREAK) HESAPLAMA ---
     curr_price = info.get('price', 0) if info else 0
-    sma50_val = tech_data.get('sma50', 0)
-    sma50_str = "ÜZERİNDE (Pozitif)" if curr_price > sma50_val else "ALTINDA (Negatif)"
 
-    # --- EMA HESAPLAMALARI (YENİ EKLENEN KISIM) ---
-    # df_hist verisinden EMA'ları hesaplayalım
-    df_hist['EMA8'] = df_hist['Close'].ewm(span=8, adjust=False).mean()
-    df_hist['EMA13'] = df_hist['Close'].ewm(span=13, adjust=False).mean()
-
-    ema8_val = df_hist['EMA8'].iloc[-1]
-    ema13_val = df_hist['EMA13'].iloc[-1]
-    
-    # Fiyatın bu ortalamalara göre durumu
-    ema8_status = "Üstünde (Kısa Vadede Güçlü)" if curr_price > ema8_val else "Altında (Kısa Vadede Zayıflama var)"
-    ema13_status = "Üstünde (Destek)" if curr_price > ema13_val else "Altında (Direnç)"
-
-    # Fark yüzdeleri
-    diff_ema8 = ((curr_price / ema8_val) - 1) * 100
-    diff_ema13 = ((curr_price / ema13_val) - 1) * 100
-
-    ema_txt = f"EMA8: {ema8_val:.2f} ({ema8_status} %{diff_ema8:.1f}) | EMA13: {ema13_val:.2f} ({ema13_status} %{diff_ema13:.1f})"
+    if df_hist is not None and not df_hist.empty:
+        # Ortalamaları df_hist üzerinde hesaplayalım ki tüm geçmiş seriyi görebilelim
+        df_hist['EMA8'] = df_hist['Close'].ewm(span=8, adjust=False).mean()
+        df_hist['EMA13'] = df_hist['Close'].ewm(span=13, adjust=False).mean()
+        df_hist['SMA50'] = df_hist['Close'].rolling(50).mean()
+        df_hist['SMA200'] = df_hist['Close'].rolling(200).mean()
+        
+        # Gün sayısı hesaplama fonksiyonu (Sistemi yormayan vektörel yöntem)
+        def calc_streak(price_s, ma_s):
+            is_above = price_s > ma_s
+            streak_groups = (is_above != is_above.shift()).cumsum()
+            if is_above.iloc[-1]:
+                days = int(is_above.groupby(streak_groups).sum().iloc[-1])
+                return f"Üzerinde ({days} Gündür)"
+            else:
+                days = int((~is_above).groupby(streak_groups).sum().iloc[-1])
+                return f"Altında ({days} Gündür)"
+        
+        # Son Değerler
+        ema8_val = df_hist['EMA8'].iloc[-1]
+        ema13_val = df_hist['EMA13'].iloc[-1]
+        sma50_val = df_hist['SMA50'].iloc[-1]
+        sma200_val = df_hist['SMA200'].iloc[-1]
+        
+        # Streak Durumları (Kaç gündür nerede?)
+        ema8_status = calc_streak(df_hist['Close'], df_hist['EMA8'])
+        ema13_status = calc_streak(df_hist['Close'], df_hist['EMA13'])
+        sma50_str = calc_streak(df_hist['Close'], df_hist['SMA50'])
+        sma200_str = calc_streak(df_hist['Close'], df_hist['SMA200'])
+        
+        # Fark Yüzdeleri
+        diff_ema8 = ((curr_price / ema8_val) - 1) * 100 if ema8_val > 0 else 0
+        diff_ema13 = ((curr_price / ema13_val) - 1) * 100 if ema13_val > 0 else 0
+        
+        ema_txt = f"EMA8: {ema8_val:.2f} [{ema8_status}, Fiyat Farkı: %{diff_ema8:.1f}] | EMA13: {ema13_val:.2f} [{ema13_status}, Fiyat Farkı: %{diff_ema13:.1f}]"
+    else:
+        sma50_str = "Veri Yok"
+        sma200_str = "Veri Yok"
+        ema_txt = "Veri Yok"
+        sma50_val = tech_data.get('sma50', 0) if tech_data else 0
+        sma200_val = tech_data.get('sma200', 0) if tech_data else 0
 
     # Destek/Direnç (Levels Data'dan çekme)
     fib_res = "-"
@@ -6854,7 +6892,6 @@ if st.session_state.generate_prompt:
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
 Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade) kullanıcıya sun
-Teknik terimleri parantez içinde global kısaltmalarıyla (örneğin: Fiyat Boşluğu deyip ama yanına (FVG) yaz) kullan ama anlatımı tamamen Türkçe ve yalın yap.
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
 *** 🚨 DURUM RAPORU: {ai_scenario_title} ***
 (Analizini bu senaryo ve talimat üzerine kur!)
@@ -6884,16 +6921,15 @@ Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum beli
 - Fiyat/Denge Sapması: %{denge_sapmasi:.2f} -> (Not: Eğer fiyat sarı denge çizgisinden (STP) %5'ten fazla uzaklaşmışsa 'Isınma' uyarısı yap.)
 *** 1. TREND VE GÜÇ ***
 KISA VADELİ TREND GÖSTERGELERİ:
-- HARSI Durumu (Heikin Ashi RSI): {harsi_txt} (son 14 günlük hafızayı kullanır, RSI üzerindeki gürültüyü temizleyerek, momentumun mevcut trend yönünü ve kalıcılığını ölçer.)
-- EMA Durumu (8/13): {ema_txt} (eğer hisse EMA8/13 altına düştüyse ve HARSI de negatifse kısa vadeli trend kırılmış olabilir)
+- HARSI Durumu (Heikin Ashi RSI): {harsi_txt} (Bu veri, son 14 günlük hafızayı kullanır; RSI üzerindeki gürültüyü temizleyerek, momentumun mevcut trend yönünü ve kalıcılığını ölçer.)
+- EMA Durumu (8/13): {ema_txt} (Gün sayısına çok dikkat et! Fiyat günlerdir bu kısa vadeli EMA'ların altındaysa bu devam eden bir 'Kurumsal Satış Baskısı' olabilir. Üstündeyse güçlü bir 'Momentum Rallisi' gibi görünmektedir. HARSI de negatifse kısa vadeli trend tamamen kırılmış olabilir.)
 ORTA VADELİ TEKNİK GÖSTERGELER ve KURUMSAL SEVİYELER:
 - SuperTrend (son 60 günlük Yön): {st_txt}
 - Minervini Durumu: {mini_txt}
-HAREKETLİ ORTALAMALAR VE KURUMSAL SEVİYELER:
-- SMA50 Durumu: {sma50_str}
-- SMA 50 (Orta Vade): {sma50_val:.2f}
-- SMA 100 (Ana Destek): {sma100_val:.2f}
-- SMA 200 (Global Trend Sınırı): {sma200_val:.2f}
+HAREKETLİ ORTALAMALAR VE KURUMSAL SEVİYELER (ZAMAN ANALİZİ):
+- SMA50 Durumu (Orta Vade): {sma50_str} (Seviye: {sma50_val:.2f}) -> (Fiyatın kaç gündür üstünde/altında olduğu trendin olgunluğunu gösterir.)
+- SMA200 Durumu (Makro Trend): {sma200_str} (Seviye: {sma200_val:.2f})
+- SMA 100 (Ara Destek/Direnç): {sma100_val:.2f}
 - EMA 144 (Fibonacci/Robotik Seviye): {ema144_val:.2f}
 Son birkaç gündür bu hareketli ortalamalardan en az birinden tepki alıp almadığını incele. bu desteklerin tamamı Kurumsal yatırımcıların yakından takip ettiği kritik seviyelerdir. Eğer fiyat bu seviyelerden tepki alıyorsa, ya da bu hareketli ortalamaların civarında bir süredir takılıyorsa, bu seviyelerin geçerliliği ve gücü hakkında yorum yap.
 - RADAR 1 (Momentum/Hacim): {r1_txt}
@@ -6979,8 +7015,8 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
    - Tezin İptal Noktası (sadece Senaryo B için geçerli): Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
-4. SONUÇ VE UYARI: Önce "SONUÇ" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
-Ardından, bir alt satıra "UYARI" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizli satışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
+4. SONUÇ VE UYARI: Önce "SONUÇ:" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
+Ardından, bir alt satıra "UYARI:" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizli satışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
 Analizinde HARSI (Heikin Ashi RSI) verilerini kullanacaksan bunun son 14 günlük olduğunu unutma ve son gün mumu için şu şartlar sağlanıyorsa dikkati çek: 1) Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. 2) Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
 Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 
@@ -6994,8 +7030,8 @@ Birinci görevinde yapmış olduğun o analizin en vurucu yerlerinin Twitter iç
 2. Dinamik Başlık ve "Kanca" (Hook) Kuralları
     - İlk Başlık daima #{clean_ticker}  {fiyat_str} ve bir önceki güne kıyasla değişim yüzdesi belirtilmelidir Örneğin: "#HISSE 123.45 (+2.34%) 👇📷".
     - En Çarpıcı Veri Odaklılık: Başlıkta sadece jenerik etiketler değil, paneldeki en çarpıcı teknik anomali (örneğin: "11266 Ana Uçurumu", "339.25 FOMO Tuzağı", "GAP Temizliği") ve kritik durumlar kullanılmalıdır.
-    - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir.
-    - En alta "Detaylı analiz ve çok detaylı görsel bir sonraki Twit’te 👇" cümlesi yazılmalıdır
+    - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir. Sakın "Kanca" ya da "Hook" yazma.
+    - En alta "Detaylı analiz ve çok detaylı görsel bir sonraki Twit’te👇" cümlesi yazılmalıdır.
 """
     with st.sidebar:
         st.code(prompt, language="text")
