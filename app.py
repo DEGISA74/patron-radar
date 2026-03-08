@@ -406,7 +406,7 @@ def get_benchmark_data(category):
         ticker = "XU100.IS" if "BIST" in category else "^GSPC"
         
         # Hisse verileriyle uyumlu olması için 1 yıllık çekiyoruz
-        df = yf.download(ticker, period="1y", progress=False)
+        df = yf.download(ticker, period="1y", progress=False, auto_adjust=True, prepost=False)
         
         if df.empty: return None
         return df['Close']
@@ -499,7 +499,7 @@ def get_batch_data_cached(asset_list, period="1y"):
             
     # 2. HİÇ OLMAYANLARI ilk defaya mahsus 2 yıllık toplu çek ve diske yaz
     if missing_assets:
-        df_missing = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False)
+        df_missing = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
         if not df_missing.empty:
             for sym in missing_assets:
                 clean_sym = sym.replace(".IS", "")
@@ -516,7 +516,7 @@ def get_batch_data_cached(asset_list, period="1y"):
                 except: continue
 
     # 3. TÜM LİSTE İÇİN (VAR OLANLAR DAHİL) SADECE SON 5 GÜNÜ TOPLU ÇEK (Güncel kalsın diye)
-    df_recent = yf.download(" ".join(asset_list), period="5d", group_by='ticker', threads=True, progress=False)
+    df_recent = yf.download(" ".join(asset_list), period="5d", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
     
     # 4. DİSKTEN OKU + 5 GÜNLÜKLE BİRLEŞTİR + SİSTEME VER
     combined_dict = {}
@@ -580,7 +580,7 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             df_cached = pd.read_parquet(file_path)
             
             # SADECE son 5 günü çek (Ban riski yok, şimşek hızında ve hep canlı)
-            df_new = yf.download(clean_ticker, period="5d", interval=interval, progress=False)
+            df_new = yf.download(clean_ticker, period="5d", interval=interval, progress=False, auto_adjust=True, prepost=False)
             
             if not df_new.empty:
                 if isinstance(df_new.columns, pd.MultiIndex):
@@ -604,7 +604,7 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             # DİSKTE HİÇ YOKSA (İlk kez açılıyorsa): Tamamını indir
             # Gelecekte Lorentzian vb için lazım olacağından ana depoya hep 10y atalım
             fetch_period = "10y" if interval == "1d" else period
-            df_new = yf.download(clean_ticker, period=fetch_period, interval=interval, progress=False)
+            df_new = yf.download(clean_ticker, period=fetch_period, interval=interval, progress=False, auto_adjust=True, prepost=False)
             if df_new.empty: return None
             
             if isinstance(df_new.columns, pd.MultiIndex):
@@ -730,7 +730,7 @@ def get_ma_data_for_ui(ticker):
     """Arayüzdeki 4. sütun için hızlıca EMA ve SMA verilerini hesaplar."""
     try:
         # Son 1 yıllık veriyi hızlıca çek
-        df = yf.download(ticker, period="1y", interval="1d", progress=False)
+        df = yf.download(ticker, period="1y", interval="1d", progress=False, auto_adjust=True, prepost=False)
         if df.empty: 
             return None
         
@@ -5674,7 +5674,9 @@ def render_ict_deep_panel(ticker):
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
     if not data: return
-
+    display_ticker = ticker.replace(".IS", "").replace("=F", "").replace("-USD", "")
+    info = fetch_stock_info(ticker)
+    current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
     # Renk ve İkon Ayarları
     is_bullish = data['st_dir'] == 1
     
@@ -5700,17 +5702,17 @@ def render_levels_card(ticker):
     else:
         # Düşüş Senaryosu
         st_label = "Trend Dönüşü (Direnç)"
-        st_desc = "🚀 Fiyat bu seviyenin <b>üstüne çıkarsa</b> düşüş biter, yükseliş başlar."
+        st_desc = "🚀 Piyasa yapıcının sipariş akışını (Order Flow) koruduğu son hattır. Yani, Fiyat bu seviyenin <b>üstüne çıkarsa</b> düşüş biter, yükseliş başlar."
         
         # Golden Pocket Metni (Düşüş)
-        gp_desc_text = "⚠️ Güçlü Direnç / Tepki Satış Bölgesi (Short)."
+        gp_desc_text = "⚠️ Güçlü Direnç / Tepki Satış Bölgesi (Short). Büyük fonların 'Discount' (İndirimli) fiyatlardan maliyetlenmek veya dağıtım yapmak için beklediği en stratejik denge noktasıdır."
         gp_desc_color = "#b91c1c" # Kırmızı
         
         # Dinamik Kutu Metinleri (Düşüş - ICT Uyumlu)
         res_ui_label = "O.T.E. DİRENCİ"
-        res_ui_desc = "Akıllı Para short arar. Trend yönünde satış bölgesidir."
+        res_ui_desc = "Akıllı Para short arar. Trend yönünde satış bölgesidir. Fiyatın Fibonacci O.T.E. aralığına girmesi 'pahalı' bölgeye işarettir. Akıllı para, buradaki perakende alımları satış likiditesi olarak kullanır."
         sup_ui_label = "AŞAĞIDAKİ LİKİDİTE HEDEFİ"
-        sup_ui_desc = "Düşüş trendinde destek aranmaz, kırılması beklenir."
+        sup_ui_desc = "Düşüş trendinde destek aranmaz, kırılması beklenir. Bu seviyeler destek değil, fiyatın stopları patlatmak için çekildiği birer mıknatıstır. Kurumsal çıkış likiditesi bu bölgede aranır."
     
     # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
@@ -5728,49 +5730,69 @@ def render_levels_card(ticker):
     gp_key = next((k for k in data['fibs'].keys() if "Golden" in k), "0.618 (Golden)")
     gp_val = data['fibs'].get(gp_key, 0)
     
+    # --- 4 SÜTUNLU YATAY TASARIM (BOŞLUKLAR DÜZELTİLDİ) ---
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95;">📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</div>
-        
-        <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; margin-bottom:8px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight:700; color:{st_color}; font-size:0.8rem;">{st_icon} SuperTrend (10,3)</span>
-                <span style="font-weight:500; color:{st_color}; font-size:0.9rem;">{st_text}</span>
-            </div>
-            <div style="font-size:0.75rem; color:#64748B; margin-top:2px;">
-                {st_label}: <strong style="color:#0f172a;">{data['st_val']:.2f}</strong>
-            </div>
-            <div style="font-size:0.65rem; color:#6b7280; font-style:italic; margin-top:4px; border-top:1px dashed {st_color}40; padding-top:2px;">
-                {st_desc}
-            </div>
+        <div class="info-header" style="color:#4c1d95; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px; font-size:1.1rem; font-weight: 800;">
+        <span>📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</span>
+        <span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:1.1rem; background: #f1f5f9; padding: 2px 8px; border-radius: 6px;">{current_price_str}</span>
         </div>
-
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-            <div style="background:#f0fdf4; padding:6px; border-radius:4px; border:1px solid #bbf7d0;">
-                <div style="font-size:0.65rem; color:#166534; font-weight:700;">{res_ui_label}</div>
-                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#15803d; font-size:0.85rem;">{res_display}</div>
-                <div style="font-size:0.6rem; color:#166534; margin-bottom:2px;">Fib {res_lbl}</div>
-                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{res_desc_final}</div>
-            </div>
+        
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
             
-            <div style="background:#fef2f2; padding:6px; border-radius:4px; border:1px solid #fecaca;">
-                <div style="font-size:0.65rem; color:#991b1b; font-weight:700;">{sup_ui_label}</div>
-                <div style="font-family:'JetBrains Mono'; font-weight:700; color:#b91c1c; font-size:0.85rem;">{sup_val:.2f}</div>
-                <div style="font-size:0.6rem; color:#991b1b; margin-bottom:2px;">Fib {sup_lbl}</div>
-                <div style="font-size:0.6rem; color:#64748B; font-style:italic; line-height:1.1;">{sup_ui_desc}</div>
-            </div>
-        </div>
-        
-        <div style="margin-top:6px;">
-            <div style="font-size:0.7rem; font-weight:700; color:#6b7280; margin-bottom:2px;">⚜️ Golden Pocket (0.618 - 0.65):</div>
-            <div style="display:flex; align-items:center; gap:6px;">
-                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px dashed #f59e0b;">
-                    {gp_val:.2f}
+            <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <div style="font-weight:700; color:{st_color} ; font-size:0.85rem;">{st_icon} SuperTrend</div>
+                    <div style="font-weight:800; color:{st_color}; font-size:0.85rem; margin-top:2px;">{st_text}</div>
                 </div>
-                <div style="font-size:0.65rem; color:{gp_desc_color}; font-style:italic;">
-                    {gp_desc_text}
+                <div style="margin-top:8px;">
+                    <div style="font-size:0.85rem; color:#64748B;">{st_label}:</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:0.9rem;">{data['st_val']:.2f}</div>
+                    <div style="font-size:0.85rem; color:#6b7280; font-style:italic; margin-top:6px; border-top:1px dashed {st_color}40; padding-top:4px; line-height:1.2;">
+                        {st_desc}
+                    </div>
                 </div>
             </div>
+
+            <div style="background:#f0fdf4; padding:8px; border-radius:4px; border:1px solid #bbf7d0; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <div style="font-size:0.85rem; color:#166534; font-weight:700;">{res_ui_label}</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#15803d; font-size:1rem; margin-top:2px;">{res_display}</div>
+                </div>
+                <div style="margin-top:8px;">
+                    <div style="font-size:0.85rem; color:#166534; font-weight:600;">Fib {res_lbl}</div>
+                    <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #bbf7d0; padding-top:4px; line-height:1.2;">
+                        {res_desc_final}
+                    </div>
+                </div>
+            </div>
+
+            <div style="background:#fef2f2; padding:8px; border-radius:4px; border:1px solid #fecaca; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <div style="font-size:0.85rem; color:#991b1b; font-weight:700;">{sup_ui_label}</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#b91c1c; font-size:1rem; margin-top:2px;">{sup_val:.2f}</div>
+                </div>
+                <div style="margin-top:8px;">
+                    <div style="font-size:0.85rem; color:#991b1b; font-weight:600;">Fib {sup_lbl}</div>
+                    <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #fecaca; padding-top:4px; line-height:1.2;">
+                        {sup_ui_desc}
+                    </div>
+                </div>
+            </div>
+
+            <div style="background:#fffbeb; padding:8px; border-radius:4px; border:1px dashed #f59e0b; display:flex; flex-direction:column; justify-content:space-between;">
+                <div>
+                    <div style="font-size:0.85rem; font-weight:700; color:#92400e;">⚜️ GOLDEN POCKET</div>
+                    <div style="font-family:'JetBrains Mono'; font-size:1rem; font-weight:800; color:#b45309; margin-top:2px;">{gp_val:.2f}</div>
+                </div>
+                <div style="margin-top:8px;">
+                    <div style="font-size:0.85rem; color:#92400e; font-weight:600;">Kurumsal Bölge</div>
+                    <div style="font-size:0.85rem; color:{gp_desc_color}; font-style:italic; margin-top:6px; border-top:1px dashed #f59e0b; padding-top:4px; line-height:1.2;">
+                        {gp_desc_text}
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
     """
@@ -7704,7 +7726,10 @@ HAREKETLİ ORTALAMALAR
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_ict_deep_panel(st.session_state.ticker)
 
-    # 4. GELİŞMİŞ TEKNİK KART (ICT ALTINDA)
+    # 4. Kritik Seviyeler
+    render_levels_card(st.session_state.ticker)
+
+    # 5. GELİŞMİŞ TEKNİK KART (ICT ALTINDA)
     render_detail_card_advanced(st.session_state.ticker)
 
     # ---------------------------------------------------------
@@ -8437,8 +8462,7 @@ with col_right:
     # Royal Flush Paneli
     render_royal_flush_banner(ict_data_check, sent_data_check, st.session_state.ticker)
   
-    # 3. Kritik Seviyeler
-    render_levels_card(st.session_state.ticker)
+
 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
