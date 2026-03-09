@@ -29,7 +29,10 @@ st.set_page_config(
     page_icon="💸"
 )
 
-# Tema seçeneği kaldırıldı, varsayılan "Buz Mavisi" olarak sabitlendi.
+# --- DARK MODE / LIGHT MODE ALTYAPISI ---
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False # Default olarak Light Mode
+
 if 'theme' not in st.session_state:
     st.session_state.theme = "Buz Mavisi"
 
@@ -40,132 +43,120 @@ THEMES = {
 }
 current_theme = THEMES[st.session_state.theme]
 
-st.markdown(f"""
-<style>
-    section[data-testid="stSidebar"] {{ width: 350px !important; }}
-    section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] * {{
-        font-family: 'Inter', sans-serif !important;
-    }}
-    /* --- METRIC (SONUÇ KUTULARI) YAZI BOYUTU AYARI --- */
-    div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
-    div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
-    div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
-    /* ------------------------------------------------ */
-
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
-    
-    html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
-    .stApp {{ background-color: {current_theme['bg']}; }}
-    
-    section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
-    
-    .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
-    
-    .stat-box-small {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }}
-    .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
-    .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
-    .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
-    
-    hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
-    .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
-    
-    .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
-    .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
-    
-    /* --- TARA VE ANA BUTONLAR (PRIMARY - DÜZELTİLMİŞ) --- */
-    /* Hem kind="primary" özelliğine hem de testid'ye bakar, ıskalamaz */
-    div.stButton > button[kind="primary"],
-    div.stButton > button[data-testid="baseButton-primary"] {{
-        background-color: #607D8B !important; /* İSTEDİĞİN MAVİ-GRİ RENK */
-        border-color: #607D8B !important;
-        color: white !important;
-        opacity: 1 !important;
-        border-radius: 6px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }}
-
-    /* HOVER (ÜZERİNE GELİNCE) AYARLARI */
-    div.stButton > button[kind="primary"]:hover,
-    div.stButton > button[data-testid="baseButton-primary"]:hover {{
-        background-color: #455A64 !important; /* ÜZERİNE GELİNCE KOYULAŞAN TON */
-        border-color: #455A64 !important;
-        color: white !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-    }}
-    
-    /* --- BİREYSEL TARAMA BUTONLARI (SECONDARY - SU YEŞİLİ) --- */
-    div.stButton button[data-testid="baseButton-secondary"] {{
-        background-color: #E0F7FA !important; /* SU YEŞİLİ ARKA PLAN */
-        border: 1px solid #4DD0E1 !important; /* İnce Turkuaz Çerçeve */
-        color: #1F2937 !important; /* KOYU GRİ YAZI */
-        font-weight: 700 !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        transition: all 0.2s ease-in-out;
-    }}
-    
-    div.stButton button[data-testid="baseButton-secondary"]:hover {{
-        background-color: #B2EBF2 !important; /* Üzerine gelince biraz koyulaşsın */
-        border-color: #00BCD4 !important;
-        color: #000000 !important;
-        transform: translateY(-1px);
-    }}
-    
-    /* --- GENEL BUTON BOYUT AYARI --- */
-    .stButton button {{
-        width: 100%;
-        border-radius: 6px;
-        font-size: 0.75rem;
-        padding: 0.1rem 0.4rem;
-    }}
-    
-    .info-card {{
-        background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']};
-        border-radius: 6px; 
-        padding: 6px;
-        margin-top: 5px; 
-        margin-bottom: 5px;
-        font-size: 0.8rem;
-        font-family: 'Inter', sans-serif;
-    }}
-    .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
-    .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
-    
-    .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
-    .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
-    
-    .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
-    
-    .edu-note {{
-        font-size: 0.85rem;
-        color: #040561;
-        font-style: italic;
-        margin-top: 2px;
-        margin-bottom: 6px;
-        line-height: 1.3;
-        padding-left: 0px;
-    }}
-
-    .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
-    .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
-
-    /* --- KUTULARI (CONTAINER) OYNAK/BOYUTLANDIRILABİLİR YAPMA --- */
-    /* st.container(height=...) ile oluşturulan kutuları hedefler */
-    div[data-testid="stVerticalBlockBorderWrapper"] {{
-        resize: vertical !important;    /* Dikey boyutlandırmayı açar */
-        overflow: auto !important;      /* İçerik taşarsa kaydırma çubuğu çıkarır */
-        min-height: 150px !important;   /* Kutunun çok küçülüp kaybolmasını engeller */
-        margin-bottom: 10px !important; /* Altına biraz boşluk bırakır */
-        border-bottom-right-radius: 8px !important; /* Tutamaç köşesini belirginleştirir */
-    }}
-</style>
-""", unsafe_allow_html=True)
+if st.session_state.dark_mode:
+    st.markdown("""
+    <style>
+        section[data-testid="stSidebar"] { width: 350px !important; }
+        section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] * { font-family: 'Inter', sans-serif !important; }
+        div[data-testid="stMetricValue"] { font-size: 0.7rem !important; color: #e2e8f0 !important; }
+        div[data-testid="stMetricLabel"] { font-size: 0.7rem !important; font-weight: 700; color: #94a3b8 !important; }
+        div[data-testid="stMetricDelta"] { font-size: 0.7rem !important; }
+        
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+        
+        .stApp { background-color: #0b0f19; color: #a3a8b8; font-family: 'Inter', sans-serif; }
+        .block-container { padding-top: 2rem !important; padding-bottom: 2rem !important; max-width: 95% !important; }
+        
+        div[data-testid="stMetric"], .stMetric {
+            background: linear-gradient(145deg, #111827 0%, #0b0f19 100%);
+            border-radius: 6px; padding: 10px 15px !important;
+            border-left: 3px solid #10b981; border-top: 1px solid rgba(255,255,255,0.05);
+            border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+        
+        [data-testid="stDataFrame"] { background-color: #111827; border: 1px solid #1f2937; }
+        .streamlit-expanderHeader { background-color: #111827 !important; border: 1px solid #1f2937 !important; border-radius: 4px; color: #38bdf8 !important; }
+        .streamlit-expanderContent { background-color: #0b0f19 !important; border: 1px solid #1f2937 !important; border-top: none !important; }
+        
+        hr { margin-top: 0.2rem; margin-bottom: 0.5rem; border-color: #1f2937; }
+        .stSelectbox, .stTextInput { margin-bottom: -10px; }
+        .delta-pos { color: #10b981; } .delta-neg { color: #ef4444; }
+        
+        div.stButton > button[kind="primary"], div.stButton > button[data-testid="baseButton-primary"] {
+            background-color: #3b82f6 !important; border-color: #3b82f6 !important; color: white !important;
+            opacity: 1 !important; border-radius: 6px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        div.stButton > button[kind="primary"]:hover, div.stButton > button[data-testid="baseButton-primary"]:hover {
+            background-color: #2563eb !important; border-color: #2563eb !important; color: white !important; transform: translateY(-1px);
+        }
+        div.stButton button[data-testid="baseButton-secondary"] {
+            background-color: #1e293b !important; border: 1px solid #334155 !important; color: #cbd5e1 !important; font-weight: 700 !important; transition: all 0.2s ease-in-out;
+        }
+        div.stButton button[data-testid="baseButton-secondary"]:hover {
+            background-color: #334155 !important; border-color: #475569 !important; color: #ffffff !important; transform: translateY(-1px);
+        }
+        .stButton button { width: 100%; border-radius: 6px; font-size: 0.75rem; padding: 0.1rem 0.4rem; }
+        
+        .info-card {
+            background: #111827; border: 1px solid #1f2937; border-radius: 6px; padding: 6px;
+            margin-top: 5px; margin-bottom: 5px; font-size: 0.8rem; font-family: 'Inter', sans-serif; color: #a3a8b8;
+        }
+        .info-header { font-weight: 700; color: #38bdf8; border-bottom: 1px solid #1f2937; padding-bottom: 4px; margin-bottom: 4px; }
+        .info-row { display: flex; align-items: flex-start; margin-bottom: 2px; }
+        .label-short { font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }
+        .label-long { font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; } 
+        .info-val { color: #e2e8f0; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+        .edu-note { font-size: 0.85rem; color: #94a3b8; font-style: italic; margin-top: 2px; margin-bottom: 6px; line-height: 1.3; padding-left: 0px; }
+        .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .tech-item { display: flex; align-items: center; font-size: 0.8rem; color: #e2e8f0; }
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            resize: vertical !important; overflow: auto !important; min-height: 150px !important; margin-bottom: 10px !important; border-bottom-right-radius: 8px !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown(f"""
+    <style>
+        section[data-testid="stSidebar"] {{ width: 350px !important; }}
+        section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] * {{ font-family: 'Inter', sans-serif !important; }}
+        div[data-testid="stMetricValue"] {{ font-size: 0.7rem !important; }}
+        div[data-testid="stMetricLabel"] {{ font-size: 0.7rem !important; font-weight: 700; }}
+        div[data-testid="stMetricDelta"] {{ font-size: 0.7rem !important; }}
+        
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght+400;700&display=swap');
+        
+        html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; color: {current_theme['text']}; }}
+        .stApp {{ background-color: {current_theme['bg']}; }}
+        section.main > div.block-container {{ padding-top: 1rem; padding-bottom: 1rem; }}
+        .stMetricValue, .money-text {{ font-family: 'JetBrains Mono', monospace !important; }}
+        
+        .stat-box-small {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 4px; padding: 8px; text-align: center; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
+        .stat-label-small {{ font-size: 0.6rem; color: #64748B; text-transform: uppercase; margin: 0; font-weight: 700; letter-spacing: 0.5px; }}
+        .stat-value-small {{ font-size: 1.1rem; font-weight: 700; color: {current_theme['text']}; margin: 2px 0 0 0; }}
+        .stat-delta-small {{ font-size: 0.8rem; margin-left: 6px; font-weight: 600; }}
+        
+        hr {{ margin-top: 0.2rem; margin-bottom: 0.5rem; }}
+        .stSelectbox, .stTextInput {{ margin-bottom: -10px; }}
+        .delta-pos {{ color: #16A34A; }} .delta-neg {{ color: #DC2626; }}
+        .news-card {{ background: {current_theme['news_bg']}; border-left: 3px solid {current_theme['border']}; padding: 6px; margin-bottom: 6px; font-size: 0.78rem; }}
+        
+        div.stButton > button[kind="primary"], div.stButton > button[data-testid="baseButton-primary"] {{
+            background-color: #607D8B !important; border-color: #607D8B !important; color: white !important; opacity: 1 !important; border-radius: 6px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        div.stButton > button[kind="primary"]:hover, div.stButton > button[data-testid="baseButton-primary"]:hover {{
+            background-color: #455A64 !important; border-color: #455A64 !important; color: white !important; transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }}
+        div.stButton button[data-testid="baseButton-secondary"] {{
+            background-color: #E0F7FA !important; border: 1px solid #4DD0E1 !important; color: #1F2937 !important; font-weight: 700 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s ease-in-out;
+        }}
+        div.stButton button[data-testid="baseButton-secondary"]:hover {{
+            background-color: #B2EBF2 !important; border-color: #00BCD4 !important; color: #000000 !important; transform: translateY(-1px);
+        }}
+        .stButton button {{ width: 100%; border-radius: 6px; font-size: 0.75rem; padding: 0.1rem 0.4rem; }}
+        
+        .info-card {{ background: {current_theme['box_bg']}; border: 1px solid {current_theme['border']}; border-radius: 6px; padding: 6px; margin-top: 5px; margin-bottom: 5px; font-size: 0.8rem; font-family: 'Inter', sans-serif; }}
+        .info-header {{ font-weight: 700; color: #1e3a8a; border-bottom: 1px solid {current_theme['border']}; padding-bottom: 4px; margin-bottom: 4px; }}
+        .info-row {{ display: flex; align-items: flex-start; margin-bottom: 2px; }}
+        .label-short {{ font-weight: 600; color: #64748B; width: 80px; flex-shrink: 0; }}
+        .label-long {{ font-weight: 600; color: #64748B; width: 100px; flex-shrink: 0; }} 
+        .info-val {{ color: {current_theme['text']}; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }}
+        .edu-note {{ font-size: 0.85rem; color: #040561; font-style: italic; margin-top: 2px; margin-bottom: 6px; line-height: 1.3; padding-left: 0px; }}
+        .tech-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }}
+        .tech-item {{ display: flex; align-items: center; font-size: 0.8rem; }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{ resize: vertical !important; overflow: auto !important; min-height: 150px !important; margin-bottom: 10px !important; border-bottom-right-radius: 8px !important; }}
+    </style>
+    """, unsafe_allow_html=True)
 
 # ==============================================================================
 # 2. VERİTABANI VE LİSTELER
@@ -2591,7 +2582,7 @@ def calculate_master_score(ticker):
                 
                 if uzaklik <= 15:
                     s_trend += 40
-                    pros.append(f"✅ Ana Trend İdeal: SMA200'e güvenli mesafede ({format_pt(40 * w_trend)} Puan)")
+                    pros.append(f"✅ Ana Trend: SMA200'e güvenli mesafede ({format_pt(40 * w_trend)} Puan)")
                 elif uzaklik <= 30:
                     s_trend += 30
                     # Puan veriyor ama uyarıyor (Kırmızıya atmıyoruz)
@@ -4934,42 +4925,41 @@ def scan_grandmaster_batch(asset_list):
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
 # ==============================================================================
 def render_gauge_chart(score):
-    """Ana Skor için Hız Göstergesi (Kompakt & Renkli & Lacivert Yazılı)"""
     score = int(score)
-    
-    # Renk Belirleme
-    color = "#b91c1c" 
-    if score >= 50: color = "#d97706" 
-    if score >= 70: color = "#16a34a" 
-    if score >= 85: color = "#15803d" 
-    
-    source = pd.DataFrame({"category": ["Skor", "Kalan"], "value": [score, 100-score]})
-    
-    base = alt.Chart(source).encode(
-        theta=alt.Theta("value", stack=True)
-    )
-    
-    # Yarıçapları biraz kıstım (Sığdırmak için)
-    pie = base.mark_arc(outerRadius=55, innerRadius=40).encode(
-        color=alt.Color("category", scale=alt.Scale(domain=["Skor", "Kalan"], range=[color, "#e2e8f0"]), legend=None),
-        order=alt.Order("category", sort="descending"),
-        tooltip=["value"]
-    )
-    
-    # Ortadaki Sayı
-    text = base.mark_text(radius=0, size=28, color=color, fontWeight="bold", dy=-5).encode(
-        text=alt.value(f"{score}")
-    )
-    
-    # Altındaki Etiket (KOYU LACİVERT ve BÜYÜK)
-    label = base.mark_text(radius=0, size=12, color="#1e3a8a", fontWeight="bold", dy=20).encode(
-        text=alt.value("ANA SKOR")
-    )
-    
-    # Yüksekliği 130px'e çektim (Daha kompakt)
-    chart = (pie + text + label).properties(height=130) 
-    
-    st.altair_chart(chart, use_container_width=True)
+    if st.session_state.dark_mode:
+        color = "#ef4444" 
+        if score >= 50: color = "#f59e0b" 
+        if score >= 70: color = "#10b981" 
+        if score >= 85: color = "#059669" 
+        
+        source = pd.DataFrame({"category": ["Skor", "Kalan"], "value": [score, 100-score]})
+        base = alt.Chart(source).encode(theta=alt.Theta("value", stack=True))
+        pie = base.mark_arc(outerRadius=55, innerRadius=40).encode(
+            color=alt.Color("category", scale=alt.Scale(domain=["Skor", "Kalan"], range=[color, "rgba(255,255,255,0.05)"]), legend=None),
+            order=alt.Order("category", sort="descending"), tooltip=["value"]
+        )
+        text = base.mark_text(radius=0, size=28, color=color, fontWeight="bold", dy=-5).encode(text=alt.value(f"{score}"))
+        label = base.mark_text(radius=0, size=12, color="#38bdf8", fontWeight="bold", dy=20).encode(text=alt.value("ANA SKOR"))
+        
+        chart = (pie + text + label).properties(height=130).configure(background='transparent').configure_view(strokeWidth=0) 
+        st.altair_chart(chart, use_container_width=True, theme=None)
+    else:
+        color = "#b91c1c" 
+        if score >= 50: color = "#d97706" 
+        if score >= 70: color = "#16a34a" 
+        if score >= 85: color = "#15803d" 
+        
+        source = pd.DataFrame({"category": ["Skor", "Kalan"], "value": [score, 100-score]})
+        base = alt.Chart(source).encode(theta=alt.Theta("value", stack=True))
+        pie = base.mark_arc(outerRadius=55, innerRadius=40).encode(
+            color=alt.Color("category", scale=alt.Scale(domain=["Skor", "Kalan"], range=[color, "#e2e8f0"]), legend=None),
+            order=alt.Order("category", sort="descending"), tooltip=["value"]
+        )
+        text = base.mark_text(radius=0, size=28, color=color, fontWeight="bold", dy=-5).encode(text=alt.value(f"{score}"))
+        label = base.mark_text(radius=0, size=12, color="#1e3a8a", fontWeight="bold", dy=20).encode(text=alt.value("ANA SKOR"))
+        
+        chart = (pie + text + label).properties(height=130) 
+        st.altair_chart(chart, use_container_width=True)
 
 def render_sentiment_card(sent):
     if not sent: return
@@ -5199,48 +5189,75 @@ def render_detail_card_advanced(ticker):
 
 def render_synthetic_sentiment_panel(data):
     if data is None or data.empty: return
-    # --- YENİ EKLENECEK KISIM (BAŞLIYOR) ---
     display_ticker = st.session_state.ticker.replace(".IS", "").replace("=F", "")
     
-    # Fiyatı çekiyoruz (Başlığın sağına koymak için)
     info = fetch_stock_info(st.session_state.ticker)
     current_price = info.get('price', 0) if info else 0
     
-    header_color = "#3b82f6" # Mavi Başlık Rengi
-
-    # Yeni Profesyonel Başlık
-    st.markdown(f"""
-    <div class="info-card" style="border-top: 3px solid {header_color}; margin-bottom:15px;">
-        <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:1.1rem;">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</span>
-            <span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; background:#eff6ff; padding:2px 8px; border-radius:4px; font-size:1.25rem;">
-                {current_price:.2f}
-            </span>
+    if st.session_state.dark_mode:
+        header_color = "#38bdf8"
+        st.markdown(f"""
+        <div class="info-card" style="border-top: 3px solid {header_color}; margin-bottom:15px; background: rgba(17, 24, 39, 0.8); border: 1px solid #1f2937;">
+            <div class="info-header" style="color:#38bdf8; display:flex; justify-content:space-between; align-items:center; border-bottom: none;">
+                <span style="font-size:1.1rem;">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:700; color:#10b981; background:#0b0f19; padding:2px 8px; border-radius:4px; font-size:1.25rem; border: 1px solid #1f2937;">
+                    {current_price:.2f}
+                </span>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
-    # --- YENİ EKLENECEK KISIM (BİTTİ) ---
-    c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45), sort=None)
-    with c1:
-        base = alt.Chart(data).encode(x=x_axis)
-        color_condition = alt.condition(
-            alt.datum.MF_Smooth > 0,
-            alt.value("#5B84C4"), 
-            alt.value("#ef4444")
-        )
-        bars = base.mark_bar(size=12, opacity=0.9).encode(
-            y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
-            color=color_condition, 
-            tooltip=['Date_Str', 'Price', 'MF_Smooth']
-        )
-        price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
-        st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#1e40af")), use_container_width=True)
-    with c2:
-        base2 = alt.Chart(data).encode(x=x_axis)
-        line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
-        line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
-        area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
-        st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
+        """, unsafe_allow_html=True)
+        
+        c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45, labelOverlap=False), sort=None)
+        with c1:
+            base = alt.Chart(data).encode(x=x_axis)
+            color_condition = alt.condition(alt.datum.MF_Smooth > 0, alt.value("#38bdf8"), alt.value("#ef4444"))
+            bars = base.mark_bar(size=12, opacity=0.9).encode(
+                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#94a3b8')), 
+                color=color_condition, tooltip=['Date_Str', 'Price', 'MF_Smooth']
+            )
+            price_line = base.mark_line(color='#10b981', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#94a3b8', labelColor='#94a3b8')))
+            chart1 = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#38bdf8")).configure(background='transparent').configure_axis(gridColor='#1f2937', domainColor='#1f2937', labelColor='#94a3b8', titleColor='#94a3b8').configure_view(strokeWidth=0)
+            st.altair_chart(chart1, use_container_width=True, theme=None)
+        with c2:
+            base2 = alt.Chart(data).encode(x=x_axis)
+            line_stp = base2.mark_line(color='#f59e0b', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#94a3b8', labelColor='#94a3b8')), tooltip=['Date_Str', 'STP', 'Price'])
+            line_price = base2.mark_line(color='#38bdf8', strokeWidth=2).encode(y='Price:Q')
+            area = base2.mark_area(opacity=0.1, color='#38bdf8').encode(y='STP:Q', y2='Price:Q')
+            chart2 = alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=12, color="#38bdf8")).configure(background='transparent').configure_axis(gridColor='#1f2937', domainColor='#1f2937', labelColor='#94a3b8', titleColor='#94a3b8').configure_view(strokeWidth=0)
+            st.altair_chart(chart2, use_container_width=True, theme=None)
+    else:
+        header_color = "#3b82f6" 
+        st.markdown(f"""
+        <div class="info-card" style="border-top: 3px solid {header_color}; margin-bottom:15px;">
+            <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:1.1rem;">🌊 Para Akış İvmesi & Fiyat Dengesi: {display_ticker}</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:700; color:#0f172a; background:#eff6ff; padding:2px 8px; border-radius:4px; font-size:1.25rem;">
+                    {current_price:.2f}
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45, labelOverlap=False, labelColor="#062C63"), sort=None)
+        with c1:
+            base = alt.Chart(data).encode(x=x_axis)
+            color_condition = alt.condition(
+                alt.datum.MF_Smooth > 0,
+                alt.value("#5B84C4"), 
+                alt.value("#ef4444")
+            )
+            bars = base.mark_bar(size=12, opacity=0.9).encode(
+                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
+                color=color_condition, 
+                tooltip=['Date_Str', 'Price', 'MF_Smooth']
+            )
+            price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
+            st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#1e40af")), use_container_width=True)
+        with c2:
+            base2 = alt.Chart(data).encode(x=x_axis)
+            line_stp = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
+            line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y='Price:Q')
+            area = base2.mark_area(opacity=0.15, color='gray').encode(y='STP:Q', y2='Price:Q')
+            st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_price_action_panel(ticker):
     obv_title, obv_color, obv_desc = get_obv_divergence_status(ticker)
@@ -5248,207 +5265,259 @@ def render_price_action_panel(ticker):
     if not pa:
         st.info("PA verisi bekleniyor...")
         return
-    # --- 👇 YENİ: S&D BÖLGESİ VERİSİ ÇEKİLİYOR 👇 ---
     df_sd = get_safe_historical_data(ticker, period="1y")
     try: sd_data = detect_supply_demand_zones(df_sd)
     except: sd_data = None
     
-    sd_txt = "Taze bölge (RBR/DBD vb.) görünmüyor."
-    sd_col = "#64748B"
-    if sd_data:
-        sd_txt = f"{sd_data['Type']} | {sd_data['Bottom']:.2f} - {sd_data['Top']:.2f} ({sd_data['Status']} olabilir)"
-        sd_col = "#16a34a" if "Talep" in sd_data['Type'] else "#dc2626"
-    # --- 👆 -------------------------------------- 👆 ---
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
-
-    sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
-    sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
-    
-    # RSI DIV RENKLENDİRME
     div_data = pa.get('div', {'type': 'neutral', 'title': '-', 'desc': '-'})
-    if div_data['type'] == 'bearish':
-        div_style = "background:#fef2f2; border-left:3px solid #dc2626; color:#991b1b;"
-    elif div_data['type'] == 'bullish':
-        div_style = "background:#f0fdf4; border-left:3px solid #16a34a; color:#166534;"
-    else:
-        div_style = "color:#475569;"
-
-    # --- YENİ VERİLERİN HAZIRLIĞI ---
     vwap_data = pa.get('vwap', {'val': 0, 'diff': 0})
     rs_data = pa.get('rs', {'alpha': 0})
-    
-    # 7. VWAP MANTIĞI (TREND DOSTU GÜNCELLEME)
     v_diff = vwap_data['diff']
-    
+    alpha = rs_data['alpha']
+
+    # --- ORİJİNAL MANTIK VE METİNLER (DOKUNULMADI) ---
+    sd_txt = "Taze bölge (RBR/DBD vb.) görünmüyor."
+    if sd_data:
+        sd_txt = f"{sd_data['Type']} | {sd_data['Bottom']:.2f} - {sd_data['Top']:.2f} ({sd_data['Status']} olabilir)"
+
     if v_diff < -2.0:
         vwap_txt = "🟢 DİP FIRSATI (Aşırı İskonto)"
         vwap_desc = f"Fiyat maliyetin %{abs(v_diff):.1f} altında. Tepki ihtimali yüksek."
-        vwap_col = "#035f25" # Koyu Yeşil
     elif v_diff < 0.0:
         vwap_txt = "🟢 UCUZ (Toplama)"
         vwap_desc = "Fiyat kurumsal maliyetin hemen altında."
-        vwap_col = "#056d2b" # Açık Yeşil
     elif v_diff < 8.0:
-        # %0 ile %8 arası: SAĞLIKLI TREND BÖLGESİ (Trenden İnme!)
         vwap_txt = "🚀 RALLİ MODU (Güçlü Trend)"
         vwap_desc = f"Fiyat maliyetin %{v_diff:.1f} üzerinde. Momentum arkanda."
-        vwap_col = "#034969" # Sky Blue (Güven Veren Mavi)
     elif v_diff < 15.0:
-        # %8 ile %15 arası: ISINMA BÖLGESİ
         vwap_txt = "🟠 DİKKAT (Piyasa Isınıyor)"
         vwap_desc = f"Fiyat ortalamadan %{v_diff:.1f} uzaklaştı. Stop seviyesi yükseltilse iyi olur."
-        vwap_col = "#a36903" # Amber (Turuncu Uyarı)
     else:
-        # %15 üzeri: ARTIK GERÇEKTEN RİSKLİ
         vwap_txt = "🔴 PARABOLİK (Aşırı Kopuş)"
         vwap_desc = f"Fiyat %{v_diff:.1f} saptı. Bu sürdürülemez, kâr almak düşünülebilir."
-        vwap_col = "#570214" # Rose Kırmızı
 
-    # 8. RS MANTIĞI
-    alpha = rs_data['alpha']
     if alpha > 1.0:
         rs_txt = "🦁 LİDER (Endeksi Yeniyor)"
         rs_desc = f"Endekse göre %{alpha:.1f} daha güçlü (Alpha Pozitif)."
-        rs_col = "#059669"
     elif alpha < -1.0:
         rs_txt = "🐢 ZAYIF (Endeksin Gerisinde)"
         rs_desc = f"Piyasa giderken gitmiyor (Fark %{alpha:.1f})."
-        rs_col = "#470312"
     else:
         rs_txt = "🔗 NÖTR (Endeks ile Aynı)"
         rs_desc = "Piyasa rüzgarıyla paralel hareket ediyor."
-        rs_col = "#475569"
 
-    html_content = f"""
-    <div class="info-card" style="border-top: 3px solid #6366f1;">
-        <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
-
-        <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
-            <div class="edu-note">{pa['candle']['desc']}</div>
-        </div>
-
-        <div style="margin-bottom:8px; border-left: 2px solid {sfp_color}; padding-left:6px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{sfp_color};">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
-            <div class="edu-note">{pa['sfp']['desc']}</div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
-            <div class="edu-note">{pa['vol']['desc']}</div>
-        </div>
-
-        <div style="margin-top:4px; padding:4px; background:{obv_color}15; border-radius:4px; border-left:2px solid {obv_color};">
-            <div style="font-size:0.75rem; font-weight:700; color:{obv_color};">💰 {obv_title}</div>
-            <div style="font-size:0.7rem; color:#475569; font-style:italic;">{obv_desc}</div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">4. BAĞLAM & KONUM: {pa['loc']['title']}</div>
-            <div class="edu-note">{pa['loc']['desc']}</div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
-            <div class="edu-note">{pa['sq']['desc']}</div>
-        </div>
-
-        <div style="margin-bottom:6px; padding:4px; border-radius:4px; {div_style}">
-            <div style="font-weight:700; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
-            <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
-        </div>
-
-        <div style="margin-bottom:6px; padding:6px; border-left:3px solid {sd_col}; background:#f8fafc; border-radius:4px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{sd_col};">🧱 ARZ-TALEP (S&D) BÖLGELERİ:</div>
-            <div style="font-size:0.85rem; font-weight:600; color:#0f172a; margin-top:2px;">{sd_txt}</div>
-            <div class="edu-note" style="margin-top:4px; margin-bottom:0; color:inherit; opacity:0.9;">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde potansiyel bir sıçrama (tepki) ihtimali doğabilir.</div>
-        </div>
-
-        <div style="border-top: 1px dashed #cbd5e1; margin-top:8px; padding-top:6px;"></div> 
-
-        <div style="margin-bottom:8px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{vwap_col};">7. KURUMSAL REFERANS MALİYET (VWAP): {vwap_txt}</div>
-            <div class="edu-note">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: {vwap_data['val']:.2f})</div>
-        </div>
-
-        <div style="margin-bottom:2px;">
-            <div style="font-weight:700; font-size:0.8rem; color:{rs_col};">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
-            <div class="edu-note" style="margin-bottom:0;">{rs_desc}</div>
-        </div>        
-    </div>
-    """
-    st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
-
-    # --- EKRANDA SMART MONEY HACİM ROZETİ GÖSTERİMİ ---
-    if pa and "smart_volume" in pa:
-        sv_data = pa["smart_volume"]
-        delta_val = sv_data.get("delta", 0)
-        delta_yuzde = sv_data.get("delta_yuzde", 0) # Yeni eklediğimiz yüzdeyi çekiyoruz
+    if st.session_state.dark_mode:
+        sd_col = "#10b981" if sd_data and "Talep" in sd_data['Type'] else "#ef4444" if sd_data else "#94a3b8"
+        sfp_color = "#10b981" if "Bullish" in pa['sfp']['title'] else "#ef4444" if "Bearish" in pa['sfp']['title'] else "#94a3b8"
+        sq_color = "#f59e0b" if "BOBİN" in pa['sq']['title'] else "#94a3b8"
         
-        # Seçili sembolün ENDEKS olup olmadığını kontrol etme
-        # (BIST endeksleri genellikle XU, XB, XT ile başlar. Global endeksler ^ ile başlar)
-        is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
+        if div_data['type'] == 'bearish': div_style = "background:rgba(239, 68, 68, 0.1); border-left:3px solid #ef4444; color:#fca5a5;"
+        elif div_data['type'] == 'bullish': div_style = "background:rgba(16, 185, 129, 0.1); border-left:3px solid #10b981; color:#6ee7b7;"
+        else: div_style = "color:#94a3b8;"
+
+        vwap_col = "#10b981" if v_diff < -2.0 else "#34d399" if v_diff < 0.0 else "#38bdf8" if v_diff < 8.0 else "#f59e0b" if v_diff < 15.0 else "#ef4444"
+        rs_col = "#10b981" if alpha > 1.0 else "#ef4444" if alpha < -1.0 else "#94a3b8"
+
+        html_content = f"""
+        <div class="info-card" style="border-top: 3px solid #6366f1; background: rgba(17, 24, 39, 0.6); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); padding: 12px;">
+            <div class="info-header" style="color:#818cf8; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 12px; font-weight: 800;">🕯️ Price Action Analizi: {display_ticker}</div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">1. MUM & FORMASYONLAR: <span style="color:#38bdf8;">{pa['candle']['title']}</span></div>
+                <div class="edu-note" style="color:#94a3b8;">{pa['candle']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:8px; border-left: 3px solid {sfp_color}; padding-left:8px; background: rgba(255,255,255,0.02); padding-top: 4px; padding-bottom: 4px; border-radius: 0 4px 4px 0;">
+                <div style="font-weight:700; font-size:0.85rem; color:{sfp_color}; margin-bottom: 2px;">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
+                <div class="edu-note" style="color:#94a3b8; margin-bottom: 0;">{pa['sfp']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">3. HACİM & VSA ANALİZİ: <span style="color:#38bdf8;">{pa['vol']['title']}</span></div>
+                <div class="edu-note" style="color:#94a3b8;">{pa['vol']['desc']}</div>
+            </div>
+
+            <div style="margin-top:4px; padding:8px; background:rgba(255,255,255,0.05); border-radius:6px; border-left:3px solid {obv_color}; margin-bottom:8px;">
+                <div style="font-size:0.8rem; font-weight:700; color:{obv_color}; margin-bottom: 2px;">💰 {obv_title}</div>
+                <div style="font-size:0.75rem; color:#94a3b8; font-style:italic;">{obv_desc}</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">4. BAĞLAM & KONUM: <span style="color:#38bdf8;">{pa['loc']['title']}</span></div>
+                <div class="edu-note" style="color:#94a3b8;">{pa['loc']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.85rem; color:{sq_color}; margin-bottom: 2px;">5. VOLATİLİTE: {pa['sq']['title']}</div>
+                <div class="edu-note" style="color:#94a3b8;">{pa['sq']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:6px; padding:8px; border-radius:6px; {div_style}">
+                <div style="font-weight:800; font-size:0.85rem; margin-bottom: 2px;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
+                <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:6px; padding:8px; border-left:3px solid {sd_col}; background:rgba(255,255,255,0.03); border-radius:4px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <div style="font-weight:800; font-size:0.85rem; color:{sd_col};">🧱 ARZ-TALEP (S&D) BÖLGELERİ:</div>
+                <div style="font-size:0.85rem; font-weight:600; color:#e2e8f0; margin-top:4px;">{sd_txt}</div>
+                <div class="edu-note" style="margin-top:6px; margin-bottom:0; color:#94a3b8;">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde potansiyel bir sıçrama (tepki) ihtimali doğabilir.</div>
+            </div>
+
+            <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin-top:8px; padding-top:8px;"></div> 
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.85rem; color:{vwap_col}; margin-bottom: 2px;">7. KURUMSAL REFERANS MALİYET (VWAP): {vwap_txt}</div>
+                <div class="edu-note" style="color:#94a3b8;">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: <span style="color:#e2e8f0; font-weight:600;">{vwap_data['val']:.2f}</span>)</div>
+            </div>
+
+            <div style="margin-bottom:4px;">
+                <div style="font-weight:700; font-size:0.85rem; color:{rs_col}; margin-bottom: 2px;">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
+                <div class="edu-note" style="color:#94a3b8; margin-bottom:0;">{rs_desc}</div>
+            </div>        
+        </div>
+        """
+        st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
         
-        # Yüzde durumuna ve yönüne göre RENKLENDİRİLMİŞ baskınlık metni
-        if is_index:
-            # Sembol bir ENDEKS ise YÜZDE GÖSTERME
-            if delta_val < 0:
-                if delta_yuzde >= 60.0:
-                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Agresif Satıcı Baskısı</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Sığ Satış (Gürültü)</span>"
-            elif delta_val > 0:
-                if delta_yuzde >= 60.0:
-                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Agresif Alıcı Baskısı</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Pasif Alım (Gürültü)</span>"
-            else:
-                baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge</span>"
-        else:
-            # Sembol bir HİSSE ise YÜZDEYİ GÖSTER
-            if delta_val < 0:
-                if delta_yuzde >= 60.0:
-                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
-            elif delta_val > 0:
-                if delta_yuzde >= 60.0:
-                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
-            else:
-                baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
+        if pa and "smart_volume" in pa:
+            sv = pa["smart_volume"]
+            bc = "#ef4444" if "SATICI" in sv["title"] or "ALTINDA" in sv["title"] else "#10b981" if "ALIM" in sv["title"] or "ÜZERİNDE" in sv["title"] else "#f59e0b"
+            bg = "rgba(239, 68, 68, 0.1)" if bc == "#ef4444" else "rgba(16, 185, 129, 0.1)" if bc == "#10b981" else "rgba(245, 158, 11, 0.1)"
             
-        # İstediğin formattaki alt metin (Lot kelimesi kalktı, yüzde geldi)
-        delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
-        
-        # Renk temaları
-        if "SATICI" in sv_data["title"] or "ALTINDA" in sv_data["title"]:
-            border_color = "#dc2626"; bg_color = "#fef2f2"
-        elif "ALIM" in sv_data["title"] or "ÜZERİNDE" in sv_data["title"]:
-            border_color = "#16a34a"; bg_color = "#f0fdf4"
-        else:
-            border_color = "#d97706"; bg_color = "#fffbeb"
+            # Yüzdeli Metin Kısmı
+            delta_val = sv.get("delta", 0)
+            delta_yuzde = sv.get("delta_yuzde", 0)
+            is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
+            if is_index:
+                if delta_val < 0:
+                    baskinlik = f"<span style='color: #ef4444; font-weight: 800;'>Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>Sığ Satış (Gürültü)</span>"
+                elif delta_val > 0:
+                    baskinlik = f"<span style='color: #10b981; font-weight: 800;'>Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>Pasif Alım (Gürültü)</span>"
+                else:
+                    baskinlik = f"<span style='color: #94a3b8; font-weight: 800;'>Kusursuz Denge</span>"
+            else:
+                if delta_val < 0:
+                    baskinlik = f"<span style='color: #ef4444; font-weight: 800;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
+                elif delta_val > 0:
+                    baskinlik = f"<span style='color: #10b981; font-weight: 800;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
+                else:
+                    baskinlik = f"<span style='color: #94a3b8; font-weight: 800;'>Kusursuz Denge (%0)</span>"
+                    
+            delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
+            
+            st.markdown(f"""
+            <div style="border: 1px solid {bc}; background-color: {bg}; padding: 12px; border-radius: 8px; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                <div style="font-weight: 800; font-size: 0.95rem; color: {bc}; margin-bottom: 6px; display:flex; align-items:center; gap:5px;">📊 SMART MONEY HACİM ANALİZİ</div>
+                <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0; margin-bottom:4px;">{sv['title']}</div>
+                <div style="font-style: italic; font-size: 0.85rem; color: #94a3b8; line-height: 1.4;">{sv['desc']}</div>
+                <div style="border-top: 1px dashed rgba(255,255,255,0.15); margin-top: 10px; padding-top: 8px; font-size: 0.85rem; color: #e2e8f0;">{delta_text}</div>
+            </div>""", unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div style="
-            border: 2px solid {border_color}; 
-            background-color: {bg_color}; 
-            padding: 12px; 
-            border-radius: 8px; 
-            margin-top: 10px; 
-            margin-bottom: 10px;">
-            <div style="font-weight: 800; font-size: 0.9rem; color: {border_color}; margin-bottom: 4px;">
-                📊 SMART MONEY HACİM ANALİZİ
+    else:
+        sd_col = "#16a34a" if sd_data and "Talep" in sd_data['Type'] else "#dc2626" if sd_data else "#64748B"
+        sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
+        sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
+        
+        if div_data['type'] == 'bearish': div_style = "background:#fef2f2; border-left:3px solid #dc2626; color:#991b1b;"
+        elif div_data['type'] == 'bullish': div_style = "background:#f0fdf4; border-left:3px solid #16a34a; color:#166534;"
+        else: div_style = "color:#475569;"
+
+        vwap_col = "#035f25" if v_diff < -2.0 else "#056d2b" if v_diff < 0.0 else "#034969" if v_diff < 8.0 else "#a36903" if v_diff < 15.0 else "#570214"
+        rs_col = "#059669" if alpha > 1.0 else "#470312" if alpha < -1.0 else "#475569"
+
+        html_content = f"""
+        <div class="info-card" style="border-top: 3px solid #6366f1;">
+            <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
+                <div class="edu-note">{pa['candle']['desc']}</div>
             </div>
-            <div style="font-weight: 700; font-size: 0.85rem; color: #0f172a;">{sv_data['title']}</div>
-            <div style="font-style: italic; font-size: 0.95rem; color: #1e3a8a; margin-top: 4px; line-height: 1.4;">{sv_data['desc']}</div>
-            <div style="border-top: 1px dashed {border_color}; margin-top: 10px; padding-top: 8px; font-size: 0.8rem; color: #1e3a8a;">
-                {delta_text}
+
+            <div style="margin-bottom:8px; border-left: 2px solid {sfp_color}; padding-left:6px;">
+                <div style="font-weight:700; font-size:0.8rem; color:{sfp_color};">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
+                <div class="edu-note">{pa['sfp']['desc']}</div>
             </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
+                <div class="edu-note">{pa['vol']['desc']}</div>
+            </div>
+
+            <div style="margin-top:4px; padding:4px; background:{obv_color}15; border-radius:4px; border-left:2px solid {obv_color};">
+                <div style="font-size:0.75rem; font-weight:700; color:{obv_color};">💰 {obv_title}</div>
+                <div style="font-size:0.7rem; color:#475569; font-style:italic;">{obv_desc}</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">4. BAĞLAM & KONUM: {pa['loc']['title']}</div>
+                <div class="edu-note">{pa['loc']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
+                <div class="edu-note">{pa['sq']['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:6px; padding:4px; border-radius:4px; {div_style}">
+                <div style="font-weight:700; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
+                <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
+            </div>
+
+            <div style="margin-bottom:6px; padding:6px; border-left:3px solid {sd_col}; background:#f8fafc; border-radius:4px;">
+                <div style="font-weight:700; font-size:0.8rem; color:{sd_col};">🧱 ARZ-TALEP (S&D) BÖLGELERİ:</div>
+                <div style="font-size:0.85rem; font-weight:600; color:#0f172a; margin-top:2px;">{sd_txt}</div>
+                <div class="edu-note" style="margin-top:4px; margin-bottom:0; color:inherit; opacity:0.9;">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde potansiyel bir sıçrama (tepki) ihtimali doğabilir.</div>
+            </div>
+
+            <div style="border-top: 1px dashed #cbd5e1; margin-top:8px; padding-top:6px;"></div> 
+
+            <div style="margin-bottom:8px;">
+                <div style="font-weight:700; font-size:0.8rem; color:{vwap_col};">7. KURUMSAL REFERANS MALİYET (VWAP): {vwap_txt}</div>
+                <div class="edu-note">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: {vwap_data['val']:.2f})</div>
+            </div>
+
+            <div style="margin-bottom:2px;">
+                <div style="font-weight:700; font-size:0.8rem; color:{rs_col};">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
+                <div class="edu-note" style="margin-bottom:0;">{rs_desc}</div>
+            </div>        
         </div>
-        """, unsafe_allow_html=True)
-    # --------------------------------------------------
+        """
+        st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
+        
+        if pa and "smart_volume" in pa:
+            sv = pa["smart_volume"]
+            bc = "#dc2626" if "SATICI" in sv["title"] or "ALTINDA" in sv["title"] else "#16a34a" if "ALIM" in sv["title"] or "ÜZERİNDE" in sv["title"] else "#d97706"
+            bg = "#fef2f2" if bc == "#dc2626" else "#f0fdf4" if bc == "#16a34a" else "#fffbeb"
+            
+            delta_val = sv.get("delta", 0)
+            delta_yuzde = sv.get("delta_yuzde", 0)
+            is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
+            if is_index:
+                if delta_val < 0:
+                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>Sığ Satış (Gürültü)</span>"
+                elif delta_val > 0:
+                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>Pasif Alım (Gürültü)</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge</span>"
+            else:
+                if delta_val < 0:
+                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
+                elif delta_val > 0:
+                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
+                else:
+                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
+                    
+            delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
+            
+            st.markdown(f"""
+            <div style="border: 2px solid {bc}; background-color: {bg}; padding: 12px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
+                <div style="font-weight: 800; font-size: 0.9rem; color: {bc}; margin-bottom: 4px;">📊 SMART MONEY HACİM ANALİZİ</div>
+                <div style="font-weight: 700; font-size: 0.85rem; color: #0f172a;">{sv['title']}</div>
+                <div style="font-style: italic; font-size: 0.95rem; color: #1e3a8a; margin-top: 4px; line-height: 1.4;">{sv['desc']}</div>
+                <div style="border-top: 1px dashed {bc}; margin-top: 10px; padding-top: 8px; font-size: 0.8rem; color: #1e3a8a;">{delta_text}</div>
+            </div>""", unsafe_allow_html=True)
+
 
 def render_ict_certification_card(ticker):
     """
@@ -5516,19 +5585,11 @@ def render_ict_certification_card(ticker):
 
 def render_ict_deep_panel(ticker):
     data = calculate_ict_deep_analysis(ticker)
+    if not data or data.get("status") == "Error": return st.warning(f"ICT Analiz Bekleniyor... ({data.get('msg', 'Veri Yok')})")
     
-    if not data or data.get("status") == "Error":
-        st.warning(f"ICT Analiz Bekleniyor... ({data.get('msg', 'Veri Yok')})")
-        return
-    
-    # ==============================================================================
-    # 1. ORİJİNAL İÇERİK MANTIĞI (ORİJİNAL METİNLER KORUNDU)
-    # ==============================================================================
-    
-    # Yapı Başlığı ve Açıklaması
+    # --- ORİJİNAL MANTIK VE METİNLER (DOKUNULMADI) ---
     struct_title = "MARKET YAPISI"
     struct_desc = "Piyasa kararsız."
-    
     if "MSS" in data['structure']:
         if "🐂" in data['structure']: 
             struct_title = "TREND DÖNÜŞÜ (BULLISH MSS)"
@@ -5546,130 +5607,85 @@ def render_ict_deep_panel(ticker):
         struct_title = "INTERNAL RANGE (Düşüş/Düzeltme)" if "bearish" in data['bias'] else "INTERNAL RANGE (Yükseliş/Tepki)"
         struct_desc = "Ana trendin tersine bir düzeltme hareketi (Internal Range) yaşanıyor olabilir. Piyasada kararsızlık hakim."
 
-    # Enerji Açıklaması
     energy_title = "ENERJİ DURUMU"
     energy_desc = "Zayıf (Hacimsiz Hareket)\nMum gövdeleri küçük, hacimsiz bir hareket. Kurumsal oyuncular henüz oyuna tam girmemiş olabilir. Kırılımlar tuzak olabilir."
     if "Güçlü" in data['displacement']: 
         energy_desc = "Güçlü (Displacement Var)\nFiyat güçlü ve hacimli mumlarla hareket ediyor. Bu 'Akıllı Para'nın (Smart Money) ayak sesidir."
 
-    # MT (Denge) Başlığı
     mt_title = "Kritik Denge Seviyesi"
     if "bearish" in data['bias']: mt_title = "Satıcılar Baskın"
     elif "bullish" in data['bias']: mt_title = "Alıcılar Baskın"
 
-    # Konum Açıklaması
     zone_desc = "Fiyat 'Ucuzluk' (Discount) bölgesinde. Kurumsal yatırımcılar bu seviyelerden alım yapmayı tercih eder."
     if "PREMIUM" in data['zone']: 
         zone_desc = "Fiyat 'Pahalılık' (Premium) bölgesinde. Kurumsal yatırımcılar bu bölgede satış yapmayı veya kar almayı sever."
 
-    # FVG Açıklaması
     fvg_desc = "Yakınlarda önemli bir dengesizlik boşluğu tespit edilemedi."
     if "Destek" in data['fvg_txt']: fvg_desc = "Fiyatın bu boşluğu doldurup destek alması beklenebilir."
     elif "Direnç" in data['fvg_txt']: fvg_desc = "Fiyatın bu boşluğu doldurup direnç görmesi beklenebilir."
 
-    # OB Açıklaması
     ob_desc = "Order Block: Yani Kurumsal oyuncuların son yüklü işlem yaptığı seviye. Fiyat buraya dönerse güçlü tepki alabilir. Eğer bu bölge fiyatı yeni bir tepeye (BOS) götürdüyse 'Kaliteli'dir. Götürmediyse zayıftır."
-    
-    # Likidite Açıklaması
     liq_desc = "Yani Fiyatın bir sonraki durağı. Stop emirlerinin (Likiditenin) biriktiği, fiyatın çekildiği hedef seviye."
-
-    # --- RENK PALETİ ---
-    main_color = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#7c3aed"
-    bg_light = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f5f3ff"
     
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
     info = fetch_stock_info(ticker)
     current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
 
-# --- ICT SMART MONEY ANALİZİ BÖLÜMÜ (GÜNCELLENMİŞ MODERN ARAYÜZ) ---
-
-# BAŞLIK (Hiyerarşik Bloklar - Revize Edilmiş Son Hali)
-    st.markdown(f"""
-<div class="info-card" style="border-top: 4px solid {main_color}; margin-bottom:10px; border-radius: 8px;">
-<div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px;">
-<span style="font-size:1.15rem; font-weight: 800;">🧠 ICT Smart Money Analizi: {display_ticker}</span>
-<span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:1.1rem; background: #f1f5f9; padding: 2px 8px; border-radius: 6px;">{current_price_str}</span>
-</div>
-</div>
-""", unsafe_allow_html=True)
-
-    c1, c2 = st.columns([1.4, 1])
-
-    with c1:
-        # Alt sütunlar: Market Yapısı ve Enerji
-        sc1, sc2 = st.columns(2)
-        
-        with sc1:
-            st.markdown(f"""
-<div style="border:2px solid {main_color}; background:{bg_light}; border-radius:8px; padding:12px; height: 100%;">
-<div style="font-weight:800; color:{main_color}; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{struct_title}</div>
-<div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{struct_desc}</div>
-</div>
-""", unsafe_allow_html=True)
-
-        with sc2:
-            st.markdown(f"""
-<div style="border:2px solid #94a3b8; background:#f8fafc; border-radius:8px; padding:12px; height: 100%;">
-<div style="font-weight:800; color:#7c3aed; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{energy_title}</div>
-<div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{energy_desc}</div>
-</div>
-""", unsafe_allow_html=True)
-
-        # MT (Denge/Alıcılar Baskın) ve Hedef Likidite Yanyana (Yeni 2 Sütun)
-        hc1, hc2 = st.columns(2)
-        
-        with hc1:
-            st.markdown(f"""
-<div style="background:#fff7ed; border:2px solid #ea580c; border-left:6px solid #ea580c; padding:12px; margin-top:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-radius:8px; height: 100%;">
-<div>
-<div style="font-weight:800; color:#c2410c; font-size:0.9rem;">🛡️ {mt_title}</div>
-<div style="font-size:0.75rem; color:#9a3412; margin-top: 2px;">Fiyat kritik orta noktanın altına sarktı/üstüne çıktı. Yapı bozulmuş olabilir.</div>
-</div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.1rem; color:#c2410c; background: white; padding: 4px 8px; border-radius: 4px; margin-left: 8px;">{data['mean_threshold']:.2f}</div>
-</div>
-""", unsafe_allow_html=True)
-
-        with hc2:
-            st.markdown(f"""
-<div style="border:2px solid #e11d48; background:#fff1f2; padding:12px; border-radius:8px; margin-top:12px; margin-bottom:12px; height: 100%;">
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-<div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase;">🎯 HEDEF LİKİDİTE</div>
-<div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.2rem; color:#be185d; background: white; padding: 2px 8px; border-radius: 6px;">{data['target']:.2f}</div>
-</div>
-<div style="font-size:0.8rem; color:#9f1239; line-height:1.3;">{liq_desc}</div>
-</div>
-""", unsafe_allow_html=True)
-
-        # The Bottom Line (Sonuç) Tam Genişlik - Koyu Arka Plan, 2px Kalın Çerçeve
+    if st.session_state.dark_mode:
+        mc = "#10b981" if "bullish" in data['bias'] else "#ef4444" if "bearish" in data['bias'] else "#8b5cf6"
+        bg = "rgba(16, 185, 129, 0.1)" if "bullish" in data['bias'] else "rgba(239, 68, 68, 0.1)" if "bearish" in data['bias'] else "rgba(139, 92, 246, 0.1)"
         st.markdown(f"""
-<div style="background:#dbeafe; border:2px solid #3b82f6; border-radius:8px; padding:16px; text-align: center;">
-<div style="font-weight:800; color:#1e40af; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div>
-<div style="font-size:1.05rem; color:#1e3a8a; font-style:italic; line-height:1.4; font-weight: 500;">"{data.get('bottom_line', '-')}"</div>
-</div>
-""", unsafe_allow_html=True)
-
-    with c2:
+        <div class="info-card" style="border-top: 4px solid {mc}; margin-bottom:10px; border-radius: 8px; background: rgba(17, 24, 39, 0.6); border: 1px solid rgba(255,255,255,0.05);">
+            <div class="info-header" style="color:#38bdf8; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px; border-bottom: none;">
+                <span style="font-size:1.15rem; font-weight: 800;">🧠 ICT Smart Money Analizi: {display_ticker}</span>
+                <span style="font-family:'JetBrains Mono'; font-weight:800; color:#10b981; font-size:1.1rem; background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">{current_price_str}</span>
+            </div>
+        </div>""", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns([1.4, 1])
+        with c1:
+            sc1, sc2 = st.columns(2)
+            with sc1: st.markdown(f"""<div style="border:1px solid {mc}; background:{bg}; border-radius:8px; padding:12px; height: 100%;"><div style="font-weight:800; color:{mc}; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{struct_title}</div><div style="font-size:0.8rem; color:#a3a8b8; line-height:1.4;">{struct_desc}</div></div>""", unsafe_allow_html=True)
+            with sc2: st.markdown(f"""<div style="border:1px solid rgba(255,255,255,0.1); background:rgba(31, 41, 55, 0.5); border-radius:8px; padding:12px; height: 100%;"><div style="font-weight:800; color:#a78bfa; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{energy_title}</div><div style="font-size:0.8rem; color:#a3a8b8; line-height:1.4;">{energy_desc}</div></div>""", unsafe_allow_html=True)
+            hc1, hc2 = st.columns(2)
+            with hc1: st.markdown(f"""<div style="background:rgba(245, 158, 11, 0.1); border:1px solid rgba(245, 158, 11, 0.3); border-left:4px solid #f59e0b; padding:12px; margin-top:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-radius:8px; height: 100%;"><div><div style="font-weight:800; color:#fbbf24; font-size:0.9rem;">🛡️ {mt_title}</div><div style="font-size:0.75rem; color:#a3a8b8; margin-top: 2px;">Fiyat kritik orta noktanın altına sarktı/üstüne çıktı. Yapı bozulmuş olabilir.</div></div><div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.1rem; color:#fbbf24; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; margin-left: 8px;">{data['mean_threshold']:.2f}</div></div>""", unsafe_allow_html=True)
+            with hc2: st.markdown(f"""<div style="border:1px solid rgba(239, 68, 68, 0.3); background:rgba(239, 68, 68, 0.1); padding:12px; border-radius:8px; margin-top:12px; margin-bottom:12px; height: 100%;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><div style="font-weight:800; color:#f87171; font-size:0.9rem; text-transform: uppercase;">🎯 HEDEF LİKİDİTE</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.2rem; color:#f87171; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 6px;">{data['target']:.2f}</div></div><div style="font-size:0.8rem; color:#a3a8b8; line-height:1.3;">{liq_desc}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:rgba(56, 189, 248, 0.1); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:16px; text-align: center;"><div style="font-weight:800; color:#7dd3fc; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#e2e8f0; font-style:italic; line-height:1.4; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+            <div style="border:1px solid rgba(255,255,255,0.1); background:rgba(17, 24, 39, 0.6); border-radius:8px; padding:16px; height:100%;">
+                <div style="font-weight:800; color:#f472b6; font-size:0.9rem; text-transform: uppercase; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px; margin-bottom:12px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#fb7185; font-size:0.85rem; margin-bottom: 2px;">KONUM: <span style="color:#e2e8f0; font-weight: 600; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">{data['zone']}</span></div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{zone_desc}</div></div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#c084fc; font-size:0.85rem; margin-bottom: 2px;">GAP (FVG): <span style="color:#e2e8f0; font-family: 'JetBrains Mono'; font-weight: 700; background: rgba(139, 92, 246, 0.15); padding: 2px 6px; border-radius: 4px;">{data['fvg_txt']}</span></div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{fvg_desc}</div></div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#38bdf8; font-size:0.85rem; margin-bottom: 2px;">AKTİF OB: <span style="color:#e2e8f0; font-family: 'JetBrains Mono'; font-weight: 700; background: rgba(56, 189, 248, 0.15); padding: 2px 6px; border-radius: 4px;">{data['ob_txt']}</span></div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{ob_desc}</div></div>
+                <div style="margin-bottom:14px; background: rgba(245, 158, 11, 0.05); padding: 8px; border-radius: 6px; border-left: 3px solid #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2);"><div style="font-weight:800; color:#fbbf24; font-size:0.85rem; margin-bottom: 4px;">HAVUZ / SWEEP: <span style="color:#e2e8f0; font-weight: 600;">{data.get('eqh_eql_txt', '-')} | {data.get('sweep_txt', '-')}</span></div><div style="font-size:0.75rem; color:#94a3b8; line-height:1.3;">🧲 <b>Mıknatıs & Av:</b> EQH/EQL, potansiyel tuzak alanlarıdır. Fiyat buraları kırıp hızla geri dönüyorsa (Sweep), büyük fonlar stopları patlatıp yönü değiştiriyor olabilir.</div></div>
+            </div>""", unsafe_allow_html=True)
+    else:
+        mc = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#7c3aed"
+        bg = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f5f3ff"
         st.markdown(f"""
-<div style="border:2px solid #cbd5e1; background:white; border-radius:8px; padding:16px; height:100%;">
-<div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin-bottom:12px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
-<div style="margin-bottom:14px;">
-<div style="font-weight:800; color:#9f1239; font-size:0.85rem; margin-bottom: 2px;">KONUM: <span style="color:#0f172a; font-weight: 600; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{data['zone']}</span></div>
-<div style="font-size:0.8rem; color:#475569; line-height:1.3;">{zone_desc}</div>
-</div>
-<div style="margin-bottom:14px;">
-<div style="font-weight:800; color:#7e22ce; font-size:0.85rem; margin-bottom: 2px;">GAP (FVG): <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #f3e8ff; padding: 2px 6px; border-radius: 4px;">{data['fvg_txt']}</span></div>
-<div style="font-size:0.8rem; color:#475569; line-height:1.3;">{fvg_desc}</div>
-</div>
-<div style="margin-bottom:14px;">
-<div style="font-weight:800; color:#0369a1; font-size:0.85rem; margin-bottom: 2px;">AKTİF OB: <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">{data['ob_txt']}</span></div>
-<div style="font-size:0.8rem; color:#475569; line-height:1.3;">{ob_desc}</div>
-</div>
-<div style="margin-bottom:14px; background: #f8fafc; padding: 8px; border-radius: 6px; border-left: 4px solid #ea580c; border: 2px solid #cbd5e1;">
-<div style="font-weight:800; color:#ea580c; font-size:0.85rem; margin-bottom: 4px;">HAVUZ / SWEEP: <span style="color:#0f172a; font-weight: 600;">{data.get('eqh_eql_txt', '-')} | {data.get('sweep_txt', '-')}</span></div>
-<div style="font-size:0.75rem; color:#475569; line-height:1.3;">🧲 <b>Mıknatıs & Av:</b> EQH/EQL, potansiyel tuzak alanlarıdır. Fiyat buraları kırıp hızla geri dönüyorsa (Sweep), büyük fonlar stopları patlatıp yönü değiştiriyor olabilir.</div>
-</div>
-</div>
-""", unsafe_allow_html=True)
+        <div class="info-card" style="border-top: 4px solid {mc}; margin-bottom:10px; border-radius: 8px;">
+            <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px;"><span style="font-size:1.15rem; font-weight: 800;">🧠 ICT Smart Money Analizi: {display_ticker}</span><span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:1.1rem; background: #f1f5f9; padding: 2px 8px; border-radius: 6px;">{current_price_str}</span></div>
+        </div>""", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns([1.4, 1])
+        with c1:
+            sc1, sc2 = st.columns(2)
+            with sc1: st.markdown(f"""<div style="border:2px solid {mc}; background:{bg}; border-radius:8px; padding:12px; height: 100%;"><div style="font-weight:800; color:{mc}; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{struct_title}</div><div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{struct_desc}</div></div>""", unsafe_allow_html=True)
+            with sc2: st.markdown(f"""<div style="border:2px solid #94a3b8; background:#f8fafc; border-radius:8px; padding:12px; height: 100%;"><div style="font-weight:800; color:#7c3aed; font-size:0.85rem; text-transform: uppercase; margin-bottom:6px;">{energy_title}</div><div style="font-size:0.8rem; color:#1e3a8a; line-height:1.4;">{energy_desc}</div></div>""", unsafe_allow_html=True)
+            hc1, hc2 = st.columns(2)
+            with hc1: st.markdown(f"""<div style="background:#fff7ed; border:2px solid #ea580c; border-left:6px solid #ea580c; padding:12px; margin-top:12px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-radius:8px; height: 100%;"><div><div style="font-weight:800; color:#c2410c; font-size:0.9rem;">🛡️ {mt_title}</div><div style="font-size:0.75rem; color:#9a3412; margin-top: 2px;">Fiyat kritik orta noktanın altına sarktı/üstüne çıktı. Yapı bozulmuş olabilir.</div></div><div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.1rem; color:#c2410c; background: white; padding: 4px 8px; border-radius: 4px; margin-left: 8px;">{data['mean_threshold']:.2f}</div></div>""", unsafe_allow_html=True)
+            with hc2: st.markdown(f"""<div style="border:2px solid #e11d48; background:#fff1f2; padding:12px; border-radius:8px; margin-top:12px; margin-bottom:12px; height: 100%;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase;">🎯 HEDEF LİKİDİTE</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.2rem; color:#be185d; background: white; padding: 2px 8px; border-radius: 6px;">{data['target']:.2f}</div></div><div style="font-size:0.8rem; color:#9f1239; line-height:1.3;">{liq_desc}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:#dbeafe; border:2px solid #3b82f6; border-radius:8px; padding:16px; text-align: center;"><div style="font-weight:800; color:#1e40af; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#1e3a8a; font-style:italic; line-height:1.4; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""
+            <div style="border:2px solid #cbd5e1; background:white; border-radius:8px; padding:16px; height:100%;">
+                <div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin-bottom:12px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#9f1239; font-size:0.85rem; margin-bottom: 2px;">KONUM: <span style="color:#0f172a; font-weight: 600; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{data['zone']}</span></div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{zone_desc}</div></div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#7e22ce; font-size:0.85rem; margin-bottom: 2px;">GAP (FVG): <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #f3e8ff; padding: 2px 6px; border-radius: 4px;">{data['fvg_txt']}</span></div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{fvg_desc}</div></div>
+                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#0369a1; font-size:0.85rem; margin-bottom: 2px;">AKTİF OB: <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">{data['ob_txt']}</span></div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{ob_desc}</div></div>
+                <div style="margin-bottom:14px; background: #f8fafc; padding: 8px; border-radius: 6px; border-left: 4px solid #ea580c; border: 2px solid #cbd5e1;"><div style="font-weight:800; color:#ea580c; font-size:0.85rem; margin-bottom: 4px;">HAVUZ / SWEEP: <span style="color:#0f172a; font-weight: 600;">{data.get('eqh_eql_txt', '-')} | {data.get('sweep_txt', '-')}</span></div><div style="font-size:0.75rem; color:#475569; line-height:1.3;">🧲 <b>Mıknatıs & Av:</b> EQH/EQL, potansiyel tuzak alanlarıdır. Fiyat buraları kırıp hızla geri dönüyorsa (Sweep), büyük fonlar stopları patlatıp yönü değiştiriyor olabilir.</div></div>
+            </div>""", unsafe_allow_html=True)
 
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
@@ -5677,48 +5693,35 @@ def render_levels_card(ticker):
     display_ticker = ticker.replace(".IS", "").replace("=F", "").replace("-USD", "")
     info = fetch_stock_info(ticker)
     current_price_str = f"{info.get('price', 0):.2f}" if info else "0.00"
-    # Renk ve İkon Ayarları
-    is_bullish = data['st_dir'] == 1
     
-    st_color = "#16a34a" if is_bullish else "#dc2626"
+    is_bullish = data['st_dir'] == 1
+    st_color = "#10b981" if is_bullish else "#ef4444" if st.session_state.dark_mode else "#16a34a" if is_bullish else "#dc2626"
     st_text = "YÜKSELİŞ (AL)" if is_bullish else "DÜŞÜŞ (SAT)"
     st_icon = "🐂" if is_bullish else "🐻"
     
-    # --- DİNAMİK METİN AYARLARI ---
+    # --- ORİJİNAL MANTIK VE METİNLER (DOKUNULMADI) ---
     if is_bullish:
-        # Yükseliş Senaryosu
         st_label = "Takip Eden Stop (Stop-Loss)"
         st_desc = "⚠️ Fiyat bu seviyenin <b>altına inerse</b> trend bozulur, stop olunmalıdır."
-        
-        # Golden Pocket Metni (Yükseliş)
         gp_desc_text = "Kurumsal alım bölgesi (İdeal Giriş/Destek)."
-        gp_desc_color = "#92400e" # Amber/Kahve
-        
-        # Dinamik Kutu Metinleri (Yükseliş)
+        gp_desc_color = "#92400e" 
         res_ui_label = "EN YAKIN DİRENÇ 🚧"
         res_ui_desc = "Zorlu tavan. Geçilirse yükseliş hızlanır."
         sup_ui_label = "EN YAKIN DESTEK 🛡️"
         sup_ui_desc = "İlk savunma hattı. Düşüşü tutmalı."
     else:
-        # Düşüş Senaryosu
         st_label = "Trend Dönüşü (Direnç)"
         st_desc = "🚀 Piyasa yapıcının sipariş akışını (Order Flow) koruduğu son hattır. Yani, Fiyat bu seviyenin <b>üstüne çıkarsa</b> düşüş biter, yükseliş başlar."
-        
-        # Golden Pocket Metni (Düşüş)
         gp_desc_text = "⚠️ Güçlü Direnç / Tepki Satış Bölgesi (Short). Büyük fonların 'Discount' (İndirimli) fiyatlardan maliyetlenmek veya dağıtım yapmak için beklediği en stratejik denge noktasıdır."
-        gp_desc_color = "#b91c1c" # Kırmızı
-        
-        # Dinamik Kutu Metinleri (Düşüş - ICT Uyumlu)
+        gp_desc_color = "#b91c1c" 
         res_ui_label = "O.T.E. DİRENCİ"
         res_ui_desc = "Akıllı Para short arar. Trend yönünde satış bölgesidir. Fiyatın Fibonacci O.T.E. aralığına girmesi 'pahalı' bölgeye işarettir. Akıllı para, buradaki perakende alımları satış likiditesi olarak kullanır."
         sup_ui_label = "AŞAĞIDAKİ LİKİDİTE HEDEFİ"
         sup_ui_desc = "Düşüş trendinde destek aranmaz, kırılması beklenir. Bu seviyeler destek değil, fiyatın stopları patlatmak için çekildiği birer mıknatıstır. Kurumsal çıkış likiditesi bu bölgede aranır."
     
-    # Fibonacci Formatlama
     sup_lbl, sup_val = data['nearest_sup']
     res_lbl, res_val = data['nearest_res']
     
-    # --- GÖRSEL DÜZELTME ---
     if res_lbl == "ZİRVE AŞIMI":
         res_display = "---"
         res_desc_final = "🚀 Fiyat tüm dirençleri kırdı (Price Discovery)."
@@ -5726,76 +5729,141 @@ def render_levels_card(ticker):
         res_display = f"{res_val:.2f}"
         res_desc_final = res_ui_desc
 
-    # --- GOLDEN POCKET DEĞERİ ---
     gp_key = next((k for k in data['fibs'].keys() if "Golden" in k), "0.618 (Golden)")
     gp_val = data['fibs'].get(gp_key, 0)
     
-    # --- 4 SÜTUNLU YATAY TASARIM (BOŞLUKLAR DÜZELTİLDİ) ---
-    html_content = f"""
-    <div class="info-card" style="border-top: 3px solid #8b5cf6;">
-        <div class="info-header" style="color:#4c1d95; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px; font-size:1.1rem; font-weight: 800;">
-        <span>📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</span>
-        <span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:1.1rem; background: #f1f5f9; padding: 2px 8px; border-radius: 6px;">{current_price_str}</span>
-        </div>
-        
-        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+    if st.session_state.dark_mode:
+        html_content = f"""
+        <div class="info-card" style="border-top: 3px solid #8b5cf6; background: rgba(17, 24, 39, 0.6); border: 1px solid rgba(255,255,255,0.05);">
+            <div class="info-header" style="color:#a78bfa; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px; font-size:1.1rem; font-weight: 800; border-bottom:none;">
+            <span>📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</span>
+            <span style="font-family:'JetBrains Mono'; font-weight:800; color:#10b981; font-size:1.1rem; background: rgba(0,0,0,0.4); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);">{current_price_str}</span>
+            </div>
             
-            <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <div style="font-weight:700; color:{st_color} ; font-size:0.85rem;">{st_icon} SuperTrend</div>
-                    <div style="font-weight:800; color:{st_color}; font-size:0.85rem; margin-top:2px;">{st_text}</div>
-                </div>
-                <div style="margin-top:8px;">
-                    <div style="font-size:0.85rem; color:#64748B;">{st_label}:</div>
-                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:0.9rem;">{data['st_val']:.2f}</div>
-                    <div style="font-size:0.85rem; color:#6b7280; font-style:italic; margin-top:6px; border-top:1px dashed {st_color}40; padding-top:4px; line-height:1.2;">
-                        {st_desc}
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+                
+                <div style="background:rgba(255,255,255,0.05); padding:8px; border-radius:5px; border:1px solid {st_color}; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-weight:700; color:{st_color} ; font-size:0.85rem;">{st_icon} SuperTrend</div>
+                        <div style="font-weight:800; color:{st_color}; font-size:0.85rem; margin-top:2px;">{st_text}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#94a3b8;">{st_label}:</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#e2e8f0; font-size:0.9rem;">{data['st_val']:.2f}</div>
+                        <div style="font-size:0.85rem; color:#94a3b8; font-style:italic; margin-top:6px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:4px; line-height:1.2;">
+                            {st_desc}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div style="background:#f0fdf4; padding:8px; border-radius:4px; border:1px solid #bbf7d0; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <div style="font-size:0.85rem; color:#166534; font-weight:700;">{res_ui_label}</div>
-                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#15803d; font-size:1rem; margin-top:2px;">{res_display}</div>
-                </div>
-                <div style="margin-top:8px;">
-                    <div style="font-size:0.85rem; color:#166534; font-weight:600;">Fib {res_lbl}</div>
-                    <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #bbf7d0; padding-top:4px; line-height:1.2;">
-                        {res_desc_final}
+                <div style="background:rgba(16, 185, 129, 0.05); padding:8px; border-radius:4px; border:1px solid rgba(16, 185, 129, 0.3); display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; color:#34d399; font-weight:700;">{res_ui_label}</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#10b981; font-size:1rem; margin-top:2px;">{res_display}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#34d399; font-weight:600;">Fib {res_lbl}</div>
+                        <div style="font-size:0.85rem; color:#94a3b8; font-style:italic; margin-top:6px; border-top:1px dashed rgba(16, 185, 129, 0.2); padding-top:4px; line-height:1.2;">
+                            {res_desc_final}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div style="background:#fef2f2; padding:8px; border-radius:4px; border:1px solid #fecaca; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <div style="font-size:0.85rem; color:#991b1b; font-weight:700;">{sup_ui_label}</div>
-                    <div style="font-family:'JetBrains Mono'; font-weight:800; color:#b91c1c; font-size:1rem; margin-top:2px;">{sup_val:.2f}</div>
-                </div>
-                <div style="margin-top:8px;">
-                    <div style="font-size:0.85rem; color:#991b1b; font-weight:600;">Fib {sup_lbl}</div>
-                    <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #fecaca; padding-top:4px; line-height:1.2;">
-                        {sup_ui_desc}
+                <div style="background:rgba(239, 68, 68, 0.05); padding:8px; border-radius:4px; border:1px solid rgba(239, 68, 68, 0.3); display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; color:#f87171; font-weight:700;">{sup_ui_label}</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#ef4444; font-size:1rem; margin-top:2px;">{sup_val:.2f}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#f87171; font-weight:600;">Fib {sup_lbl}</div>
+                        <div style="font-size:0.85rem; color:#94a3b8; font-style:italic; margin-top:6px; border-top:1px dashed rgba(239, 68, 68, 0.2); padding-top:4px; line-height:1.2;">
+                            {sup_ui_desc}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div style="background:#fffbeb; padding:8px; border-radius:4px; border:1px dashed #f59e0b; display:flex; flex-direction:column; justify-content:space-between;">
-                <div>
-                    <div style="font-size:0.85rem; font-weight:700; color:#92400e;">⚜️ GOLDEN POCKET</div>
-                    <div style="font-family:'JetBrains Mono'; font-size:1rem; font-weight:800; color:#b45309; margin-top:2px;">{gp_val:.2f}</div>
-                </div>
-                <div style="margin-top:8px;">
-                    <div style="font-size:0.85rem; color:#92400e; font-weight:600;">Kurumsal Bölge</div>
-                    <div style="font-size:0.85rem; color:{gp_desc_color}; font-style:italic; margin-top:6px; border-top:1px dashed #f59e0b; padding-top:4px; line-height:1.2;">
-                        {gp_desc_text}
+                <div style="background:rgba(245, 158, 11, 0.05); padding:8px; border-radius:4px; border:1px dashed #f59e0b; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; font-weight:700; color:#fbbf24;">⚜️ GOLDEN POCKET</div>
+                        <div style="font-family:'JetBrains Mono'; font-size:1rem; font-weight:800; color:#f59e0b; margin-top:2px;">{gp_val:.2f}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#fbbf24; font-weight:600;">Kurumsal Bölge</div>
+                        <div style="font-size:0.85rem; color:#d97706; font-style:italic; margin-top:6px; border-top:1px dashed rgba(245, 158, 11, 0.3); padding-top:4px; line-height:1.2;">
+                            {gp_desc_text}
+                        </div>
                     </div>
                 </div>
-            </div>
 
+            </div>
         </div>
-    </div>
-    """
+        """
+    else:
+        html_content = f"""
+        <div class="info-card" style="border-top: 3px solid #8b5cf6;">
+            <div class="info-header" style="color:#4c1d95; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding: 3px 12px; font-size:1.1rem; font-weight: 800;">
+            <span>📐 Orta Vadeli Trend (1-6 ay): {display_ticker}</span>
+            <span style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:1.1rem; background: #f1f5f9; padding: 2px 8px; border-radius: 6px;">{current_price_str}</span>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+                
+                <div style="background:{st_color}15; padding:8px; border-radius:5px; border:1px solid {st_color}; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-weight:700; color:{st_color} ; font-size:0.85rem;">{st_icon} SuperTrend</div>
+                        <div style="font-weight:800; color:{st_color}; font-size:0.85rem; margin-top:2px;">{st_text}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#64748B;">{st_label}:</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#0f172a; font-size:0.9rem;">{data['st_val']:.2f}</div>
+                        <div style="font-size:0.85rem; color:#6b7280; font-style:italic; margin-top:6px; border-top:1px dashed {st_color}40; padding-top:4px; line-height:1.2;">
+                            {st_desc}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#f0fdf4; padding:8px; border-radius:4px; border:1px solid #bbf7d0; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; color:#166534; font-weight:700;">{res_ui_label}</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#15803d; font-size:1rem; margin-top:2px;">{res_display}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#166534; font-weight:600;">Fib {res_lbl}</div>
+                        <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #bbf7d0; padding-top:4px; line-height:1.2;">
+                            {res_desc_final}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#fef2f2; padding:8px; border-radius:4px; border:1px solid #fecaca; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; color:#991b1b; font-weight:700;">{sup_ui_label}</div>
+                        <div style="font-family:'JetBrains Mono'; font-weight:800; color:#b91c1c; font-size:1rem; margin-top:2px;">{sup_val:.2f}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#991b1b; font-weight:600;">Fib {sup_lbl}</div>
+                        <div style="font-size:0.85rem; color:#64748B; font-style:italic; margin-top:6px; border-top:1px dashed #fecaca; padding-top:4px; line-height:1.2;">
+                            {sup_ui_desc}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background:#fffbeb; padding:8px; border-radius:4px; border:1px dashed #f59e0b; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div style="font-size:0.85rem; font-weight:700; color:#92400e;">⚜️ GOLDEN POCKET</div>
+                        <div style="font-family:'JetBrains Mono'; font-size:1rem; font-weight:800; color:#b45309; margin-top:2px;">{gp_val:.2f}</div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <div style="font-size:0.85rem; color:#92400e; font-weight:600;">Kurumsal Bölge</div>
+                        <div style="font-size:0.85rem; color:{gp_desc_color}; font-style:italic; margin-top:6px; border-top:1px dashed #f59e0b; padding-top:4px; line-height:1.2;">
+                            {gp_desc_text}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        """
     st.markdown(html_content.replace("\n", " "), unsafe_allow_html=True)
 
 def render_minervini_panel_v2(ticker):
@@ -5880,8 +5948,8 @@ def render_minervini_panel_v2(ticker):
 # 5. SIDEBAR UI
 # ==============================================================================
 with st.sidebar:
-    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div><hr style="border:0; border-top: 1px solid #e5e7eb; margin-top:5px; margin-bottom:10px;">""", unsafe_allow_html=True)
-
+    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
+    
     # --- YENİ EKLENEN: TEKNİK SEVİYELER (MA) PANELİ ---
     try:
         if "ticker" in st.session_state and st.session_state.ticker:
@@ -6217,16 +6285,23 @@ EMA 144: {ma_status(ema144, current_price)}
 # 6. ANA SAYFA (MAIN UI) - GÜNCELLENMİŞ MASTER SCAN VERSİYONU
 # ==============================================================================
 
-# Üst Menü Düzeni: Kategori | Varlık Listesi | DEV TARAMA BUTONU
-col_cat, col_ass, col_btn = st.columns([1.5, 2, 1.5])
+# Üst Menü Düzeni: Kategori | Varlık Listesi | DEV TARAMA BUTONU | TEMA BUTONU
+col_theme, col_cat, col_ass, col_btn = st.columns([1., 1.5, 1.5, 1])
 
-# 1. Kategori Seçimi
+# 1. TEMA DEĞİŞTİRME BUTONU (YENİ)
+with col_theme:
+    mode_text = "🌙 Karanlık Mod" if not st.session_state.dark_mode else "☀️ Aydınlık Mod"
+    if st.button(mode_text, use_container_width=True):
+        st.session_state.dark_mode = not st.session_state.dark_mode
+        st.rerun()
+
+# 2. Kategori Seçimi
 try: cat_index = list(ASSET_GROUPS.keys()).index(st.session_state.category)
 except ValueError: cat_index = 0
 with col_cat:
     st.selectbox("Kategori", list(ASSET_GROUPS.keys()), index=cat_index, key="selected_category_key", on_change=on_category_change, label_visibility="collapsed")
 
-# 2. Varlık Listesi (Dropdown)
+# 3. Varlık Listesi (Dropdown)
 with col_ass:
     current_opts = ASSET_GROUPS.get(st.session_state.category, ASSET_GROUPS[INITIAL_CATEGORY]).copy()
     active_ticker = st.session_state.ticker
@@ -6238,7 +6313,7 @@ with col_ass:
         except ValueError: asset_idx = 0
     st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=lambda x: x.replace(".IS", ""))
 
-# 3. MASTER SCAN BUTONU (Eski arama kutusu yerine geldi)
+# 4. MASTER SCAN BUTONU (Eski arama kutusu yerine geldi)
 with col_btn:
     # Butona basıldığında çalışacak sihirli kod
     if st.button("🕵️ TÜM PİYASAYI TARA (MASTER SCAN)", type="primary", use_container_width=True):
@@ -7629,21 +7704,20 @@ with col_left:
         if score_pros:
             for p in score_pros:
                 # DİKKAT: Baştaki hardcoded ✅ işaretini kaldırdık, çünkü fonksiyondan geliyor!
-                pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
+                if st.session_state.dark_mode:
+                    pos_items_html += f"<div style='font-size:0.8rem; color:#e2e8f0; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(16, 185, 129, 0.15);'>{p}</div>"
+                else:
+                    pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
         else:
-            pos_items_html = "<div style='font-size:0.8rem; color:#14532d; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
+            if st.session_state.dark_mode:
+                pos_items_html = "<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
+            else:
+                pos_items_html = "<div style='font-size:0.8rem; color:#14532d; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
 
-        st.markdown(f"""
-        <div class="custom-scroll" style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);">
-            <div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:10px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;">
-                <span>POZİTİF ETKENLER</span>
-                <span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span>
-            </div>
-            <div style="padding:8px 12px;">
-                {pos_items_html}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        if st.session_state.dark_mode:
+            st.markdown(f"""<div class="custom-scroll" style="background-color:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#10b981; background-color:rgba(16, 185, 129, 0.15); padding:10px 12px; border-bottom:1px solid rgba(16, 185, 129, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>POZİTİF ETKENLER</span><span style="background-color:#10b981; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""<div class="custom-scroll" style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:10px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>POZİTİF ETKENLER</span><span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
 
     # 3. SÜTUN: NEGATİF ETKENLER (KIRMIZI KUTU)
     with c_neg:
@@ -7652,59 +7726,78 @@ with col_left:
             for c in score_cons:
                 # DİKKAT: Baştaki hardcoded ❌ işaretini kaldırdık, çünkü cons listesine sadece 0 alanları attık.
                 # Arayüzde net bir kırmızı çarpı görünmesi için buraya sadece ❌ ekliyoruz.
-                neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
+                if st.session_state.dark_mode:
+                    neg_items_html += f"<div style='font-size:0.8rem; color:#e2e8f0; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(239, 68, 68, 0.15);'>❌ {c}</div>"
+                else:
+                    neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
         else:
-            neg_items_html = "<div style='font-size:0.8rem; color:#7f1d1d; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
+            if st.session_state.dark_mode:
+                neg_items_html = "<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
+            else:
+                neg_items_html = "<div style='font-size:0.8rem; color:#7f1d1d; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
 
-        st.markdown(f"""
-        <div class="custom-scroll" style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);">
-            <div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:10px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;">
-                <span>NEGATİF ETKENLER</span>
-                <span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span>
-            </div>
-            <div style="padding:8px 12px;">
-                {neg_items_html}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        if st.session_state.dark_mode:
+            st.markdown(f"""<div class="custom-scroll" style="background-color:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#ef4444; background-color:rgba(239, 68, 68, 0.15); padding:10px 12px; border-bottom:1px solid rgba(239, 68, 68, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>NEGATİF ETKENLER</span><span style="background-color:#ef4444; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""<div class="custom-scroll" style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:10px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>NEGATİF ETKENLER</span><span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
 
     # 4. SÜTUN: HAREKETLİ ORTALAMALAR (YENİ - MAVİ KUTU / 2 SÜTUNLU)
     with c_ma:
         ma_data = get_ma_data_for_ui(st.session_state.ticker)
-        
+
         if ma_data:
-            c = ma_data["close"]
-            
+            c_val = ma_data["close"]
+
             def render_ma_row(name, val, current_price):
                 if pd.isna(val) or val == 0: return ""
-                
+
                 # Fiyat üstündeyse yeşil, altındaysa kırmızı daire
                 color_icon = "🟢" if current_price > val else "🔴"
-                
+
                 # 1000 ve üzeri değerlerde ondalık kısmı at, virgülle ayır (Örn: 13,915)
                 # 1000 altı değerlerde ise 2 küsurat bırak (Örn: 15.42)
                 if val >= 1000:
                     val_str = f"{int(val):,}"
                 else:
                     val_str = f"{val:,.2f}"
-                
+
                 # İki sütuna sığması için font-size'ı 0.8rem'den 0.75rem'e düşürdük
-                return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
-            
+                if st.session_state.dark_mode:
+                    return f"<div style='font-size:0.75rem; color:#a3a8b8; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span style='color:#e2e8f0;'><b>{val_str}</b> {color_icon}</span></div>"
+                else:
+                    return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
+
             # EMA'ları ve SMA'ları ayrı ayrı HTML değişkenlerine alıyoruz
             ema_html = ""
-            ema_html += render_ma_row("EMA 5", ma_data["ema5"], c)
-            ema_html += render_ma_row("EMA 8", ma_data["ema8"], c)
-            ema_html += render_ma_row("EMA 13", ma_data["ema13"], c)
-            
+            ema_html += render_ma_row("EMA 5", ma_data["ema5"], c_val)
+            ema_html += render_ma_row("EMA 8", ma_data["ema8"], c_val)
+            ema_html += render_ma_row("EMA 13", ma_data["ema13"], c_val)
+
             sma_html = ""
-            sma_html += render_ma_row("SMA 50", ma_data["sma50"], c)
-            sma_html += render_ma_row("SMA 100", ma_data["sma100"], c)
-            sma_html += render_ma_row("SMA 200", ma_data["sma200"], c)
-            
+            sma_html += render_ma_row("SMA 50", ma_data["sma50"], c_val)
+            sma_html += render_ma_row("SMA 100", ma_data["sma100"], c_val)
+            sma_html += render_ma_row("SMA 200", ma_data["sma200"], c_val)
+
             # CSS Grid (display: grid; grid-template-columns: 1fr 1fr;) ile ikiye bölüyoruz
             # Streamlit hatası almamak için HTML bloğunu TAMAMEN sola yaslıyoruz
-            final_html = f"""
+            if st.session_state.dark_mode:
+                final_html = f"""
+<div class="custom-scroll" style="background-color:rgba(17, 24, 39, 0.6); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
+<div style="font-weight:800; font-size:0.85rem; color:#38bdf8; background-color:rgba(56, 189, 248, 0.15); padding:10px 12px; border-bottom:1px solid rgba(56, 189, 248, 0.3); position:sticky; top:0; z-index:10; text-align:center; backdrop-filter: blur(4px);">
+HAREKETLİ ORTALAMALAR 
+</div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px;">
+<div>
+{ema_html}
+</div>
+<div>
+{sma_html}
+</div>
+</div>
+</div>
+"""
+            else:
+                final_html = f"""
 <div class="custom-scroll" style="background-color:#f8fafc; border:1px solid #94a3b8; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(148, 163, 184, 0.1);">
 <div style="font-weight:800; font-size:0.85rem; color:#334155; background-color:#e2e8f0; padding:10px 12px; border-bottom:2px solid #94a3b8; position:sticky; top:0; z-index:10; text-align:center;">
 HAREKETLİ ORTALAMALAR 
@@ -7720,9 +7813,12 @@ HAREKETLİ ORTALAMALAR
 </div>
 """
             st.markdown(final_html, unsafe_allow_html=True)
-            
+
         else:
-            st.markdown("<div style='font-size:0.8rem; color:#64748b; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
+            if st.session_state.dark_mode:
+                st.markdown("<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div style='font-size:0.8rem; color:#64748b; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
 
 
 
