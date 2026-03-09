@@ -6698,6 +6698,8 @@ if st.session_state.generate_prompt:
     sent_vola = clean_html_val('vola')
     
     fiyat_str = f"{info.get('price', 0):.2f}" if info else "0.00"
+    p_change_pct = info.get('change_pct', 0) if info else 0
+    degisim_str = f"+%{p_change_pct:.2f}" if p_change_pct > 0 else f"-%{abs(p_change_pct):.2f}"
     master_txt = f"{master_score}/100"
     pros_txt = ", ".join(pros[:5])
     
@@ -8882,4 +8884,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
