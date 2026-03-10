@@ -3910,31 +3910,36 @@ def calculate_ict_deep_analysis(ticker):
         
         import random
 
-        # --- İleri ve Derin Hedeflerin Hesaplanması (Sıralı Likidite Havuzları) ---
-        # Fiyatın üstündeki tepeleri (küçükten büyüğe) ve altındaki dipleri (büyükten küçüğe) sırala
-        all_highs = sorted([h[1] for h in sw_highs if h[1] > curr_price])
-        all_lows = sorted([l[1] for l in sw_lows if l[1] < curr_price], reverse=True)
+        # ====================================================================
+        # YENİ: ICT UYUMLU YAKIN LİKİDİTE (DEALING RANGE) HESAPLAMASI
+        # ====================================================================
+        # 1. Sadece yakın geçmişteki (son 20 mum) İşlem Aralığına odaklan
+        recent_df = df.iloc[-20:]
         
-        # Boğa (Yükseliş) için 2. Likidite Havuzunu (İleri Hedef) belirle
-        if len(all_highs) > 1:
-            ileri_hedef = all_highs[1]
-        elif len(all_highs) == 1:
-            ileri_hedef = all_highs[0] * 1.02
+        # 2. Fiyatın altındaki dipleri bul (Sell-Side Liquidity - SSL)
+        lows_below = recent_df[recent_df['Low'] < curr_price]['Low'].drop_duplicates()
+        nearest_ssl = lows_below.sort_values(ascending=False)
+        
+        # 3. Fiyatın üstündeki tepeleri bul (Buy-Side Liquidity - BSL)
+        highs_above = recent_df[recent_df['High'] > curr_price]['High'].drop_duplicates()
+        nearest_bsl = highs_above.sort_values(ascending=True)
+
+        # 4. Yön (Bias) durumuna göre dinamik hedefleri ata
+        if "bearish" in bias:
+            final_target = nearest_ssl.iloc[0] if len(nearest_ssl) > 0 else curr_price * 0.98
+            derin_hedef = nearest_ssl.iloc[1] if len(nearest_ssl) > 1 else final_target * 0.98
+            ileri_hedef = curr_price * 1.02 # Ayı'da anlamsızdır ama hata vermesin diye tutuyoruz
+            safety_lvl = nearest_bsl.iloc[0] if len(nearest_bsl) > 0 else curr_price * 1.02
         else:
-            ileri_hedef = curr_price * 1.04
-            
-        # Ayı (Düşüş) için 2. Likidite Havuzunu (Derin Hedef) belirle
-        if len(all_lows) > 1:
-            derin_hedef = all_lows[1]
-        elif len(all_lows) == 1:
-            derin_hedef = all_lows[0] * 0.98
-        else:
-            derin_hedef = curr_price * 0.96
-            
+            final_target = nearest_bsl.iloc[0] if len(nearest_bsl) > 0 else curr_price * 1.02
+            ileri_hedef = nearest_bsl.iloc[1] if len(nearest_bsl) > 1 else final_target * 1.02
+            derin_hedef = curr_price * 0.98 # Boğa'da anlamsızdır ama hata vermesin diye tutuyoruz
+            safety_lvl = nearest_ssl.iloc[0] if len(nearest_ssl) > 0 else curr_price * 0.98
+
         # Matematiksel Emniyet Kilidi (İkinci hedef, ilk hedeften daha geride olamaz)
-        if derin_hedef >= final_target: 
+        if "bearish" in bias and derin_hedef >= final_target:
             derin_hedef = final_target * 0.98
-        if ileri_hedef <= final_target: 
+        if "bullish" in bias and ileri_hedef <= final_target:
             ileri_hedef = final_target * 1.02
 
         # KARAR MATRİSİ: Yön (Bias) x Konum (Zone) Çaprazlaması (HİBRİT SENARYOLAR)
@@ -6286,7 +6291,7 @@ EMA 144: {ma_status(ema144, current_price)}
 # ==============================================================================
 
 # Üst Menü Düzeni: Kategori | Varlık Listesi | DEV TARAMA BUTONU | TEMA BUTONU
-col_theme, col_cat, col_ass, col_btn = st.columns([1., 1.5, 1.5, 1])
+col_theme, col_cat, col_ass, col_btn = st.columns([0.5, 1.5, 1.5, 1])
 
 # 1. TEMA DEĞİŞTİRME BUTONU (YENİ)
 with col_theme:
@@ -6826,7 +6831,7 @@ if st.session_state.generate_prompt:
         p_change_pct = 0; trend_ratio = 1.0; vol_ratio = 1.0; is_stp_broken = False; rsi_val_now = 50
         is_rsi_div_neg = False; is_rsi_div_pos = False; has_bad_candle = False; has_good_candle = False; sma50_slope = 1
 
-    # 2. SENARYO TESPİT MOTORU (12 SENARYO - TAM DÖNGÜ)
+    # 2. SENARYO TESPİT MOTORU (16 SENARYO - TAM DÖNGÜ)
     # ---------------------------------------------------------
     ai_scenario_title = "NORMAL PİYASA AKIŞI"
     ai_mood_instruction = "Veriler nötr/karışık. Yön tayini zor. Her iki yönü de (Destek/Direnç) dengeli anlat."
@@ -6883,7 +6888,6 @@ if st.session_state.generate_prompt:
         DURUM: Piyasada yaprak kımıldamıyor. Fiyat SMA50 civarında yataya bağlamış, hacim kurumuş.
         TALİMAT: "Fırtına öncesi sessizlik" temasını kullan. Yön tahmini yapma, büyük bir kırılımın yaklaştığını belirt.
         """
-
     # --- 3. TREND VE DÜZELTME SENARYOLARI ---
 
     # SENARYO 7: 📈 İSTİKRARLI YÜKSELİŞ (YENİ)
@@ -6934,6 +6938,40 @@ if st.session_state.generate_prompt:
         ai_mood_instruction = """
         DURUM: Fiyat yükseliyor GİBİ görünüyor AMA yakıt bitmiş. Negatif uyumsuzluk veya kötü mum var.
         TALİMAT: Kullanıcıyı "Gel-Gel Tuzağı" (Bull Trap) konusunda uyar. Yükselişlerin satış fırsatı olabileceğini söyle.
+        """
+
+    # --- 4. SMART MONEY (ICT) BÖLGE SENARYOLARI (YENİ EKLENENLER) ---
+
+    # SENARYO 13: 🟢 OPTİMAL GİRİŞ ALANI (BULLISH + DISCOUNT)
+    elif "bullish" in bias.lower() and zone == "Discount":
+        ai_scenario_title = "🟢 SENARYO: OPTİMAL GİRİŞ ALANI (SMART MONEY BUY)"
+        ai_mood_instruction = """
+        DURUM: Ana trend yukarı (Bullish) ancak fiyat kısa vadede 'Ucuzluk' (Discount) bölgesine inmiş.
+        TALİMAT: Klasik yatırımcılar düşüşten korkarken, Akıllı Para (Smart Money) için bunun bir alım fırsatı olduğunu belirt. Fiyatın aşağıdaki stopları temizleyip (Sweep) yukarıdaki BSL (Buy-Side Liquidity) hedeflerine gitme ihtimalini vurgula.
+        """
+
+    # SENARYO 14: 🔴 AÇIĞA SATIŞ BÖLGESİ (BEARISH + PREMIUM)
+    elif "bearish" in bias.lower() and zone == "Premium":
+        ai_scenario_title = "🔴 SENARYO: AÇIĞA SATIŞ (SMART MONEY SELL)"
+        ai_mood_instruction = """
+        DURUM: Ana trend aşağı (Bearish) ancak fiyat 'Pahalı' (Premium) bölgeye sıçramış.
+        TALİMAT: Bu yükselişin kalıcı bir trend dönüşü değil, kurumsalların daha yüksekten satmak için fiyatı yukarı çekmesi (Premium'a taşıması) olabileceğini söyle. Asıl hedefin aşağıdaki SSL (Sell-Side Liquidity) olduğunu hatırlat.
+        """
+
+    # SENARYO 15: 🟡 KÂR ALMA & DAĞITIM (BULLISH + PREMIUM)
+    elif "bullish" in bias.lower() and zone == "Premium":
+        ai_scenario_title = "🟡 SENARYO: HEDEFE ULAŞILDI (PREMIUM BÖLGE)"
+        ai_mood_instruction = """
+        DURUM: Trend çok güçlü ve fiyat 'Pahalı' (Premium) bölgenin zirvelerinde geziyor.
+        TALİMAT: Yükseliş devam etse bile buralardan yeni alım yapmanın riskli olduğunu, büyük oyuncuların buralarda mal dağıtabileceğini ve kâr satışı yapabileceğini temkinli bir dille anlat.
+        """
+
+    # SENARYO 16: 🟠 LİKİDİTE TEMİZLİĞİ / DÜŞÜŞÜN SONU (BEARISH + DISCOUNT)
+    elif "bearish" in bias.lower() and zone == "Discount":
+        ai_scenario_title = "🟠 SENARYO: LİKİDİTE TEMİZLİĞİ (BEARISH DISCOUNT)"
+        ai_mood_instruction = """
+        DURUM: Trend aşağı yönlü ve fiyat çoktan 'Ucuzluk' (Discount) bölgesinin en dibine inmiş durumda.
+        TALİMAT: Piyasada korku hakim olsa da, aşağıdaki likidite (stoplar) temizlendikten sonra fiyatın aniden yukarı yönde sert bir tepki verebileceğini belirt. Şort (satış) pozisyonu açmak için çok geç kalınmış olabileceği konusunda uyar.
         """
     # --- YENİ: AI İÇİN S&D VE LİKİDİTE VERİLERİ ÇEKİMİ ---
     try: 
