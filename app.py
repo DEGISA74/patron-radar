@@ -5204,6 +5204,7 @@ def scan_grandmaster_batch(asset_list):
         
     return pd.DataFrame()
 
+   
 # ==============================================================================
 # 4. GÖRSELLEŞTİRME FONKSİYONLARI (EKSİK OLAN KISIM)
 # ==============================================================================
@@ -6226,7 +6227,156 @@ def render_minervini_panel_v2(ticker):
 """
     
     st.markdown(html_content, unsafe_allow_html=True)
+
+# --- 8 MADDELİK DETAYLI YOL HARİTASI HESAPLAMA VE ÇİZİM FONKSİYONLARI ---
+@st.cache_data(ttl=600)
+def calculate_8_point_roadmap(ticker):
+    """Alt başlıklarla zenginleştirilmiş 8 Maddelik Teknik Okuma"""
+    try:
+        df = get_safe_historical_data(ticker, period="1y")
+        if df is None or len(df) < 200: return None
+
+        c = df['Close']; h = df['High']; l = df['Low']; o = df['Open']; v = df['Volume']
+        cp = float(c.iloc[-1])
+
+        clean_ticker = ticker.split('.')[0].replace("=F", "").replace("-USD", "")
+        def fmt(val): return f"{int(val):,}" if val >= 1000 else f"{val:.2f}"
+
+        # Temel İndikatörler
+        sma200 = c.rolling(200).mean().iloc[-1]
+        sma50 = c.rolling(50).mean().iloc[-1]
+        atr = (h - l).rolling(14).mean().iloc[-1]
+        
+        delta = c.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi_val = (100 - (100 / (1 + gain/loss))).iloc[-1]
+        
+        avg_vol = v.rolling(20).mean().iloc[-1]
+        vol_ratio = v.iloc[-1] / avg_vol if avg_vol > 0 else 1
+        
+        res_20 = h.tail(20).max()
+        sup_20 = l.tail(20).min()
+
+        # Mum İstatistikleri
+        alt_fitil = min(o.iloc[-1], c.iloc[-1]) - l.iloc[-1]
+        ust_fitil = h.iloc[-1] - max(o.iloc[-1], c.iloc[-1])
+        govde = abs(c.iloc[-1] - o.iloc[-1])
+
+        # Sıkışma (Z-Score & Volatilite)
+        std_20 = c.rolling(20).std().iloc[-1]
+        z_score = (cp - c.rolling(20).mean().iloc[-1]) / std_20 if std_20 > 0 else 0
+
+        # --- 8 MADDENİN DETAYLI (GPT FORMATINDA) MATEMATİĞİ ---
+        
+        # Madde 1: Fiyat Davranışı
+        m1_mum = "Geniş gövdeli kırmızı (Satış baskısı)" if c.iloc[-1] < o.iloc[-1] and govde > atr*0.5 else "Gövde içi konsolidasyon" if govde < atr*0.3 else "Yeşil momentum mumu (Alıcı güçlü)"
+        m1_fitil = "Alt fitiller belirgin → Dipten tepki" if alt_fitil > govde else "Üst fitil uzun → Zirveden ret" if ust_fitil > govde else "Dengeli"
+        m1_vol = "Volatilite dar bantta (Sıkışma)" if std_20 < atr else "Geniş bantlı hareket"
+        m1_baski = "Satıcılar üstün" if cp < sma50 and rsi_val < 50 else "Alıcılar kontrolde"
+        
+        m1 = f"<b>Mum Yapısı:</b> {m1_mum}<br><b>Fitil/Gövde:</b> {m1_fitil}<br><b>Volatilite:</b> {m1_vol}<br><b>Anlık Baskı:</b> {m1_baski}"
+
+        # Madde 2: Pattern Tespiti
+        pattern_ihtimal = int(min(max(50 + abs(z_score)*10, 50), 85))
+        m2 = f"<b>Mevcut Pattern:</b> Otomatik tarama kanalında<br><b>Ana Yapı:</b> {'Trend takibi / İtki' if cp > sma50 else 'Düzeltme Fazı / Pullback'}<br><b>Gerçekleşme İhtimali:</b> %{pattern_ihtimal}"
+
+        # Madde 3: Trend Build-Up Skoru
+        sq_puan = 8 if std_20 < atr else 4
+        vol_puan = 7 if vol_ratio < 0.8 else 4
+        ema_puan = 8 if abs(cp - sma50)/sma50 < 0.02 else 5
+        enerji_skor = (sq_puan + vol_puan + ema_puan) / 3
+        m3 = f"<b>Sıkışma:</b> {sq_puan}/10<br><b>Hacim Daralması:</b> {vol_puan}/10<br><b>EMA Yakınsaması:</b> {ema_puan}/10<br><b>Genel Skor:</b> {enerji_skor:.1f} / 10"
+
+        # Madde 4: Hacim Algoritması Tespiti
+        m4_sp = "Belirgin veri yok."
+        m4_ice = f"{fmt(sup_20)} bandında absorption (emilim) ihtimali." if alt_fitil > atr*0.5 else "Zayıf ihtimal."
+        m4_rob = "Düşüşlerde bot satışı aktif." if c.iloc[-1] < o.iloc[-1] and vol_ratio > 1.2 else "Standart işlem hacmi."
+        m4 = f"<b>Spoofing:</b> {m4_sp}<br><b>Iceberg:</b> {m4_ice}<br><b>Robotik Hacim:</b> {m4_rob}"
+
+        # Madde 5: Yön Beklentisi
+        boga_w = min(max(int(50 + (rsi_val-50)*0.5 + (15 if cp>sma50 else -15)), 15), 85)
+        kisa_baski = "Satış baskısı daha güçlü." if boga_w < 50 else "Alıcılar ivme kazanıyor."
+        m5 = f"<b>Boğa:</b> %{boga_w}<br><b>Ayı:</b> %{100-boga_w}<br><b>Durum:</b> {kisa_baski}"
+
+        # Madde 6: Boğa Senaryosu
+        h1 = res_20 + (atr*1)
+        h2 = res_20 + (atr*2.5)
+        m6 = f"<b>Kırılması Gereken:</b> {fmt(res_20)}<br><b>Teyit Bölgesi:</b> {fmt(res_20*1.015)} üstü kapanış<br><b>Hedefler:</b> H1: {fmt(h1)} | H2: {fmt(h2)}<br><b>İptal (Stop):</b> {fmt(sup_20)} altı"
+
+        # Madde 7: Ayı Senaryosu
+        a1 = sup_20 - (atr*1)
+        a2 = sup_20 - (atr*2.5)
+        m7 = f"<b>Kırılması Gereken:</b> {fmt(sup_20)}<br><b>Aşağı Hedefler:</b> H1: {fmt(a1)} | H2: {fmt(a2)}<br><b>Stop Bölgesi:</b> {fmt(res_20)} üzeri"
+
+        # Madde 8: Özet
+        durum = "güçlü yükseliş trendinde" if cp > sma200 else "baskı altında"
+        m8 = f"{clean_ticker} makro ölçekte {durum} bulunuyor. Momentum göstergeleri ({rsi_val:.1f}) mevcut yapıyı teyit ediyor. Kısa vadede {fmt(res_20)} üzeri kapanışlar trendin ivmelenmesine, {fmt(sup_20)} altı kırılım ise düzeltmenin derinleşmesine yol açacaktır."
+
+        return {
+            "M1": m1, "M2": m2, "M3": m3, "M4": m4, "M5": m5, "M6": m6, "M7": m7, "M8": m8
+        }
+    except Exception as e:
+        return None
+
+def render_roadmap_8_panel(ticker):
+    data = calculate_8_point_roadmap(ticker)
+    if not data: return
+
+    display_ticker = ticker.split('.')[0].replace("=F", "").replace("-USD", "")
     
+    # Kutu Oluşturucu (Alt başlık HTML'lerini destekleyecek şekilde ayarlandı)
+    def make_box(num, title, content, color, edu_text, tf_text):
+        return f"""
+        <div style="background:rgba({color}, 0.05); border-left: 3px solid rgba({color}, 0.8); padding: 10px; border-radius: 4px; display:flex; flex-direction:column; justify-content:flex-start; height: 100%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; border-bottom: 1px solid rgba({color}, 0.2); padding-bottom: 4px;">
+                <div style="font-size: 0.85rem; font-weight: 800; color: rgba({color}, 1);">{num}. {title}</div>
+                <div style="font-size: 0.6rem; font-weight: 700; color: #64748b; background: rgba(100,116,139,0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(100,116,139,0.2);">⏱️ {tf_text}</div>
+            </div>
+            <div style="font-size: 0.78rem; font-weight: 500; line-height: 1.5; margin-bottom: 8px;" class="dark-text-fix">{content}</div>
+            <div class="edu-note" style="font-size: 0.85rem; margin-top: auto; border-top: 1px dashed rgba({color}, 0.3); padding-top: 6px;">{edu_text}</div>
+        </div>
+        """
+
+    # Renkler (RGB Formatında)
+    c_trend = "139, 92, 246"   # Mor
+    c_liq = "245, 158, 11"     # Turuncu
+    c_bull = "22, 163, 74"     # Yeşil
+    c_bear = "239, 68, 68"     # Kırmızı
+    c_summary = "14, 165, 233" # Mavi
+
+    # İlk 7 Madde
+    boxes = [
+        make_box("1", "Fiyat Davranışı", data['M1'], c_trend, "Mum fitilleri ve gövdelerinin analizi.", "Son 1 Gün"),
+        make_box("2", "Pattern Tespiti", data['M2'], c_trend, "Grafikteki geometrik formasyonlar.", "1-6 Ay"),
+        make_box("3", "Trend Skoru (0-10)", data['M3'], c_trend, "Göstergelerin toplam enerji birikimi.", "1-3 Ay"),
+        make_box("4", "Hacim Algoritması", data['M4'], c_liq, "Olası robot/algoritmik işlem izleri.", "Son 20 Gün"),
+        make_box("5", "Yön Beklentisi", data['M5'], c_liq, "İstatistiksel yön olasılığı.", "1-3 Ay"),
+        make_box("6", "Boğa Senaryosu", data['M6'], c_bull, "Yükselişin onaylanması için şartlar.", "1-3 Hafta"),
+        make_box("7", "Ayı Senaryosu", data['M7'], c_bear, "Düşüşün derinleşmesi için şartlar.", "1-3 Hafta"),
+        make_box("8", "Teknik Özet", data['M8'], c_summary, "Tüm verilerin nihai sentezi.", "Genel Projeksiyon"),
+    ]
+    
+    grid_html = "".join(boxes)
+
+    html_content = f"""
+    <div class="info-card" style="border-top: 3px solid #f59e0b; margin-top:15px; margin-bottom:15px; padding: 0;">
+        <div class="info-header" style="color:#d97706; font-size:1.1rem; padding:10px 12px; border-bottom:1px solid rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.05); margin-bottom:0;">
+            🗺️ Teknik Yol Haritası: {display_ticker}
+        </div>
+        
+        <div style="padding: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                {grid_html}
+            </div>
+        </div>
+    </div>
+    <style>
+    .dark-text-fix {{ color: inherit !important; }}
+    </style>
+    """
+    st.markdown(html_content.replace('\n', ''), unsafe_allow_html=True)
+#         
 # ==============================================================================
 # 5. SIDEBAR UI
 # ==============================================================================
@@ -6709,6 +6859,28 @@ if st.session_state.generate_prompt:
     levels_data = get_advanced_levels_data(t) or {}
     synth_data = calculate_synthetic_sentiment(t)
 
+    # --- YENİ: 8 MADDELİK TEKNİK HARİTASINI AI İÇİN TEMİZLE (HTML'den Arındır) ---
+    roadmap_data_ai = calculate_8_point_roadmap(t)
+    roadmap_ai_txt = "Veri Yok"
+    
+    if roadmap_data_ai:
+        import re
+        def clean_html(raw_html):
+            # <b>, <br> gibi tüm HTML etiketlerini silip boşluk bırakır
+            cleanr = re.compile('<.*?>')
+            return re.sub(cleanr, ' ', str(raw_html)).strip()
+            
+        roadmap_ai_txt = f"""
+        1) Fiyat Davranışı: {clean_html(roadmap_data_ai['M1'])}
+        2) Pattern: {clean_html(roadmap_data_ai['M2'])}
+        3) Trend Skoru: {clean_html(roadmap_data_ai['M3'])}
+        4) Hacim Algoritması: {clean_html(roadmap_data_ai['M4'])}
+        5) Yön Beklentisi: {clean_html(roadmap_data_ai['M5'])}
+        6) Boğa Senaryosu (Hedefler): {clean_html(roadmap_data_ai['M6'])}
+        7) Ayı Senaryosu (İptal/Stop): {clean_html(roadmap_data_ai['M7'])}
+        8) Okuma Özeti: {clean_html(roadmap_data_ai['M8'])}
+        """
+
     # Prompt içinde eksik olan slope hesaplaması
     if df_hist is not None and len(df_hist) > 2:
         sma50_hist = df_hist['Close'].rolling(50).mean()
@@ -7122,171 +7294,60 @@ if st.session_state.generate_prompt:
         p_change_pct = 0; trend_ratio = 1.0; vol_ratio = 1.0; is_stp_broken = False; rsi_val_now = 50
         is_rsi_div_neg = False; is_rsi_div_pos = False; has_bad_candle = False; has_good_candle = False; sma50_slope = 1
 
-    # 2. SENARYO TESPİT MOTORU (16 SENARYO - TAM DÖNGÜ)
-    # ---------------------------------------------------------
-    ai_scenario_title = "NORMAL PİYASA AKIŞI"
-    ai_mood_instruction = "Veriler nötr/karışık. Yön tayini zor. Her iki yönü de (Destek/Direnç) dengeli anlat."
-
-    # PA Dönüş ve Kesişim Verisini Çek
+    # ==============================================================================
+    # 2. SENARYO TESPİT MOTORU (YENİ NESİL - ICT ve PA ODAKLI)
+    # ==============================================================================
+    ai_scenario_title = "PİYASA OKUMASI BEKLENİYOR"
+    ai_mood_instruction = ""
+    
+    # --- DEĞİŞKENLERİ HESAPLA (Eksik olan kısım burasıydı!) ---
     pa_signal, pa_context = detect_price_action_with_context(df_hist)
     reversal_signal = detect_ict_reversal(df_hist)
-    # ICT Yön ve Bölge verilerini kutudan (ict_data) çıkarıyoruz:
     bias = str(ict_data.get('bias', 'Nötr')) if isinstance(ict_data, dict) else 'Nötr'
     zone = str(ict_data.get('zone', 'Nötr')) if isinstance(ict_data, dict) else 'Nötr'
-    # ---------------------------------------
-    # --- 1. EN UÇ SENARYOLAR (AŞIRILIKLAR) ---
-    # SENARYO 1: 🚀 AŞIRI ALIM ÇILGINLIĞI (FOMO)
-    if (p_change_pct > 4.0) and (vol_ratio > 1.5) and (trend_ratio > 1.10) and (rsi_val_now > 75):
-        ai_scenario_title = "🚀 SENARYO: AŞIRI ALIM ÇILGINLIĞI (FOMO)"
-        ai_mood_instruction = """
-        DURUM: Fiyat parabolik uçuyor. Hacim coşmuş, RSI aşırı alımda ve fiyat SMA50'den çok uzak (Köpük).
-        TALİMAT: Yeni alım yapmanın (FOMO) çok riskli olduğunu belirt. Kâr al seviyelerini yukarı taşıma (Trailing Stop) mantığını anlat.
-        """
+    
+    try:
+        z_score_val = round(calculate_z_score_live(df_hist), 2)
+    except:
+        z_score_val = 0.0
+    # ----------------------------------------------------------
 
-    # SENARYO 2: 🩸 KAPİTÜLASYON (PANİK SATIŞI)
-    elif (p_change_pct < -5.0) and (vol_ratio > 1.8) and (rsi_val_now < 30):
-        ai_scenario_title = "🩸 SENARYO: KAPİTÜLASYON (PANIC SELLING)"
-        ai_mood_instruction = """
-        DURUM: Tam bir kan banyosu. İnanılmaz yüksek hacimle fiyat çöküyor. Ancak RSI aşırı satımda diplerde.
-        TALİMAT: "Akıllı Para"nın dipten toplama fırsatı olabileceğini hissettir. "Düşen bıçak tutulmaz" de ama fırsat penceresini de arala.
-        """
-
-    # --- 2. DÖNÜŞ VE ANOMALİ SENARYOLARI ---
-
-    # SENARYO 3: 🟢 DİPTEN DÖNÜŞ TEYİDİ (YENİ)
-    # Şart: Fiyat dipte (trend_ratio < 0.98), %1.5'ten fazla yükselmiş, hacim iyi ve pozitif bir emare var.
-    elif (p_change_pct >= 1.5) and (vol_ratio >= 1.2) and (trend_ratio < 0.98) and (has_good_candle or is_rsi_div_pos):
-        ai_scenario_title = "🟢 SENARYO: DİPTEN DÖNÜŞ (RECOVERY)"
-        ai_mood_instruction = """
-        DURUM: Fiyat ana trendin çok altındaydı ama bugün güçlü bir hacim ve iyi bir mumla yukarı tepki verdi.
-        TALİMAT: Bu hareketin bir "Dipten Dönüş" sinyali olabileceğini, akıllı paranın alıma geçtmiş olabileceğini, umut verici ama temkinli bir dille anlat.
-        """
-
-    # SENARYO 4: ⚫ TREND ÇÖKÜŞÜ (STOP-OUT)
-    elif (p_change_pct < -2.5) and (vol_ratio > 1.1) and (trend_ratio < 0.99) and is_stp_broken and (sma50_slope <= 0 or has_bad_candle):
-        ai_scenario_title = "⚫ SENARYO: TREND ÇÖKÜŞÜ (REVERSAL)"
-        ai_mood_instruction = """
-        DURUM: Sert ve hacimli bir düşüşle ana trend (SMA50) kırıldı. Ayılar kontrolü aldı.
-        TALİMAT: Umut verme. "STOP-OUT" seviyesinin delindiğini belirt. En korumacı senaryoyu yaz.
-        """ 
-    # SENARYO 5: ⚡ PRICE ACTION (DİPTEN V-DÖNÜŞ VE KESİŞİM)
-    elif pa_signal == "PA_BULLISH":
-        ai_scenario_title = "⚡ SENARYO: PRICE ACTION (DİPTEN V-DÖNÜŞ)"
-        ai_mood_instruction = f"""
-        DURUM: Fiyat bir önceki mumun dibini delip likidite aldı (Sweep) ve aniden devasa bir tepki vererek V-dönüşü yaptı. 
-        ÖNEMLİ DETAY: Bu dönüş rastgele bir yerde değil, tam olarak [{pa_context}] bölgesinde gerçekleşti!
-        TALİMAT: Klasik indikatörler henüz dönüş vermese de, Price Action (mum anatomisi) açısından içeride çok agresif alıcıların (Akıllı Para) belirdiğini belirt. {pa_context} seviyesindeki bu kesişimin (Confluence) güvenilirliği çok artırdığını, anlık bir yukarı patlama ihtimalini vurgula.
-        """
-
-    # SENARYO 6: ⚡ PRICE ACTION (TEPEDEN V-DÖNÜŞ VE KESİŞİM)
+    # 1. ÖNCELİK: PRICE ACTION (Anlık Dönüşler en kritiktir)
+    if pa_signal == "PA_BULLISH":
+        ai_scenario_title = "⚡ DİPTEN V-DÖNÜŞ (LİKİDİTE AVI)"
+        ai_mood_instruction = f"Fiyat {pa_context} seviyesinden agresif bir alıcı tepkisi verdi. Ayı tuzakları (Bear Trap) kurulmuş olabilir. Düşüş trendi olsa bile kısa vadeli yukarı yönlü dönüş senaryosuna ağırlık ver."
     elif pa_signal == "PA_BEARISH":
-        ai_scenario_title = "⚡ SENARYO: PRICE ACTION (TEPEDEN V-DÖNÜŞ)"
-        ai_mood_instruction = f"""
-        DURUM: Fiyat bir önceki mumun tepesine iğne atıp alıcıları (FOMO) içeri çektikten sonra aniden reddedildi (rejection) ve çok sert bir satıcı baskısıyla karşılaştı.
-        ÖNEMLİ DETAY: Bu reddedilme tam olarak [{pa_context}] bölgesinde gerçekleşti!
-        TALİMAT: Bu mum hareketinin klasik bir "Boğa Tuzağı" (Bull Trap) olduğunu, {pa_context} direncinde satıcıların gizlice devreye girdiğini ve kısa vadeli bir çöküşün habercisi olabileceğini uyar. Temkinli bir dil kullan.
-        """
+        ai_scenario_title = "⚡ TEPEDEN RET (BOĞA TUZAĞI)"
+        ai_mood_instruction = f"Fiyat {pa_context} seviyesinden sert şekilde reddedildi. Satıcılar (Ayılar) kontrolü ele alıyor. Yükseliş trendi olsa bile kısa vadeli düşüş ve düzeltme senaryosuna ağırlık ver."
 
-    # SENARYO 7: 🔴 DAĞITIM / CHURNING (GİZLİ SATIŞ)
-    elif (abs(p_change_pct) < 1.5) and (vol_ratio > 1.3) and (trend_ratio > 1.05) and has_bad_candle:
-        ai_scenario_title = "🔴 SENARYO: DAĞITIM / CHURNING (GİZLİ SATIŞ)"
-        ai_mood_instruction = """
-        DURUM: Hacim patlamış ama fiyat gitmiyor, üstelik satıcılı (kötü) bir mum var. (Patinaj)
-        TALİMAT: "Hacim yüksek ama fiyat yerinde sayıyor, bu hayra alamet değil" de. Büyüklerin mal devrediyor olabileceğini uyar.
-        """
+    # 2. ÖNCELİK: UÇ DURUMLAR (Z-SCORE & KOPUŞLAR)
+    elif z_score_val >= 2.0:
+        ai_scenario_title = "🔥 AŞIRI ISINMA (PARABOLİK RİSK)"
+        ai_mood_instruction = "Fiyat istatistiksel olarak çok şişmiş durumda (+2 Z-Score). Kar satışları ve sert düzeltme riski çok yüksek. Yeni alımların riskli olduğunu ve stopların yaklaştırılması gerektiğini vurgula."
+    elif z_score_val <= -2.0:
+        ai_scenario_title = "🩸 KAPİTÜLASYON (AŞIRI SATIM)"
+        ai_mood_instruction = "Fiyat istatistiksel olarak dibe vurmuş durumda (-2 Z-Score). Panik satışları bitmek üzere olabilir, Akıllı Para'nın (Smart Money) dipten toplama ihtimalini ve dönüş fırsatlarını değerlendir."
 
-    # SENARYO 8: ⚪ SIKIŞMA (CONSOLIDATION)
-    elif (abs(p_change_pct) < 0.5) and (vol_ratio < 0.6) and (0.98 < trend_ratio < 1.02):
-        ai_scenario_title = "⚪ SENARYO: SIKIŞMA (CONSOLIDATION / SQUEEZE)"
-        ai_mood_instruction = """
-        DURUM: Piyasada yaprak kımıldamıyor. Fiyat SMA50 civarında yataya bağlamış, hacim kurumuş.
-        TALİMAT: "Fırtına öncesi sessizlik" temasını kullan. Yön tahmini yapma, büyük bir kırılımın yaklaştığını belirt.
-        """
-    # --- 3. TREND VE DÜZELTME SENARYOLARI ---
+    # 3. ÖNCELİK: ICT (SMART MONEY) BAĞLAMI
+    elif "bearish" in bias.lower():
+        if "PREMIUM" in zone.upper():
+            ai_scenario_title = "📉 DAĞITIM BÖLGESİ (BEARISH PREMIUM)"
+            ai_mood_instruction = "Makro trend aşağı ve fiyat şu an 'Pahalı' (Premium) bölgede. Kurumsalların satış (dağıtım) yaptığı bir alandayız. 'Normal piyasa' demek yerine, aşağıdaki likidite hedeflerine (SSL) doğru düşüş senaryosuna net bir şekilde odaklan."
+        else:
+            ai_scenario_title = "🐻 DÜŞÜŞ TRENDİ (İSKONTOLU ALAN)"
+            ai_mood_instruction = "Trend aşağı yönlü ancak fiyat şu an 'Ucuz' (Discount) bölgede. Düşüş devam etse de, aşağıdaki likidite (stoplar) temizlendikten sonra sert bir yukarı tepki gelebileceğini uyar. Çift yönlü düşün."
+    elif "bullish" in bias.lower():
+        if "DISCOUNT" in zone.upper():
+            ai_scenario_title = "🚀 TOPLAMA BÖLGESİ (BULLISH DISCOUNT)"
+            ai_mood_instruction = "Makro trend yukarı ve fiyat şu an 'Ucuz' (Discount) bölgede. Akıllı paranın (Smart Money) alım için pusuda beklediği en ideal seviyeler. Yukarı yönlü hedeflere (BSL) ve yükseliş senaryosuna net bir şekilde odaklan."
+        else:
+            ai_scenario_title = "🐂 YÜKSELİŞ TRENDİ (PAHALI ALAN)"
+            ai_mood_instruction = "Trend yukarı yönlü ancak fiyat 'Pahalı' (Premium) bölgede. Yükseliş sürse de yeni alım için FOMO riski taşıyan bir bölge. Kar realizasyonlarına (pullback) karşı temkinli bir yükseliş senaryosu çiz."
+    else:
+        # Gerçekten Nötr ise
+        ai_scenario_title = "⚖️ KONSOLİDASYON (YATAY BANT)"
+        ai_mood_instruction = "Piyasa şu an net bir trende sahip değil ve yön arayışında (Range). Destek ve dirençler arasında sıkışma var. Her iki yönü de dengeli bir şekilde anlatarak kırılım şartlarını belirt."
 
-    # SENARYO 9: 📈 İSTİKRARLI YÜKSELİŞ (YENİ)
-    # Şart: Sağlıklı yükseliş (%1 - %4 arası), hacim fena değil, trend yukarı bakıyor, kötü mum yok.
-    elif (1.0 <= p_change_pct <= 4.0) and (vol_ratio >= 0.9) and (trend_ratio > 1.02) and (sma50_slope > 0) and not has_bad_candle:
-        ai_scenario_title = "📈 SENARYO: İSTİKRARLI YÜKSELİŞ (MARKUP)"
-        ai_mood_instruction = """
-        DURUM: Trend yönü yukarı, hacim destekliyor ve fiyat istikrarlı şekilde yükseliyor. Kötü bir emare şimdilik yok.
-        TALİMAT: Boğaların kontrolü elinde tuttuğunu, her şeyin yolunda olduğunu, desteklerin yukarı çekilerek (iz sürerek) trendin takip edilmesi gerektiğini söyle.
-        """
-
-    # SENARYO 10: 🐻 ÖLÜ KEDİ SIÇRAMASI (YENİ)
-    # Şart: Trend aşağı bakıyor, fiyat SMA50 altında, fiyat yükselmiş AMA hacim çok düşük!
-    elif (p_change_pct >= 1.0) and (trend_ratio < 0.98) and (sma50_slope <= 0) and (vol_ratio < 0.85):
-        ai_scenario_title = "🐻 SENARYO: ÖLÜ KEDİ SIÇRAMASI (DEAD CAT BOUNCE)"
-        ai_mood_instruction = """
-        DURUM: Ana trend aşağı yönlü. Bugün fiyat yükseliyor gibi görünse de hacim çok zayıf.
-        TALİMAT: Acemi yatırımcıyı uyar. Bunun kalıcı bir yükseliş değil, "Ölü Kedi Sıçraması" (Sahte yükseliş) olma ihtimalinin yüksek olduğunu vurgula.
-        """
-
-    # SENARYO 11: 🟡 KÂR REALİZASYONU (PROFIT TAKING)
-    elif (-5.0 <= p_change_pct <= -1.5) and (0.85 <= vol_ratio <= 1.25) and (trend_ratio > 1.03) and is_stp_broken:
-        ai_scenario_title = "🟡 SENARYO: KÂR REALİZASYONU (PROFIT TAKING)"
-        ai_mood_instruction = """
-        DURUM: Kısa vadeli momentum kırıldı. Ancak Ana Trend (SMA50) hala güvende.
-        TALİMAT: Kısa vadeli düzeltmenin derinleşebileceğini, acele etmemek gerektiğini ve dönüş sinyali beklenmesini tavsiye et.
-        """
-
-    # SENARYO 12: 🟢 DİNLENEN BOĞA (HEALTHY PULLBACK)
-    elif (-3.5 <= p_change_pct <= -0.5) and (vol_ratio < 0.85) and (trend_ratio > 1.03) and (sma50_slope > 0) and not has_bad_candle:
-        ai_scenario_title = "🟢 SENARYO: DİNLENEN BOĞA (HEALTHY PULLBACK)"
-        ai_mood_instruction = """
-        DURUM: Fiyat düşüyor FAKAT Hacim çok düşük ve trend yönü hala yukarı. Kötü bir mum yok.
-        TALİMAT: Asla "Çöküş" deme. Bunun "Düzeltme" olabileceğini yorumlar, sağlıklı düzeltme için gerekli şartların neler olduğunu sırala. Sabırlı olunması gerektiğini vurgula.
-        """
-
-    # SENARYO 13: 🟠 TREND SAVAŞI (MAJOR TEST)
-    elif (0.985 <= trend_ratio <= 1.015) and is_stp_broken:
-        ai_scenario_title = "🟠 SENARYO: TREND SAVAŞI (MAJOR TEST)"
-        ai_mood_instruction = """
-        DURUM: Fiyat "Son Kale" olan SMA50 ortalamasına dayandı. Tam bıçak sırtı durum.
-        TALİMAT: Çok ciddi ve profesyonel konuş. Tahmin yapma. "SMA50 altı kapanış stop, üstü devam" de.
-        """
-
-    # SENARYO 14: 🟠 YORGUN BOĞA (TUZAK RİSKİ)
-    elif (p_change_pct > -1.0) and (trend_ratio > 1.05) and (is_rsi_div_neg or has_bad_candle or (rsi_val_now > 70 and vol_ratio < 0.7)):
-        ai_scenario_title = "🟠 SENARYO: YORGUN BOĞA (EXHAUSTION)"
-        ai_mood_instruction = """
-        DURUM: Fiyat yükseliyor GİBİ görünüyor AMA yakıt bitmiş. Negatif uyumsuzluk veya kötü mum var.
-        TALİMAT: Kullanıcıyı "Gel-Gel Tuzağı" (Bull Trap) konusunda uyar. Yükselişlerin satış fırsatı olabileceğini söyle.
-        """
-
-    # --- 4. SMART MONEY (ICT) BÖLGE SENARYOLARI (YENİ EKLENENLER) ---
-
-    # SENARYO 15: 🟢 OPTİMAL GİRİŞ ALANI (BULLISH + DISCOUNT)
-    elif "bullish" in bias.lower() and zone == "Discount":
-        ai_scenario_title = "🟢 SENARYO: OPTİMAL GİRİŞ ALANI (SMART MONEY BUY)"
-        ai_mood_instruction = """
-        DURUM: Ana trend yukarı (Bullish) ancak fiyat kısa vadede 'Ucuzluk' (Discount) bölgesine inmiş.
-        TALİMAT: Klasik yatırımcılar düşüşten korkarken, Akıllı Para (Smart Money) için bunun bir alım fırsatı olduğunu belirt. Fiyatın aşağıdaki stopları temizleyip (Sweep) yukarıdaki BSL (Buy-Side Liquidity) hedeflerine gitme ihtimalini vurgula.
-        """
-
-    # SENARYO 16: 🔴 AÇIĞA SATIŞ BÖLGESİ (BEARISH + PREMIUM)
-    elif "bearish" in bias.lower() and zone == "Premium":
-        ai_scenario_title = "🔴 SENARYO: AÇIĞA SATIŞ (SMART MONEY SELL)"
-        ai_mood_instruction = """
-        DURUM: Ana trend aşağı (Bearish) ancak fiyat 'Pahalı' (Premium) bölgeye sıçramış.
-        TALİMAT: Bu yükselişin kalıcı bir trend dönüşü değil, kurumsalların daha yüksekten satmak için fiyatı yukarı çekmesi (Premium'a taşıması) olabileceğini söyle. Asıl hedefin aşağıdaki SSL (Sell-Side Liquidity) olduğunu hatırlat.
-        """
-
-    # SENARYO 17: 🟡 KÂR ALMA & DAĞITIM (BULLISH + PREMIUM)
-    elif "bullish" in bias.lower() and zone == "Premium":
-        ai_scenario_title = "🟡 SENARYO: HEDEFE ULAŞILDI (PREMIUM BÖLGE)"
-        ai_mood_instruction = """
-        DURUM: Trend çok güçlü ve fiyat 'Pahalı' (Premium) bölgenin zirvelerinde geziyor.
-        TALİMAT: Yükseliş devam etse bile buralardan yeni alım yapmanın riskli olduğunu, büyük oyuncuların buralarda mal dağıtabileceğini ve kâr satışı yapabileceğini temkinli bir dille anlat.
-        """
-
-    # SENARYO 18: 🟠 LİKİDİTE TEMİZLİĞİ / DÜŞÜŞÜN SONU (BEARISH + DISCOUNT)
-    elif "bearish" in bias.lower() and zone == "Discount":
-        ai_scenario_title = "🟠 SENARYO: LİKİDİTE TEMİZLİĞİ (BEARISH DISCOUNT)"
-        ai_mood_instruction = """
-        DURUM: Trend aşağı yönlü ve fiyat çoktan 'Ucuzluk' (Discount) bölgesinin en dibine inmiş durumda.
-        TALİMAT: Piyasada korku hakim olsa da, aşağıdaki likidite (stoplar) temizlendikten sonra fiyatın aniden yukarı yönde sert bir tepki verebileceğini belirt. Şort (satış) pozisyonu açmak için çok geç kalınmış olabileceği konusunda uyar.
-        """
     # --- YENİ: AI İÇİN S&D VE LİKİDİTE VERİLERİ ÇEKİMİ ---
     try: 
         sd_data = detect_supply_demand_zones(df_hist)
@@ -7296,6 +7357,7 @@ if st.session_state.generate_prompt:
         
     havuz_ai = ict_data.get('eqh_eql_txt', 'Yok') if isinstance(ict_data, dict) else 'Yok'
     sweep_ai = ict_data.get('sweep_txt', 'Yok') if isinstance(ict_data, dict) else 'Yok'
+    
     # --- 🚨 PROMPT'TAN HEMEN ÖNCE PAKETİ AÇIYORUZ ---
     # calculate_price_action_dna'dan dönen veriyi (örneğin dna değişkeni) kontrol ediyoruz:
     df = get_safe_historical_data(t, period="6mo") 
@@ -7341,13 +7403,22 @@ if st.session_state.generate_prompt:
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
-Aşağıdaki TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
+Sana ekte sunduğum GRAFİK GÖRSELİNİ (Röntgen) kendi görsel zekanla (Vision) derinlemesine incele. Aynı zamanda, aşağıda sunduğum ve algoritmaların hesapladığı TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. 
+Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar.
+Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade bir dille) kullanıcıya sun
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
-*** 🚨 DURUM RAPORU: {ai_scenario_title} ***
-(Analizini bu senaryo ve talimat üzerine kur!)
-Sistem Talimatı: {ai_mood_instruction}
+*** 🚨 ALGORİTMİK DURUM RAPORU VE GÖRSEL ÇAPRAZ SORGU (CROSS-EXAMINATION) TALEBİ: {ai_scenario_title} ***
+Mevcut Özet: {ai_mood_instruction} 
 Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum belirtilmedi.')}
+(Yukarıdaki senaryo, sistemimizin arka planda hesapladığı salt matematiksel bir "Ön Tanı"dır. Şimdi bir Baş Analist olarak en büyük görevin; bu algoritmik verileri, ekte sunduğum GRAFİK (Röntgen) ile çapraz sorguya almandır. Lütfen grafiği incelerken şu 3 aşamalı testi uygula:
+1. ONAY VE DERİNLEŞTİRME (CONFLUENCE): 
+Algoritma ve Grafik birbiriyle uyumlu mu? Örneğin; algoritma "Boğa" diyorsa, grafikte net bir şekilde Yükselen Tepeler/Dipler (HH/HL), güçlü yeşil momentum mumları (Displacement) veya doldurulmamış fiyat boşlukları (FVG) görüyor musun? Uyumluysa, bu senaryoyu kendi görsel kanıtlarınla destekleyerek derinleştir.
+2. BOĞA TUZAĞI (BULL TRAP) KONTROLÜ: 
+Algoritma "Yükseliş / Pozitif" gösteriyor olabilir (RSI şişmiş, fiyat ortalamaların üstünde olabilir). Ancak grafiğe baktığında; direnç bölgelerinde oluşan uzun üst fitiller (Rejection/SFP), hacimli yutan kırmızı mumlar (Bearish Engulfing) veya Omuz-Baş-Omuz (OBO) gibi yorgunluk formasyonları görüyorsan, ALGORİTMAYI REDDET. Kullanıcıyı "Ekranda yeşil rakamlar var ama grafikte mal dağıtılıyor (Dağıtım/Distribution)" şeklinde uyar.
+3. AYI TUZAĞI (BEAR TRAP) KONTROLÜ: 
+Algoritma "Düşüş / Negatif / Aşırı Satım" gösteriyor olabilir (Z-Score diplerde, fiyat ortalamaların çok altında olabilir). Ancak grafiğe baktığında; destek kırılmış gibi yapıp hızla toparlayan uzun alt fitiller (Liquidity Sweep / Turtle Soup), dipten dönüş formasyonları (TOBO, Pinbar) görüyorsan, ALGORİTMAYI REDDET. Kullanıcıyı "Sistem kan ağlıyor ama Akıllı Para şu an dipte perakende yatırımcının stoplarını patlatıp mal topluyor (Akümülasyon)" şeklinde uyar.
+NİHAİ KURAL: Matematik (Algoritma) ile Göz (Price Action) çeliştiğinde, daima GÖZÜNE ve LİKİDİTE MANTIĞINA (Smart Money) öncelik ver!)
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, )
 {scan_summary_str}
@@ -7446,13 +7517,13 @@ Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' ve
 
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
 Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
-1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlamaktadır" gibi abartılı, duygusal ve kesinlik bildiren sıfatları ASLA KULLANMAYACAKSIN.
+1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlamaktadır, belgeliyor, belgeler,  belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren sıfatları ASLA KULLANMAYACAKSIN.
 2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
 3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. Parantez içinde İngilizce terim koyma, mümkün olduğunca Türkçe terimler kullanarak sadeleştir.
 4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
 Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
 
-*** İKİ GÖREVİN VAR *** 
+*** ÜÇ GÖREVİN VAR *** 
 
 Birinci Görevin; 
 Tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev", "keskin", "sert" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
@@ -7499,7 +7570,35 @@ Birinci görevinde yapmış olduğun o analizin en vurucu yerlerinin Twitter iç
     - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir. Sakın "Kanca" ya da "Hook" yazma.
     - En alta "Detaylı analiz ve detaylı görsel bir sonraki Twit’te👇" cümlesi yazılmalıdır.
 
-Fakat bu iki görevin sunum sıralaması ters olmalı: Önce İkinci görevini sunmalısın, ardından Birinci görevi. Yani önce Twitter için özet ve vurucu başlık, ardından Detaylı Analiz.
+Üçüncü Görevin: 
+Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laboratuvar Verisi" bölümünü) kullanarak ve grafiği okuyarak aşağıdaki 8 maddelik şablonu EKSİKSİZ doldur. Her madde alt başlıklardan oluşmalı ve okuması keyifli, profesyonel bir tonda olmalıdır. Başlık "SMART MONEY RADAR #{clean_ticker} ANALİZİ - {fiyat_str} 👇📸" olmalıdır.
+Formatın TAM OLARAK şu şekilde olmalıdır (Alt başlıkları aynen kullan):
+TEKNİK KART:
+1) Fiyat Davranışı ve Yapı
+Mum Yapısı: (Gövde ve fitillere göre görsel okuma + algoritmik veri)
+Volatilite Durumu: (Grafikteki sıkışma veya genişleme durumu)
+Anlık Baskı: (Kimin kontrolde olduğu)
+2) Formasyon Tespiti ve Olasılık
+Mevcut Formasyon: (Grafikte gördüğün OBO, TOBO, Bayrak vs. formasyon)
+Ana Yapı: (İtki mi Düzeltme mi?)
+Gerçekleşme İhtimali: (Algoritmadan gelen % oranı ver)
+3) Trend Gücü ve Enerji
+(Algoritmadan gelen Skoru yaz ve grafikteki hareketli ortalamalara göre yorumla)
+4) Hacim ve Akıllı Para İzi
+Sahte Emirler / Yanıltıcı Likidite: (Grafikteki fitillere ve algoritmaya göre değerlendir)
+Robotik / Kurumsal İşlem: (Dağıtım mı Toplama mı var?)
+5) Yön Beklentisi ve Momentum
+Boğa / Ayı İhtimali: (Algoritmadan gelen % oranın 1,5 katını yaz)
+Momentum Durumu: (Grafiğe göre onaylıyor mu?)
+6) Yol Haritası (Boğa Senaryosu)
+Kırılması Gereken Direnç: (Sana verilen seviye veya grafikte gördüğün majör tepe)
+Teyit Bölgesi: (Fakeout olmaması için gereken onay yeri)
+7) Yol Haritası (Ayı Senaryosu)
+Kırılması Gereken Destek: (Sana verilen veya grafikte gördüğün dip)
+8) Teknik Okuma Özeti
+(Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
+
+Fakat bu üç görevin sunum sıralaması ters olmalı: Önce Üçüncü görevini sunmalısın, ardından İkinci ve Birinci görevleri. Yani önce Teknik Kart, sonra Twitter için özet ve vurucu başlık, ardından Detaylı Analiz.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -8192,6 +8291,9 @@ HAREKETLİ ORTALAMALAR
     # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_ict_deep_panel(st.session_state.ticker)
+    
+    # --- YENİ: 8 MADDELİK YOL HARİTASI PANELİ ---
+    render_roadmap_8_panel(st.session_state.ticker)
 
     # 4. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
