@@ -7404,7 +7404,7 @@ if st.session_state.generate_prompt:
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
 Sana ekte sunduğum GRAFİK GÖRSELİNİ (Röntgen) kendi görsel zekanla (Vision) derinlemesine incele. Aynı zamanda, aşağıda sunduğum ve algoritmaların hesapladığı TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. 
-Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar.
+Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar. Eğer grefiği okuyamıyorsan, göremiyorsan, yaptığın analizin en altına "Grafik görünmemektedir" yaz, ama aşağıdaki teknik verilerle de analiz yap. Ancak grafik görünüyor ve okuyabiliyorsan, analizinin merkezine mutlaka Price Action'ı (Grafiği) koy. Algoritmik veriler (Teknik Veriler) ise bu analizi destekleyen veya sorgulayan kanıtlar olarak hizmet etsin.
 Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade bir dille) kullanıcıya sun
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
@@ -9448,3 +9448,4 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
