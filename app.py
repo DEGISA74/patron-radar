@@ -7598,7 +7598,7 @@ Kırılması Gereken Destek: (Sana verilen veya grafikte gördüğün dip)
 8) Teknik Okuma Özeti
 (Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 
-Fakat bu üç görevin sunum sıralaması ters olmalı: Önce Üçüncü görevini sunmalısın, ardından İkinci ve Birinci görevleri. Yani önce Teknik Kart, sonra Twitter için özet ve vurucu başlık, ardından Detaylı Analiz.
+Fakat bu üç görevin sunum sıralaması şöyle olmalı: Önce ikinci görevini sunmalısın, ardından Birinci ve Üçüncü görevleri. Yani önce Twitter için özet ve vurucu başlık, ardından  Detaylı Analiz, en sonra Teknik Kart.
 """
     with st.sidebar:
         st.code(prompt, language="text")
@@ -9448,4 +9448,5 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+
 
