@@ -6228,10 +6228,10 @@ def render_minervini_panel_v2(ticker):
     
     st.markdown(html_content, unsafe_allow_html=True)
 
-# --- 8 MADDELİK DETAYLI YOL HARİTASI HESAPLAMA VE ÇİZİM FONKSİYONLARI ---
+# --- 8 MADDELİK DETAYLI TEKNİK HARİTA HESAPLAMA VE ÇİZİM FONKSİYONLARI ---
 @st.cache_data(ttl=600)
 def calculate_8_point_roadmap(ticker):
-    """Alt başlıklarla zenginleştirilmiş 8 Maddelik Teknik Okuma"""
+    """Alt başlıklarla zenginleştirilmiş, Hatasız ve Kurumsal 8 Maddelik Algoritma"""
     try:
         df = get_safe_historical_data(ticker, period="1y")
         if df is None or len(df) < 200: return None
@@ -6267,44 +6267,56 @@ def calculate_8_point_roadmap(ticker):
         std_20 = c.rolling(20).std().iloc[-1]
         z_score = (cp - c.rolling(20).mean().iloc[-1]) / std_20 if std_20 > 0 else 0
 
-        # --- 8 MADDENİN DETAYLI (GPT FORMATINDA) MATEMATİĞİ ---
+        # --- 8 MADDENİN DETAYLI VE DÜRÜST MATEMATİĞİ ---
         
-        # Madde 1: Fiyat Davranışı
-        m1_mum = "Geniş gövdeli kırmızı (Satış baskısı)" if c.iloc[-1] < o.iloc[-1] and govde > atr*0.5 else "Gövde içi konsolidasyon" if govde < atr*0.3 else "Yeşil momentum mumu (Alıcı güçlü)"
-        m1_fitil = "Alt fitiller belirgin → Dipten tepki" if alt_fitil > govde else "Üst fitil uzun → Zirveden ret" if ust_fitil > govde else "Dengeli"
-        m1_vol = "Volatilite dar bantta (Sıkışma)" if std_20 < atr else "Geniş bantlı hareket"
+        # Madde 1: Fiyat Davranışı (BUG DÜZELTİLDİ)
+        if c.iloc[-1] < o.iloc[-1] and govde > atr*0.5:
+            m1_mum = "Geniş gövdeli kırmızı (Satış baskısı)"
+        elif c.iloc[-1] > o.iloc[-1] and govde > atr*0.5:
+            m1_mum = "Geniş gövdeli yeşil (Alıcı momentumu)"
+        else:
+            m1_mum = "Gövde içi konsolidasyon / Kararsız"
+            
+        m1_fitil = "Alt fitiller belirgin → Dipten tepki" if alt_fitil > max(govde, atr*0.4) else "Üst fitil uzun → Zirveden ret" if ust_fitil > max(govde, atr*0.4) else "Dengeli"
+        m1_vol = "Volatilite dar bantta (Sıkışma/Squeeze)" if std_20 < atr else "Geniş bantlı hareket"
         m1_baski = "Satıcılar üstün" if cp < sma50 and rsi_val < 50 else "Alıcılar kontrolde"
         
         m1 = f"<b>Mum Yapısı:</b> {m1_mum}<br><b>Fitil/Gövde:</b> {m1_fitil}<br><b>Volatilite:</b> {m1_vol}<br><b>Anlık Baskı:</b> {m1_baski}"
 
-        # Madde 2: Pattern Tespiti
-        pattern_ihtimal = int(min(max(50 + abs(z_score)*10, 50), 85))
-        m2 = f"<b>Mevcut Pattern:</b> Otomatik tarama kanalında<br><b>Ana Yapı:</b> {'Trend takibi / İtki' if cp > sma50 else 'Düzeltme Fazı / Pullback'}<br><b>Gerçekleşme İhtimali:</b> %{pattern_ihtimal}"
+        # Madde 2: İstatistiksel Durum (Uydurma Pattern Yerine Gerçek Veri)
+        m2_durum = "Aşırı Şişkin (Kâr Alımı Riski)" if z_score >= 2 else "Aşırı Satım (Tepki İhtimali)" if z_score <= -2 else "Normal Bant İçi (Ortalamada)"
+        m2_sapma = f"Fiyat 50G ortalamadan %{((cp/sma50)-1)*100:.1f} uzakta."
+        m2 = f"<b>Z-Score (Sapma):</b> {z_score:.2f} Standart Sapma<br><b>Konum:</b> {m2_durum}<br><b>Trend Mesafesi:</b> {m2_sapma}"
 
         # Madde 3: Trend Build-Up Skoru
         sq_puan = 8 if std_20 < atr else 4
         vol_puan = 7 if vol_ratio < 0.8 else 4
         ema_puan = 8 if abs(cp - sma50)/sma50 < 0.02 else 5
         enerji_skor = (sq_puan + vol_puan + ema_puan) / 3
-        m3 = f"<b>Sıkışma:</b> {sq_puan}/10<br><b>Hacim Daralması:</b> {vol_puan}/10<br><b>EMA Yakınsaması:</b> {ema_puan}/10<br><b>Genel Skor:</b> {enerji_skor:.1f} / 10"
+        m3 = f"<b>Sıkışma (Squeeze):</b> {sq_puan}/10<br><b>Hacim Daralması:</b> {vol_puan}/10<br><b>EMA Yakınsaması:</b> {ema_puan}/10<br><b>Genel Skor:</b> {enerji_skor:.1f} / 10"
 
-        # Madde 4: Hacim Algoritması Tespiti
-        m4_sp = "Belirgin veri yok."
-        m4_ice = f"{fmt(sup_20)} bandında absorption (emilim) ihtimali." if alt_fitil > atr*0.5 else "Zayıf ihtimal."
-        m4_rob = "Düşüşlerde bot satışı aktif." if c.iloc[-1] < o.iloc[-1] and vol_ratio > 1.2 else "Standart işlem hacmi."
-        m4 = f"<b>Spoofing:</b> {m4_sp}<br><b>Iceberg:</b> {m4_ice}<br><b>Robotik Hacim:</b> {m4_rob}"
+        # Madde 4: Kurumsal Ayak İzi (Hacim Anomalisi - Sahte Terimler Çıkarıldı)
+        m4_abs = f"{fmt(sup_20)} bandında gizli alım (Absorption)." if alt_fitil > atr*0.5 else "Belirgin bir karşılama (Absorption) yok."
+        if c.iloc[-1] < o.iloc[-1] and vol_ratio > 1.3:
+            m4_agresif = "Düşüşte hacim patlaması (Dağıtım izi)."
+        elif c.iloc[-1] > o.iloc[-1] and vol_ratio > 1.3:
+            m4_agresif = "Yükselişte hacim patlaması (Agresif Alım)."
+        else:
+            m4_agresif = "Standart hacim akışı."
+            
+        m4 = f"<b>Absorption (Emilim):</b> {m4_abs}<br><b>Piyasa Akışı:</b> {m4_agresif}"
 
-        # Madde 5: Yön Beklentisi
+        # Madde 5: Yön Beklentisi (Momentum Endeksi)
         boga_w = min(max(int(50 + (rsi_val-50)*0.5 + (15 if cp>sma50 else -15)), 15), 85)
         kisa_baski = "Satış baskısı daha güçlü." if boga_w < 50 else "Alıcılar ivme kazanıyor."
-        m5 = f"<b>Boğa:</b> %{boga_w}<br><b>Ayı:</b> %{100-boga_w}<br><b>Durum:</b> {kisa_baski}"
+        m5 = f"<b>Boğa İndeksi:</b> %{boga_w}<br><b>Ayı İndeksi:</b> %{100-boga_w}<br><b>Durum:</b> {kisa_baski}"
 
-        # Madde 6: Boğa Senaryosu
+        # Madde 6: Boğa Senaryosu (ATR Bazlı Kurumsal Hedefler)
         h1 = res_20 + (atr*1)
         h2 = res_20 + (atr*2.5)
         m6 = f"<b>Kırılması Gereken:</b> {fmt(res_20)}<br><b>Teyit Bölgesi:</b> {fmt(res_20*1.015)} üstü kapanış<br><b>Hedefler:</b> H1: {fmt(h1)} | H2: {fmt(h2)}<br><b>İptal (Stop):</b> {fmt(sup_20)} altı"
 
-        # Madde 7: Ayı Senaryosu
+        # Madde 7: Ayı Senaryosu (ATR Bazlı Kurumsal Hedefler)
         a1 = sup_20 - (atr*1)
         a2 = sup_20 - (atr*2.5)
         m7 = f"<b>Kırılması Gereken:</b> {fmt(sup_20)}<br><b>Aşağı Hedefler:</b> H1: {fmt(a1)} | H2: {fmt(a2)}<br><b>Stop Bölgesi:</b> {fmt(res_20)} üzeri"
@@ -6347,14 +6359,14 @@ def render_roadmap_8_panel(ticker):
 
     # İlk 7 Madde
     boxes = [
-        make_box("1", "Fiyat Davranışı", data['M1'], c_trend, "Mum fitilleri ve gövdelerinin analizi.", "Son 1 Gün"),
-        make_box("2", "Pattern Tespiti", data['M2'], c_trend, "Grafikteki geometrik formasyonlar.", "1-6 Ay"),
+        make_box("1", "Fiyat Davranışı", data['M1'], c_trend, "Mum fitilleri ve gövdelerinin gerçek analizi.", "Son 1 Gün"),
+        make_box("2", "İstatistiksel Durum", data['M2'], c_trend, "Fiyatın ortalamalara göre ekstrem (Z-Score) durumu.", "Son 20 Gün"),
         make_box("3", "Trend Skoru (0-10)", data['M3'], c_trend, "Göstergelerin toplam enerji birikimi.", "1-3 Ay"),
-        make_box("4", "Hacim Algoritması", data['M4'], c_liq, "Olası robot/algoritmik işlem izleri.", "Son 20 Gün"),
-        make_box("5", "Yön Beklentisi", data['M5'], c_liq, "İstatistiksel yön olasılığı.", "1-3 Ay"),
-        make_box("6", "Boğa Senaryosu", data['M6'], c_bull, "Yükselişin onaylanması için şartlar.", "1-3 Hafta"),
-        make_box("7", "Ayı Senaryosu", data['M7'], c_bear, "Düşüşün derinleşmesi için şartlar.", "1-3 Hafta"),
-        make_box("8", "Teknik Özet", data['M8'], c_summary, "Tüm verilerin nihai sentezi.", "Genel Projeksiyon"),
+        make_box("4", "Kurumsal Ayak İzi", data['M4'], c_liq, "Hacim ve fiyat anormallikleri (Absorption).", "Son 20 Gün"),
+        make_box("5", "Yön Momentum İndeksi", data['M5'], c_liq, "Ağırlıklandırılmış trend ve osilatör analizi.", "1-3 Ay"),
+        make_box("6", "Boğa Senaryosu", data['M6'], c_bull, "ATR bazlı kurumsal direnç hedefleri.", "1-3 Hafta"),
+        make_box("7", "Ayı Senaryosu", data['M7'], c_bear, "ATR bazlı kurumsal destek hedefleri.", "1-3 Hafta"),
+        make_box("8", "Teknik Özet", data['M8'], c_summary, "Tüm verilerin nihai sentezi.", "Genel Beklenti"),
     ]
     
     grid_html = "".join(boxes)
@@ -6362,7 +6374,7 @@ def render_roadmap_8_panel(ticker):
     html_content = f"""
     <div class="info-card" style="border-top: 3px solid #f59e0b; margin-top:15px; margin-bottom:15px; padding: 0;">
         <div class="info-header" style="color:#d97706; font-size:1.1rem; padding:10px 12px; border-bottom:1px solid rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.05); margin-bottom:0;">
-            🗺️ Teknik Yol Haritası: {display_ticker}
+            🗺️ 8 Maddelik Teknik Yol Haritası: {display_ticker}
         </div>
         
         <div style="padding: 12px;">
@@ -7525,7 +7537,7 @@ Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağı
 
 *** ÜÇ GÖREVİN VAR *** 
 
-Birinci Görevin; 
+* Birinci Görevin; 
 Tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev", "keskin", "sert" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
 Teknik terimleri sadece ilk geçtiği yerde kısaltmasıyla ver, sonraki anlatımlarda akıcılığı bozmamak için sadeleştir.
@@ -7552,49 +7564,49 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz?
    - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
    - Tezin İptal Noktası (sadece Senaryo B için geçerli): Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
-4. SONUÇ VE UYARI: Önce "SONUÇ:" başlığı aç Kurumsal Özet kısmını da aynen buraya da ekle. 
+4. SONUÇ VE UYARI: Önce "SONUÇ:" başlığı aç "Teknik Okuma Özeti" kısmındaki yorumlarını aynen buraya da ekle. (Yani: Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 Ardından, bir alt satıra "UYARI:" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizli satışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
 Analizinde HARSI (Heikin Ashi RSI) verilerini kullanacaksan bunun son 14 günlük olduğunu unutma ve son gün mumu için şu şartlar sağlanıyorsa dikkati çek: 1) Eğer 'Yeşil Bar' ise bunu "gürültüden arınmış gerçek bir yükseliş ivmesi" olarak yorumla. 2) Eğer 'Kırmızı Bar' ise fiyat yükselse bile momentumun (RSI bazında) düştüğünü ve bunun bir yorgunluk sinyali olabileceğini belirt. 
 Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 
-İkinci Görevin;
+* İkinci Görevin;
 Birinci görevinde yapmış olduğun o analizin en vurucu yerlerinin Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde özetini çıkarmak. Bu özet şu formatta alacak:
 1. Görsel ve Biçimsel Standartlar
     - Toplam 3 Madde Kuralı: Paylaşımların Twitter arayüzünde tam görünmesi ve vurucu olması için içerik her zaman toplam 3 maddeden oluşmalıdır. Satırlar arasında boşluk bırakmadan yaz.
     - Emoji Standartı: Her maddenin başında mutlaka "🔹" emojisi kullanılmalıdır.
     - İçerik Tonu ve Uzunluk: Maddeler çok kısa (mümkünse bir cümle), öz ve "Societe Generale risk toplantısı" ciddiyetinde, laf kalabalığından arındırılmış olmalıdır.
-    - Hashtag Protokolü: Tweet sonuna mutlaka ilgili hisse kodu ile birlikte #BIST100 #SmartMoneyRadar #[HisseKodu] etiketleri eklenmelidir.
 2. Dinamik Başlık ve "Kanca" (Hook) Kuralları
     - İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. Yüzdeyi sen tahmin etme, doğrudan sana verdiğim bu {degisim_str} değerini kullan. Örneğin: "#HISSE 123.45 (+2.34%) 👇📸".
     - En Çarpıcı Veri Odaklılık: Başlıkta sadece jenerik etiketler değil, paneldeki en çarpıcı teknik anomali (örneğin: "11266 Ana Uçurumu", "339.25 FOMO Tuzağı", "GAP Temizliği") ve kritik durumlar kullanılmalıdır.
     - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir. Sakın "Kanca" ya da "Hook" yazma.
     - En alta "Detaylı analiz ve detaylı görsel bir sonraki Twit’te👇" cümlesi yazılmalıdır.
+    - Hashtag Protokolü: Tweet sonuna mutlaka ilgili hisse kodu ile birlikte #BIST100 #SmartMoneyRadar #[HisseKodu] etiketleri eklenmelidir.
 
-Üçüncü Görevin: 
+* Üçüncü Görevin: 
 Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laboratuvar Verisi" bölümünü) kullanarak ve grafiği okuyarak aşağıdaki 8 maddelik şablonu EKSİKSİZ doldur. Her madde alt başlıklardan oluşmalı ve okuması keyifli, profesyonel bir tonda olmalıdır. Başlık "SMART MONEY RADAR #{clean_ticker} ANALİZİ - {fiyat_str} 👇📸" olmalıdır.
 Formatın TAM OLARAK şu şekilde olmalıdır (Alt başlıkları aynen kullan):
 TEKNİK KART:
 1) Fiyat Davranışı ve Yapı
-Mum Yapısı: (Gövde ve fitillere göre görsel okuma + algoritmik veri)
-Volatilite Durumu: (Grafikteki sıkışma veya genişleme durumu)
-Anlık Baskı: (Kimin kontrolde olduğu)
+- Mum Yapısı: (Gövde ve fitillere göre görsel okuma + algoritmik veri)
+- Volatilite Durumu: (Grafikteki sıkışma veya genişleme durumu)
+- Anlık Baskı: (Kimin kontrolde olduğu)
 2) Formasyon Tespiti ve Olasılık
-Mevcut Formasyon: (Grafikte gördüğün OBO, TOBO, Bayrak vs. formasyon)
-Ana Yapı: (İtki mi Düzeltme mi?)
-Gerçekleşme İhtimali: (Algoritmadan gelen % oranı ver)
+- Mevcut Formasyon: (Grafikte gördüğün OBO, TOBO, Bayrak vs. formasyon)
+- Ana Yapı: (İtki mi Düzeltme mi?)
+- Gerçekleşme İhtimali: (Algoritmadan gelen % oranı ver)
 3) Trend Gücü ve Enerji
-(Algoritmadan gelen Skoru yaz ve grafikteki hareketli ortalamalara göre yorumla)
+- (Algoritmadan gelen Skoru yaz ve grafikteki hareketli ortalamalara göre yorumla)
 4) Hacim ve Akıllı Para İzi
-Sahte Emirler / Yanıltıcı Likidite: (Grafikteki fitillere ve algoritmaya göre değerlendir)
-Robotik / Kurumsal İşlem: (Dağıtım mı Toplama mı var?)
+- Sahte Emirler / Yanıltıcı Likidite / Pasif Emirler: (Grafikteki fitillere ve algoritmaya göre değerlendir)
+- Robotik / Kurumsal İşlem: (Dağıtım mı Toplama mı var?)
 5) Yön Beklentisi ve Momentum
-Boğa / Ayı İhtimali: (Algoritmadan gelen % oranın 1,5 katını yaz)
-Momentum Durumu: (Grafiğe göre onaylıyor mu?)
+- Boğa / Ayı İhtimali: (Hesaplanmış yön beklentisini yaz. Grafikteki hareket ve algoritmik verilerle yorumla)
+- Momentum Durumu: (Grafiğe göre onaylıyor mu?)
 6) Yol Haritası (Boğa Senaryosu)
-Kırılması Gereken Direnç: (Sana verilen seviye veya grafikte gördüğün majör tepe)
-Teyit Bölgesi: (Fakeout olmaması için gereken onay yeri)
+- Kırılması Gereken Direnç: (Sana verilen seviye veya grafikte gördüğün majör tepe)
+- Teyit Bölgesi: (Fakeout olmaması için gereken onay yeri)
 7) Yol Haritası (Ayı Senaryosu)
-Kırılması Gereken Destek: (Sana verilen veya grafikte gördüğün dip)
+- Kırılması Gereken Destek: (Sana verilen veya grafikte gördüğün dip)
 8) Teknik Okuma Özeti
 (Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 
@@ -9448,5 +9460,3 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
-
-
