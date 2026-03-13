@@ -7584,13 +7584,13 @@ Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' ve
 
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
 Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
-1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlamaktadır, belgeliyor, belgeler,  belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren sıfatları ASLA KULLANMAYACAKSIN.
+1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN.
 2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
 3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. Parantez içinde İngilizce terim koyma, mümkün olduğunca Türkçe terimler kullanarak sadeleştir.
 4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
 Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
 
-*** ÜÇ GÖREVİN VAR *** 
+*** DÖRT GÖREVİN VAR *** 
 
 * Birinci Görevin; 
 Tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev", "keskin", "sert" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
@@ -7662,7 +7662,19 @@ TEKNİK KART:
 8) Teknik Okuma Özeti
 (Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 
-Fakat bu üç görevin sunum sıralaması şöyle olmalı: Önce ikinci görevini sunmalısın, ardından Birinci ve Üçüncü görevleri. Yani önce Twitter için özet ve vurucu başlık, ardından  Detaylı Analiz, en sonra Teknik Kart.
+* Dördüncü Görevin: 
+Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın. 
+Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin en kritik noktalarını ve sonuçlarını içermelidir. Değerlendirme şu formatta olmalıdır:
+İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. 
+GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
+DEĞERLENDİRME: Buraya Birinci Görevindeki SONUÇ kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
+UYARI: Buraya Birinci Görevindeki UYARI kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
+TEKNİK KART: yaz ve alt satıra geç.
+Alt satıra  Üçüncü Görevdeki TEKNİK KART kısmında olan 1-2-4-6'ı kopyalayarak yapıştır. Ama burada maddeleri 1-2-4-6 şeklinde sıralama. Her maddenin başına "🔹" işareti koy.
+
+*****GÖREVLERİN SUNUŞ SIRALAMASI*****
+Bu DÖRT görevin sunum sıralaması şöyle olmalı: Önce Dördüncü görevini sunmalısın, ardından Birinci görevini sunmalısın. Sonrasında da sırayla Üçüncü ve en sonunda Birinci görevleri. 
+Yani önce Aboneler için özet, ardından  Detaylı Analiz, sonra Teknik Kart ve en sonunda Twitter için özet ve vurucu başlık.
 """
     with st.sidebar:
         st.code(prompt, language="text")
