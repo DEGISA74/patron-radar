@@ -6385,7 +6385,6 @@ def calculate_8_point_roadmap(ticker):
     except Exception as e:
         return None
 
-
 def render_roadmap_8_panel(ticker):
     data = calculate_8_point_roadmap(ticker)
     if not data: return
@@ -6400,19 +6399,23 @@ def render_roadmap_8_panel(ticker):
 
     # --- 2. YENİ EKLENEN: ROZET (BADGE) İÇİN TEMA RENKLERİ ---
     is_dark = st.session_state.dark_mode
-    badge_bg = "rgba(0,0,0,0.4)" if is_dark else "#1e3a8a"
-    badge_text = "#ffffff"
-    price_color = "#10b981" if is_dark else "#6ee7b7"
+    title_col = "#38bdf8" if is_dark else "#1e3a8a"
+    header_bg = "rgba(56, 189, 248, 0.05)" if is_dark else "rgba(30, 58, 138, 0.05)"
+    header_border = "rgba(56, 189, 248, 0.2)" if is_dark else "rgba(30, 58, 138, 0.2)"
+    badge_bg = "rgba(56, 189, 248, 0.15)" if is_dark else "rgba(30, 58, 138, 0.15)" # Zemin renginin 2-3 ton koyusu
+    badge_text = title_col # Yazılar başlık ile aynı renk
+    price_color = title_col # Fiyat da başlık ile aynı renk
     
     def make_box(num, title, content, color, edu_text, tf_text):
+        # BOŞLUKLAR TIRAŞLANDI: padding 6px 8px yapıldı, marginler kısıldı, line-height 1.35 yapıldı.
         return f"""
-        <div style="background:rgba({color}, 0.05); border-left: 3px solid rgba({color}, 0.8); padding: 10px; border-radius: 4px; display:flex; flex-direction:column; justify-content:flex-start; height: 100%;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px; border-bottom: 1px solid rgba({color}, 0.2); padding-bottom: 4px;">
-                <div style="font-size: 0.85rem; font-weight: 800; color: rgba({color}, 1);">{num}. {title}</div>
-                <div style="font-size: 0.6rem; font-weight: 700; color: #64748b; background: rgba(100,116,139,0.1); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(100,116,139,0.2);">⏱️ {tf_text}</div>
+        <div style="background:rgba({color}, 0.05); border-left: 3px solid rgba({color}, 0.8); padding: 6px 8px; border-radius: 4px; display:flex; flex-direction:column; justify-content:flex-start; height: 100%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px; border-bottom: 1px solid rgba({color}, 0.2); padding-bottom: 4px;">
+                <div style="font-size: 0.8rem; font-weight: 800; color: rgba({color}, 1);">{num}. {title}</div>
+                <div style="font-size: 0.6rem; font-weight: 700; color: #64748b; background: rgba(100,116,139,0.1); padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(100,116,139,0.2);">⏱️ {tf_text}</div>
             </div>
-            <div style="font-size: 0.78rem; font-weight: 500; line-height: 1.5; margin-bottom: 8px;" class="dark-text-fix">{content}</div>
-            <div class="edu-note" style="font-size: 0.85rem; margin-top: auto; border-top: 1px dashed rgba({color}, 0.3); padding-top: 6px;">{edu_text}</div>
+            <div style="font-size: 0.75rem; font-weight: 500; line-height: 1.35; margin-bottom: 4px;" class="dark-text-fix">{content}</div>
+            <div class="edu-note" style="font-size: 0.75rem; margin-top: auto; border-top: 1px dashed rgba({color}, 0.3); padding-top: 4px; margin-bottom: 0px;">{edu_text}</div>
         </div>
         """
 
@@ -6434,16 +6437,16 @@ def render_roadmap_8_panel(ticker):
     
     grid_html = "".join(boxes)
 
-    # --- 3. GÜNCELLENMİŞ HTML (FLEXBOX VE ROZET EKLENDİ) ---
+    # --- 3. GÜNCELLENMİŞ HTML (ANA KART BOŞLUKLARI KISILDI: margin-top 8px, padding 8px, gap 6px) ---
     html_content = f"""
-    <div class="info-card" style="border-top: 3px solid #1e3a8a; margin-top:15px; margin-bottom:15px; padding: 0;">
-        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:#1e3a8a; font-size:1.1rem; padding:10px 12px; border-bottom:1px solid rgba(30, 58, 138, 0.2); background: rgba(30, 58, 138, 0.05); margin-bottom:0;">
+    <div class="info-card" style="border-top: 3px solid {title_col}; margin-top:8px; margin-bottom:10px; padding: 0;">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:{title_col}; font-size:1.05rem; padding:6px 10px; border-bottom:1px solid {header_border}; background: {header_bg}; margin-bottom:0;">
             <span style="font-weight:800;">🗺️ Teknik Yol Haritası</span>
-            <span style="background: {badge_bg}; color: {badge_text}; padding: 4px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.95rem; border: 1px solid rgba(255,255,255,0.1);">{display_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:{price_color};">{display_price}</span></span>
+            <span style="background: {badge_bg}; color: {badge_text}; padding: 2px 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.9rem; border: 1px solid {header_border};">{display_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:{price_color};">{display_price}</span></span>
         </div>
         
-        <div style="padding: 12px;">
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+        <div style="padding: 8px;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
                 {grid_html}
             </div>
         </div>
@@ -6453,6 +6456,7 @@ def render_roadmap_8_panel(ticker):
     </style>
     """
     st.markdown(html_content.replace('\n', ''), unsafe_allow_html=True)
+
 #         
 # ==============================================================================
 # 5. SIDEBAR UI
@@ -8205,7 +8209,7 @@ with col_left:
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     
-    # --- YENİ YERİ: TEKNİK SEVİYELER (MA) PANELİ (YAN YANA YAPI & BİRLEŞİK BAŞLIK) ---
+    # --- YENİ YERİ: TEKNİK SEVİYELER (MA) PANELİ (TEK SATIR ŞERİT GÖRÜNÜMÜ) ---
     try:
         if "ticker" in st.session_state and st.session_state.ticker:
             df_ma = get_safe_historical_data(st.session_state.ticker, period="1y") 
@@ -8216,6 +8220,7 @@ with col_left:
                 elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
                 else: c_col = df_ma.columns[0]
 
+                # SENİN ORİJİNAL KODUN (DOKUNULMADI)
                 current_price = info.get('price', df_ma[c_col].iloc[-1]) if info else df_ma[c_col].iloc[-1]
 
                 ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
@@ -8250,33 +8255,34 @@ with col_left:
                 lbl_col = "#94a3b8" if st.session_state.dark_mode else "#64748b"
                 border_col = "rgba(255,255,255,0.2)" if st.session_state.dark_mode else "#cbd5e1"
                 bg_col = "rgba(17, 24, 39, 0.6)" if st.session_state.dark_mode else "transparent"
+                badge_bg = "rgba(0,0,0,0.4)" if st.session_state.dark_mode else "#1e3a8a"
+                badge_text = "#ffffff"
+                price_color = "#10b981" if st.session_state.dark_mode else "#6ee7b7"
 
                 # Yan yana (inline) öğe oluşturucu fonksiyon
                 def ma_inline(label, val, price, is_last=False):
-                    border_style = "" if is_last else f"border-right: 1px solid {border_col}; padding-right: 12px; margin-right: 12px;"
-                    return f'<div style="display: inline-block; {border_style}"><span style="font-size:0.8rem; color:{lbl_col};">{label}:</span> <span style="font-size:0.9rem; color:{text_col};">{ma_status(val, price)}</span></div>'
+                    border_style = "" if is_last else f"border-right: 1px solid {border_col}; padding-right: 8px; margin-right: 8px;"
+                    return f'<div style="display: inline-block; {border_style}"><span style="font-size:0.75rem; color:{lbl_col};">{label}:</span> <span style="font-size:0.85rem; color:{text_col};">{ma_status(val, price)}</span></div>'
 
-                # BOŞLUK HATASINI ÖNLEMEK İÇİN TEK SATIRDA YAZILMIŞ HTML DEĞİŞKENLERİ
-                kisa_html = f'<div style="display: flex; flex-wrap: wrap; align-items: center; margin-top: 4px;">{ma_inline("EMA 5", ema5, current_price)}{ma_inline("EMA 8", ema8, current_price)}{ma_inline("EMA 13", ema13, current_price, True)}</div>'
+                # HTML DEĞİŞKENLERİ (Tamamen yatay dizilim)
+                kisa_html = f'<div style="display: flex; align-items: center;">{ma_inline("EMA 5", ema5, current_price)}{ma_inline("EMA 8", ema8, current_price)}{ma_inline("EMA 13", ema13, current_price, True)}</div>'
                 
-                uzun_html = f'<div style="display: flex; flex-wrap: wrap; align-items: center; margin-top: 4px;">{ma_inline("SMA 50", sma50, current_price)}{ma_inline("SMA 100", sma100, current_price)}{ma_inline("SMA 200", sma200, current_price)}{ma_inline("EMA 144", ema144, current_price, True)}</div>'
+                uzun_html = f'<div style="display: flex; align-items: center;">{ma_inline("SMA 50", sma50, current_price)}{ma_inline("SMA 100", sma100, current_price)}{ma_inline("SMA 200", sma200, current_price)}{ma_inline("EMA 144", ema144, current_price, True)}</div>'
 
-                # Ana HTML Çıktısı (En sola dayalı)
+                # Ana HTML Çıktısı (En sola dayalı, terminal gibi tek şerit)
                 st.markdown(f"""
-<div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-<div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
-<span style="font-weight: 700; font-size: 0.9rem;">📊 TEKNİK SEVİYELER</span>
-<span style="background: rgba(0,0,0,0.25); padding: 4px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.95rem;">{clean_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:#6ee7b7;">{display_price}</span></span>
+<div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);">
+<div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 4px 10px; display: flex; justify-content: space-between; align-items: center;">
+<span style="font-weight: 700; font-size: 0.85rem;">📊 TEKNİK SEVİYELER</span>
+<span style="background: {badge_bg}; color: {badge_text}; padding: 2px 10px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.1);">{clean_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:{price_color};">{display_price}</span></span>
 </div>
-
-<div style="display: flex; padding: 12px 10px; background-color: {bg_col};">
-<div style="flex: 1; padding-right: 15px; border-right: 1px solid {border_col};">
-<div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold; margin-bottom: 2px;">📉 KISA VADE</div>
+<div class="custom-scroll" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; background-color: {bg_col}; overflow-x: auto; white-space: nowrap;">
+<div style="display: flex; align-items: center;">
+<div style="font-size: 0.8rem; color: #3b82f6; font-weight: bold; margin-right: 12px;">📉 KISA VADE</div>
 {kisa_html}
 </div>
-
-<div style="flex: 1.3; padding-left: 15px;">
-<div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold; margin-bottom: 2px;">🔭 ORTA/UZUN VADE</div>
+<div style="display: flex; align-items: center; margin-left: 30px;">
+<div style="font-size: 0.8rem; color: #3b82f6; font-weight: bold; margin-right: 12px;">🔭 ORTA/UZUN VADE</div>
 {uzun_html}
 </div>
 </div>
