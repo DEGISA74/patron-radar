@@ -6392,6 +6392,18 @@ def render_roadmap_8_panel(ticker):
 
     display_ticker = ticker.split('.')[0].replace("=F", "").replace("-USD", "")
     
+    # --- 1. YENİ EKLENEN: FİYAT ÇEKME VE KÜSURAT AYARI ---
+    info = fetch_stock_info(ticker)
+    current_price = info.get('price', 0) if info else 0
+    is_index = "XU" in ticker.upper() or "^" in ticker or current_price > 1000
+    display_price = f"{int(current_price)}" if is_index else f"{current_price:.2f}"
+
+    # --- 2. YENİ EKLENEN: ROZET (BADGE) İÇİN TEMA RENKLERİ ---
+    is_dark = st.session_state.dark_mode
+    badge_bg = "rgba(0,0,0,0.4)" if is_dark else "#1e3a8a"
+    badge_text = "#ffffff"
+    price_color = "#10b981" if is_dark else "#6ee7b7"
+    
     def make_box(num, title, content, color, edu_text, tf_text):
         return f"""
         <div style="background:rgba({color}, 0.05); border-left: 3px solid rgba({color}, 0.8); padding: 10px; border-radius: 4px; display:flex; flex-direction:column; justify-content:flex-start; height: 100%;">
@@ -6422,10 +6434,12 @@ def render_roadmap_8_panel(ticker):
     
     grid_html = "".join(boxes)
 
+    # --- 3. GÜNCELLENMİŞ HTML (FLEXBOX VE ROZET EKLENDİ) ---
     html_content = f"""
-    <div class="info-card" style="border-top: 3px solid #f59e0b; margin-top:15px; margin-bottom:15px; padding: 0;">
-        <div class="info-header" style="color:#d97706; font-size:1.1rem; padding:10px 12px; border-bottom:1px solid rgba(245, 158, 11, 0.2); background: rgba(245, 158, 11, 0.05); margin-bottom:0;">
-            🗺️ Teknik Yol Haritası: {display_ticker}
+    <div class="info-card" style="border-top: 3px solid #1e3a8a; margin-top:15px; margin-bottom:15px; padding: 0;">
+        <div class="info-header" style="display:flex; justify-content:space-between; align-items:center; color:#1e3a8a; font-size:1.1rem; padding:10px 12px; border-bottom:1px solid rgba(30, 58, 138, 0.2); background: rgba(30, 58, 138, 0.05); margin-bottom:0;">
+            <span style="font-weight:800;">🗺️ Teknik Yol Haritası</span>
+            <span style="background: {badge_bg}; color: {badge_text}; padding: 4px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.95rem; border: 1px solid rgba(255,255,255,0.1);">{display_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:{price_color};">{display_price}</span></span>
         </div>
         
         <div style="padding: 12px;">
@@ -6446,12 +6460,12 @@ def render_roadmap_8_panel(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
     
-    # --- YENİ YERİ: GENEL SAĞLIK PANELİ (SIDEBAR İÇİN DİKEY OPTİMİZE EDİLDİ) ---
+    # --- YENİ YERİ: GENEL SAĞLIK PANELİ (SIDEBAR İÇİN OPTİMİZE EDİLDİ) ---
     try:
         if "ticker" in st.session_state and st.session_state.ticker:
             master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-            st.markdown("<div style='text-align:center; font-weight:800; font-size:1.1rem; color:#3b82f6; margin-bottom:5px; margin-top:10px;'>GENEL SAĞLIK DURUMU</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; font-weight:800; font-size:1rem; color:#38bdf8; margin-bottom:5px; margin-top:5px;'>GENEL SAĞLIK DURUMU</div>", unsafe_allow_html=True)
 
             # 1. HIZ GÖSTERGESİ (GAUGE)
             render_gauge_chart(master_score)
@@ -6459,7 +6473,7 @@ with st.sidebar:
             # CSS: Özel ve İnce Kaydırma Çubuğu (Custom Scrollbar)
             custom_scrollbar_css = """
             <style>
-            .custom-scroll::-webkit-scrollbar { width: 6px; }
+            .custom-scroll::-webkit-scrollbar { width: 4px; }
             .custom-scroll::-webkit-scrollbar-track { background: transparent; }
             .custom-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
             .custom-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.3); }
@@ -6471,55 +6485,34 @@ with st.sidebar:
             pos_items_html = ""
             if score_pros:
                 for p in score_pros:
-                    color_line = "rgba(16, 185, 129, 0.15)" if st.session_state.dark_mode else "rgba(22, 163, 74, 0.2)"
+                    color_line = "rgba(255,255,255,0.05)" if st.session_state.dark_mode else "rgba(22, 163, 74, 0.2)"
                     text_color = "#e2e8f0" if st.session_state.dark_mode else "#14532d"
-                    pos_items_html += f"<div style='font-size:0.8rem; color:{text_color}; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid {color_line};'>{p}</div>"
+                    pos_items_html += f"<div style='font-size:0.7rem; line-height:1.3; color:{text_color}; margin-bottom:3px; padding:3px 2px; border-bottom:1px solid {color_line};'>{p}</div>"
             else:
                 text_color = "#94a3b8" if st.session_state.dark_mode else "#14532d"
-                pos_items_html = f"<div style='font-size:0.8rem; color:{text_color}; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
+                pos_items_html = f"<div style='font-size:0.7rem; color:{text_color}; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
 
             if st.session_state.dark_mode:
-                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.3); border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#10b981; background-color:rgba(16, 185, 129, 0.15); padding:8px 12px; border-bottom:1px solid rgba(16, 185, 129, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>POZİTİF ETKENLER</span><span style="background-color:#10b981; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background:rgba(17, 24, 39, 0.6); border:1px solid rgba(255,255,255,0.05); border-top:3px solid #10b981; border-radius:6px; padding:0; max-height:160px; overflow-y:auto; position:relative; box-shadow: 0 2px 4px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.75rem; color:#10b981; background:transparent; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.1); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; align-items:center; backdrop-filter: blur(4px);"><span>POZİTİF ETKENLER</span><span style="background-color:rgba(16, 185, 129, 0.15); color:#10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding:2px 6px; border-radius:10px; font-size:0.65rem;">{len(score_pros)}</span></div><div style="padding:6px 10px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
             else:
-                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:8px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>POZİTİF ETKENLER</span><span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#f0fdf4; border:1px solid #16a34a; border-radius:6px; padding:0; max-height:160px; overflow-y:auto; position:relative; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.1);"><div style="font-weight:800; font-size:0.75rem; color:#15803d; background-color:#dcfce7; padding:6px 10px; border-bottom:1px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; align-items:center;"><span>POZİTİF ETKENLER</span><span style="background-color:#16a34a; color:white; padding:2px 6px; border-radius:10px; font-size:0.65rem;">{len(score_pros)}</span></div><div style="padding:6px 10px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
 
             # 3. NEGATİF ETKENLER
             neg_items_html = ""
             if score_cons:
                 for c in score_cons:
-                    color_line = "rgba(239, 68, 68, 0.15)" if st.session_state.dark_mode else "rgba(220, 38, 38, 0.2)"
+                    color_line = "rgba(255,255,255,0.05)" if st.session_state.dark_mode else "rgba(220, 38, 38, 0.2)"
                     text_color = "#e2e8f0" if st.session_state.dark_mode else "#7f1d1d"
-                    neg_items_html += f"<div style='font-size:0.8rem; color:{text_color}; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid {color_line};'>❌ {c}</div>"
+                    neg_items_html += f"<div style='font-size:0.7rem; line-height:1.3; color:{text_color}; margin-bottom:3px; padding:3px 2px; border-bottom:1px solid {color_line};'>❌ {c}</div>"
             else:
                 text_color = "#94a3b8" if st.session_state.dark_mode else "#7f1d1d"
-                neg_items_html = f"<div style='font-size:0.8rem; color:{text_color}; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
+                neg_items_html = f"<div style='font-size:0.7rem; color:{text_color}; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
 
             if st.session_state.dark_mode:
-                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#ef4444; background-color:rgba(239, 68, 68, 0.15); padding:8px 12px; border-bottom:1px solid rgba(239, 68, 68, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>NEGATİF ETKENLER</span><span style="background-color:#ef4444; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background:rgba(17, 24, 39, 0.6); border:1px solid rgba(255,255,255,0.05); border-top:3px solid #ef4444; border-radius:6px; padding:0; max-height:160px; overflow-y:auto; position:relative; box-shadow: 0 2px 4px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.75rem; color:#ef4444; background:transparent; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.1); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; align-items:center; backdrop-filter: blur(4px);"><span>NEGATİF ETKENLER</span><span style="background-color:rgba(239, 68, 68, 0.15); color:#ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding:2px 6px; border-radius:10px; font-size:0.65rem;">{len(score_cons)}</span></div><div style="padding:6px 10px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
             else:
-                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:8px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>NEGATİF ETKENLER</span><span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#fef2f2; border:1px solid #dc2626; border-radius:6px; padding:0; max-height:160px; overflow-y:auto; position:relative; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);"><div style="font-weight:800; font-size:0.75rem; color:#b91c1c; background-color:#fee2e2; padding:6px 10px; border-bottom:1px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; align-items:center;"><span>NEGATİF ETKENLER</span><span style="background-color:#dc2626; color:white; padding:2px 6px; border-radius:10px; font-size:0.65rem;">{len(score_cons)}</span></div><div style="padding:6px 10px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
 
-            # 4. HAREKETLİ ORTALAMALAR
-            ma_data = get_ma_data_for_ui(st.session_state.ticker)
-            if ma_data:
-                c_val = ma_data["close"]
-                def render_ma_row(name, val, current_price):
-                    if pd.isna(val) or val == 0: return ""
-                    color_icon = "🟢" if current_price > val else "🔴"
-                    val_str = f"{int(val):,}" if val >= 1000 else f"{val:,.2f}"
-                    if st.session_state.dark_mode:
-                        return f"<div style='font-size:0.75rem; color:#a3a8b8; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span style='color:#e2e8f0;'><b>{val_str}</b> {color_icon}</span></div>"
-                    else:
-                        return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
-
-                ema_html = render_ma_row("EMA 5", ma_data["ema5"], c_val) + render_ma_row("EMA 8", ma_data["ema8"], c_val) + render_ma_row("EMA 13", ma_data["ema13"], c_val)
-                sma_html = render_ma_row("SMA 50", ma_data["sma50"], c_val) + render_ma_row("SMA 100", ma_data["sma100"], c_val) + render_ma_row("SMA 200", ma_data["sma200"], c_val)
-
-                if st.session_state.dark_mode:
-                    final_ma_html = f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(17, 24, 39, 0.6); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:0; height:180px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);"><div style="font-weight:800; font-size:0.85rem; color:#38bdf8; background-color:rgba(56, 189, 248, 0.15); padding:8px 12px; border-bottom:1px solid rgba(56, 189, 248, 0.3); position:sticky; top:0; z-index:10; text-align:center; backdrop-filter: blur(4px);">HAREKETLİ ORTALAMALAR</div><div style="padding: 8px 12px;">{ema_html}{sma_html}</div></div>"""
-                else:
-                    final_ma_html = f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#f8fafc; border:1px solid #94a3b8; border-radius:8px; padding:0; height:180px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(148, 163, 184, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#334155; background-color:#e2e8f0; padding:8px 12px; border-bottom:2px solid #94a3b8; position:sticky; top:0; z-index:10; text-align:center;">HAREKETLİ ORTALAMALAR</div><div style="padding: 8px 12px;">{ema_html}{sma_html}</div></div>"""
-                st.markdown(final_ma_html, unsafe_allow_html=True)
     except Exception as e:
         st.warning(f"Genel Sağlık tablosu oluşturulamadı. Hata: {e}")
 
@@ -6540,6 +6533,7 @@ with st.sidebar:
     st.divider()
     # MINERVINI PANELİ (Hatasız Versiyon)
     render_minervini_panel_v2(st.session_state.ticker)
+   
     # --- YILDIZ ADAYLARI (KESİŞİM PANELİ) ---
     st.markdown(f"""
     <div style="background: linear-gradient(45deg, #06b6d4, #3b82f6); color: white; padding: 12px 8px; border-radius: 6px; text-align: center; margin-bottom: 10px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -6750,7 +6744,6 @@ with st.sidebar:
         ⚓ DİPTEN DÖNÜŞ?
     </div>
     """, unsafe_allow_html=True)
-    
     with st.container(height=150):
         if reversal_list:
             # RSI değerine göre (Düşük RSI en üstte) sıralayalım
@@ -6768,7 +6761,8 @@ with st.sidebar:
                 st.caption("'Ayı Tuzağı' ve 'RSI Uyumsuzluk' taramalarının ortak sonuçları burada gösterilir.")
             else:
                 st.info("Şu an hem tuzağa düşürüp hem uyumsuzluk veren (Kesişim) hisse yok.")
-
+    
+    st.divider()
     # 4. AI ANALIST PANELİ
     with st.expander("🤖 AI Analist (Prompt)", expanded=True):
         st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
@@ -8222,7 +8216,7 @@ with col_left:
                 elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
                 else: c_col = df_ma.columns[0]
 
-                current_price = df_ma[c_col].iloc[-1]
+                current_price = info.get('price', df_ma[c_col].iloc[-1]) if info else df_ma[c_col].iloc[-1]
 
                 ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
                 ema8 = df_ma[c_col].ewm(span=8, adjust=False).mean().iloc[-1]
@@ -8292,15 +8286,13 @@ with col_left:
     except Exception as e:
         st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
     # --------------------------------------------------
+    # --- YENİ: 8 MADDELİK YOL HARİTASI PANELİ ---
+    render_roadmap_8_panel(st.session_state.ticker)
 
-
-    # 3. ICT SMART MONEY ANALİZİ (YENİ YERİ: ANA SKOR ALTINDA)
+    # 3. ICT SMART MONEY ANALİZİ 
     # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_ict_deep_panel(st.session_state.ticker)
-    
-    # --- YENİ: 8 MADDELİK YOL HARİTASI PANELİ ---
-    render_roadmap_8_panel(st.session_state.ticker)
 
     # 4. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
@@ -8751,6 +8743,10 @@ with col_right:
     scan_results_html = ""
     found_any = False
     is_star_candidate = False
+    is_dark = st.session_state.dark_mode # Karanlık Mod Bayrağı
+    
+    # Metin etiketleri için ortak renk
+    c_lbl = "#e2e8f0" if is_dark else "#334155"
     
     # 1. VERİYİ ÇEK (Tek Sefer)
     df_live = get_safe_historical_data(active_t)
@@ -8771,253 +8767,230 @@ with col_right:
         idx_data = get_safe_historical_data(bench_ticker)['Close'] if bench_ticker else None
 
         # --- B. TÜM HESAPLAMALAR (Sırayla) ---
-        
-        # 1. STP (Smart Trend Pilot) - Kesişim, Momentum, Trend
         stp_live = process_single_stock_stp(active_t, df_live)
-        
-        # 2. Sentiment Ajanı (Akıllı Para)
         acc_live = process_single_accumulation(active_t, df_live, bench_series)
-        
-        # 3. Breakout Ajanı (Isınanlar / Kıranlar)
         bo_live = process_single_breakout(active_t, df_live)
-        
-        # 4. Minervini SEPA
         mini_live = calculate_minervini_sepa(active_t, benchmark_ticker=bench_ticker)
         
-        # 5. Formasyonlar
         pat_df = pd.DataFrame()
         try: pat_df = scan_chart_patterns([active_t])
         except: pass
         
-        # 6. Radar 1 & 2
         r1_live = process_single_radar1(active_t, df_live)
         r2_live = process_single_radar2(active_t, df_live, idx_data, 0, 100000, 0)
-        
-        # 7. Bear Trap Kontrolü
         bt_live = process_single_bear_trap_live(df_live)
         pa_data = calculate_price_action_dna(active_t)
 
         # --- C. YILDIZ ADAYI KONTROLÜ ---
-        # Kural: Akıllı Para VARSA ve Breakout (Isınan veya Kıran) VARSA -> Yıldız
         if acc_live and bo_live:
             is_star_candidate = True
 
         # ============================================================
-        # SIDEBAR İÇİN: 20 GÜNLÜK ALPHA (SWING MOMENTUM) - GARANTİLİ VERSİYON
+        # SIDEBAR İÇİN: 20 GÜNLÜK ALPHA (SWING MOMENTUM) 
         # ============================================================
         rs_html = ""
         try:
-            # --- YENİ EKLENEN KISIM: ENDEKS KONTROLÜ ---
-            # Eğer seçili varlık bir endeks ise RS hesaplama, direkt çık.
+            # Endeks kontrolü
             is_index_asset = active_t.startswith("^") or "XU" in active_t or "XBANK" in active_t
             if is_index_asset:
                 raise ValueError("Endeks için RS hesaplanmaz")
-            # -----------------------------------------------
-            # 1. HİSSE VERİSİ KONTROLÜ
-            if df_live is None or len(df_live) < 5:
-                raise ValueError("Hisse verisi yetersiz")
+                
+            if df_live is None or len(df_live) < 5: raise ValueError("Hisse verisi yetersiz")
 
-            # 2. ENDEKS VERİSİ (GARANTİLEME)
-            # Öncelik 1: bench_series, Öncelik 2: idx_data, Öncelik 3: İndir
             final_bench = None
-            
             if 'bench_series' in locals() and bench_series is not None and len(bench_series) > 5:
                 final_bench = bench_series
             elif 'idx_data' in locals() and idx_data is not None and len(idx_data) > 5:
                 final_bench = idx_data
             else:
-                # Hiçbiri yoksa şimdi indir (XU100 veya S&P500)
                 b_ticker = "XU100.IS" if "BIST" in st.session_state.category else "^GSPC"
                 final_bench = yf.download(b_ticker, period="1mo", progress=False)['Close']
 
-            if final_bench is None or len(final_bench) < 5:
-                raise ValueError("Endeks verisi yok")
+            if final_bench is None or len(final_bench) < 5: raise ValueError("Endeks verisi yok")
 
-            # 3. VERİ TİPİ DÜZELTME (Series formatına zorla)
             if isinstance(final_bench, pd.DataFrame):
-                # Eğer DataFrame ise ve 'Close' sütunu varsa onu al, yoksa ilk sütunu al
-                if 'Close' in final_bench.columns:
-                    final_bench = final_bench['Close']
-                else:
-                    final_bench = final_bench.iloc[:, 0]
+                if 'Close' in final_bench.columns: final_bench = final_bench['Close']
+                else: final_bench = final_bench.iloc[:, 0]
 
-            # 4. HESAPLAMA (Son 5 İş Günü)
-            # Hissenin performansı
             stock_now = float(df_live['Close'].iloc[-1])
             stock_old = float(df_live['Close'].iloc[-6])
             stock_perf = ((stock_now - stock_old) / stock_old) * 100
             
-            # Endeksin performansı
             bench_now = float(final_bench.iloc[-1])
             bench_old = float(final_bench.iloc[-6])
             bench_perf = ((bench_now - bench_old) / bench_old) * 100
             
-            # 5. ALPHA (FARK)
             alpha = stock_perf - bench_perf
             
-            # 6. GÖRSEL DURUM
+            # Dinamik Renkler
             if alpha > 2.0: 
-                rs_icon = "🔥"; rs_color = "#056829"; rs_text = f"Endeksi Eziyor (+%{alpha:.1f})"
+                rs_icon = "🔥"; rs_color = "#10b981" if is_dark else "#056829"; rs_text = f"Endeksi Eziyor (+%{alpha:.1f})"
             elif alpha > 0.0: 
-                rs_icon = "💪"; rs_color = "#05772f"; rs_text = f"Endeksi Yeniyor (+%{alpha:.1f})"
+                rs_icon = "💪"; rs_color = "#34d399" if is_dark else "#05772f"; rs_text = f"Endeksi Yeniyor (+%{alpha:.1f})"
             elif alpha > -2.0: 
-                rs_icon = "⚠️"; rs_color = "#9e9284"; rs_text = f"Endeksle Paralel (%{alpha:.1f})"
+                rs_icon = "⚠️"; rs_color = "#94a3b8" if is_dark else "#9e9284"; rs_text = f"Endeksle Paralel (%{alpha:.1f})"
             else: 
-                rs_icon = "🐢"; rs_color = "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
+                rs_icon = "🐢"; rs_color = "#ef4444" if is_dark else "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
 
-            rs_html = f"<div style='font-size:0.75rem; margin-bottom:2px; color:{rs_color};'>{rs_icon} <b>RS Momentum (5 GÜN):</b> {rs_text}</div>"
+            rs_html = f"<div style='font-size:0.8rem; margin-bottom:4px; color:{rs_color};'>{rs_icon} <span style='font-weight:700; color:{c_lbl};'>RS Momentum (5G):</span> {rs_text}</div>"
                 
         except Exception as e:
-            # Hata varsa ekrana basalım ki görelim (Canlı hata ayıklama)
-            # Normalde boş bırakırdık ama sorunu çözmek için hata mesajını yazdırıyoruz
-            rs_html = f"<div style='font-size:0.6rem; color:gray;'>RS Verisi Yok: {str(e)}</div>"
+            c_err = "#94a3b8" if is_dark else "gray"
+            rs_html = f"<div style='font-size:0.75rem; color:{c_err}; margin-bottom:4px;'>RS Verisi Yok: {str(e)}</div>"
 
         # --- D. HTML OLUŞTURMA ---
-        # 0. RS Gücünü En Üste Ekle (YENİ)
         if rs_html:
             scan_results_html += rs_html
             found_any = True
+            
         # 1. STP Sonuçları
         if stp_live:
             found_any = True
+            c_stp_c = "#10b981" if is_dark else "#056829"
+            c_stp_m = "#f472b6" if is_dark else "#db2777"
+            c_stp_t = "#4ade80" if is_dark else "#15803d"
+
             if stp_live['type'] == 'cross':
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#056829;'>⚡ <b>STP:</b> Kesişim (AL Sinyali)</div>"
-                # Momentum Başlangıcı Kontrolü (Filtreli mi?)
+                scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_stp_c};'>⚡ <span style='font-weight:700; color:{c_lbl};'>STP:</span> Kesişim (AL Sinyali)</div>"
                 if stp_live.get('is_filtered', False):
-                    scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#db2777;'>🎯 <b>Momentum:</b> Başlangıç Sinyali (Filtreli)</div>"
+                    scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_stp_m};'>🎯 <span style='font-weight:700; color:{c_lbl};'>Momentum:</span> Başlangıç Sinyali</div>"
             elif stp_live['type'] == 'trend':
                 gun = stp_live['data'].get('Gun', '?')
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>✅ <b>STP:</b> Trend ({gun} Gündür)</div>"
+                scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_stp_t};'>✅ <span style='font-weight:700; color:{c_lbl};'>STP:</span> Trend ({gun} Gündür)</div>"
 
-        # 2. Akıllı Para (Sentiment)
+        # 2. Akıllı Para
         if acc_live:
             found_any = True
+            c_acc = "#a78bfa" if is_dark else "#7c3aed"
             is_pp = acc_live.get('Pocket_Pivot', False)
             icon = "⚡" if is_pp else "🤫"
             text = "Pocket Pivot (Patlama)" if is_pp else "Sessiz Toplama"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#7c3aed;'>{icon} <b>Akıllı Para:</b> {text}</div>"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_acc};'>{icon} <span style='font-weight:700; color:{c_lbl};'>Akıllı Para:</span> {text}</div>"
 
-        # 3. Breakout (Isınan / Kıran)
+        # 3. Breakout
         if bo_live:
             found_any = True
+            c_bo_k = "#4ade80" if is_dark else "#16a34a"
+            c_bo_i = "#fbbf24" if is_dark else "#d97706"
             is_firing = "TETİKLENDİ" in bo_live['Zirveye Yakınlık'] or "Sıkışma Var" in bo_live['Zirveye Yakınlık']
             prox_clean = str(bo_live['Zirveye Yakınlık']).split('<')[0].strip()
             if is_firing:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#16a34a;'>🔨 <b>Breakout:</b> KIRILIM (Onaylı)</div>"
+                scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_bo_k};'>🔨 <span style='font-weight:700; color:{c_lbl};'>Breakout:</span> KIRILIM (Onaylı)</div>"
             else:
-                scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#d97706;'>🔥 <b>Breakout:</b> Isınanlar ({prox_clean})</div>"
+                scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_bo_i};'>🔥 <span style='font-weight:700; color:{c_lbl};'>Breakout:</span> Isınanlar ({prox_clean})</div>"
 
         # 4. Minervini SEPA
         if mini_live:
             found_any = True
-            # Verinin içinden Durum ve Puanı çekiyoruz
+            c_mini = "#fb923c" if is_dark else "#ea580c"
             durum = mini_live.get('Durum', 'Trend?')
             puan = mini_live.get('Raw_Score', 0)
-            
-            # Ekrana dinamik olarak yazdırıyoruz: "🦁 Minervini: KIRILIM EŞİĞİNDE (70)"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#ea580c;'>🦁 <b>Minervini:</b> {durum} ({puan})</div>"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_mini};'>🦁 <span style='font-weight:700; color:{c_lbl};'>Minervini:</span> {durum} ({puan})</div>"
 
         # 5. Formasyonlar
         if not pat_df.empty:
             found_any = True
+            c_pat = "#94a3b8" if is_dark else "#0f172a"
             pat_name = pat_df.iloc[0]['Formasyon']
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0f172a;'>📐 <b>Formasyon:</b> {pat_name}</div>"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_pat};'>📐 <span style='font-weight:700; color:{c_lbl};'>Formasyon:</span> {pat_name}</div>"
 
         # 6. Radarlar
         if r1_live and r1_live['Skor'] >= 4:
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#0369a1;'>🧠 <b>Radar 1:</b> Momentum ({r1_live['Skor']}/7)</div>"
+            c_r1 = "#38bdf8" if is_dark else "#0369a1"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_r1};'>🧠 <span style='font-weight:700; color:{c_lbl};'>Radar 1:</span> Momentum ({r1_live['Skor']}/7)</div>"
         
         if r2_live and r2_live['Skor'] >= 4:
             found_any = True
+            c_r2 = "#4ade80" if is_dark else "#15803d"
             setup_name = r2_live['Setup'] if r2_live['Setup'] != "-" else "Trend Takibi"
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>🚀 <b>Radar 2:</b> {setup_name} ({r2_live['Skor']}/7)</div>"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_r2};'>🚀 <span style='font-weight:700; color:{c_lbl};'>Radar 2:</span> {setup_name} ({r2_live['Skor']}/7)</div>"
         
-        # 7. Bear Trap (Görseli)
+        # 7. Bear Trap
         if bt_live:
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b45309;'>🪤 <b>Bear Trap:</b> {bt_live['Zaman']} (Vol: {bt_live['Hacim_Kat']})</div>"
+            c_bt = "#fcd34d" if is_dark else "#b45309"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_bt};'>🪤 <span style='font-weight:700; color:{c_lbl};'>Bear Trap:</span> {bt_live['Zaman']} (Vol: {bt_live['Hacim_Kat']})</div>"
             
-    # --- HTML ÇIKTISI ---
-    star_title = " ⭐" if is_star_candidate else ""
-    display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
-
-    # 8. RSI UYUMSUZLUKLARI (YENİ EKLENEN KISIM)
-    # Detay panelindeki veriyi (pa_data) kullanalım
+    # 8. RSI UYUMSUZLUKLARI
     if pa_data:
         div_info = pa_data.get('div', {})
         div_type = div_info.get('type', 'neutral')
         
         if div_type == 'bullish':
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#15803d;'>💎 <b>RSI Uyumsuzluk:</b> POZİTİF (Alış?)</div>"
+            c_div_bull = "#10b981" if is_dark else "#15803d"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_div_bull};'>💎 <span style='font-weight:700; color:{c_lbl};'>RSI Uyumsuzluk:</span> POZİTİF (Alış?)</div>"
         elif div_type == 'bearish':
             found_any = True
-            scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#b91c1c;'>🐻 <b>RSI Uyumsuzluk:</b> NEGATİF (Satış?)</div>"
+            c_div_bear = "#ef4444" if is_dark else "#b91c1c"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_div_bear};'>🐻 <span style='font-weight:700; color:{c_lbl};'>RSI Uyumsuzluk:</span> NEGATİF (Satış?)</div>"
 
-    # 9. DİPTEN DÖNÜŞ (KUTSAL KASE) KONTROLÜ (YENİ EKLENEN KISIM)
-    # Eğer hem Bear Trap hem de Pozitif Uyumsuzluk varsa
+    # 9. DİPTEN DÖNÜŞ KONTROLÜ
     if bt_live and pa_data and pa_data.get('div', {}).get('type') == 'bullish':
         found_any = True
-        is_star_candidate = True # Yıldız da ekleyelim
-        scan_results_html += f"<div style='font-size:0.75rem; margin-bottom:2px; color:#059669; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ?</div>"
+        is_star_candidate = True
+        c_dip = "#34d399" if is_dark else "#059669"
+        scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_dip}; font-weight:bold;'>⚓ DİPTEN DÖNÜŞ SİNYALİ?</div>"
 
-    # ----------------------------------------------------------------------
-    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI (4 AŞAMALI KADEMELİ SİSTEM)
-    # ----------------------------------------------------------------------
+    # 10. İSTATİSTİKSEL Z-SCORE TARAMASI
     z_score_val = round(calculate_z_score_live(df_live), 2)
     
-    # --- A. DÜŞÜŞ SENARYOLARI (UCUZLAMA) ---
+    # Düşüş Senaryoları
     if z_score_val <= -2.0: 
-        # SEVİYE 3: KRİTİK DİP (FIRSAT)
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#059669; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
-        scan_results_html += f"""
-        <div style='background:#ecfdf5; border-left:3px solid #059669; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-            <div style='font-size:0.65rem; color:#047857; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
-            <div style='font-size:0.65rem; color:#065f46; line-height:1.2;'>Fiyat -2 sapmayı kırdı. İstatistiksel olarak dönüş (tepki) ihtimali çok yüksektir.</div>
-        </div>
-        """
+        z_col = "#10b981" if is_dark else "#059669"
+        z_bg = "rgba(16, 185, 129, 0.1)" if is_dark else "#ecfdf5"
+        z_t1 = "#34d399" if is_dark else "#047857"
+        z_t2 = "#a7f3d0" if is_dark else "#065f46"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{z_col}; font-weight:bold;'>🔥 İstatistiksel DİP (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"<div style='background:{z_bg}; border-left:3px solid {z_col}; padding:6px; margin-top:2px; border-radius:0 4px 4px 0;'><div style='font-size:0.7rem; color:{z_t1}; font-weight:bold; margin-bottom:2px;'>🎓 GÜÇLÜ ANOMALİ</div><div style='font-size:0.7rem; color:{z_t2}; line-height:1.3;'>Fiyat -2 sapmayı kırdı. İstatistiksel olarak dönüş ihtimali yüksek.</div></div>"
     elif z_score_val <= -1.5: 
-        # SEVİYE 2: DİBE YAKLAŞIYOR (UYARI)
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#d97706;'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-        
+        c_z2 = "#fbbf24" if is_dark else "#d97706"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{c_z2};'>⚠️ Dibe Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
     elif z_score_val <= -1.0: 
-        # SEVİYE 1: UCUZLUYOR (BİLGİ) - [YENİ]
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#0284c7;'>📉 Ucuzluyor (Z-Score: {z_score_val:.2f})</div>"
+        c_z1 = "#38bdf8" if is_dark else "#0284c7"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{c_z1};'>📉 Ucuzluyor (Z-Score: {z_score_val:.2f})</div>"
 
-    # --- B. YÜKSELİŞ SENARYOLARI (PAHALILANMA) ---
+    # Yükseliş Senaryoları
     elif z_score_val >= 2.0: 
-        # SEVİYE 3: KRİTİK TEPE (SATIŞ RİSKİ)
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#dc2626; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
-        scan_results_html += f"""
-        <div style='background:#fef2f2; border-left:3px solid #dc2626; padding:4px; margin-top:2px; border-radius:0 4px 4px 0;'>
-            <div style='font-size:0.65rem; color:#b91c1c; font-weight:bold;'>🎓 GÜÇLÜ ANOMALİ</div>
-            <div style='font-size:0.65rem; color:#7f1d1d; line-height:1.2;'>Fiyat +2 sapmayı aştı. Aşırı alım bölgesinde, düzeltme riski çok yüksek.</div>
-        </div>
-        """
+        z_col = "#ef4444" if is_dark else "#dc2626"
+        z_bg = "rgba(239, 68, 68, 0.1)" if is_dark else "#fef2f2"
+        z_t1 = "#f87171" if is_dark else "#b91c1c"
+        z_t2 = "#fca5a5" if is_dark else "#7f1d1d"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{z_col}; font-weight:bold;'>🔥 İstatistiksel TEPE (Z-Score: {z_score_val:.2f})</div>"
+        scan_results_html += f"<div style='background:{z_bg}; border-left:3px solid {z_col}; padding:6px; margin-top:2px; border-radius:0 4px 4px 0;'><div style='font-size:0.7rem; color:{z_t1}; font-weight:bold; margin-bottom:2px;'>🎓 GÜÇLÜ ANOMALİ</div><div style='font-size:0.7rem; color:{z_t2}; line-height:1.3;'>Fiyat +2 sapmayı aştı. Düzeltme riski çok yüksek.</div></div>"
     elif z_score_val >= 1.5: 
-        # SEVİYE 2: TEPEYE YAKLAŞIYOR (UYARI)
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#ea580c;'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
-        
+        c_z2 = "#f97316" if is_dark else "#ea580c"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{c_z2};'>⚠️ Tepeye Yaklaşıyor (Z-Score: {z_score_val:.2f})</div>"
     elif z_score_val >= 1.0: 
-        # SEVİYE 1: PAHALILANIYOR (BİLGİ) - [YENİ]
         found_any = True
-        scan_results_html += f"<div style='margin-top:4px; font-size:0.8rem; color:#854d0e;'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
+        c_z1 = "#eab308" if is_dark else "#854d0e"
+        scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{c_z1};'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
+
+    # --- HTML ÇIKTISI RENDER ---
     if found_any:
+        star_title = " ⭐" if is_star_candidate else ""
+        display_ticker_safe = active_t.replace(".IS", "").replace("=F", "")
+        
+        # Tema Renkleri
+        bg_panel = "rgba(17, 24, 39, 0.6)" if is_dark else "#f8fafc"
+        border_panel = "rgba(255,255,255,0.05)" if is_dark else "#cbd5e1"
+        title_col = "#38bdf8" if is_dark else "#1e3a8a"
+        title_border = "rgba(255,255,255,0.1)" if is_dark else "#e2e8f0"
+
         st.markdown(f"""
-        <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:8px; margin-bottom:15px;">
-            <div style="font-size:1.0rem; font-weight:700; color:#1e3a8a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px;">📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}</div>
+        <div style="background:{bg_panel}; border:1px solid {border_panel}; border-radius:8px; padding:12px; margin-bottom:15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <div style="font-size:0.95rem; font-weight:800; color:{title_col}; border-bottom:1px solid {title_border}; padding-bottom:6px; margin-bottom:8px; display:flex; align-items:center; gap:5px;">
+                📋 TARAMA SONUÇLARI - {display_ticker_safe}{star_title}
+            </div>
             {scan_results_html}
         </div>
         """, unsafe_allow_html=True)
-    else:
-        # Hiçbir şey yoksa boş bırak
-        pass
     # 2. Price Action Paneli
     render_price_action_panel(st.session_state.ticker)
 
