@@ -6446,86 +6446,84 @@ def render_roadmap_8_panel(ticker):
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
     
-    # --- YENİ EKLENEN: TEKNİK SEVİYELER (MA) PANELİ ---
+    # --- YENİ YERİ: GENEL SAĞLIK PANELİ (SIDEBAR İÇİN DİKEY OPTİMİZE EDİLDİ) ---
     try:
         if "ticker" in st.session_state and st.session_state.ticker:
-            
-            df_ma = get_safe_historical_data(st.session_state.ticker, period="1y") 
-            
-            if df_ma is not None and not df_ma.empty:
-                if 'Close' in df_ma.columns: c_col = 'Close'
-                elif 'close' in df_ma.columns: c_col = 'close'
-                elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
-                else: c_col = df_ma.columns[0]
+            master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-                current_price = df_ma[c_col].iloc[-1]
+            st.markdown("<div style='text-align:center; font-weight:800; font-size:1.1rem; color:#3b82f6; margin-bottom:5px; margin-top:10px;'>GENEL SAĞLIK DURUMU</div>", unsafe_allow_html=True)
 
-                ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
-                ema8 = df_ma[c_col].ewm(span=8, adjust=False).mean().iloc[-1]
-                ema13 = df_ma[c_col].ewm(span=13, adjust=False).mean().iloc[-1]
-                ema144 = df_ma[c_col].ewm(span=144, adjust=False).mean().iloc[-1]
+            # 1. HIZ GÖSTERGESİ (GAUGE)
+            render_gauge_chart(master_score)
 
-                sma50 = df_ma[c_col].rolling(window=50).mean().iloc[-1]
-                sma100 = df_ma[c_col].rolling(window=100).mean().iloc[-1]
-                sma200 = df_ma[c_col].rolling(window=200).mean().iloc[-1]
+            # CSS: Özel ve İnce Kaydırma Çubuğu (Custom Scrollbar)
+            custom_scrollbar_css = """
+            <style>
+            .custom-scroll::-webkit-scrollbar { width: 6px; }
+            .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+            .custom-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
+            .custom-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.3); }
+            </style>
+            """
+            st.markdown(custom_scrollbar_css, unsafe_allow_html=True)
 
-                # AKILLI FORMAT: Endeksleri (XU) veya 1000'den büyük rakamları yakala
-                is_index = "XU" in st.session_state.ticker.upper() or "^" in st.session_state.ticker or current_price > 1000
+            # 2. POZİTİF ETKENLER
+            pos_items_html = ""
+            if score_pros:
+                for p in score_pros:
+                    color_line = "rgba(16, 185, 129, 0.15)" if st.session_state.dark_mode else "rgba(22, 163, 74, 0.2)"
+                    text_color = "#e2e8f0" if st.session_state.dark_mode else "#14532d"
+                    pos_items_html += f"<div style='font-size:0.8rem; color:{text_color}; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid {color_line};'>{p}</div>"
+            else:
+                text_color = "#94a3b8" if st.session_state.dark_mode else "#14532d"
+                pos_items_html = f"<div style='font-size:0.8rem; color:{text_color}; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
 
-                def ma_status(ma_value, price):
-                    if pd.isna(ma_value): return "⏳ -"
-                    
-                    # Küsurat ayarı
-                    if is_index:
-                        val_str = f"{int(ma_value)}" # Endeks ise tam sayı yap (Örn: 14016)
+            if st.session_state.dark_mode:
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.3); border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#10b981; background-color:rgba(16, 185, 129, 0.15); padding:8px 12px; border-bottom:1px solid rgba(16, 185, 129, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>POZİTİF ETKENLER</span><span style="background-color:#10b981; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:8px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>POZİTİF ETKENLER</span><span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+
+            # 3. NEGATİF ETKENLER
+            neg_items_html = ""
+            if score_cons:
+                for c in score_cons:
+                    color_line = "rgba(239, 68, 68, 0.15)" if st.session_state.dark_mode else "rgba(220, 38, 38, 0.2)"
+                    text_color = "#e2e8f0" if st.session_state.dark_mode else "#7f1d1d"
+                    neg_items_html += f"<div style='font-size:0.8rem; color:{text_color}; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid {color_line};'>❌ {c}</div>"
+            else:
+                text_color = "#94a3b8" if st.session_state.dark_mode else "#7f1d1d"
+                neg_items_html = f"<div style='font-size:0.8rem; color:{text_color}; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
+
+            if st.session_state.dark_mode:
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#ef4444; background-color:rgba(239, 68, 68, 0.15); padding:8px 12px; border-bottom:1px solid rgba(239, 68, 68, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>NEGATİF ETKENLER</span><span style="background-color:#ef4444; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:150px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:8px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>NEGATİF ETKENLER</span><span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
+
+            # 4. HAREKETLİ ORTALAMALAR
+            ma_data = get_ma_data_for_ui(st.session_state.ticker)
+            if ma_data:
+                c_val = ma_data["close"]
+                def render_ma_row(name, val, current_price):
+                    if pd.isna(val) or val == 0: return ""
+                    color_icon = "🟢" if current_price > val else "🔴"
+                    val_str = f"{int(val):,}" if val >= 1000 else f"{val:,.2f}"
+                    if st.session_state.dark_mode:
+                        return f"<div style='font-size:0.75rem; color:#a3a8b8; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span style='color:#e2e8f0;'><b>{val_str}</b> {color_icon}</span></div>"
                     else:
-                        val_str = f"{ma_value:.2f}"  # Hisse ise küsuratlı kalsın (Örn: 15.42)
-                        
-                    if price > ma_value:
-                        return f"🟢 <b>{val_str}</b>"
-                    else:
-                        return f"🔴 <b>{val_str}</b>"
+                        return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
 
-                # YENİ EKLENEN: Sembolü temizleme (Örn: XU100.IS -> XU100)
-                # Noktadan (.) bölüp ilk kısmı alıyoruz ve her ihtimale karşı büyük harfe çeviriyoruz.
-                clean_ticker = st.session_state.ticker.split('.')[0].upper()
+                ema_html = render_ma_row("EMA 5", ma_data["ema5"], c_val) + render_ma_row("EMA 8", ma_data["ema8"], c_val) + render_ma_row("EMA 13", ma_data["ema13"], c_val)
+                sma_html = render_ma_row("SMA 50", ma_data["sma50"], c_val) + render_ma_row("SMA 100", ma_data["sma100"], c_val) + render_ma_row("SMA 200", ma_data["sma200"], c_val)
 
-                # DİKKAT: Üç tırnaktan sonraki HTML etiketleri tamamen en sola dayalı olmalıdır!
-                st.markdown(f"""
-<div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-<div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 6px; text-align: center; font-weight: 700; font-size: 0.9rem;">
-📊 TEKNİK SEVİYELER
-</div>
-<div style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 6px; text-align: center; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-<span style="font-weight: 800; font-size: 0.95rem; color: #0f172a; letter-spacing: 0.5px;">{clean_ticker}</span>
-<span style="color: #64748b; margin: 0 8px; font-weight: 400;">—</span>
-<span style="font-weight: 700; font-size: 0.95rem; color: #0284c7;">{current_price:,.2f}</span>
-</div>
-<div style="display: flex; padding: 10px 5px; background-color: transparent;">
-<div style="flex: 1; padding-right: 10px; border-right: 1px solid #4b5563;">
-<div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">📉 KISA VADE</div>
-<div style="font-size: 0.85rem; line-height: 1.6;">
-EMA 5: {ma_status(ema5, current_price)}<br>
-EMA 8: {ma_status(ema8, current_price)}<br>
-EMA 13: {ma_status(ema13, current_price)}
-</div>
-</div>
-<div style="flex: 1; padding-left: 10px;">
-<div style="font-size: 0.75rem; color: #6b7280; font-weight: bold; margin-bottom: 5px;">🔭 ORTA/UZUN VADE</div>
-<div style="font-size: 0.85rem; line-height: 1.6;">
-SMA 50: {ma_status(sma50, current_price)}<br>
-SMA 100: {ma_status(sma100, current_price)}<br>
-SMA 200: {ma_status(sma200, current_price)}<br>
-EMA 144: {ma_status(ema144, current_price)}
-</div>
-</div>
-</div>
-</div>
-""", unsafe_allow_html=True)
-                
+                if st.session_state.dark_mode:
+                    final_ma_html = f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:rgba(17, 24, 39, 0.6); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:0; height:180px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);"><div style="font-weight:800; font-size:0.85rem; color:#38bdf8; background-color:rgba(56, 189, 248, 0.15); padding:8px 12px; border-bottom:1px solid rgba(56, 189, 248, 0.3); position:sticky; top:0; z-index:10; text-align:center; backdrop-filter: blur(4px);">HAREKETLİ ORTALAMALAR</div><div style="padding: 8px 12px;">{ema_html}{sma_html}</div></div>"""
+                else:
+                    final_ma_html = f"""<div class="custom-scroll" style="margin-bottom:10px; background-color:#f8fafc; border:1px solid #94a3b8; border-radius:8px; padding:0; height:180px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(148, 163, 184, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#334155; background-color:#e2e8f0; padding:8px 12px; border-bottom:2px solid #94a3b8; position:sticky; top:0; z-index:10; text-align:center;">HAREKETLİ ORTALAMALAR</div><div style="padding: 8px 12px;">{ema_html}{sma_html}</div></div>"""
+                st.markdown(final_ma_html, unsafe_allow_html=True)
     except Exception as e:
-        st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
-    # --------------------------------------------------
+        st.warning(f"Genel Sağlık tablosu oluşturulamadı. Hata: {e}")
+
+
     # --------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
@@ -8213,154 +8211,87 @@ with col_left:
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
     
-    # 2. ANA SKOR PANELİ (İKİNCİ SIRA)
-    st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-    
-    master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
+    # --- YENİ YERİ: TEKNİK SEVİYELER (MA) PANELİ (YAN YANA YAPI & BİRLEŞİK BAŞLIK) ---
+    try:
+        if "ticker" in st.session_state and st.session_state.ticker:
+            df_ma = get_safe_historical_data(st.session_state.ticker, period="1y") 
+            
+            if df_ma is not None and not df_ma.empty:
+                if 'Close' in df_ma.columns: c_col = 'Close'
+                elif 'close' in df_ma.columns: c_col = 'close'
+                elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
+                else: c_col = df_ma.columns[0]
 
-    # --- YENİ 4 SÜTUNLU ANA SKOR DÜZENİ ---
-    # Oranları 4 sütuna göre dengeledik: Hız göstergesi(1.2), Artılar(1.9, Eksiler(1.9), Ortalamalar(1.4)
-    c_gauge, c_pos, c_neg, c_ma = st.columns([1.2, 1.9, 1.9, 1.4], vertical_alignment="center")
-    
-    # CSS: Özel ve İnce Kaydırma Çubuğu (Custom Scrollbar)
-    custom_scrollbar_css = """
-    <style>
-    .custom-scroll::-webkit-scrollbar { width: 6px; }
-    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-    .custom-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 10px; }
-    .custom-scroll:hover::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.3); }
-    </style>
-    """
-    st.markdown(custom_scrollbar_css, unsafe_allow_html=True)
+                current_price = df_ma[c_col].iloc[-1]
 
-    # 1. SÜTUN: HIZ GÖSTERGESİ
-    with c_gauge:
-        bosluk_sol, grafik_alani, bosluk_sag = st.columns([0.2, 1, 0.2]) 
-        with grafik_alani:
-            render_gauge_chart(master_score)
+                ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
+                ema8 = df_ma[c_col].ewm(span=8, adjust=False).mean().iloc[-1]
+                ema13 = df_ma[c_col].ewm(span=13, adjust=False).mean().iloc[-1]
+                ema144 = df_ma[c_col].ewm(span=144, adjust=False).mean().iloc[-1]
 
-    # 2. SÜTUN: POZİTİF ETKENLER (YEŞİL KUTU)
-    with c_pos:
-        pos_items_html = ""
-        if score_pros:
-            for p in score_pros:
-                # DİKKAT: Baştaki hardcoded ✅ işaretini kaldırdık, çünkü fonksiyondan geliyor!
-                if st.session_state.dark_mode:
-                    pos_items_html += f"<div style='font-size:0.8rem; color:#e2e8f0; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(16, 185, 129, 0.15);'>{p}</div>"
+                sma50 = df_ma[c_col].rolling(window=50).mean().iloc[-1]
+                sma100 = df_ma[c_col].rolling(window=100).mean().iloc[-1]
+                sma200 = df_ma[c_col].rolling(window=200).mean().iloc[-1]
+
+                is_index = "XU" in st.session_state.ticker.upper() or "^" in st.session_state.ticker or current_price > 1000
+
+                def ma_status(ma_value, price):
+                    if pd.isna(ma_value): return "⏳ -"
+                    if is_index: val_str = f"{int(ma_value)}" 
+                    else: val_str = f"{ma_value:.2f}"  
+                        
+                    if price > ma_value: return f"🟢 <b>{val_str}</b>"
+                    else: return f"🔴 <b>{val_str}</b>"
+
+                clean_ticker = st.session_state.ticker.split('.')[0].upper()
+                
+                # Fiyat formatlaması (Endeks ise EMA'lar gibi küsuratsız)
+                if is_index:
+                    display_price = f"{int(current_price)}"
                 else:
-                    pos_items_html += f"<div style='font-size:0.8rem; color:#14532d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(22, 163, 74, 0.2);'>{p}</div>"
-        else:
-            if st.session_state.dark_mode:
-                pos_items_html = "<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
-            else:
-                pos_items_html = "<div style='font-size:0.8rem; color:#14532d; padding:6px 2px;'>Belirgin pozitif etken yok.</div>"
+                    display_price = f"{current_price:.2f}"
+                
+                # Dark Mode Uyumlu Metin Renkleri
+                text_col = "#e2e8f0" if st.session_state.dark_mode else "#1e293b"
+                lbl_col = "#94a3b8" if st.session_state.dark_mode else "#64748b"
+                border_col = "rgba(255,255,255,0.2)" if st.session_state.dark_mode else "#cbd5e1"
+                bg_col = "rgba(17, 24, 39, 0.6)" if st.session_state.dark_mode else "transparent"
 
-        if st.session_state.dark_mode:
-            st.markdown(f"""<div class="custom-scroll" style="background-color:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#10b981; background-color:rgba(16, 185, 129, 0.15); padding:10px 12px; border-bottom:1px solid rgba(16, 185, 129, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>POZİTİF ETKENLER</span><span style="background-color:#10b981; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<div class="custom-scroll" style="background-color:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#15803d; background-color:#dcfce7; padding:10px 12px; border-bottom:2px solid #16a34a; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>POZİTİF ETKENLER</span><span style="background-color:#16a34a; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_pros)}</span></div><div style="padding:8px 12px;">{pos_items_html}</div></div>""", unsafe_allow_html=True)
+                # Yan yana (inline) öğe oluşturucu fonksiyon
+                def ma_inline(label, val, price, is_last=False):
+                    border_style = "" if is_last else f"border-right: 1px solid {border_col}; padding-right: 12px; margin-right: 12px;"
+                    return f'<div style="display: inline-block; {border_style}"><span style="font-size:0.8rem; color:{lbl_col};">{label}:</span> <span style="font-size:0.9rem; color:{text_col};">{ma_status(val, price)}</span></div>'
 
-    # 3. SÜTUN: NEGATİF ETKENLER (KIRMIZI KUTU)
-    with c_neg:
-        neg_items_html = ""
-        if score_cons:
-            for c in score_cons:
-                # DİKKAT: Baştaki hardcoded ❌ işaretini kaldırdık, çünkü cons listesine sadece 0 alanları attık.
-                # Arayüzde net bir kırmızı çarpı görünmesi için buraya sadece ❌ ekliyoruz.
-                if st.session_state.dark_mode:
-                    neg_items_html += f"<div style='font-size:0.8rem; color:#e2e8f0; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(239, 68, 68, 0.15);'>❌ {c}</div>"
-                else:
-                    neg_items_html += f"<div style='font-size:0.8rem; color:#7f1d1d; margin-bottom:1px; padding:3px 2px; border-bottom:1px solid rgba(220, 38, 38, 0.2);'>❌ {c}</div>"
-        else:
-            if st.session_state.dark_mode:
-                neg_items_html = "<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
-            else:
-                neg_items_html = "<div style='font-size:0.8rem; color:#7f1d1d; padding:6px 2px;'>Belirgin negatif etken yok.</div>"
+                # BOŞLUK HATASINI ÖNLEMEK İÇİN TEK SATIRDA YAZILMIŞ HTML DEĞİŞKENLERİ
+                kisa_html = f'<div style="display: flex; flex-wrap: wrap; align-items: center; margin-top: 4px;">{ma_inline("EMA 5", ema5, current_price)}{ma_inline("EMA 8", ema8, current_price)}{ma_inline("EMA 13", ema13, current_price, True)}</div>'
+                
+                uzun_html = f'<div style="display: flex; flex-wrap: wrap; align-items: center; margin-top: 4px;">{ma_inline("SMA 50", sma50, current_price)}{ma_inline("SMA 100", sma100, current_price)}{ma_inline("SMA 200", sma200, current_price)}{ma_inline("EMA 144", ema144, current_price, True)}</div>'
 
-        if st.session_state.dark_mode:
-            st.markdown(f"""<div class="custom-scroll" style="background-color:rgba(239, 68, 68, 0.05); border:1px solid rgba(239, 68, 68, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0, 0.2);"><div style="font-weight:800; font-size:0.85rem; color:#ef4444; background-color:rgba(239, 68, 68, 0.15); padding:10px 12px; border-bottom:1px solid rgba(239, 68, 68, 0.3); position:sticky; top:0; z-index:10; display:flex; justify-content:space-between; backdrop-filter: blur(4px);"><span>NEGATİF ETKENLER</span><span style="background-color:#ef4444; color:#0b0f19; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<div class="custom-scroll" style="background-color:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.1);"><div style="font-weight:800; font-size:0.85rem; color:#b91c1c; background-color:#fee2e2; padding:10px 12px; border-bottom:2px solid #dc2626; position:sticky; top:0; z-index:10; display:flex; justify-content:space-between;"><span>NEGATİF ETKENLER</span><span style="background-color:#dc2626; color:white; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{len(score_cons)}</span></div><div style="padding:8px 12px;">{neg_items_html}</div></div>""", unsafe_allow_html=True)
-
-    # 4. SÜTUN: HAREKETLİ ORTALAMALAR (YENİ - MAVİ KUTU / 2 SÜTUNLU)
-    with c_ma:
-        ma_data = get_ma_data_for_ui(st.session_state.ticker)
-
-        if ma_data:
-            c_val = ma_data["close"]
-
-            def render_ma_row(name, val, current_price):
-                if pd.isna(val) or val == 0: return ""
-
-                # Fiyat üstündeyse yeşil, altındaysa kırmızı daire
-                color_icon = "🟢" if current_price > val else "🔴"
-
-                # 1000 ve üzeri değerlerde ondalık kısmı at, virgülle ayır (Örn: 13,915)
-                # 1000 altı değerlerde ise 2 küsurat bırak (Örn: 15.42)
-                if val >= 1000:
-                    val_str = f"{int(val):,}"
-                else:
-                    val_str = f"{val:,.2f}"
-
-                # İki sütuna sığması için font-size'ı 0.8rem'den 0.75rem'e düşürdük
-                if st.session_state.dark_mode:
-                    return f"<div style='font-size:0.75rem; color:#a3a8b8; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span style='color:#e2e8f0;'><b>{val_str}</b> {color_icon}</span></div>"
-                else:
-                    return f"<div style='font-size:0.75rem; color:#334155; margin-bottom:4px; padding:4px 2px; border-bottom:1px solid rgba(0,0,0,0.05); display:flex; justify-content:space-between; align-items:center;'><span>{name}</span> <span><b>{val_str}</b> {color_icon}</span></div>"
-
-            # EMA'ları ve SMA'ları ayrı ayrı HTML değişkenlerine alıyoruz
-            ema_html = ""
-            ema_html += render_ma_row("EMA 5", ma_data["ema5"], c_val)
-            ema_html += render_ma_row("EMA 8", ma_data["ema8"], c_val)
-            ema_html += render_ma_row("EMA 13", ma_data["ema13"], c_val)
-
-            sma_html = ""
-            sma_html += render_ma_row("SMA 50", ma_data["sma50"], c_val)
-            sma_html += render_ma_row("SMA 100", ma_data["sma100"], c_val)
-            sma_html += render_ma_row("SMA 200", ma_data["sma200"], c_val)
-
-            # CSS Grid (display: grid; grid-template-columns: 1fr 1fr;) ile ikiye bölüyoruz
-            # Streamlit hatası almamak için HTML bloğunu TAMAMEN sola yaslıyoruz
-            if st.session_state.dark_mode:
-                final_html = f"""
-<div class="custom-scroll" style="background-color:rgba(17, 24, 39, 0.6); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
-<div style="font-weight:800; font-size:0.85rem; color:#38bdf8; background-color:rgba(56, 189, 248, 0.15); padding:10px 12px; border-bottom:1px solid rgba(56, 189, 248, 0.3); position:sticky; top:0; z-index:10; text-align:center; backdrop-filter: blur(4px);">
-HAREKETLİ ORTALAMALAR 
+                # Ana HTML Çıktısı (En sola dayalı)
+                st.markdown(f"""
+<div style="border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+<div style="background: linear-gradient(45deg, #1e3a8a, #3b82f6); color: white; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+<span style="font-weight: 700; font-size: 0.9rem;">📊 TEKNİK SEVİYELER</span>
+<span style="background: rgba(0,0,0,0.25); padding: 4px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 0.95rem;">{clean_ticker} <span style="opacity:0.6; margin:0 4px; font-weight:400;">—</span> <span style="color:#6ee7b7;">{display_price}</span></span>
 </div>
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px;">
-<div>
-{ema_html}
+
+<div style="display: flex; padding: 12px 10px; background-color: {bg_col};">
+<div style="flex: 1; padding-right: 15px; border-right: 1px solid {border_col};">
+<div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold; margin-bottom: 2px;">📉 KISA VADE</div>
+{kisa_html}
 </div>
-<div>
-{sma_html}
+
+<div style="flex: 1.3; padding-left: 15px;">
+<div style="font-size: 0.85rem; color: #3b82f6; font-weight: bold; margin-bottom: 2px;">🔭 ORTA/UZUN VADE</div>
+{uzun_html}
 </div>
 </div>
 </div>
-"""
-            else:
-                final_html = f"""
-<div class="custom-scroll" style="background-color:#f8fafc; border:1px solid #94a3b8; border-radius:8px; padding:0; height:200px; overflow-y:auto; position:relative; box-shadow: 0 4px 6px -1px rgba(148, 163, 184, 0.1);">
-<div style="font-weight:800; font-size:0.85rem; color:#334155; background-color:#e2e8f0; padding:10px 12px; border-bottom:2px solid #94a3b8; position:sticky; top:0; z-index:10; text-align:center;">
-HAREKETLİ ORTALAMALAR 
-</div>
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px;">
-<div>
-{ema_html}
-</div>
-<div>
-{sma_html}
-</div>
-</div>
-</div>
-"""
-            st.markdown(final_html, unsafe_allow_html=True)
-
-        else:
-            if st.session_state.dark_mode:
-                st.markdown("<div style='font-size:0.8rem; color:#94a3b8; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div style='font-size:0.8rem; color:#64748b; padding:6px 2px;'>Veri hesaplanamadı.</div>", unsafe_allow_html=True)
-
+""", unsafe_allow_html=True)
+                
+    except Exception as e:
+        st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
+    # --------------------------------------------------
 
 
     # 3. ICT SMART MONEY ANALİZİ (YENİ YERİ: ANA SKOR ALTINDA)
