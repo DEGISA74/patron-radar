@@ -1559,11 +1559,11 @@ def scan_stp_signals(asset_list):
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             if res:
-                if res["type"] == "cross":
+                if res["type"] == "cross_up":
                     cross_signals.append(res["data"])
                     if res.get("is_filtered"):
                         filtered_signals.append(res["data"])
-                elif res["type"] == "trend":
+                elif res["type"] == "trend_up":
                     trend_signals.append(res["data"])
 
     cross_signals.sort(key=lambda x: x.get("Hacim", 0), reverse=True)
