@@ -961,7 +961,10 @@ def process_single_stock_stp(symbol, df):
         high = df['High']
         low = df['Low']
         volume = float(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0
-        
+        # --- YENİ EKLENEN: 20 Günlük Ortalamaya Göre Hacim Artış Katı ---
+        avg_vol = float(df['Volume'].rolling(20).mean().iloc[-1]) if 'Volume' in df.columns and len(df) >= 20 else 1.0
+        vol_ratio = volume / avg_vol if avg_vol > 0 else 1.0
+
         typical_price = (high + low + close) / 3
         stp = typical_price.ewm(span=6, adjust=False).mean()
         sma200 = close.rolling(200).mean()
@@ -980,7 +983,7 @@ def process_single_stock_stp(symbol, df):
         if c_prev <= s_prev and c_last > s_last:
             result = {
                 "type": "cross_up",
-                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume}
+                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume, "Hacim_Kat": vol_ratio}
             }
             sma_val = float(sma200.iloc[-1])
             rsi_val = float(rsi.iloc[-1])
@@ -989,11 +992,11 @@ def process_single_stock_stp(symbol, df):
             else:
                 result["is_filtered"] = False
 
-        # --- YENİ: AŞAĞI KESİŞİM (SAT) ---
+        # --- AŞAĞI KESİŞİM (SAT) ---
         elif c_prev >= s_prev and c_last < s_last:
             result = {
                 "type": "cross_down",
-                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume}
+                "data": {"Sembol": symbol, "Fiyat": c_last, "STP": s_last, "Fark": ((c_last/s_last)-1)*100, "Hacim": volume, "Hacim_Kat": vol_ratio}
             }
 
         # YUKARI TREND
@@ -1566,9 +1569,9 @@ def scan_stp_signals(asset_list):
                 elif res["type"] == "trend_up":
                     trend_signals.append(res["data"])
 
-    cross_signals.sort(key=lambda x: x.get("Hacim", 0), reverse=True)
-    filtered_signals.sort(key=lambda x: x.get("Hacim", 0), reverse=True) # İstersen filtrelenmişleri de sıralayabilirsin
-    trend_signals.sort(key=lambda x: x["Gun"], reverse=False)
+    cross_signals.sort(key=lambda x: x.get("Hacim_Kat", 0), reverse=True)
+    filtered_signals.sort(key=lambda x: x.get("Hacim_Kat", 0), reverse=True) 
+    trend_signals.sort(key=lambda x: x["Gun"], reverse=False) # Trend olanları hala gün sayısına göre sıralamak mantıklı
     return cross_signals, trend_signals, filtered_signals
 
 def process_single_accumulation(symbol, df, benchmark_series):
@@ -8440,7 +8443,7 @@ with col_left:
             with st.container(height=200, border=True):
                 if st.session_state.stp_crosses:
                     for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_c_{item['Sembol']}", use_container_width=True): 
+                        if st.button(f"🚀 {item['Sembol']} | {item.get('Hacim_Kat', 0):.1f}x Hacim", key=f"stp_c_{item['Sembol']}", use_container_width=True):
                             st.session_state.ticker = item['Sembol']
                             st.rerun()
                 else:
@@ -8451,7 +8454,7 @@ with col_left:
             with st.container(height=200, border=True):
                 if st.session_state.stp_filtered:
                     for item in st.session_state.stp_filtered:
-                        if st.button(f"🔥 {item['Sembol']} ({item['Fiyat']:.2f})", key=f"stp_f_{item['Sembol']}", use_container_width=True): 
+                        if st.button(f"🔥 {item['Sembol']} | {item.get('Hacim_Kat', 0):.1f}x Hacim", key=f"stp_f_{item['Sembol']}", use_container_width=True):
                             st.session_state.ticker = item['Sembol']
                             st.rerun()
                 else:
