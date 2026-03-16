@@ -16,9 +16,45 @@ import altair as alt
 import random
 import os
 
-CACHE_DIR = "veriler"
+CACHE_DIR = r"C:\Users\LENOVO\OneDrive\Desktop\Patron Terminal\veriler"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
+
+def is_yahoo_update_needed(ticker, local_last_date):
+    """
+    Piyasa saatlerine göre Yahoo'ya gitmenin gerekip gerekmediğini denetler.
+    """
+    now = datetime.now()
+    weekday = now.weekday()  # 0=Pazartesi, 5=Cumartesi, 6=Pazar
+    hour_min = now.hour * 100 + now.minute
+    local_date = local_last_date.date()
+
+    # BIST Grubu (.IS veya XU ile başlayanlar)
+    if ".IS" in ticker or ticker.startswith("XU"):
+        # Hafta sonu ise: Veri en az Cuma gününe aitse GİTME.
+        if weekday >= 5:
+            return local_date < (now - timedelta(days=(weekday - 4))).date()
+        # Hafta içi mesai öncesi (10:00 altı): Veri dün ise GİTME.
+        if hour_min < 1000:
+            return local_date < (now - timedelta(days=1)).date()
+        # Hafta içi mesai sonrası (18:30 üstü): Veri bugün ise GİTME.
+        if hour_min > 1830:
+            return local_date < now.date()
+        return True # Seans içi: GİT.
+
+    # ABD Grubu (Nasdaq/SP500 - USD olmayanlar/Kripto hariç)
+    elif "-USD" not in ticker:
+        # Hafta sonu: Cuma verisi varsa GİTME.
+        if weekday >= 5:
+            return local_date < (now - timedelta(days=(weekday - 4))).date()
+        # Hafta içi gece kapanış sonrası (23:30 TR saati): Veri bugün ise GİTME.
+        if hour_min > 2330 or hour_min < 1630:
+            target_date = now.date() if hour_min > 2330 else (now - timedelta(days=1)).date()
+            return local_date < target_date
+        return True # Seans içi: GİT.
+
+    # Kripto: 7/24 olduğu için her zaman GİT.
+    return True
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -473,46 +509,13 @@ def get_fundamental_score(ticker):
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_batch_data_cached(asset_list, period="1y"):
     """
-    TOPLU TARAMALAR İÇİN AKILLI ÖNBELLEK (SCANNER'LAR İÇİN)
+    GATEKEEPER DESTEKLİ TOPLU TARAMA MOTORU - MULTIINDEX HATASI GİDERİLDİ
     """
     if not asset_list:
         return pd.DataFrame()
         
     missing_assets = []
-    
-    # 1. Hangi hisselerin diskte verisi yok?
-    for sym in asset_list:
-        clean_sym = sym.replace(".IS", "")
-        if "BIST" in sym or ".IS" in sym:
-            clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
-        if not os.path.exists(os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")):
-            missing_assets.append(sym)
-            
-    # 2. HİÇ OLMAYANLARI ilk defaya mahsus 2 yıllık toplu çek ve diske yaz
-    if missing_assets:
-        df_missing = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
-        if not df_missing.empty:
-            for sym in missing_assets:
-                clean_sym = sym.replace(".IS", "")
-                if "BIST" in sym or ".IS" in sym:
-                    clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
-                    
-                try:
-                    df_sym = df_missing[sym] if len(missing_assets) > 1 and isinstance(df_missing.columns, pd.MultiIndex) else df_missing
-                    df_sym = df_sym.dropna(subset=['Close'])
-                    if not df_sym.empty:
-                        df_sym.columns = [c.capitalize() for c in df_sym.columns]
-                        if 'Volume' not in df_sym.columns: df_sym['Volume'] = 1
-                        df_sym.to_parquet(os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet"))
-                except: continue
-
-    # 3. TÜM LİSTE İÇİN (VAR OLANLAR DAHİL) SADECE SON 5 GÜNÜ TOPLU ÇEK (Güncel kalsın diye)
-    df_recent = yf.download(" ".join(asset_list), period="5d", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
-    
-    # 4. DİSKTEN OKU + 5 GÜNLÜKLE BİRLEŞTİR + SİSTEME VER
     combined_dict = {}
-    period_map = {"10y": 2500, "5y": 1250, "2y": 500, "1y": 250, "6mo": 125, "3mo": 60, "1mo": 20}
-    days_to_keep = period_map.get(period, 500) 
     
     for sym in asset_list:
         clean_sym = sym.replace(".IS", "")
@@ -520,38 +523,62 @@ def get_batch_data_cached(asset_list, period="1y"):
             clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
         file_path = os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")
         
-        try:
-            if os.path.exists(file_path):
+        needs_download = True
+        if os.path.exists(file_path):
+            try:
                 df_cached = pd.read_parquet(file_path)
-                
-                # Yeni 5 günlük veriyi ayıkla
-                df_sym_recent = pd.DataFrame()
-                if not df_recent.empty:
-                    if len(asset_list) == 1:
-                        df_sym_recent = df_recent
-                    elif isinstance(df_recent.columns, pd.MultiIndex) and sym in df_recent.columns.levels[0]:
-                        df_sym_recent = df_recent[sym]
-                        
-                if not df_sym_recent.empty:
-                    df_sym_recent = df_sym_recent.dropna(subset=['Close'])
-                    df_sym_recent.columns = [c.capitalize() for c in df_sym_recent.columns]
-                    if 'Volume' not in df_sym_recent.columns: df_sym_recent['Volume'] = 1
-                    
-                    # ESKİ VE YENİ VERİYİ BİRLEŞTİR (Yeni veri ezerek günceller)
-                    df_combined = pd.concat([df_cached, df_sym_recent])
-                    df_combined = df_combined[~df_combined.index.duplicated(keep='last')]
-                    df_combined.sort_index(inplace=True)
-                    
-                    df_combined.to_parquet(file_path) # Diski güncelle
-                    final_df = df_combined
-                else:
-                    final_df = df_cached
-                
-                combined_dict[sym] = final_df.tail(days_to_keep)
-        except Exception:
-            continue
+                if not df_cached.empty:
+                    if not is_yahoo_update_needed(sym, df_cached.index[-1]):
+                        combined_dict[sym] = df_cached.tail(500)
+                        needs_download = False
+            except: pass
+        if needs_download:
+            missing_assets.append(sym)
+
+    if missing_assets:
+        df_new = yf.download(" ".join(missing_assets), period="1mo", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
+        
+        for sym in missing_assets:
+            clean_sym = sym.replace(".IS", "")
+            if "BIST" in sym or ".IS" in sym:
+                clean_sym = sym if sym.endswith(".IS") else f"{sym}.IS"
             
-    # Taramaların (eski kodun) yapısını bozmamak için MultiIndex DataFrame olarak birleştir
+            try:
+                # MULTIINDEX TEMİZLİĞİ: Katmanları tekilleştir
+                if len(missing_assets) > 1 and isinstance(df_new.columns, pd.MultiIndex):
+                    df_sym_new = df_new.xs(sym, axis=1, level=1).copy() if sym in df_new.columns.get_level_values(1) else df_new[sym].copy()
+                else:
+                    df_sym_new = df_new.copy()
+                
+                if isinstance(df_sym_new.columns, pd.MultiIndex):
+                    if 'Close' in df_sym_new.columns.get_level_values(0):
+                        df_sym_new.columns = df_sym_new.columns.get_level_values(0)
+                    else:
+                        df_sym_new.columns = df_sym_new.columns.get_level_values(1)
+                
+                df_sym_new = df_sym_new.loc[:, ~df_sym_new.columns.duplicated()]
+                df_sym_new.columns = [str(c).capitalize() for c in df_sym_new.columns]
+                if 'Volume' not in df_sym_new.columns: df_sym_new['Volume'] = 1.0
+
+                df_sym_new = df_sym_new.dropna(subset=['Close'])
+                df_sym_new.index = df_sym_new.index.tz_localize(None) # Zaman dilimi çakışmasını önle
+                
+                file_path = os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")
+                if os.path.exists(file_path):
+                    df_old = pd.read_parquet(file_path)
+                    df_old = df_old.loc[:, ~df_old.columns.duplicated()]
+                    df_old.columns = [str(c).capitalize() for c in df_old.columns]
+                    df_old.index = df_old.index.tz_localize(None)
+                    df_combined = pd.concat([df_old, df_sym_new])
+                    df_combined = df_combined[~df_combined.index.duplicated(keep='last')].sort_index()
+                else:
+                    df_combined = df_sym_new
+                
+                df_combined.to_parquet(file_path)
+                combined_dict[sym] = df_combined.tail(500)
+            except Exception as e: 
+                continue
+
     if combined_dict:
         return pd.concat(combined_dict.values(), axis=1, keys=combined_dict.keys())
     return pd.DataFrame()
@@ -563,57 +590,46 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
         clean_ticker = ticker.replace(".IS", "")
         if "BIST" in ticker or ".IS" in ticker:
             clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
-            
         file_path = os.path.join(CACHE_DIR, f"{clean_ticker}_{interval}.parquet")
         
-        # 1. DİSK KONTROLÜ VE "SADECE EKSİĞİ (Son 5 Gün)" İNDİRME
+        def safe_clean_columns(df):
+            if isinstance(df.columns, pd.MultiIndex):
+                if 'Close' in df.columns.get_level_values(0):
+                    df.columns = df.columns.get_level_values(0)
+                else:
+                    df.columns = df.columns.get_level_values(1)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+            df.columns = [str(c).capitalize() for c in df.columns]
+            if 'Volume' not in df.columns: df['Volume'] = 1.0
+            return df
+
         if os.path.exists(file_path):
             df_cached = pd.read_parquet(file_path)
+            df_cached = safe_clean_columns(df_cached)
+            df_cached.index = df_cached.index.tz_localize(None)
             
-            # SADECE son 5 günü çek (Ban riski yok, şimşek hızında ve hep canlı)
-            df_new = yf.download(clean_ticker, period="5d", interval=interval, progress=False, auto_adjust=True, prepost=False)
-            
+            if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
+                return df_cached.tail(500)
+
+            df_new = yf.download(clean_ticker, period="1mo", interval=interval, progress=False, auto_adjust=True)
             if not df_new.empty:
-                if isinstance(df_new.columns, pd.MultiIndex):
-                    try: df_new = df_new.xs(clean_ticker, axis=1, level=1)
-                    except: df_new.columns = df_new.columns.get_level_values(0)
-                df_new.columns = [c.capitalize() for c in df_new.columns]
-                if 'Volume' not in df_new.columns: df_new['Volume'] = 1
+                df_new = safe_clean_columns(df_new)
+                df_new.index = df_new.index.tz_localize(None)
                 
-                # 2. ESKİ VE YENİ VERİYİ KAYNAŞTIR (Güncel olan eskisini ezer)
                 df_combined = pd.concat([df_cached, df_new])
-                df_combined = df_combined[~df_combined.index.duplicated(keep='last')]
-                df_combined.sort_index(inplace=True)
-                
-                # 3. DİSKİ GÜNCELLE
+                df_combined = df_combined[~df_combined.index.duplicated(keep='last')].sort_index()
                 df_combined.to_parquet(file_path)
-                final_df = df_combined
-            else:
-                final_df = df_cached
-                
+                return df_combined.tail(500)
+            return df_cached.tail(500)
         else:
-            # DİSKTE HİÇ YOKSA (İlk kez açılıyorsa): Tamamını indir
-            # Gelecekte Lorentzian vb için lazım olacağından ana depoya hep 10y atalım
-            fetch_period = "10y" if interval == "1d" else period
-            df_new = yf.download(clean_ticker, period=fetch_period, interval=interval, progress=False, auto_adjust=True, prepost=False)
-            if df_new.empty: return None
-            
-            if isinstance(df_new.columns, pd.MultiIndex):
-                try: df_new = df_new.xs(clean_ticker, axis=1, level=1)
-                except: df_new.columns = df_new.columns.get_level_values(0)
-            df_new.columns = [c.capitalize() for c in df_new.columns]
-            if 'Volume' not in df_new.columns: df_new['Volume'] = 1
-            
-            df_new.to_parquet(file_path)
-            final_df = df_new
-
-        # 4. İSTENEN SÜREYİ VER (İçeride 10 yıl var ama "6mo" istendiyse sadece 6 ayı ver)
-        period_map = {"10y": 2500, "5y": 1250, "2y": 500, "1y": 250, "6mo": 125, "3mo": 60, "1mo": 20}
-        days_to_keep = period_map.get(period, len(final_df))
-        
-        return final_df.tail(days_to_keep)
-
-    except Exception as e:
+            df_full = yf.download(clean_ticker, period="2y", interval=interval, progress=False, auto_adjust=True)
+            if not df_full.empty:
+                df_full = safe_clean_columns(df_full)
+                df_full.index = df_full.index.tz_localize(None)
+                df_full.to_parquet(file_path)
+                return df_full.tail(500)
+        return None
+    except Exception as e: 
         return None
 
 def calculate_harsi(df, period=14):
@@ -781,18 +797,21 @@ def get_tech_card_data(ticker):
     try:
         df = get_safe_historical_data(ticker, period="2y")
         if df is None: return None
-        close = df['Close']; high = df['High']; low = df['Low']
         
-        sma50 = close.rolling(50).mean().iloc[-1] if len(close) > 50 else 0
-        sma100 = close.rolling(100).mean().iloc[-1] if len(close) > 100 else 0
-        sma200 = close.rolling(200).mean().iloc[-1] if len(close) > 200 else 0
-        ema144 = close.ewm(span=144, adjust=False).mean().iloc[-1]
-        atr = (high-low).rolling(14).mean().iloc[-1]
+        close = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
+        high = df['High'].iloc[:, 0] if isinstance(df['High'], pd.DataFrame) else df['High']
+        low = df['Low'].iloc[:, 0] if isinstance(df['Low'], pd.DataFrame) else df['Low']
+        
+        sma50 = float(close.rolling(50).mean().iloc[-1]) if len(close) > 50 else 0.0
+        sma100 = float(close.rolling(100).mean().iloc[-1]) if len(close) > 100 else 0.0
+        sma200 = float(close.rolling(200).mean().iloc[-1]) if len(close) > 200 else 0.0
+        ema144 = float(close.ewm(span=144, adjust=False).mean().iloc[-1])
+        atr = float((high-low).rolling(14).mean().iloc[-1])
         
         return {
             "sma50": sma50, "sma100": sma100, "sma200": sma200, "ema144": ema144,
-            "stop_level": close.iloc[-1] - (2 * atr), "risk_pct": (2 * atr) / close.iloc[-1] * 100,
-            "atr": atr, "close_last": close.iloc[-1]
+            "stop_level": float(close.iloc[-1] - (2 * atr)), "risk_pct": float((2 * atr) / close.iloc[-1] * 100),
+            "atr": atr, "close_last": float(close.iloc[-1])
         }
     except: return None
 
@@ -2473,6 +2492,154 @@ def get_fundamental_score(ticker):
     except Exception:
         return {"score": 50, "details": [], "valid": False}
 
+# ==============================================================================
+# YENİ: ROYAL FLUSH 3.0 SETUP (DEEP VALUE & TRAP SNIPER) - 6 KATI KRİTERLİ TUZAK AVCISI
+# ==============================================================================
+def calculate_royal_flush_3_0_setup(ticker, df):
+    """
+    🩸 ROYAL FLUSH 3.0 (Deep Value & Trap Sniper)
+    6 Katı Kriter:
+    1. Z-Score <= -1.5 (Aşırı Satım/Ucuzluk bölgesi)
+    2. OBV Yükseliyor (Gizli Para girişi var)
+    3. Hacim Düşük (Panik satışı bitmiş/Tahta kurumuş)
+    4. FVG / Smart Money İndirim Bölgesi Teması
+    5. Trap Score < 0.3 (Boğa tuzakları cezalandırıldı, Ayı tuzakları ödüllendirildi)
+    6. Lorentzian Güven Skoru >= %65
+    """
+    try:
+        if df is None or df.empty or len(df) < 50:
+            return None
+            
+        df_calc = df.copy()
+        
+        close = df_calc['Close']
+        low = df_calc['Low']
+        high = df_calc['High']
+        open_p = df_calc['Open']
+        
+        if 'Volume' not in df_calc.columns or df_calc['Volume'].isnull().all():
+            return None # Hacimsiz verilerde çalışmaz
+        volume = df_calc['Volume']
+        
+        # --- 1. Z-SCORE KONTROLÜ (Ucuzluk: <= -1.5) ---
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        z_score = (close.iloc[-1] - sma20.iloc[-1]) / std20.iloc[-1]
+        
+        if pd.isna(z_score) or z_score > -1.5: 
+            return None
+        
+        # --- 2. OBV KONTROLÜ (Gizli Para Girişi) ---
+        obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+        obv_sma20 = obv.rolling(20).mean()
+        
+        if pd.isna(obv.iloc[-1]) or pd.isna(obv_sma20.iloc[-1]): return None
+        # OBV ortalamanın üzerinde VE yönü yukarı bakıyor olmalı
+        if not (obv.iloc[-1] > obv_sma20.iloc[-1] and obv.iloc[-1] >= obv.iloc[-2]):
+            return None
+            
+        # --- 3. DÜŞÜK HACİM KONTROLÜ (Sakinlik & Panik Yok) ---
+        avg_vol20 = volume.rolling(20).mean()
+        if pd.isna(avg_vol20.iloc[-1]): return None
+        if volume.iloc[-1] > avg_vol20.iloc[-1]: 
+            return None # Son gün hacmi ortalamadan yüksekse (panik varsa) reddet
+            
+        # --- 4. FVG / SMART MONEY BÖLGESİ (İndirim Teması) ---
+        # Son 12 bar içinde oluşan Bullish FVG'ye (Değer Boşluğuna) inmiş mi?
+        fvg_found = False
+        for i in range(len(df_calc)-14, len(df_calc)-2):
+            if df_calc['Low'].iloc[i+2] > df_calc['High'].iloc[i]: # Bullish FVG
+                if low.iloc[-1] <= df_calc['Low'].iloc[i+2]: # Boşluğa veya altına iğne atmış
+                    fvg_found = True
+                    break
+        if not fvg_found: 
+            return None
+        
+        # --- 5. TRAP SCORE HESAPLAMASI (Tuzak Skoru < 0.3) ---
+        # ATR ve SMA
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        df_calc['TR'] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        df_calc['ATR'] = df_calc['TR'].rolling(14).mean()
+        df_calc['SMA_50'] = close.rolling(50).mean()
+        
+        # Puan Artırıcılar (KÖTÜ DURUM: Boğa Tuzağı)
+        rejection_wick = (high - close) > (df_calc['ATR'] * 0.7)
+        fakeout_upper = rejection_wick & (volume < (avg_vol20 * 1.2))
+        
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        rsi_prev = rsi.shift(1)
+        false_breakout = (rsi_prev > 70) & (rsi < 70) & (close < open_p)
+        
+        # Puan Düşürücüler (İYİ DURUM: Ayı Tuzağı / Stop Patlatma)
+        prev_low = low.shift(1)
+        liquidity_sweep = (low < prev_low - (df_calc['ATR'] * 0.5)) & (close > low + (df_calc['ATR'] * 0.3))
+        stop_hunt = (low < df_calc['SMA_50'] - (df_calc['ATR'] * 1.5)) & (close > df_calc['SMA_50'] - (df_calc['ATR'] * 0.5))
+        
+        # Son günkü tuzak skoru hesaplaması
+        trap_score = 0.0
+        if fakeout_upper.iloc[-1]: trap_score += 0.4
+        if false_breakout.iloc[-1]: trap_score += 0.4
+        if liquidity_sweep.iloc[-1]: trap_score -= 0.3
+        if stop_hunt.iloc[-1]: trap_score -= 0.3
+        
+        trap_score = max(0.0, trap_score) # Sıfırın altına düşmesine izin verme
+        
+        if trap_score >= 0.3: 
+            return None # Skor çok yüksek, riskli! Reddet.
+            
+        # --- 6. LORENTZIAN KONTROLÜ (Güven >= %65) ---
+        # Performans artışı için Lorentzian'ı sona bıraktık (Zor hesaplanır)
+        lor_res = calculate_lorentzian_classification(ticker)
+        if not lor_res or lor_res['signal'] != 'YÜKSELİŞ' or lor_res['prob'] < 65:
+            return None
+            
+        # 6 KURALI DA GEÇTİYSE SONUCU DÖNDÜR
+        return {
+            "Sembol": ticker,
+            "Fiyat": float(close.iloc[-1]),
+            "Z-Score": float(round(z_score, 2)),
+            "Trap Skoru": float(round(trap_score, 2)),
+            "Güven": f"%{lor_res['prob']:.0f}"
+        }
+        
+    except Exception as e:
+        return None
+
+def scan_rf3_batch(asset_list):
+    """
+    YENİ ROYAL FLUSH 3.0 Toplu Tarama Ajanı
+    """
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
+    
+    results = []
+    stock_dfs = []
+    
+    # Çoklu veya tekli sembol verilerini listeye al
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    df = data[symbol].dropna()
+                    if not df.empty: stock_dfs.append((symbol, df))
+            else:
+                if len(asset_list) == 1: 
+                    df = data.dropna()
+                    if not df.empty: stock_dfs.append((symbol, df))
+        except: continue
+        
+    # Her bir hisseyi fonksiyona sok
+    for symbol, df in stock_dfs:
+        res = calculate_royal_flush_3_0_setup(symbol, df)
+        if res: results.append(res)
+            
+    return pd.DataFrame(results)
 
 # ==============================================================================
 # YENİ: TEMEL ANALİZ VE MASTER SKOR MOTORU (GLOBAL STANDART)
@@ -3341,6 +3508,128 @@ LORENTZIAN MODELİ'NİN GEÇMİŞ 2000 GÜNE BAKARAK YAPTIĞI YARIN (1 GÜNLÜK)
 - Oylama (Benzer Senaryo): {data['votes']}/{data['total']}
 """
     return ai_data_text
+
+# *****************************************************************
+# 👑 SMART MONEY RADAR: TOP 20 MASTER LİSTESİ (ARKETİP MODEL V2)
+# *****************************************************************
+import streamlit as st
+
+def fetch_technical_engine_data(ticker, sources_list):
+    """
+    HİYERARŞİK TEKNİK MOTOR:
+    Puanlama; Arketip onayı, Çarpanlar ve Kill-Switch mekanizmalarına dayanır.
+    """
+    # 1. TEMEL AĞIRLIKLAR (BASE WEIGHTS)
+    mapping = {
+        '🩸 Royal Flush Dip Avcısı': 25,
+        '🦅 ICT Sniper': 25,
+        '🦁 Minervini': 25,
+        '🐻 Bear Trap': 15,
+        '🏆 RS Lideri': 20,
+        '📈 RSI Pozitif Uyumsuzluk': 15,
+        '🤫 Sentiment (Akıllı Para)': 15,
+        '🔨 Breakout Yapan': 15,
+        '📡 1-5 Günlük Yükseliş': 10,
+        '🚀 Grandmaster': 10,
+        '♠️ Royal Flush (Klasik)': 10,
+        '⭐ Yıldız Adayı': 5
+    }
+
+    # 2. ÖN KONTROLLER (ANCHOR CHECK)
+    anchors = ['🩸 Royal Flush Dip Avcısı', '🦅 ICT Sniper', '🦁 Minervini']
+    has_anchor = any(a in sources_list for a in anchors)
+    
+    # 3. PUAN HESAPLAMA (DİNAMİK)
+    base_score = 0
+    for src in sources_list:
+        if src in mapping:
+            current_weight = mapping[src]
+            # KILL-SWITCH: Sentiment yoksa Minervini puanını kır
+            if src == '🦁 Minervini' and '🤫 Sentiment (Akıllı Para)' not in sources_list:
+                current_weight /= 2
+            base_score += current_weight
+
+    # 4. BONUS ÇARPANLARI (STRATEJİK KONFLUANS)
+    # A Kulvarı Bonus: Dip + Trap
+    if '🩸 Royal Flush Dip Avcısı' in sources_list and '🐻 Bear Trap' in sources_list:
+        base_score *= 1.2
+    
+    # B Kulvarı Bonus: Minervini + RS Lideri
+    if '🦁 Minervini' in sources_list and '🏆 RS Lideri' in sources_list:
+        base_score *= 1.2
+
+    # 5. SINIRLANDIRICILAR (LIMITERS)
+    # Gatekeeper: Ana model yoksa skor 20'yi geçemez
+    if not has_anchor:
+        base_score = min(base_score, 20)
+    
+    # Reversal Limit: Dip var ama RSI uyumsuzluk yoksa 70'i geçemez
+    if '🩸 Royal Flush Dip Avcısı' in sources_list and '📈 RSI Pozitif Uyumsuzluk' not in sources_list:
+        base_score = min(base_score, 70)
+
+    total_score = min(100, int(base_score))
+    icons = [src.split(' ')[0] for src in sources_list if src in mapping]
+    icon_str = " ".join(icons)
+
+    # --- TEKNİK KATALİZÖR MESAJLARI ---
+    confluence_count = len(sources_list)
+    if total_score >= 85:
+        catalyst_msg = f"💎 ARKETİP ZİRVESİ: {confluence_count} onaylı tam kurumsal konfluans!"
+    elif total_score >= 65:
+        catalyst_msg = f"🔥 GÜÇLÜ KULVAR: Stratejik çarpanlar devrede, trend/dönüş onaylı."
+    elif total_score >= 40:
+        catalyst_msg = f"⚡ MOMENTUM: {confluence_count} onay. Ana model desteği mevcut."
+    elif total_score > 20:
+        catalyst_msg = f"🔍 İZLEME: Yardımcı sinyaller var ancak ana arketip zayıf."
+    else:
+        catalyst_msg = "⚠️ KAPI KAPALI: Ana modellerden onay gelmedi, gürültü yüksek."
+
+    return total_score, catalyst_msg, icon_str
+
+def compile_top_20_summary():
+    """
+    12 tarama kaynağından gelen verileri toplar ve hiyerarşik modelle skorlar.
+    """
+    candidates = {} 
+    
+    def add_candidates(df, source_name, limit=5):
+        if df is not None and not df.empty:
+            for i, row in df.head(limit).iterrows():
+                sym = row.get('Sembol', row.get('Sembol_Raw', None))
+                if not sym: continue
+                fiyat = row.get('Fiyat', row.get('Güncel_Fiyat', 0))
+                if sym not in candidates:
+                    candidates[sym] = {'sources': [], 'price': fiyat}
+                if source_name not in candidates[sym]['sources']:
+                    candidates[sym]['sources'].append(source_name)
+
+    # 1. HAVUZU OLUŞTUR (12 KAYNAK)
+    add_candidates(st.session_state.get('rf3_scan_data'), '🩸 Royal Flush Dip Avcısı')
+    add_candidates(st.session_state.get('golden_trio_data'), '♠️ Royal Flush (Klasik)')
+    add_candidates(st.session_state.get('ict_scan_data'), '🦅 ICT Sniper')
+    add_candidates(st.session_state.get('minervini_data'), '🦁 Minervini')
+    add_candidates(st.session_state.get('accum_data'), '🤫 Sentiment (Akıllı Para)')
+    add_candidates(st.session_state.get('gm_results'), '🚀 Grandmaster')
+    add_candidates(st.session_state.get('rs_leaders_data'), '🏆 RS Lideri')
+    add_candidates(st.session_state.get('breakout_right'), '🔨 Breakout Yapan')
+    add_candidates(st.session_state.get('bear_trap_data'), '🐻 Bear Trap')
+    add_candidates(st.session_state.get('rsi_div_data'), '📈 RSI Pozitif Uyumsuzluk')
+    add_candidates(st.session_state.get('radar2_data'), '⭐ Yıldız Adayı')
+    add_candidates(st.session_state.get('scan_data'), '📡 1-5 Günlük Yükseliş')
+    
+    candidate_list = [{'Sembol': k, **v} for k, v in candidates.items()]
+    
+    # 2. TEKNİK SINAV (HİYERARŞİK SKORLAMA)
+    for item in candidate_list:
+        tot_score, msg, icons = fetch_technical_engine_data(item['Sembol'], item['sources'])
+        item['score'] = tot_score
+        item['katalizor'] = f"{icons} | {msg}"
+        item['onay_sayisi'] = len(item['sources'])
+        
+    # 3. SIRALAMA
+    candidate_list.sort(key=lambda x: (x['score'], x['onay_sayisi']), reverse=True)
+    
+    return candidate_list[:20]
 
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
@@ -4776,6 +5065,45 @@ def render_golden_trio_banner(ict_data, sent_data):
 </div>
 </div>""", unsafe_allow_html=True)
 
+def render_royal_flush_3_0_banner(ticker):
+    """
+    BİREYSEL HİSSE ANALİZİ (TARAMA SONUÇLARI PANELİ İÇİN)
+    Kullanıcı hisse seçtiğinde, 6 katı Royal Flush 3.0 kriterini sadece bu hisse için hesaplar.
+    Başarılıysa, hisse sayfasının sağ üstünde kan kırmızısı bir pano oluşturur.
+    """
+    try:
+        # İhtiyacımız olan 1 yıllık günlük veriyi çekiyoruz (app.py'deki mevcut fonksiyon)
+        df = get_safe_historical_data(ticker, period="1y")
+        if df is None or df.empty: return
+        
+        # 6 zorlu kriteri hesaplayan algoritmayı çağır (Önceki adımda eklemiştik)
+        res = calculate_royal_flush_3_0_setup(ticker, df)
+        if not res: 
+            return # Hisse 6 şartı sağlamıyorsa sessizce dön, ekranı boşuna işgal etme
+        
+        # --- HTML ÇIKTISI (KAN KIRMIZISI PANO) ---
+        bg = "linear-gradient(90deg, #7f1d1d 0%, #dc2626 100%)" 
+        border = "#991b1b"
+        
+        st.markdown(f'''
+        <div style="background:{bg}; border:2px solid {border}; border-radius:8px; padding:15px; margin-top:10px; margin-bottom:10px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+            <h3 style="color:#ffffff; margin:0; font-size:1.4rem; font-weight:800; display:flex; align-items:center;">
+                <span style="font-size:2rem; margin-right:10px;">🩸</span> ROYAL FLUSH 3.0 (KUSURSUZ DİPTEN DÖNÜŞ)
+            </h3>
+            <p style="color:#fca5a5; font-size:0.9rem; margin-top:5px; margin-bottom:10px; font-weight:600;">Dikkat! Bu hisse "6 Katı Kurumsal Kriteri" de başarıyla geçti!</p>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">🟢 Z-Score: {res['Z-Score']} (Aşırı Satım)</span>
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">💸 OBV Hacmi: Gizli Para Girişi</span>
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">📉 Hacim: Sakin (Tahta Kurumuş)</span>
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">🎯 FVG Teması: Kurumsal İndirim</span>
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">🛡️ Trap Skoru: {res['Trap Skoru']} (Risk Yok)</span>
+                <span style="background:rgba(255,255,255,0.15); padding:4px 8px; border-radius:4px; font-size:0.85rem; color:white; font-weight:700;">🤖 AI Güven: {res['Güven']}</span>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    except Exception as e:
+        pass # Panel çökerse programı durdurmamak için sessizce geç
+
 # --- ROYAL FLUSH HESAPLAYICI ---
 def render_royal_flush_banner(ict_data, sent_data, ticker):
     if not ict_data or not sent_data: return
@@ -4894,10 +5222,13 @@ def calculate_fib_levels(df, st_dir=1, period=144):
         if len(df) < period: period = len(df)
         recent_data = df.tail(period)
         
-        max_h = recent_data['High'].max()
-        min_l = recent_data['Low'].min()
-        diff = max_h - min_l
+        high_s = recent_data['High'].iloc[:, 0] if isinstance(recent_data['High'], pd.DataFrame) else recent_data['High']
+        low_s = recent_data['Low'].iloc[:, 0] if isinstance(recent_data['Low'], pd.DataFrame) else recent_data['Low']
         
+        max_h = float(high_s.max())
+        min_l = float(low_s.min())
+        diff = max_h - min_l
+    
         # Trend yönü doğrudan SuperTrend'den alınır.
         is_uptrend = (st_dir == 1)
         
@@ -4962,43 +5293,43 @@ def calculate_z_score_live(df, period=20):
 @st.cache_data(ttl=600)
 def get_advanced_levels_data(ticker):
     """
-    Arayüz için verileri paketler. (GÜNCELLENMİŞ: Buffer ve 1.236 Mantığı)
+    Arayüz için verileri paketler. (GÜNCELLENMİŞ: Güçlü Tip Dönüşümü)
     """
     df = get_safe_historical_data(ticker, period="1y")
-    if df is None: return None
+    if df is None or df.empty: return None
     
     # 1. SuperTrend
     st_val, st_dir = calculate_supertrend(df)
     
-    # 2. Fibonacci (DÜZELTME: st_dir pusulası motora gönderildi)
+    # 2. Fibonacci 
     fibs = calculate_fib_levels(df, st_dir=st_dir, period=120)
     
-    curr_price = float(df['Close'].iloc[-1])
+    close_s = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
+    curr_price = float(close_s.iloc[-1])
     
     # En yakın destek ve direnci bulma
     sorted_fibs = sorted(fibs.items(), key=lambda x: float(x[1]))
-    support = (None, -999999)
-    resistance = (None, 999999)
+    support = (None, -999999.0)
+    resistance = (None, 999999.0)
     
     # TAMPON BÖLGE (BUFFER) - Binde 2
-    # Fiyat dirence %0.2 kadar yaklaştıysa veya geçtiyse, o direnci "GEÇİLDİ" say.
     buffer = 0.002 
     
     for label, val in sorted_fibs:
+        val = float(val)
         # Destek: Fiyatın altında kalan en büyük değer
         if val < curr_price and val > support[1]:
             support = (label, val)
             
         # Direnç: Fiyatın (ve tamponun) üzerinde kalan en küçük değer
-        # MANTIK: Eğer Fiyat > Zirve ise, Zirve elenir, sıradaki "1.236 (Kırılım Hedefi)" seçilir.
         if val > (curr_price * (1 + buffer)) and val < resistance[1]:
             resistance = (label, val)
             
-    if resistance[1] == 999999:
+    if resistance[1] == 999999.0:
         resistance = ("UZAY BOŞLUĞU 🚀", curr_price * 1.15) 
 
     return {
-        "st_val": st_val,
+        "st_val": float(st_val) if st_val else 0.0,
         "st_dir": st_dir,
         "fibs": fibs,
         "nearest_sup": support,
@@ -6873,9 +7204,17 @@ with col_btn:
             st.session_state.rsi_div_bull = bull_df
             st.session_state.rsi_div_bear = bear_df
 
-            # 12. MİNERVİNİ SEPA AJANI - %95
-            my_bar.progress(95, text="🦁 Minervini Sepa Taranıyor...%95")
+            # 12. MİNERVİNİ SEPA AJANI - %90
+            my_bar.progress(90, text="🦁 Minervini Sepa Taranıyor...%90")
             st.session_state.minervini_data = scan_minervini_batch(scan_list)
+
+            # 13. ROYAL FLUSH 3.0 AJANI - %95
+            my_bar.progress(95, text="🩸 Royal Flush 3.0 (Kusursuz Dipten Dönüş) Aranıyor...%95")
+            st.session_state.rf3_scan_data = scan_rf3_batch(scan_list)
+
+            # --- YENİ EKLENEN TOP 20 YÖNETİCİ ÖZETİ (ÜÇLÜ DOĞRULAMA) - %99
+            my_bar.progress(99, text="🏆 TOP 20 Yönetici Özeti: Kesişimler ve Kurumsal API Doğrulaması Çekiliyor...%99")
+            st.session_state.top_20_summary = compile_top_20_summary()
 
             # --- BİTİŞ ---
             my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...%100")
@@ -7467,10 +7806,21 @@ if st.session_state.generate_prompt:
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
 Sana ekte sunduğum GRAFİK GÖRSELİNİ (Röntgen) kendi görsel zekanla (Vision) derinlemesine incele. Aynı zamanda, aşağıda sunduğum ve algoritmaların hesapladığı TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. 
-Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar. Eğer grefiği okuyamıyorsan, göremiyorsan, yaptığın analizin en altına "Grafik görünmemektedir" yaz, ama aşağıdaki teknik verilerle de analiz yap. Ancak grafik görünüyor ve okuyabiliyorsan, analizinin merkezine mutlaka Price Action'ı (Grafiği) koy. Algoritmik veriler (Teknik Veriler) ise bu analizi destekleyen veya sorgulayan kanıtlar olarak hizmet etsin.
+Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar. Eğer grafiği okuyamıyorsan, göremiyorsan, yaptığın analizin en altına "Grafik görünmemektedir" yaz, ama aşağıdaki teknik verilerle de analiz yap. Ancak grafik görünüyor ve okuyabiliyorsan, analizinin merkezine mutlaka Price Action'ı (Grafiği) koy. Algoritmik veriler (Teknik Veriler) ise bu analizi destekleyen veya sorgulayan kanıtlar olarak hizmet etsin.
 Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade bir dille) kullanıcıya sun
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
+
+*** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
+Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
+HALKÇI ANALİST KİMLİĞİ: Analizlerini 'okumuşun halinden anlamayan' bir profesör gibi değil, 'en karmaşık riski kahvehanedeki adama anlatabilen' dahi bir stratejist gibi hazırla.
+1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN.
+2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
+3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
+4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
+Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
+Özetle; Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz. Yatırımcıyı korkutmadan, umutlandırmadan, sadece mevcut durumun ne olduğunu ve hangi risklerin nerede olduğunu anlat.
+
 *** 🚨 ALGORİTMİK DURUM RAPORU VE GÖRSEL ÇAPRAZ SORGU (CROSS-EXAMINATION) TALEBİ: {ai_scenario_title} ***
 Mevcut Özet: {ai_mood_instruction} 
 Kurumsal Özet (Bottom Line): {ict_data.get('bottom_line', 'Özel bir durum belirtilmedi.')}
@@ -7581,24 +7931,16 @@ Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' ve
 *** 7. YARIN NE OLABİLİR ***
 {lorentzian_bilgisi} 
 
-*** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
-Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
-1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN.
-2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
-3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. Parantez içinde İngilizce terim koyma, mümkün olduğunca Türkçe terimler kullanarak sadeleştir.
-4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
-Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
-
 *** DÖRT GÖREVİN VAR *** 
 
 * Birinci Görevin; 
 Tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev", "keskin", "sert" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
-Teknik terimleri sadece ilk geçtiği yerde kısaltmasıyla ver, sonraki anlatımlarda akıcılığı bozmamak için sadeleştir.
+Teknik terimleri zorunda kalırsan sadece ilk geçtiği yerde kısaltmasıyla ver, sonraki anlatımlarda akıcılığı bozmamak için sadeleştir.
 Analizinde 'Retail Sentiment' (Küçük Yatırımcı Psikolojisi) ile 'Institutional Intent' (Kurumsal Niyet) arasındaki farka odaklan. Verilerdeki anormallikleri (örneğin: RSI düşerken fiyatın yatay kalması veya düşük hacimli kırılımlar) birer 'ipucu' olarak kabul et ve bu ipuçlarını birleştirerek piyasa yapıcının bir sonraki hamlesini tahmin etmeye çalış.
 Bir veri noktası 'Bilinmiyor' gelirse onu yok say, ancak eldeki verilerle bir 'Olasılık Matrisi' kur. Asla tek yönlü (sadece olumlu) bir tablo çizme; 'Madalyonun Öteki Yüzü'nü her zaman göster. Savunma mekanizman 'analizi haklı çıkarmak' değil, 'riski bulmak' olsun.
 Herhangi bir veri alanı boş veya süslü parantez içinde {...} şeklinde ham halde gelmişse, o verinin teknik bir arıza nedeniyle okunamadığını varsay ve mevcut diğer verilerle analizi tamamla. Asla "Veri Yok" veya "Bilinmiyor" yazan bir alanı yorumlamaya zorlama, sadece mevcut verilerle en iyi sentezi yapmaya çalış.
-En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📸" başlığı at ve şunları analiz et. (Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz)
+En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📸" başlığı at ve şunları analiz et. 
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
 1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
@@ -7664,12 +8006,16 @@ TEKNİK KART:
 * Dördüncü Görevin: 
 Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın. 
 Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin en kritik noktalarını ve sonuçlarını içermelidir. Değerlendirme şu formatta olmalıdır:
-İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. 
+İlk Başlık daima"SMART MONEY RADAR #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸" formatında olmalıdır. Asla tarih ve saat yazma. 
 GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
+Teknik Görünüm: (Fiyat davranışı, formasyonlar ve genel trend durumunun 2-3 cümlelik net, anlaşılır ve eyleme dönüştürülebilir özeti.)
+Smart Money İzi: (Hacim, OBV, ICT analizleri ve para akışı verilerindeki kurumsal ayak izlerinin 2-3 cümlelik özeti.)
+Çelişki ve Risk: (Grafikteki ve verilerdeki RSI uyumsuzlukları, olası ayı/boğa tuzakları, aşırı ısınma/satım durumları ve risklerin 2-3 cümlelik özeti.)
 DEĞERLENDİRME: Buraya Birinci Görevindeki SONUÇ kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 UYARI: Buraya Birinci Görevindeki UYARI kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 TEKNİK KART: yaz ve alt satıra geç.
 Alt satıra  Üçüncü Görevdeki TEKNİK KART kısmında olan 1-2-4-6'ı kopyalayarak yapıştır. Ama burada maddeleri 1-2-4-6 şeklinde sıralama. Her maddenin başına "🔹" işareti koy.
+Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 
 *****GÖREVLERİN SUNUŞ SIRALAMASI*****
 Bu DÖRT görevin sunum sıralaması şöyle olmalı: Önce Dördüncü görevini sunmalısın, ardından Birinci görevini sunmalısın. Sonrasında da sırayla Üçüncü ve en sonunda Birinci görevleri. 
@@ -7678,528 +8024,6 @@ Yani önce Aboneler için özet, ardından  Detaylı Analiz, sonra Teknik Kart v
     with st.sidebar:
         st.code(prompt, language="text")
         st.success("Prompt Güncellendi")
-        # ==============================================================================
-        # 𝕏 TWITTER VİRAL AJANI (V18.0 - MAJOR OYUNCU MODU)
-        # ==============================================================================
-        st.markdown("---")
-        st.markdown("### 𝕏 Twitter Vitrini")
-
-        # 1. ADIM: INIT
-        clean_ticker = "HISSE"
-        c_rsi = 50.0
-        c_rs = 0.0
-        c_score = 50.0
-        c_ict = 0.0
-        c_vol = 0.0
-        check_royal = False
-        check_golden = False
-        c_destek = "Grafikte"
-        c_direnc = "Grafikte"
-
-        # 2. ADIM: VERİ ÇEKME
-        if 't' in locals() and t: 
-            clean_ticker = str(t).replace(".IS", "").replace(".is", "").replace("-USD", "").replace("=F", "")
-        elif 'sembol' in locals() and sembol: 
-            clean_ticker = str(sembol).replace(".IS", "").replace(".is", "").replace("-USD", "").replace("=F", "")
-
-        try:
-            if 'sent_data' in locals() and sent_data: 
-                c_rsi = float(sent_data.get('raw_rsi', 50.0))
-                if 'vol' in sent_data and 'Hacim' in str(sent_data['vol']): c_vol = 20.0 
-            
-            if 'mini_data' in locals() and mini_data: 
-                c_rs = float(mini_data.get('rs_val', 0.0))
-            
-            if 'master_score' in locals(): 
-                c_score = float(master_score)
-                
-            if 'ict_score' in locals(): 
-                c_ict = float(ict_score)
-            elif 'ict_data' in locals() and ict_data:
-                 if "MSS" in str(ict_data) or "BOS" in str(ict_data): c_ict = 20.0
-        except Exception as e:
-            st.error(f"Veri çekme hatası: {e}")
-            pass 
-
-        try:
-            if 'is_royal' in locals() and "EVET" in str(is_royal): check_royal = True
-            if 'is_golden' in locals() and "EVET" in str(is_golden): check_golden = True
-        except:
-            pass
-
-        try:
-            if 'fib_sup' in locals(): c_destek = str(fib_sup).split(' ')[0]
-            if 'fib_res' in locals(): c_direnc = str(fib_res).split(' ')[0]
-        except:
-            pass
-        # --- YENİ: AJANA GETİRİ HAFIZASI EKLENİYOR ---
-        aylik_getiri = 0.0
-        try:
-            if 'df' in locals() and len(df) >= 20:
-                ilk_fiyat = float(df['Close'].iloc[-20])
-                son_fiyat = float(df['Close'].iloc[-1])
-                aylik_getiri = ((son_fiyat - ilk_fiyat) / ilk_fiyat) * 100
-        except:
-            pass
-        # ------------------------------------------------------------------
-        # 2.5. ADIM: TURNİKE SİSTEMİ (VARLIK KİMLİĞİ VE JARGON SÖZLÜĞÜ)
-        # ------------------------------------------------------------------
-        # Varsayılan (Borsa İstanbul Ağzı)
-        context_piyasa = "Borsa"
-        context_varlik = "Hisse"
-        context_rakip  = "Endeks" 
-        context_tag    = "#Bist100"
-        is_major = False # Ana oyuncu mu?
-        
-        # Jargon Değişkenleri (Varsayılan)
-        j_aktor  = "Fon Yöneticileri"   # Kim alıyor?
-        j_analiz = "Takas"              # Neye bakıyoruz?
-        j_dusus  = "Taban Serisi"       # Kötü durum ne?
-        j_yuksel = "Tavan Serisi"       # İyi durum ne?
-        j_sebep  = "Bilanço/Haber"      # Neden düştü?
-
-        # 1. TURNİKE: KRİPTO (Bitcoin ve Altcoinler)
-        if "-USD" in str(t):
-            context_piyasa = "Kripto"
-            context_varlik = "Coin"
-            context_tag    = "#Bitcoin #Kripto"
-            
-            # Altcoin mi Bitcoin mi?
-            if "BTC-" in str(t):
-                context_rakip = "Nasdaq" 
-                context_tag   = "#Bitcoin #BTC"
-                is_major = True # BTC bir Ana Oyuncudur
-            else:
-                context_rakip = "BTC"    
-            
-            # Kripto Jargonu
-            j_aktor  = "Balinalar (Whales)"
-            j_analiz = "On-Chain Verileri"
-            j_dusus  = "Sert Dump"
-            j_yuksel = "Parabolik Pump"
-            j_sebep  = "FUD/Haber"
-
-        # 2. TURNİKE: SEKTÖR ENDEKSLERİ
-        elif str(t).startswith("X") and ".IS" in str(t):
-            context_piyasa = "BIST"
-            context_varlik = "Sektör"
-            context_rakip  = "XU100"
-            context_tag    = "#Bist100 #Sektör"
-            j_aktor        = "Büyük Fonlar"
-            is_major = True # Sektör endeksleri majördür
-
-        # 3. TURNİKE: GLOBAL/EMTIA/ENDEKS
-        elif ".IS" not in str(t) and "=F" not in str(t) and "-USD" not in str(t):
-            context_piyasa = "ABD"
-            context_varlik = "Hisse"
-            context_rakip  = "SP500"
-            context_tag    = "#WallStreet"
-            # Eğer SPX, NDX, GOLD gibi bir şeyse is_major=True yapabiliriz ama
-        # 3. ADIM: SENARYO MOTORU (DİNAMİK VARYASYONLAR - TAMAMEN VERİYE DAYALI)
-        txt_baslik = ""
-        txt_kanca = "" 
-        
-        # --- 0. GRUP: FORMASYON TARAMA AJANI (MUTLAK ÖNCELİK) ---
-        # Ajanın ürettiği formasyon metnini güvenli bir şekilde alıyoruz
-        aktif_formasyon = ""
-        if 'formasyon_sonucu' in locals():
-            aktif_formasyon = str(formasyon_sonucu).upper()
-        elif 'formasyon_metni' in locals():
-            aktif_formasyon = str(formasyon_metni).upper()
-        elif 'aktif_formasyonlar' in locals():
-            aktif_formasyon = str(aktif_formasyonlar).upper()
-
-        if aktif_formasyon:
-            # 1. GEOMETRİK DÖNÜŞ FORMASYONLARI
-            if "TOBO" in aktif_formasyon:
-                txt_baslik = f"🏗️ {clean_ticker}: TOBO Formasyonu Onaylandı mı?"
-                txt_kanca = "Düşüş trendinin tabanında devasa bir (TOBO) tespit edildi! Boyun çizgisi kırılıyor, ayılar masadan kalktı mı? Sonuç ve UYARI kısmına dikkat👇"
-            elif "OBO" in aktif_formasyon and "TOBO" not in aktif_formasyon:
-                txt_baslik = f"☠️ {clean_ticker}: OBO Tehlikesi?"
-                txt_kanca = "Zirvede tehlikeli bir (OBO) yapısı belirdi. Akıllı para malı dağıtıyor ve boyun çizgisi tehdit altında! Sonuç ve UYARI kısmına dikkat👇"
-            elif "FİNCAN" in aktif_formasyon or "CUP" in aktif_formasyon:
-                txt_baslik = f"☕ {clean_ticker}: Fincan-Kulp Hazırlığı mı?"
-                txt_kanca = "Uzun süren sabır testi bitiyor! Fincan-Kulp formasyonu tamamlanmak üzere. Devasa bir ralli kapıda mı? Sonuç ve UYARI kısmına dikkat👇"
-            elif "BAYRAK" in aktif_formasyon or "FLAG" in aktif_formasyon:
-                txt_baslik = f"🏴 {clean_ticker}: Boğa Bayrağı Dalgalanıyor mu?"
-                txt_kanca = "Sert bir direğin ardından kusursuz bir bayrak flama dinlenmesi! Rallinin ikinci ve daha sert ayağı başlıyor mu? Sonuç ve UYARI kısmına dikkat👇"
-
-            # 2. KURUMSAL ARZ-TALEP (SUPPLY/DEMAND) BÖLGELERİ
-            elif "RBR" in aktif_formasyon or "RALLY BASE RALLY" in aktif_formasyon:
-                txt_baslik = f"🚀 {clean_ticker}: Rally-Base-Rally? Yeni Dalga!"
-                txt_kanca = "Kurumsal Arz-Talep formasyonu devrede. Ralli, dinlenme ve yeni bir ralli! Hedef neresi? Sonuç ve UYARI kısmına dikkat👇"
-            elif "DBR" in aktif_formasyon or "DROP BASE RALLY" in aktif_formasyon:
-                txt_baslik = f"🧲 {clean_ticker}: Drop-Base-Rally? Dip Dönüşü!"
-                txt_kanca = "Sert düşüş sonrası yatay toplama evresi bitti. Akıllı para dipten dönüşü (DBR) ateşledi mi? Sonuç ve UYARI kısmına dikkat👇"
-            elif "DBD" in aktif_formasyon or "DROP BASE DROP" in aktif_formasyon:
-                txt_baslik = f"📉 {clean_ticker}: Drop-Base-Drop? Ayıların İnsafı Yok!"
-                txt_kanca = "Düşüş sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? Sonuç ve UYARI kısmına dikkat👇"
-            elif "RBD" in aktif_formasyon or "RALLY BASE DROP" in aktif_formasyon:
-                txt_baslik = f"🧱 {clean_ticker}: Rally-Base-Drop? Zirvede Dağıtım?"
-                txt_kanca = "Ralli sonrası tepede oyalama (Base) ve ardından sert çöküş (Drop). Büyük oyuncular malı devredip çıkıyor mu? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- GRUP A: EFSANE SİNYALLER ---
-        if check_royal:
-            if c_rsi >= 70:
-                if c_rs > 80:
-                    txt_baslik = f"💎 {clean_ticker}: Kusursuz Fırtına Liderliği? (Flash Royal)"
-                    txt_kanca = "RSI şişmiş olsa da RS (Alpha) gücü endeksi eziyor mu? Trendin zirvesinde kurumsal inat devam ediyor. Sonuç ve UYARI kısmına dikkat👇"
-                else:
-                    txt_baslik = f"🔥 {clean_ticker}: Rallide Kâr Katlanıyor ama Yorulma Belirtileri mi Var?"
-                    txt_kanca = "Kusursuz yükseliş sürüyor fakat RS ivmesi yavaşlıyor. Erken girenler kârını maksimize ederken, düzeltme ufukta olabilir mi? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                if c_vol > 20:
-                    txt_baslik = f"🚀 {clean_ticker}: Tarihi Fırsat ve Hacim Patlaması?"
-                    txt_kanca = "Tüm göstergeler aynı anda yeşil yaktı ve devasa bir hacimle onaylandı! Büyük kalkış için kurumsal vagonlar doldu mu? Sonuç ve UYARI kısmına dikkat👇"
-                else:
-                    txt_baslik = f"💎 {clean_ticker}: Kusursuz Hizalanma Tamamlandı mı? (Flash Royal)"
-                    txt_kanca = "Sistem 4/4 onay verdi ancak hacim hala sakin. Sessizce pozisyon alanlar büyük hareketi mi bekliyor? Sonuç ve UYARI kısmına dikkat👇"
-        
-        elif check_golden:
-            if c_rsi >= 70:
-                if aylik_getiri > 15.0:
-                    txt_baslik = f"🏆 {clean_ticker}: Altın Ralli Zirveyi Zorluyor?"
-                    txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} getiri ile ralli olgunluk evresinde. Tutanlar rahat, peki yeni girenler için risk/ödül ne durumda? Sonuç ve UYARI kısmına dikkat👇"
-                else:
-                    txt_baslik = f"🔥 {clean_ticker}: Golden Trio Onayıyla İstikrarlı Yükseliş?"
-                    txt_kanca = "Trend, ivme ve hacim sapasağlam! Göstergeler sıcak ama fiyat aşırı fiyatlanmamış. Ralli devam edecek mi? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                if c_score > 80:
-                    txt_baslik = f"⚡ {clean_ticker}: Güçlü Sinyal, Yüksek Skor? (Golden Trio)"
-                    txt_kanca = "Algoritmik skor zirvede, üçlü onay devrede! Tahtada akıllı para toplanıyor, kalkış izni çıktı. Sonuç ve UYARI kısmına dikkat👇"
-                else:
-                    txt_baslik = f"🏆 {clean_ticker}: Ralli Hazırlığı mı? (Golden Trio!)"
-                    txt_kanca = "Trend ve momentum onay verdi. Radar yeşile döndü ancak ana skor hala temkinli. Kırılım an meselesi mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- GRUP B: KURUMSAL İZLER ---
-        elif c_ict >= 15:
-            if c_rsi > 60:
-                txt_baslik = f"🦁 {clean_ticker}: Ayılar Tamamen Pes Etti mi? (Kurumsal Hakimiyet)"
-                txt_kanca = "Fiyat momentum kazanıyor ve kurumsal fonlar tahtayı domine ediyor. Dirençler tek tek kırılacak mı? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                txt_baslik = f"🦁 {clean_ticker}: Düşüş Trendi Kırıldı mı? (MSS/BOS)"
-                txt_kanca = "Ayıların son kalesi yıkıldı! Diplerden gelen kurumsal alımlarla direksiyon artık Boğaların elinde. Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- ÖZEL FIRSATLAR ---
-        elif c_vol < 5 and 45 < c_rsi < 55 and c_score > 50:
-            if c_rs > 50:
-                txt_baslik = f"💣 {clean_ticker}: Yukarı Yönlü Fırtına Öncesi Sessizlik? (Squeeze)"
-                txt_kanca = f"Hacim kurudu, bantlar daraldı. Ancak hisse {context_rakip} karşısında güçlü (RS>50). Yukarı yönlü %20'lik bir patlama kapıda mı? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                txt_baslik = f"🗜️ {clean_ticker}: Yön Kararı An Meselesi olabilir mi? (Volatilite Daralması)"
-                txt_kanca = "Fiyat dar bir alana hapsoldu, alıcı ve satıcı dengede. Akıllı para tetiği hangi yöne çekecek? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score > 70 and c_vol > 25 and c_rs > 80:
-            txt_baslik = f"🚀 {clean_ticker}: Köprüleri Yaktı mı? (Breakaway/Kaçış)"
-            txt_kanca = "Güçlü hacim, yüksek RS ve devasa skor! Bu sıradan bir hareket değil, kurumsal bir 'Kaçış' dalgası olabilir. Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- UÇ DURUMLAR ---
-        elif c_rsi < 22 and c_score < 30:
-            if c_vol > 15:
-                txt_baslik = f"💀 {clean_ticker}: Kan Banyosunda Panik Satışı mı? (Kapitülasyon)"
-                txt_kanca = f"RSI tarihi dipte ve hacim çok yüksek! Küçük yatırımcı 'Battık' diyip kaçarken {j_aktor} dipten mi topluyor? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                txt_baslik = f"🕳️ {clean_ticker}: Sessiz Çöküş Devam Ediyor mu? (Aşırı Satım)"
-                txt_kanca = "RSI dipte ama hacim yok. Kimse almaya cesaret edemiyor. Bıçağı tutmak için erken mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rsi > 88:
-            if c_vol > 20:
-                txt_baslik = f"🎈 {clean_ticker}: Kusursuz Balon Şişti mi? (Dağıtım Tehlikesi)"
-                txt_kanca = "RSI 88 üstünde ve hacim patlıyor! Akıllı para malı ky'ye mi devrediyor? 'Hüzün' gelmeden kârı koruma vakti mi? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                txt_baslik = f"🔥 {clean_ticker}: Yerçekimine Meydan mı Okuyor? (Parabolik)"
-                txt_kanca = "Aşırı alım bölgesinde limitsiz gidiş. Motor hararet yaptı, kâr realizasyonu her an sert gelebilir. Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- 1. GRUP: RS GÜCÜ ---
-        elif c_rs > 90 and c_score > 65:
-            txt_baslik = f"🦖 {clean_ticker}: {context_piyasa}'nın Mutlak Lideri mi?"
-            txt_kanca = f"{context_rakip} kan ağlarken o zirve yeniliyor. {j_aktor} buraya sığınıyor, Alfa gücü devrede! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score < 45:
-            if aylik_getiri > 12.0:
-                txt_baslik = f"🚧 {clean_ticker}: Zirve Yorgunluğu mu? (Ralli Molası)"
-                txt_kanca = f"Son 1 ayda %{aylik_getiri:.1f} ralli yaptı ama şimdi skor düşüyor. Kâr satışları başladı, yeni bir sıçrama için güç mü topluyor? Sonuç ve UYARI kısmına dikkat👇"
-            else:
-                if "BTC-" in str(t):
-                    txt_baslik = f"🥀 {clean_ticker}: Dijital Altın Pas mı Tuttu?"
-                    txt_kanca = "Risk iştahı kesildi, skor yerlerde. Piyasa beklerken o neden kan kaybediyor? Sonuç ve UYARI kısmına dikkat👇"
-                elif is_major:
-                    txt_baslik = f"🏛️ {clean_ticker}: Piyasanın Kolonları Titriyor mu?"
-                    txt_kanca = "Ana oyuncu zayıfladı, güven erozyonu sürüyor. Bu çöküş tüm piyasayı aşağı çeker mi? Sonuç ve UYARI kısmına dikkat👇"
-                else:
-                    txt_baslik = f"🚜 {clean_ticker}: Piyasa Giderken O Neden Duruyor?"
-                    txt_kanca = f"Denge skoru düşük, hareket yok. {j_aktor} bu tahtayı tamamen unuttu mu, yoksa bezdirme mi var? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rs < 35 and c_score > 60:
-            txt_baslik = f"🧟 {clean_ticker}: Bu Yükseliş Gerçek mi? (Yalancı Bahar)"
-            txt_kanca = "Skor yüksek ama RS (Endeks Gücü) yerlerde. Fiyat artıyor ama altı boş. Bu bir 'Boğa Tuzağı' olabilir mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score < 30 and 40 < c_rs < 50:
-            txt_baslik = f"🕳️ {clean_ticker}: Ucuz Sandıkça Daha da Ucuzluyor mu?"
-            txt_kanca = "RS nötr ama ana skor iflas bayrağı çekiyor. Dibi bulmaya çalışmak portföy intiharı mı? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rs < 45 and c_score > 40 and c_vol > 12:
-            txt_baslik = f"🎭 {clean_ticker}: Direnç Kırıldı mı, Kandırdı mı? (Boğa Tuzağı)"
-            txt_kanca = "Hacim geldi ama RS hala zayıf. Dün 'Tamam' dedik, bugün vazgeçtiler. Sahte kırılımla mal mı kilitlediler? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- 2. GRUP: ANOMALİLER ---
-        elif c_score < 45 and 40 < c_rsi < 50:
-            txt_baslik = f"🧹 {clean_ticker}: Gizli Toplama (Akümülasyon) İzi mi?"
-            txt_kanca = f"Fiyat dipte yataya bağladı ama Z-Score iyileşiyor. {j_aktor} panik yaptırıp sessizce mal mı topluyor? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rsi > 75 and c_rs < 60:
-            txt_baslik = f"🥵 {clean_ticker}: Rallinin Nefesi Kesildi mi?"
-            txt_kanca = "Fiyat zirveyi gördü ama RS (Alfa) desteklemiyor. Rüzgar tersine dönmek üzere, kârı cebine koyma vakti mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rsi > 40 and c_score < 40 and c_vol > 8:
-            txt_baslik = f"👻 {clean_ticker}: Fiyat Yalan Söylüyor mu? (RSI Uyumsuzluğu)"
-            txt_kanca = "Fiyat 'Öldüm' diyor, İndikatörler 'Hayır' diyor. Trend dönüşü mü yoksa son bir silkeleme mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score > 60 and c_rsi < 60 and c_vol < 8:
-            txt_baslik = f"🪤 {clean_ticker}: Ekranda Yeşil Mumlar, Peki Altı Boş mu? (Fake Out)"
-            txt_kanca = "Skor şişmiş ama hacim yok, RSI yatay. Malı yavaşça yukarıdan mı devrediyorlar? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rs > 75 and c_score > 75 and c_rsi > 50:
-            txt_baslik = f"🌟 {clean_ticker}: Kutsal Kase Formasyonu Onaylandı mı?"
-            txt_kanca = "Trend, Momentum ve Alfa gücü (RS) aynı yönü gösteriyor. Büyük oyun başladı, hedefler neresi? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- 3. GRUP: ZİRVE/YATAY ---
-        elif c_vol > 20 and 60 < c_rsi < 80:
-            txt_baslik = f"🌪️ {clean_ticker}: Sessiz Dağıtım Devrede mi?"
-            txt_kanca = "Fiyat gitmiyor ama hacim patlıyor. Yukarı kırmıyor, satışı karşılıyorlar. Bu bir 'Gel Gel' operasyonu mu? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score > 65 and c_vol < 8 and 50 < c_rsi < 65:
-            txt_baslik = f"🏳️ {clean_ticker}: Boğa Bayrağı Dalgalanıyor mu? (Mola)"
-            txt_kanca = "Hacim kurudu, satıcılar isteksiz, skor güçlü. Rallinin ikinci ayağı için enerji mi toplanıyor? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rsi > 70 and c_score < 60:
-            txt_baslik = f"🎣 {clean_ticker}: Wyckoff Tuzağı! İçeri mi Çektiler?"
-            txt_kanca = "Tavanı deliyor gibi yapıp geri bastılar. Skor zayıf, RSI şişik. Bu tam bir 'Fake Breakout'. Sonuç ve UYARI kısmına dikkat👇"
-        
-        elif 50 < c_rsi < 60 and c_score > 75:
-            txt_baslik = f"🧊 {clean_ticker}: Sağlıklı Yükseliş mi? (RSI Reset)"
-            txt_kanca = "Fiyat düşmeden indikatörler soğudu. Trendin gücünü koruduğu en sağlıklı ralli işareti! Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- 4. GRUP: DÜŞÜŞ ---
-        elif c_score < 30 and c_vol > 20:
-            txt_baslik = f"🛗 {clean_ticker}: Halat Koptu, Serbest Düşüş mü?"
-            txt_kanca = "Bu sıradan bir düzeltme değil! Devasa hacimle skor dibe vurdu. Kurumsallar 'Ne olursa olsun sat' diyor! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rs > 70 and c_rsi < 55 and c_score > 55:
-            txt_baslik = f"🩺 {clean_ticker}: Sağlıklı Pullback! (Alım Fırsatı mı?)"
-            txt_kanca = "Köpük alındı, fiyat trend desteğine indi. Endeksten güçlü hissede trene binmek için ikinci şans mı? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif 50 < c_score < 65 and c_rsi < 50:
-            txt_baslik = f"🎒 {clean_ticker}: Trend Yoruldu, Kanama Başlayabilir mi?"
-            txt_kanca = "Tırmanış açısı eğildi, ivme kayboldu. Denge bozuluyor, yavaş yavaş destekler test edilecek. Sonuç ve UYARI kısmına dikkat👇"
-        
-        elif c_score < 40 and c_rsi < 30 and c_vol > 15:
-            txt_baslik = f"🦈 {clean_ticker}: Likidite Avı! Stopları Patlattılar mı?"
-            txt_kanca = f"Desteğin altına atılan o hacimli iğne tesadüf değil. {j_aktor} panikleyenlerin ucuz malını mı topluyor? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score > 40 and c_vol > 25 and c_rsi < 60:
-            txt_baslik = f"🦅 {clean_ticker}: Anka Kuşu! Küllerinden Doğuyor mu?"
-            txt_kanca = "Dünün kaybını devasa hacimle tek lokmada yuttu! Ayılar gafil avlandı, rüzgar aniden döndü. Sonuç ve UYARI kısmına dikkat👇"
-        
-        elif c_score > 75 and 48 < c_rsi < 55:
-            txt_baslik = f"⚓ {clean_ticker}: Trend Onayı! Güvenli Giriş Limanı mı?"
-            txt_kanca = "Fırtına dindi, RSI tam 50 desteğinden güç aldı. Skor zirvedeyken en güvenli alım penceresi mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- 5. GRUP: ARZ-TALEP (SUPPLY/DEMAND) FORMASYONLARI ---
-        
-        # 1. RALLY - BASE - RALLY (RBR)
-        elif aylik_getiri > 10.0 and 50 < c_rsi < 65 and c_vol < 10 and c_score > 65:
-            txt_baslik = f"🚀 {clean_ticker}: Rally-Base-Rally! Yeni Zirve Hazırlığı mı?"
-            txt_kanca = "Güçlü bir yükseliş (Rally), ardından hacimsiz bir dinlenme (Base) ve şimdi yeniden yukarı sinyali! İkinci dalga başlıyor mu? Sonuç ve UYARI kısmına dikkat👇"
-            
-        # 2. DROP - BASE - RALLY (DBR)
-        elif aylik_getiri < -10.0 and 40 < c_rsi < 55 and c_ict >= 15:
-            txt_baslik = f"🧲 {clean_ticker}: Drop-Base-Rally! Dip Dönüşü Onaylandı mı?"
-            txt_kanca = "Sert düşüş (Drop) sonrası yatay bantta (Base) mal toplandı ve şimdi Market Yapısı Kırılımı (MSS/Rally) geldi! Akıllı para trene bindi mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        # 3. DROP - BASE - DROP (DBD)
-        elif aylik_getiri < -5.0 and 40 < c_rsi < 50 and c_score < 35:
-            txt_baslik = f"📉 {clean_ticker}: Drop-Base-Drop! Ayıların İnsafı Yok mu?"
-            txt_kanca = "Düşüş (Drop) sonrası soluklanma (Base) başarısız oldu. Destekler kırılıyor, yeni bir satış dalgası mı tetikleniyor? Sonuç ve UYARI kısmına dikkat👇"
-            
-        # 4. RALLY - BASE - DROP (RBD)
-        elif aylik_getiri > 15.0 and 55 < c_rsi < 70 and c_score < 45:
-            txt_baslik = f"🧱 {clean_ticker}: Rally-Base-Drop! Zirvede Dağıtım Formasyonu mu?"
-            txt_kanca = "Güçlü ralli (Rally) sonrası tepede oyalama (Base) ve şimdi skor hızla düşüyor (Drop). Büyük oyuncular malı devredip çıkıyor mu? Sonuç ve UYARI kısmına dikkat👇"
-
-        # 5. ÖLÜMCÜL YATAY BANT (Uzun Süreli Konsolidasyon)
-        elif -3.0 < aylik_getiri < 3.0 and 45 < c_rsi < 55 and c_vol < 8:
-            txt_baslik = f"⏳ {clean_ticker}: Ölümcül Yatay Bant! Akümülasyon mu, Dağıtım mı?"
-            txt_kanca = "Uzun süredir yön bulamıyor. Hacim ölü, getiri sıfır. Bu devasa sıkışmanın sonu efsanevi bir patlama mı olacak? Sonuç ve UYARI kısmına dikkat👇"
-
-        # --- ESKİLER ---
-        elif c_vol > 18 and c_score > 60:
-            txt_baslik = f"🐋 {clean_ticker}: Balina Hazırlığı! Gizli Toplama mı?"
-            txt_kanca = f"Fiyat henüz patlamadı ama Hacim çıldırıyor. {j_aktor} büyük bir ralli için vagonları mı dolduruyor? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rs > 88:
-            txt_baslik = f"👑 {clean_ticker}: Piyasaya Meydan Okuyan Lider!"
-            txt_kanca = f"{context_rakip} düşerken o neden dimdik ayakta? Kurumsal koruma kalkanı devrede! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score >= 85:
-            txt_baslik = f"🚀 {clean_ticker}: Roket Modu Açıldı, Hedef Neresi?"
-            txt_kanca = "Trend o kadar güçlü ki önüne geleni eziyor! Kusursuz skor, amansız yükseliş! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score >= 60 and c_rsi < 50:
-            txt_baslik = f"🧘 {clean_ticker}: Boğaların Dinlenme Tesisleri! (Pit Stop)"
-            txt_kanca = "Skor hala güçlü ama RSI dinleniyor. Bu bir çöküş değil, yeni bir sıçrama öncesi enerji toplama molası. Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score >= 40 and c_rsi < 30:
-            txt_baslik = f"🎯 {clean_ticker}: Korkunun Zirvesinde Sniper Atışı!"
-            txt_kanca = "Korku tavan yaptı, fiyat 'Bedava' bölgesine düştü. RSI diplerdeyken cesaret eden kazanacak mı? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score < 35 and c_rsi < 40:
-            txt_baslik = f"🔪 {clean_ticker}: Düşen Bıçağı Tutmak? (Yüksek Risk)"
-            txt_kanca = "Ucuz görünüyor ama teknik yapı iflas çekiyor. Dip sandığın yer aslında yeni bir uçurumun kenarı olabilir. Sonuç ve UYARI kısmına dikkat👇"
-
-        elif 35 < c_score < 55 and 40 < c_rsi < 60:
-            txt_baslik = f"🐢 {clean_ticker}: Bezdirme Politikası mı Devrede?"
-            txt_kanca = "Ne düşüyor ne çıkıyor. Gitmiyor diye sattığınız an uçuracaklar mı? Büyük bir sabır testi! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_vol < 5 and c_score < 50:
-            txt_baslik = f"🚜 {clean_ticker}: Zaman Kaybı mı, Güvenli Liman mı?"
-            txt_kanca = "Herkes kazanırken o yerinde sayıyor. Hacim yok, skor düşük. Tahta yapıcısı tatile mi çıktı? Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_score < 50 and c_rsi > 70:
-            txt_baslik = f"🪤 {clean_ticker}: Kusursuz Boğa Tuzağı mı? (Gel-Gel)"
-            txt_kanca = "Fiyat çıkıyor, RSI şişiyor ama ana skor desteklemiyor. Malı kitleyip kaçma ihtimalleri masada! Sonuç ve UYARI kısmına dikkat👇"
-
-        elif c_rsi > 85:
-            txt_baslik = f"🔥 {clean_ticker}: Motor Hararet Yaptı mı? (Aşırı Isınma)"
-            txt_kanca = "RSI tarihi zirvede! Rasyonellik bitti, FOMO başladı. Kârı alıp kenara çekilme vakti mi? Sonuç ve UYARI kısmına dikkat👇"
-
-        else:
-            txt_baslik = f"👀 {clean_ticker}: Radara Girdi! Hazırlık Başladı mı?"
-            txt_kanca = "Henüz net bir 'AL' veya 'SAT' kırılımı yok ama göstergeler hareketleniyor. Kritik eşik neresi? Sonuç ve UYARI kısmına dikkat👇"
-
-        # ---------------------------------------------------------
-        # 4. ADIM: NİHAİ TWEET (ICT MOTORUNA TAM ENTEGRE)
-        # ---------------------------------------------------------
-
-        # 1. AKILLI HATA ÇÖZÜMÜ: Eğer hiçbir senaryoya girmediyse, ICT MOTORUNDAN VERİ ÇEK!
-        if 'txt_kanit' not in locals():
-            
-            # A) Skor Güvenlik Kontrolü
-            safe_score = c_score if 'c_score' in locals() else 0
-            
-            # ==============================================================================
-            # AKILLI VİTRİN MANTIĞI (Dinamik Başlıklar v2.0)
-            # ==============================================================================
-            
-            # 1. DİNAMİK MADDELEME (Rüya Takımı Modu - Önem Sırasına Göre)
-            dinamik_maddeler = []
-
-            # A) NADİR KURULUMLAR VE ICT (AKILLI PARA) SİNYALLERİ (EN YÜKSEK ÖNCELİK)
-            if check_royal:
-                dinamik_maddeler.append("👑 Kusursuz Kurulum: Flash Royal (4/4 Onay)")
-            elif check_golden:
-                dinamik_maddeler.append("🏆 Altın Fırsat: Golden Trio (3/3 Onay)")
-                
-            if 'ict_data' in locals() and ict_data:
-                if "MSS" in str(ict_data) or "BOS" in str(ict_data) or c_ict >= 15:
-                    dinamik_maddeler.append("🐳 Smart Money: Market Yapısı Kırılımı (BOS/MSS)")
-
-            # B) DİNAMİK DESTEK / DİRENÇ KONTROLÜ
-            if 'ict_data' in locals() and ict_data:
-                import re
-                try:
-                    bl_text = ict_data.get('bottom_line', '').split('için')[-1]
-                    match = re.search(r"(\d+\.?\d*)", bl_text)
-                    if match:
-                        val_float = float(match.group(1))
-                        curr_p = info.get('price', 0) if 'info' in locals() and info else 0
-                        if curr_p > 0 and val_float < curr_p:
-                            dinamik_maddeler.append(f"🛡️ Kale (Destek): {val_float:,.2f}")
-                        elif curr_p > 0:
-                            dinamik_maddeler.append(f"🧱 Duvar (Direnç): {val_float:,.2f}")
-                except:
-                    pass
-
-            # C) RSI VE HACİM ANOMALİLERİ (PRICE ACTION)
-            if 'rsi_val' in locals():
-                if rsi_val < 30:
-                    dinamik_maddeler.append(f"💎 Aşırı Satım: RSI {int(rsi_val)} (Dip Fırsatı)")
-                elif rsi_val > 70:
-                    dinamik_maddeler.append(f"⚠️ Aşırı Alım: RSI {int(rsi_val)} (Şişkinlik Uyarısı)")
-            
-            if c_vol < 5 and 45 < c_rsi < 55:
-                dinamik_maddeler.append("💣 Hacim Kuruması: Fırtına Öncesi Sessizlik (Squeeze)")
-            elif c_vol > 20:
-                dinamik_maddeler.append("🌊 Anormal Hacim: Kurumsal Giriş İhtimali")
-
-            # D) ALGORİTMİK SKOR (ZORUNLU DEĞİL, DURUMA GÖRE EKLENİR)
-            if safe_score >= 80:
-                dinamik_maddeler.append(f"🚀 Algoritmik Skor: {safe_score}/100 (Ralli Gücü)")
-            elif safe_score <= 30:
-                dinamik_maddeler.append(f"🩸 Algoritmik Skor: {safe_score}/100 (Yüksek Risk)")
-            elif len(dinamik_maddeler) < 3: # Sadece liste boşsa ortalama skoru göster
-                dinamik_maddeler.append(f"⚖️ Denge Skoru: {safe_score}/100")
-
-            # E) LİSTEYİ FİLTRELE (SADECE EN KRİTİK İLK 3 MADDEYİ AL)
-            # Kod akışı zaten en önemliden en aza doğru eklendiği için direkt ilk 3'ü alıyoruz.
-            secilen_maddeler = dinamik_maddeler[:3]
-            
-            # Eğer her şeye rağmen boş kalırsa
-            if not secilen_maddeler:
-                secilen_maddeler.append("👀 Görünüm: Yön Arayışında (Nötr)")
-
-            # D) Metni Birleştir (Dinamik Etiketler)
-            txt_kanit = "\n".join(secilen_maddeler)
-            
-            # E) Başlık ve Kanca Kontrolü
-            if 'txt_baslik' not in locals():
-                txt_baslik = "Yön Arayışında (Karar Anı)"
-                
-            if 'txt_kanca' not in locals():
-                txt_kanca = "Net bir sinyal yok ama teknik seviyeler konuşuyor. İşte son durum... 👇"
-
-        # 2. SATIRLARI OLUŞTURMA
-        satirlar = []
-
-        # A) BAŞLIK AYARI (Sadece Metin)
-        if clean_ticker in txt_baslik:
-            final_baslik = txt_baslik.replace(clean_ticker, f"#{clean_ticker}", 1)
-        else:
-            final_baslik = f"#{clean_ticker}: {txt_baslik}"
-            
-        satirlar.append(final_baslik)
-
-        # Kanca Metni
-        if 'txt_kanca' in locals():
-            satirlar.append(txt_kanca)
-
-        # Teknik Kanıtlar Başlığı
-        satirlar.append("📊 TEKNİK KANITLAR:")
-
-        # B) MADDE İŞARETİ AYARI (Çift Yıldız Sorunu Çözüldü)
-        # Kanıt satırlarını kontrol et, zaten şekilli geliyorsa dokunma.
-        if 'txt_kanit' in locals():
-            for s in txt_kanit.split('\n'):
-                line = s.strip()
-                if line:
-                    # Eğer satır zaten bir simgeyle başlıyorsa (🔹, 🚀, 🩸 vb.) OLDUĞU GİBİ ekle
-                    if any(line.startswith(char) for char in ["🔹", "🔸", "▪️", "🚀", "🩸", "🛡️", "⚖️", "🧱", "🚧", "💎", "⚠️", "🌊", "🌧️"]):
-                        satirlar.append(line)
-                    else:
-                        # Başlamıyorsa mavi elması biz ekleyelim
-                        satirlar.append(f"🔹 {line}")
-
-        # Alt Bilgi
-        satirlar.append("Detaylı analiz ve resimli risk haritası için buyrun: 👇")
-
-        # 3. LİSTEYİ BİRLEŞTİR VE SONUCU ÜRET
-        final_tweet_safe = "\n".join(satirlar)
-
-        # 4. ADIM: EKRANA BASMA (Sınırlı yükseklik ve kopyalama butonlu)
-        st.markdown("𝕏 Başlık:")
-        with st.container(height=200): 
-            st.code(final_tweet_safe, language="text")
-        st.caption("📸 Analizin veya Grafiğin ekran görüntüsünü eklemeyi unutma!")
     st.session_state.generate_prompt = False
 
 info = fetch_stock_info(st.session_state.ticker)
@@ -8223,17 +8047,23 @@ with col_left:
                 elif 'Fiyat' in df_ma.columns: c_col = 'Fiyat'
                 else: c_col = df_ma.columns[0]
 
-                # SENİN ORİJİNAL KODUN (DOKUNULMADI)
-                current_price = info.get('price', df_ma[c_col].iloc[-1]) if info else df_ma[c_col].iloc[-1]
+                # 🛡️ YENİ KORUMA: Eğer eski bozuk veriden dolayı 'Close' iki tane gelmişse, sadece ilkini al
+                if isinstance(df_ma[c_col], pd.DataFrame):
+                    price_series = df_ma[c_col].iloc[:, 0]
+                else:
+                    price_series = df_ma[c_col]
 
-                ema5 = df_ma[c_col].ewm(span=5, adjust=False).mean().iloc[-1]
-                ema8 = df_ma[c_col].ewm(span=8, adjust=False).mean().iloc[-1]
-                ema13 = df_ma[c_col].ewm(span=13, adjust=False).mean().iloc[-1]
-                ema144 = df_ma[c_col].ewm(span=144, adjust=False).mean().iloc[-1]
+                # DEĞERLERİ GÜVENLİ SERİ ÜZERİNDEN HESAPLA
+                current_price = info.get('price', price_series.iloc[-1]) if info else price_series.iloc[-1]
 
-                sma50 = df_ma[c_col].rolling(window=50).mean().iloc[-1]
-                sma100 = df_ma[c_col].rolling(window=100).mean().iloc[-1]
-                sma200 = df_ma[c_col].rolling(window=200).mean().iloc[-1]
+                ema5 = price_series.ewm(span=5, adjust=False).mean().iloc[-1]
+                ema8 = price_series.ewm(span=8, adjust=False).mean().iloc[-1]
+                ema13 = price_series.ewm(span=13, adjust=False).mean().iloc[-1]
+                ema144 = price_series.ewm(span=144, adjust=False).mean().iloc[-1]
+
+                sma50 = price_series.rolling(window=50).mean().iloc[-1]
+                sma100 = price_series.rolling(window=100).mean().iloc[-1]
+                sma200 = price_series.rolling(window=200).mean().iloc[-1]
 
                 is_index = "XU" in st.session_state.ticker.upper() or "^" in st.session_state.ticker or current_price > 1000
 
@@ -8369,6 +8199,49 @@ with col_left:
                     
         else:
             st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu (ne Long ne Short) tespit edilemedi.") 
+    # ==============================================================================
+    # 🩸 ROYAL FLUSH 3.0 (DİPTEN DÖNÜŞ VE TUZAK AVCISI) PANELİ
+    # ==============================================================================
+    if 'rf3_scan_data' not in st.session_state: st.session_state.rf3_scan_data = None
+
+    # Panel Başlığı
+    st.markdown('<div class="info-header" style="margin-top: 30px; margin-bottom: 5px; border-left: 5px solid #dc2626;">🩸 Royal Flush 3.0 (Dipten Dönüş ve Tuzak Avcısı)</div>', unsafe_allow_html=True)
+    
+    # Tarama Butonu
+    if st.button(f"🩸 DİPTEN GÜVENLİ SETUP TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_rf3"):
+        with st.spinner("Z-Score, Hacim Daralması ve Ayı Tuzakları taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.rf3_scan_data = scan_rf3_batch(current_assets) 
+            
+    # Sonuçların Gösterimi
+    if st.session_state.rf3_scan_data is not None:
+        df_rf3 = st.session_state.rf3_scan_data
+        
+        if not df_rf3.empty:
+            st.success(f"🎉 Mükemmel! {len(df_rf3)} adet 'Kusursuz Dipten Dönüş' adayı bulundu.")
+            
+            # Etkileşimli ve görsel bir tablo (Trap skoru progress bar şeklinde)
+            st.dataframe(
+                df_rf3, 
+                use_container_width=True,
+                column_config={
+                    "Z-Score": st.column_config.NumberColumn("Z-Score (Ucuzluk)", format="%.2f"),
+                    "Trap Skoru": st.column_config.ProgressColumn("Tuzak Riski (0 En İyi)", format="%.2f", min_value=0, max_value=0.5),
+                }
+            )
+            
+            # Detaylı inceleme butonları (Kullanıcı tıkladığında grafiğe gitsin)
+            cols = st.columns(min(len(df_rf3), 4))
+            for i, (index, row) in enumerate(df_rf3.iterrows()):
+                sym = row["Sembol"]
+                with cols[i % 4]:
+                    if st.button(f"🔎 {sym} İncele", key=f"rf3_res_btn_{sym}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.warning("🧐 Şu anda 6 zorlu Royal Flush 3.0 kriterini (Aşırı Satım + Tuzak Yok) geçebilen hisse bulunamadı. Sabırlı olun, fırsat mutlaka gelecektir.")
+    # ==============================================================================
+
     # ---------------------------------------------------------
     # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
     # ---------------------------------------------------------
@@ -9020,6 +8893,8 @@ with col_right:
     # Royal Flush Paneli
     render_royal_flush_banner(ict_data_check, sent_data_check, st.session_state.ticker)
   
+    # --- YENİ EKLENEN SATIR: ROYAL FLUSH 3.0 BİREYSEL TARAMA ---
+    render_royal_flush_3_0_banner(st.session_state.ticker)
 
 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
@@ -9437,3 +9312,61 @@ with col_right:
                             on_scan_result_click(sym); st.rerun()
         else:
             st.info("Sonuçlar bekleniyor...")
+    # ==============================================================================
+    # 👑 TOP 20 MASTER LİSTE (TEK SÜTUN & DOĞAL HİZALAMA)
+    # ==============================================================================
+    if 'top_20_summary' in st.session_state and st.session_state.top_20_summary:
+        
+        # Başlık alanı - CSS zorlaması kaldırıldı, doğal boşluk bırakıldı
+        st.markdown('<div class="info-header" style="margin-bottom: 10px;">👑 Top 20 Master Liste (Teknik Confluence)</div>', unsafe_allow_html=True)
+        
+        # Tek sütunlu liste için container
+        with st.container(height=500, border=True):
+            for i, item in enumerate(st.session_state.top_20_summary):
+                # Veri Hazırlığı
+                sym = item['Sembol'].replace('.IS', '') 
+                score = int(item['score'])
+                onay_sayisi = item.get('onay_sayisi', 0)
+                
+                price_val = float(item['price'])
+                price_str = f"{int(price_val)}" if price_val >= 1000 else f"{price_val:.2f}"
+                sources_str = ", ".join(item['sources'][:3]) 
+                if len(item['sources']) > 3: sources_str += "..."
+                
+                # Renk Ayarları
+                if score >= 80:
+                    bg_color, border_color = "#fffbeb", "#f59e0b"
+                    score_bg = "linear-gradient(90deg, #f59e0b 0%, #d97706 100%)"
+                elif score >= 50:
+                    bg_color, border_color = "#f8fafc", "#3b82f6"
+                    score_bg = "#3b82f6"
+                else:
+                    bg_color, border_color = "#ffffff", "#e2e8f0"
+                    score_bg = "#64748b"
+                
+                # Kart HTML (1 Sütun için optimize edildi)
+                html_card = f"""
+    <div style="background-color: {bg_color}; padding: 12px; border-radius: 8px; border: 2px solid {border_color}; margin-bottom: 5px; text-align: left;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid {border_color}44; padding-bottom: 6px; margin-bottom: 8px;">
+            <span style="font-weight: 900; font-size: 1.2rem; color: #0f172a;">{sym}</span>
+            <span style="background: {score_bg}; color: white; padding: 2px 10px; border-radius: 12px; font-weight: 800; font-size: 0.8rem;">Skor: {score}/100</span>
+        </div>
+        <div style="background: #f1f5f9; border-radius: 4px; padding: 4px 10px; font-size: 0.75rem; color: #1e293b; font-weight: 800; margin-bottom: 8px; display: inline-block;">
+            ✅ {onay_sayisi} Strateji Onayı
+        </div>
+        <div style="font-size: 0.8rem; color: #0f172a; font-weight: 600; line-height: 1.4; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 5px; border-left: 4px solid {border_color}; text-align: left;">
+            {item['katalizor']}
+        </div>
+        <div style="font-size: 0.65rem; color: #64748b; margin-top: 8px; font-weight: 700;">
+            <span style="color: #94a3b8;">Kesişen Sinyaller:</span> {sources_str}
+        </div>
+    </div>"""
+                st.markdown(html_card, unsafe_allow_html=True)
+                
+                # Buton (Kartın hemen altında)
+                if st.button(f"📊 {sym} İncele ({price_str})", key=f"top20_btn_{sym}_{i}", use_container_width=True):
+                    st.session_state.ticker = sym
+                    st.rerun()
+                
+                # Her kartın arasına hafif boşluk
+                st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
