@@ -5110,7 +5110,8 @@ def render_royal_flush_banner(ict_data, sent_data, ticker):
 
     # --- KRİTER 1: YAPI (ICT) ---
     # BOS veya MSS (Bullish) olmalı
-    cond_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS (Market Structure Shift) 🐂" in ict_data.get('structure', '')
+    # Sadece BOS veya MSS kelimesi geçiyor mu diye baksın, metnin devamına takılmasın:
+    cond_struct = "BOS" in ict_data.get('structure', '') or "MSS" in ict_data.get('structure', '')
     
     # --- KRİTER 2: ZEKA (LORENTZIAN AI) ---
     # 7/8 veya 8/8 Yükseliş olmalı
@@ -8010,7 +8011,6 @@ Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin
 GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
 Teknik Görünüm: (Fiyat davranışı, formasyonlar ve genel trend durumunun 2-3 cümlelik net, anlaşılır ve eyleme dönüştürülebilir özeti.)
 Smart Money İzi: (Hacim, OBV, ICT analizleri ve para akışı verilerindeki kurumsal ayak izlerinin 2-3 cümlelik özeti.)
-Çelişki ve Risk: (Grafikteki ve verilerdeki RSI uyumsuzlukları, olası ayı/boğa tuzakları, aşırı ısınma/satım durumları ve risklerin 2-3 cümlelik özeti.)
 DEĞERLENDİRME: Buraya Birinci Görevindeki SONUÇ kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 UYARI: Buraya Birinci Görevindeki UYARI kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 TEKNİK KART: yaz ve alt satıra geç.
