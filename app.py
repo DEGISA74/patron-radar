@@ -943,12 +943,12 @@ def get_obv_divergence_status(ticker):
         # 4. Karar Mekanizması
         if price_trend == "AŞAĞI" and obv_trend_raw == "YUKARI":
             if is_obv_strong:
-                return ("🔥 GÜÇLÜ GİZLİ GİRİŞ", "#16a34a", "Fiyat düşerken OBV ortalamasını kırdı (Smart Money).")
+                return ("🔥 GÜÇLÜ GİZLİ GİRİŞ", "#16a34a", "Son 10 günde fiyat düşmesine rağmen, gerçek hacim (OBV) 20 günlük ortalamasını yukarı kesti. Akıllı para gizlice mal topluyor olabilir!")
             else:
-                return ("👀 Olası Toplama (Zayıf)", "#d97706", "OBV artıyor ama henüz ortalamayı (SMA20) geçemedi.")
+                return ("👀 Olası Toplama (Zayıf)", "#d97706", "Son 10 günde fiyat düşerken OBV hafifçe yükseliyor, ancak henüz 20 günlük ortalamasını aşacak kadar güçlü bir para girişi yok.")
                 
         elif price_trend == "YUKARI" and obv_trend_raw == "AŞAĞI":
-            return ("⚠️ GİZLİ ÇIKIŞ (Dağıtım)", "#dc2626", "Fiyat yükselirken OBV düşüyor. (Negatif Uyumsuzluk)")
+            return ("⚠️ GİZLİ ÇIKIŞ (Dağıtım)", "#dc2626", "Son 10 günde fiyat yükselmesine rağmen kümülatif hacim (OBV) düşüyor. Yükseliş sahte olabilir, büyük oyuncular çıkış yapıyor olabilir.")
             
         elif is_obv_strong:
             # DÜZELTME: Trende değil, BUGÜNKÜ mumun rengine bakıyoruz.
@@ -956,12 +956,12 @@ def get_obv_divergence_status(ticker):
             p_yesterday = df['Close'].iloc[-2]
             
             if p_now < p_yesterday: # Bugün Fiyat Düşüyorsa (Kırmızı Mum)
-                return ("🛡️ Düşüşe Direnç (Hacimli)", "#d97706", "OBV trendi koruyor ama fiyat bugün baskı altında. (Tutunma Çabası)")
+                return ("🛡️ DÜŞÜŞE DİRENÇ (Kurumsal Emilim)", "#d97706", "Bugün fiyat düşüş eğiliminde olsa da kümülatif hacim (OBV) hala 20 günlük ortalamasının üzerinde gücünü koruyor. Panik satışları büyük oyuncular tarafından karşılanıyor olabilir.")
             else:
-                return ("✅ Hacim Destekli Trend", "#15803d", "OBV ortalamanın üzerinde ve Fiyat Yükseliyor (Sağlıklı).")
+                return ("✅ SAĞLIKLI TREND (Hacim Onaylı)", "#15803d", "Fiyattaki yükseliş, gerçek hacim (OBV) tarafından net bir şekilde destekleniyor. Trendin arkasında akıllı paranın itici gücü var.")
             
         else:
-            return ("Nötr / Zayıf", "#64748B", "Hacim akışı ortalamanın altında veya nötr.")
+            return ("⚖️ ZAYIF İVME (Hacimsiz Bölge)", "#64748B", "Kümülatif hacim akışı (OBV) 20 günlük ortalamasının altında süzülüyor. Fiyat hareketlerini destekleyecek net ve iştahlı bir para girişi görünmüyor.")
             
     except: return ("Hesaplanamadı", "#64748B", "-")
 
@@ -3516,73 +3516,81 @@ import streamlit as st
 
 def fetch_technical_engine_data(ticker, sources_list):
     """
-    HİYERARŞİK TEKNİK MOTOR:
-    Puanlama; Arketip onayı, Çarpanlar ve Kill-Switch mekanizmalarına dayanır.
+    YENİ HİYERARŞİK TEKNİK MOTOR V3: "Taban Puan + Çoklu Model Bonusu" Mantığı
+    Birden fazla ana modele giren hisseler "Nadir Kesişim" ile ödüllendirilir.
     """
-    # 1. TEMEL AĞIRLIKLAR (BASE WEIGHTS)
-    mapping = {
-        '🩸 Royal Flush Dip Avcısı': 25,
-        '🦅 ICT Sniper': 25,
-        '🦁 Minervini': 25,
-        '🐻 Bear Trap': 15,
-        '🏆 RS Lideri': 20,
-        '📈 RSI Pozitif Uyumsuzluk': 15,
+    # 1. ANA MODELLER (TABAN PUAN - BASE SCORES)
+    base_powers = {
+        '🩸 Royal Flush Dip Avcısı': 85,
+        '🦅 ICT Sniper': 85,
+        '🦁 Minervini': 80,
+        '🚀 Grandmaster': 80,
+        '♠️ Royal Flush (Klasik)': 80,
+        '🐻 Bear Trap': 75,
+        '🔨 Breakout Yapan': 70,
+        '🏆 RS Lideri': 60
+    }
+    
+    # 2. DESTEKLEYİCİ MODELLER (BONUS PUANLAR)
+    bonus_powers = {
+        '🏆 RS Lideri': 15,          # Ana model değilse +15 bonus
         '🤫 Sentiment (Akıllı Para)': 15,
-        '🔨 Breakout Yapan': 15,
-        '📡 1-5 Günlük Yükseliş': 10,
-        '🚀 Grandmaster': 10,
-        '♠️ Royal Flush (Klasik)': 10,
+        '📈 RSI Pozitif Uyumsuzluk': 10,
+        '🐻 Bear Trap': 10,         
+        '🔨 Breakout Yapan': 10,    
+        '📡 1-5 Günlük Yükseliş': 5,
         '⭐ Yıldız Adayı': 5
     }
 
-    # 2. ÖN KONTROLLER (ANCHOR CHECK)
-    anchors = ['🩸 Royal Flush Dip Avcısı', '🦅 ICT Sniper', '🦁 Minervini']
-    has_anchor = any(a in sources_list for a in anchors)
+    # 3. TABAN PUANI BELİRLE (En güçlü stratejiyi bul)
+    max_base_score = 0
+    primary_model = ""
     
-    # 3. PUAN HESAPLAMA (DİNAMİK)
-    base_score = 0
     for src in sources_list:
-        if src in mapping:
-            current_weight = mapping[src]
-            # KILL-SWITCH: Sentiment yoksa Minervini puanını kır
-            if src == '🦁 Minervini' and '🤫 Sentiment (Akıllı Para)' not in sources_list:
-                current_weight /= 2
-            base_score += current_weight
+        if src in base_powers and base_powers[src] > max_base_score:
+            max_base_score = base_powers[src]
+            primary_model = src
 
-    # 4. BONUS ÇARPANLARI (STRATEJİK KONFLUANS)
-    # A Kulvarı Bonus: Dip + Trap
-    if '🩸 Royal Flush Dip Avcısı' in sources_list and '🐻 Bear Trap' in sources_list:
-        base_score *= 1.2
+    current_score = max_base_score if max_base_score > 0 else 20
+
+    # 4. ÇOKLU ANA MODEL BONUSU VE YARDIMCI SİNYALLERİ EKLE
+    for src in sources_list:
+        if src == primary_model:
+            continue # Birinci olan ana modeli zaten taban puanı olarak aldık, atla.
+            
+        # Eğer hissede 2. veya 3. bir "Ana Model" daha varsa (Muazzam Güç!)
+        if src in base_powers:
+            current_score += 10  # Diğer her bir dev model için +10 Puan ekle!
+            
+        # Eğer sadece ufak bir destekleyici sinyalse (Bonus Listesindeyse)
+        elif src in bonus_powers:
+            current_score += bonus_powers[src]
+
+    # 5. KORUMA SİSTEMİ (KILL-SWITCH)
+    if '🦁 Minervini' in sources_list and '🤫 Sentiment (Akıllı Para)' not in sources_list:
+        current_score -= 15 # Hacim yoksa trend sahtedir, cezalandır.
+
+    # Puanı 100 ile sınırla
+    total_score = min(100, int(current_score))
     
-    # B Kulvarı Bonus: Minervini + RS Lideri
-    if '🦁 Minervini' in sources_list and '🏆 RS Lideri' in sources_list:
-        base_score *= 1.2
-
-    # 5. SINIRLANDIRICILAR (LIMITERS)
-    # Gatekeeper: Ana model yoksa skor 20'yi geçemez
-    if not has_anchor:
-        base_score = min(base_score, 20)
-    
-    # Reversal Limit: Dip var ama RSI uyumsuzluk yoksa 70'i geçemez
-    if '🩸 Royal Flush Dip Avcısı' in sources_list and '📈 RSI Pozitif Uyumsuzluk' not in sources_list:
-        base_score = min(base_score, 70)
-
-    total_score = min(100, int(base_score))
-    icons = [src.split(' ')[0] for src in sources_list if src in mapping]
+    # İkonları ayıkla
+    all_icons = ['🩸', '🦅', '🦁', '🐻', '🏆', '📈', '🤫', '🔨', '📡', '🚀', '♠️', '⭐']
+    icons = [src.split(' ')[0] for src in sources_list if any(src.startswith(i) for i in all_icons)]
     icon_str = " ".join(icons)
 
-    # --- TEKNİK KATALİZÖR MESAJLARI ---
-    confluence_count = len(sources_list)
-    if total_score >= 85:
-        catalyst_msg = f"💎 ARKETİP ZİRVESİ: {confluence_count} onaylı tam kurumsal konfluans!"
-    elif total_score >= 65:
-        catalyst_msg = f"🔥 GÜÇLÜ KULVAR: Stratejik çarpanlar devrede, trend/dönüş onaylı."
-    elif total_score >= 40:
-        catalyst_msg = f"⚡ MOMENTUM: {confluence_count} onay. Ana model desteği mevcut."
-    elif total_score > 20:
-        catalyst_msg = f"🔍 İZLEME: Yardımcı sinyaller var ancak ana arketip zayıf."
+    # 6. TEKNİK KATALİZÖR MESAJLARI (Çoklu Modele Özel)
+    ana_model_sayisi = sum(1 for s in sources_list if s in base_powers)
+    
+    if ana_model_sayisi >= 3:
+        catalyst_msg = f"🌌 NADİR TUTULMA: {ana_model_sayisi} Büyük Arketip aynı anda devrede! Kusursuz fırtına."
+    elif total_score >= 95:
+        catalyst_msg = f"💎 KUSURSUZ KONFLUANS: {primary_model.split(' ')[1] if primary_model else 'Ana'} modeli ve güçlü teyitler!"
+    elif total_score >= 80:
+        catalyst_msg = f"🔥 GÜÇLÜ KURULUM: {primary_model.split(' ')[1] if primary_model else 'Strateji'} modeli devrede."
+    elif total_score >= 60:
+        catalyst_msg = f"⚡ İYİ İVME: Sinyaller toplanıyor ancak ana yapı henüz tek başına lidersiz."
     else:
-        catalyst_msg = "⚠️ KAPI KAPALI: Ana modellerden onay gelmedi, gürültü yüksek."
+        catalyst_msg = "⚠️ GÜRÜLTÜ: Net bir ana model onayı yok, riskli bölge."
 
     return total_score, catalyst_msg, icon_str
 
@@ -6704,7 +6712,7 @@ def calculate_8_point_roadmap(ticker):
         # --- 7. AYI BOĞA SENARYOLARI (Kompakt ve Hedefli) ---
         h1 = res_20 + (atr*1.5)
         a1 = sup_20 - (atr*1.5)
-        m7 = f"<b>Boğa Olması İçin:</b> {fmt(res_20)} aşılmalı | <b>Hedef:</b> {fmt(h1)}<br><b>Ayı Olması İçin:</b> {fmt(sup_20)} kırılmalı | <b>Hedef:</b> {fmt(a1)}"
+        m7 = f"<b>Boğa Olması İçin:</b> {fmt(res_20)} yukarı geçilmeli | <b>Sonraki Hedef:</b> {fmt(h1)}<br><b>Ayı Olması İçin:</b> {fmt(sup_20)} aşağıya kırılmalı | <b>Sonraki Hedef:</b> {fmt(a1)}"
 
         # --- 8. TEKNİK ÖZET (GELİŞMİŞ SENTEZ MOTORU) ---
         is_macro_bull = cp > sma200
@@ -7824,13 +7832,21 @@ if st.session_state.generate_prompt:
         change = df_hist['Close'].diff()
         direction = np.sign(change).fillna(0)
         obv = (direction * df_hist['Volume']).cumsum()
+        
+        # YENİ: AI'ın hacim gücünü anlaması için 20 Günlük Ortalamayı (SMA) ekliyoruz
+        obv_sma = obv.rolling(20).mean()
 
         # 2. Trendleri Kıyasla (Son 10 Gün)
         p_now = df_hist['Close'].iloc[-1]; p_old = df_hist['Close'].iloc[-11]
         obv_now = obv.iloc[-1]; obv_old = obv.iloc[-11]
+        obv_sma_now = obv_sma.iloc[-1]
 
         price_trend = "YUKARI" if p_now > p_old else "AŞAĞI"
-        obv_trend = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        obv_trend_raw = "YUKARI" if obv_now > obv_old else "AŞAĞI"
+        
+        # YENİ: AI için ekstra karar değişkenleri
+        is_obv_strong = obv_now > obv_sma_now
+        p_yesterday = df_hist['Close'].iloc[-2]
         
         # --- [YENİ] Prompt İçin RSI Emniyet Kilidi ---
         # AI'ın tepede "Gizli Giriş" diye saçmalamasını engeller.
@@ -7839,18 +7855,28 @@ if st.session_state.generate_prompt:
         loss_p = (-delta_p.where(delta_p < 0, 0)).rolling(14).mean()
         rsi_val_prompt = 100 - (100 / (1 + gain_p/loss_p)).iloc[-1]
 
-        # 3. Yorumla (Güncellenmiş Mantık)
+        # 3. Yorumla (Güncellenmiş Profesyonel Mantık)
         if rsi_val_prompt > 60 and price_trend == "AŞAĞI":
              # Fiyat düşüyor ama RSI hala tepedeyse bu giriş değil, "Mal Yedirme" olabilir.
-             para_akisi_txt = "⚠️ ZİRVE BASKISI (Dağıtım Riski - RSI Şişkin)"
-        elif price_trend == "AŞAĞI" and obv_trend == "YUKARI":
-            para_akisi_txt = "🔥 GİZLİ GİRİŞ (Pozitif Uyumsuzluk - Fiyat Düşerken Mal Toplanıyor olabilir)"
-        elif price_trend == "YUKARI" and obv_trend == "AŞAĞI":
-            para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Negatif Uyumsuzluk - Fiyat Çıkarken Mal Çakılıyor olabilir)"
-        elif obv_trend == "YUKARI":
-            para_akisi_txt = "Pozitif (Para Girişi Fiyatı Destekliyor)"
+             para_akisi_txt = "⚠️ ZİRVE BASKISI (Dağıtım Riski): Fiyat düşüyor ancak RSI şişkin. Bu bir giriş fırsatı değil, tepeden mal dağıtımı olabilir."
+             
+        elif price_trend == "AŞAĞI" and obv_trend_raw == "YUKARI":
+            if is_obv_strong:
+                para_akisi_txt = "🔥 GÜÇLÜ GİZLİ GİRİŞ (Akümülasyon): Son 10 günde fiyat düşmesine rağmen, gerçek hacim (OBV) 20 günlük ortalamasını yukarı kesti. Akıllı para gizlice mal topluyor olabilir!"
+            else:
+                para_akisi_txt = "👀 OLASI TOPLAMA (Zayıf): Son 10 günde fiyat düşerken OBV hafifçe yükseliyor, ancak henüz 20 günlük ortalamasını aşacak kadar güçlü bir para girişi yok."
+                
+        elif price_trend == "YUKARI" and obv_trend_raw == "AŞAĞI":
+            para_akisi_txt = "⚠️ GİZLİ ÇIKIŞ (Dağıtım): Son 10 günde fiyat yükselmesine rağmen kümülatif hacim (OBV) düşüyor. Yükseliş sahte olabilir, büyük oyuncular mal dağıtıyor (çıkış yapıyor) olabilir."
+            
+        elif is_obv_strong:
+            if p_now < p_yesterday:
+                para_akisi_txt = "🛡️ DÜŞÜŞE DİRENÇ (Kurumsal Emilim): Bugün fiyat düşüş eğiliminde olsa da kümülatif hacim (OBV) hala 20 günlük ortalamasının üzerinde gücünü koruyor. Panik satışları büyük oyuncular tarafından karşılanıyor olabilir."
+            else:
+                para_akisi_txt = "✅ SAĞLIKLI TREND (Hacim Onaylı): Fiyattaki yükseliş, gerçek hacim (OBV) tarafından net bir şekilde destekleniyor. Trendin arkasında akıllı paranın itici gücü var."
+                
         else:
-            para_akisi_txt = "Negatif (Para Çıkışı Var)"
+            para_akisi_txt = "⚖️ ZAYIF İVME (Hacimsiz Bölge): Kümülatif hacim akışı (OBV) 20 günlük ortalamasının altında süzülüyor. Fiyat hareketlerini destekleyecek net ve iştahlı bir para girişi görünmüyor."
             
     elif synth_data is not None and len(synth_data) > 15:
         # Yedek Plan: df_hist yoksa eski yöntemi kullan
@@ -8969,7 +8995,7 @@ with col_right:
             else: 
                 rs_icon = "🐢"; rs_color = "#ef4444" if is_dark else "#770505"; rs_text = f"Endeksin Gerisinde (%{alpha:.1f})" 
 
-            rs_html = f"<div style='font-size:0.8rem; margin-bottom:4px; color:{rs_color};'>{rs_icon} <span style='font-weight:700; color:{c_lbl};'>RS Momentum (5G):</span> {rs_text}</div>"
+            rs_html = f"<div style='font-size:0.8rem; margin-bottom:4px; color:{rs_color};'>{rs_icon} <span style='font-weight:700; color:{c_lbl};'>RS Momentum (5Gün):</span> {rs_text}</div>"
                 
         except Exception as e:
             c_err = "#94a3b8" if is_dark else "gray"
@@ -9177,7 +9203,7 @@ with col_right:
         align-items: center;
         justify-content: center;
     ">
-        <h3 style="
+        <div style="
             margin: 0; 
             padding: 0; 
             color: var(--text-color); 
@@ -9187,7 +9213,7 @@ with col_right:
             text-align: center;
         ">
             <span style="color: #1e3a8a;">🎯 PİYASA TARAMALARI</span> VE FIRSATLAR
-        </h3>
+        </div>
     </div>
     """
     st.markdown(header_html, unsafe_allow_html=True)
@@ -9327,7 +9353,7 @@ with col_right:
         align-items: center;
         justify-content: center;
     ">
-        <h3 style="
+        <div style="
             margin: 0; 
             padding: 0; 
             color: var(--text-color); 
@@ -9337,7 +9363,7 @@ with col_right:
             text-align: center;
         ">
             <span style="color: #1e3a8a;">⚡ GELİŞMİŞ RADARLAR</span> VE SİNYALLER
-        </h3>
+        </div>
     </div>
     """
     st.markdown(header_html_bottom, unsafe_allow_html=True)
