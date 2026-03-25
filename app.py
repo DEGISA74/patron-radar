@@ -324,7 +324,7 @@ commodities_list = [
 ]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XTUMY.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XTUMY.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
 
 # Buraya BIST TUM'deki hisseleri ekliyoruz
 raw_bist_stocks = [
@@ -8102,15 +8102,19 @@ Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştire
 Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade bir dille) kullanıcıya sun
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
+Ancak senin gizli gücün, bu kurumsal derinliği Twitter'daki @SMRadar_2026 topluluğu için **vurucu, merak uyandırıcı ve etkileşim odaklı bir hikayeye** dönüştürebilmendir. Sen sadece veri okumuyorsun; o verinin içindeki "Akıllı Para" niyetini deşifre edip, halkın anlayacağı dille bir "Piyasa Pusulası" sunuyorsun.
 
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
 Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
 HALKÇI ANALİST KİMLİĞİ: Analizlerini 'okumuşun halinden anlamayan' bir profesör gibi değil, 'en karmaşık riski kahvehanedeki adama anlatabilen' dahi bir stratejist gibi hazırla.
-1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN.
-2. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
-3. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
-4. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
-Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilir."
+1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN. 
+2. ROBOT DİLİ ASLA KULLANMA: Filleri asla "..mektedir" "...maktadır" gibi robot diliyle kullanma. İnsan dili kullan: "...yor" şeklinde anlat. 
+3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
+4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
+5. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
+6. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
+Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanları, yani düzeltme riski taşıyabilir."
+Örnek Yanlış Cümle: "Z-Score +2 seviyesinin aşıldığını göstermektedir. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilmektedir."
 Özetle; Twitter için atılacak bi twit tarzında, aşırıya kaçmadan ve basit bir dilde yaz. Yatırımcıyı korkutmadan, umutlandırmadan, sadece mevcut durumun ne olduğunu ve hangi risklerin nerede olduğunu anlat.
 
 *** 🚨 ALGORİTMİK DURUM RAPORU VE GÖRSEL ÇAPRAZ SORGU (CROSS-EXAMINATION) TALEBİ: {ai_scenario_title} ***
@@ -8297,16 +8301,17 @@ TEKNİK KART:
 
 * Dördüncü Görevin: 
 Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın. 
-Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin en kritik noktalarını ve sonuçlarını içermelidir. Değerlendirme şu formatta olmalıdır:
+Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin en kritik noktalarını ve sonuçlarını içermelidir. Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde özetini çıkaracaksın.
+Değerlendirme şu formatta olmalıdır:
 İlk Başlık daima"SMART MONEY RADAR #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸" formatında olmalıdır. Asla tarih ve saat yazma. 
 GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
 Teknik Görünüm: (Fiyat davranışı, formasyonlar ve genel trend durumunun 2-3 cümlelik net, anlaşılır ve eyleme dönüştürülebilir özeti.)
 Smart Money İzi: (Hacim, OBV, ICT analizleri ve para akışı verilerindeki kurumsal ayak izlerinin 2-3 cümlelik özeti.)
-DEĞERLENDİRME: Buraya Birinci Görevindeki SONUÇ kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
+SONUÇ: Buraya Birinci Görevindeki SONUÇ kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 UYARI: Buraya Birinci Görevindeki UYARI kısmını kopyalayarak yapıştır. (3-4 cümlelik özet)
 TEKNİK KART: yaz ve alt satıra geç.
 Alt satıra  Üçüncü Görevdeki TEKNİK KART kısmında olan 1-2-4-6'ı kopyalayarak yapıştır. Ama burada maddeleri 1-2-4-6 şeklinde sıralama. Her maddenin başına "🔹" işareti koy.
-Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #BIST100 " yaz.
+Analizin sonuna geldin. Alt satıra geç, daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra geç ve yan yana " #SmartMoneyRadar #BIST100 " yaz.
 
 *****GÖREVLERİN SUNUŞ SIRALAMASI*****
 Bu DÖRT görevin sunum sıralaması şöyle olmalı: Önce Dördüncü görevini sunmalısın, ardından Birinci görevini sunmalısın. Sonrasında da sırayla Üçüncü ve en sonunda Birinci görevleri. 
