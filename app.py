@@ -324,7 +324,7 @@ commodities_list = [
 ]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XUTUMY.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XTUMY.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
 
 # Buraya BIST TUM'deki hisseleri ekliyoruz
 raw_bist_stocks = [
