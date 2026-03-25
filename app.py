@@ -42,8 +42,8 @@ def is_yahoo_update_needed(ticker, local_last_date):
             return local_date < now.date()
         return True # Seans içi: GİT.
 
-    # ABD Grubu (Nasdaq/SP500 - USD olmayanlar/Kripto hariç)
-    elif "-USD" not in ticker:
+    # ABD Grubu (Sadece hisseler; Kripto ve Vadeli İşlemler hariç)
+    elif "-USD" not in ticker and "=F" not in ticker:
         # Hafta sonu: Cuma verisi varsa GİTME.
         if weekday >= 5:
             return local_date < (now - timedelta(days=(weekday - 4))).date()
@@ -64,7 +64,8 @@ st.set_page_config(
     layout="wide",
     page_icon="💸"
 )
-
+# YENİ EKLENEN: Global Değişken Tanımlamaları
+kd_res = None
 # --- DARK MODE / LIGHT MODE ALTYAPISI ---
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False # Default olarak Light Mode
@@ -323,7 +324,7 @@ commodities_list = [
 ]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
+priority_bist_indices = ["XU100.IS", "XU030.IS", "XUTUMY.IS", "XBANK.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
 
 # Buraya BIST TUM'deki hisseleri ekliyoruz
 raw_bist_stocks = [
@@ -422,6 +423,61 @@ def toggle_watchlist(symbol):
 # 3. OPTİMİZE EDİLMİŞ HESAPLAMA FONKSİYONLARI (CORE LOGIC)
 # ==============================================================================
 
+def apply_volume_projection(df, ticker=""):
+    """
+    Piyasa saatlerine göre Hacim Projeksiyonu (Run-Rate) yapar.
+    Eğer piyasa açıksa, bugünün eksik hacmini gün sonuna göre oranlayarak büyütür.
+    DİKKAT: Bu işlem sadece RAM üzerinde (kopya df'te) yapılır, veritabanını bozmaz.
+    """
+    if df is None or df.empty or 'Volume' not in df.columns:
+        return df
+
+    now = datetime.now()
+    
+    # Hafta sonuysa projeksiyon yapma
+    if now.weekday() >= 5:
+        return df
+        
+    # Elimizdeki son veri BUGÜNE mi ait? Değilse dokunma.
+    last_date = df.index[-1].date()
+    if last_date != now.date():
+        return df 
+
+    # Kripto, ABD veya BIST saatlerine göre hesaplama
+    if "-USD" in ticker:
+        # Kripto 7/24 (1440 dakika)
+        elapsed_minutes = (now.hour * 60) + now.minute
+        total_minutes = 1440
+    elif "^" in ticker or (not ".IS" in ticker and not ticker.startswith("XU")):
+        # ABD Piyasası (16:30 - 23:00 TR Saati) -> 390 dakika
+        if now.hour < 16 or (now.hour == 16 and now.minute < 30) or now.hour >= 23:
+            return df
+        elapsed_minutes = ((now.hour - 16) * 60) + now.minute - 30
+        total_minutes = 390
+    else:
+        # BIST (10:00 - 18:00 TR Saati) -> 480 dakika
+        if now.hour < 10 or now.hour >= 18:
+            return df
+        elapsed_minutes = ((now.hour - 10) * 60) + now.minute
+        total_minutes = 480
+
+    # Güvenlik Kilidi: Sıfıra bölünmeyi ve açılıştaki ilk 15 dakikanın aşırı şişkinliğini önle
+    if elapsed_minutes < 15:
+        elapsed_minutes = 15 
+        
+    progress = elapsed_minutes / total_minutes
+    progress = max(0.1, min(progress, 1.0))
+    
+    # Orijinal veritabanı bozulmasın diye KOPYA (copy) oluşturuyoruz
+    df_proj = df.copy()
+    current_volume = float(df_proj['Volume'].iloc[-1])
+    projected_volume = current_volume / progress
+    
+    # Sadece en son satırın (bugünün) hacmini güncelle
+    df_proj.loc[df_proj.index[-1], 'Volume'] = projected_volume
+    
+    return df_proj
+
 @st.cache_data(ttl=3600)
 def get_benchmark_data(category):
     """
@@ -439,71 +495,6 @@ def get_benchmark_data(category):
         return df['Close']
     except:
         return None
-
-@st.cache_data(ttl=3600)
-def get_fundamental_score(ticker):
-    """
-    GLOBAL STANDART (IBD/Stockopedia Mantığı) - Kademeli Puanlama
-    """
-    # Endeks veya Kripto kontrolü
-    if ticker.startswith("^") or "XU" in ticker or "-USD" in ticker:
-        return {"score": 50, "details": [], "valid": False} # Nötr dön
-
-    try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        if not info: return {"score": 50, "details": ["Veri Yok"], "valid": False}
-        
-        score = 0
-        details = []
-        
-        # --- YARDIMCI FONKSİYON: Kademeli Puanlama ---
-        def rate_metric(val, thresholds, max_pts):
-            """Değeri eşiklere göre puanlar. Örn: val=15, thresh=[5, 10, 20], max=20"""
-            if not val: return 0
-            val = val * 100 if val < 10 else val # Yüzde dönüşümü
-            step = max_pts / len(thresholds)
-            earned = 0
-            for t in thresholds:
-                if val > t: earned += step
-            return earned
-
-        # 1. BÜYÜME (GROWTH) - Max 40 Puan
-        # Ciro Büyümesi (Eşikler: %5, %15, %25) -> Max 20p
-        rev_g = info.get('revenueGrowth', 0)
-        s_rev = rate_metric(rev_g, [5, 15, 25], 20)
-        score += s_rev
-        if s_rev >= 10: details.append(f"Ciro Büyümesi: %{rev_g*100:.1f}")
-
-        # Kâr Büyümesi (Eşikler: %5, %15, %25) -> Max 20p
-        earn_g = info.get('earningsGrowth', 0)
-        s_earn = rate_metric(earn_g, [5, 15, 25], 20)
-        score += s_earn
-        if s_earn >= 10: details.append(f"Kâr Büyümesi: %{earn_g*100:.1f}")
-
-        # 2. KALİTE (QUALITY) - Max 40 Puan
-        # ROE (Eşikler: %5, %10, %15, %20) -> Max 20p (Daha hassas)
-        roe = info.get('returnOnEquity', 0)
-        s_roe = rate_metric(roe, [5, 10, 15, 20], 20)
-        score += s_roe
-        if s_roe >= 15: details.append(f"Güçlü ROE: %{roe*100:.1f}")
-
-        # Net Marj (Eşikler: %5, %10, %20) -> Max 20p
-        margin = info.get('profitMargins', 0)
-        s_marg = rate_metric(margin, [5, 10, 20], 20)
-        score += s_marg
-        if s_marg >= 10: details.append(f"Net Marj: %{margin*100:.1f}")
-
-        # 3. SMART MONEY (SAHİPLİK) - Max 20 Puan
-        inst = info.get('heldPercentInstitutions', 0)
-        s_inst = rate_metric(inst, [10, 30, 50, 70], 20)
-        score += s_inst
-        if s_inst >= 10: details.append(f"Kurumsal: %{inst*100:.0f}")
-
-        return {"score": min(score, 100), "details": details, "valid": True}
-        
-    except Exception:
-        return {"score": 50, "details": [], "valid": False}
 
 # --- GLOBAL DATA CACHE KATMANI ---
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -529,14 +520,17 @@ def get_batch_data_cached(asset_list, period="1y"):
                 df_cached = pd.read_parquet(file_path)
                 if not df_cached.empty:
                     if not is_yahoo_update_needed(sym, df_cached.index[-1]):
-                        combined_dict[sym] = df_cached.tail(500)
+                        # 👇 ESKİ HALİ: combined_dict[sym] = df_cached.tail(500)
+                        # 👇 YENİ HALİ:
+                        df_ready = df_cached.tail(500).copy()
+                        combined_dict[sym] = apply_volume_projection(df_ready, sym)
                         needs_download = False
             except: pass
         if needs_download:
             missing_assets.append(sym)
 
     if missing_assets:
-        df_new = yf.download(" ".join(missing_assets), period="1mo", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
+        df_new = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
         
         for sym in missing_assets:
             clean_sym = sym.replace(".IS", "")
@@ -564,18 +558,13 @@ def get_batch_data_cached(asset_list, period="1y"):
                 df_sym_new.index = df_sym_new.index.tz_localize(None) # Zaman dilimi çakışmasını önle
                 
                 file_path = os.path.join(CACHE_DIR, f"{clean_sym}_1d.parquet")
-                if os.path.exists(file_path):
-                    df_old = pd.read_parquet(file_path)
-                    df_old = df_old.loc[:, ~df_old.columns.duplicated()]
-                    df_old.columns = [str(c).capitalize() for c in df_old.columns]
-                    df_old.index = df_old.index.tz_localize(None)
-                    df_combined = pd.concat([df_old, df_sym_new])
-                    df_combined = df_combined[~df_combined.index.duplicated(keep='last')].sort_index()
-                else:
-                    df_combined = df_sym_new
                 
-                df_combined.to_parquet(file_path)
-                combined_dict[sym] = df_combined.tail(500)
+                # Doğrudan yeni gelen düzeltilmiş veriyi kaydediyoruz
+                df_sym_new.to_parquet(file_path) 
+                
+                df_ready = df_sym_new.tail(500).copy()
+                combined_dict[sym] = apply_volume_projection(df_ready, sym)
+                
             except Exception as e: 
                 continue
 
@@ -609,27 +598,33 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             df_cached.index = df_cached.index.tz_localize(None)
             
             if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
-                return df_cached.tail(500)
+                # 👇 YENİ HALİ:
+                return apply_volume_projection(df_cached.tail(500).copy(), ticker)
 
-            df_new = yf.download(clean_ticker, period="1mo", interval=interval, progress=False, auto_adjust=True)
+            df_new = yf.download(clean_ticker, period="2y", interval=interval, progress=False, auto_adjust=True)
             if not df_new.empty:
                 df_new = safe_clean_columns(df_new)
                 df_new.index = df_new.index.tz_localize(None)
                 
-                df_combined = pd.concat([df_cached, df_new])
-                df_combined = df_combined[~df_combined.index.duplicated(keep='last')].sort_index()
-                df_combined.to_parquet(file_path)
-                return df_combined.tail(500)
-            return df_cached.tail(500)
+                # Dosyayı tamamen yenile (Temettü düzeltmesi için şart)
+                df_new.to_parquet(file_path)
+                
+                return apply_volume_projection(df_new.tail(500).copy(), ticker)
+            
+            # 👇 YENİ HALİ:
+            return apply_volume_projection(df_cached.tail(500).copy(), ticker)
         else:
             df_full = yf.download(clean_ticker, period="2y", interval=interval, progress=False, auto_adjust=True)
             if not df_full.empty:
                 df_full = safe_clean_columns(df_full)
                 df_full.index = df_full.index.tz_localize(None)
                 df_full.to_parquet(file_path)
-                return df_full.tail(500)
+                
+                # 👇 YENİ HALİ:
+                return apply_volume_projection(df_full.tail(500).copy(), ticker)
         return None
-    except Exception as e: 
+    
+    except Exception as e:
         return None
 
 def calculate_harsi(df, period=14):
@@ -1611,26 +1606,8 @@ def process_single_accumulation(symbol, df, benchmark_series):
             if price_now < (price_2_days_ago * 0.97): 
                 return None 
 
-        # --- 2. ZAMAN AYARLI HACİM HESABI (PRO-RATA) ---
-        last_date = df.index[-1].date()
-        today_date = datetime.now().date()
-        is_live = (last_date == today_date)
-        
+        # --- 2. HACİM KONTROLÜ (Artık Global Olarak Hesaplanıyor) ---
         volume_for_check = float(volume.iloc[-1])
-        
-        if is_live:
-            now = datetime.now() + timedelta(hours=3) # TR Saati
-            current_hour = now.hour
-            current_minute = now.minute
-            
-            if current_hour < 10: progress = 0.1
-            elif current_hour >= 18: progress = 1.0
-            else:
-                progress = ((current_hour - 10) * 60 + current_minute) / 480.0
-                progress = max(0.1, min(progress, 1.0))
-            
-            if progress > 0:
-                volume_for_check = float(volume.iloc[-1]) / progress
 
         # --- 3. MEVCUT MANTIK (TOPLAMA & FORCE INDEX) ---
         delta = close.diff()
@@ -2178,31 +2155,15 @@ def process_single_breakout(symbol, df):
         close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
         volume = df['Volume'] if 'Volume' in df.columns else pd.Series([1]*len(df))
         
-        # --- 1. ZAMAN AYARLI HACİM (SABAH KORUMASI) ---
-        last_date = df.index[-1].date()
-        today_date = datetime.now().date()
-        is_live = (last_date == today_date)
-        
-        progress = 1.0 
-        if is_live:
-            now = datetime.now() + timedelta(hours=3) # TR Saati
-            current_hour = now.hour
-            current_minute = now.minute
-            
-            if current_hour < 10: progress = 0.1
-            elif current_hour >= 18: progress = 1.0
-            else:
-                progress = ((current_hour - 10) * 60 + current_minute) / 480.0
-                progress = max(0.1, min(progress, 1.0))
-
+        # --- 1. HACİM KONTROLÜ (Sabah koruması ana depoda halledildi) ---
         curr_vol_raw = float(volume.iloc[-1])
-        curr_vol_projected = curr_vol_raw / progress
+        curr_vol_projected = curr_vol_raw # Zaten ana depodan projeksiyonlu geldi
         
         vol_20 = volume.iloc[:-1].tail(20).mean()
         if pd.isna(vol_20) or vol_20 == 0: vol_20 = 1
 
         rvol = curr_vol_projected / vol_20
-        
+     
         # --- TEKNİK HESAPLAMALAR ---
         ema5 = close.ewm(span=5, adjust=False).mean()
         ema20 = close.ewm(span=20, adjust=False).mean()
@@ -2311,52 +2272,20 @@ def process_single_confirmed(symbol, df):
         # Eğer bugünkü fiyat, geçmiş 20 günün zirvesini geçmediyse ELE.
         if curr_close <= high_val: return None 
 
-        # --- 2. ADIM: GÜVENLİ HACİM HESABI (TIME-BASED) ---
-        
-        # Önce Tarih Kontrolü: Elimizdeki son veri (df.index[-1]) BUGÜNE mi ait?
-        last_data_date = df.index[-1].date()
-        today_date = datetime.now().date()
-        
-        # Eğer son veri bugüne aitse "Canlı Seans" mantığı çalışsın.
-        # Eğer veri eskiyse (akşam olduysa veya hafta sonuysa), gün bitmiş sayılır (Progress = 1.0)
-        is_live_today = (last_data_date == today_date)
-        
-        day_progress = 1.0 # Varsayılan: Gün bitti (%100)
-
-        if is_live_today:
-            # Sadece veri "Bugün" ise saat hesabına gir.
-            now = datetime.now()
-            current_hour = now.hour
-            current_minute = now.minute
-            
-            # BIST Seans: 10:00 - 18:00 (480 dk)
-            if current_hour < 10:
-                day_progress = 0.1 # Seans öncesi veri gelirse sapıtmasın
-            elif current_hour >= 18:
-                day_progress = 1.0 # Seans bitti
-            else:
-                minutes_passed = (current_hour - 10) * 60 + current_minute
-                day_progress = minutes_passed / 480.0
-                day_progress = max(0.1, min(day_progress, 1.0)) # 0.1 ile 1.0 arasına sıkıştır
-
+        # --- 2. ADIM: GÜVENLİ HACİM HESABI ---
         # Geçmiş 20 günün ortalama hacmi (Bugün hariç)
         avg_vol_20 = volume.rolling(20).mean().shift(1).iloc[-1]
-        
-        # BEKLENEN HACİM
-        expected_vol_now = avg_vol_20 * day_progress
-        curr_vol = float(volume.iloc[-1])
+        curr_vol = float(volume.iloc[-1]) # Bu hacim zaten ana merkezde güncellendi!
         
         # PERFORMANS ORANI
-        # Eğer günün yarısı bittiyse ve hacim de ortalamanın yarısıysa oran 1.0 olur.
-        # Biz biraz 'hareket' istiyoruz, o yüzden 0.6 (Normalin %60'ı) alt sınır olsun.
         if avg_vol_20 > 0:
-            performance_ratio = curr_vol / expected_vol_now
+            performance_ratio = curr_vol / avg_vol_20
         else:
             performance_ratio = 0
             
         # Filtre: Eğer o saate kadar yapması gereken hacmi yapmadıysa ELE.
-        if performance_ratio < 0.6: return None 
-        
+        if performance_ratio < 0.6: return None
+       
         # --- GÜVENLİK 3: GAP (BOŞLUK) TUZAĞI ---
         prev_close = float(close.iloc[-2])
         curr_open = float(open_.iloc[-1])
@@ -2638,6 +2567,79 @@ def scan_rf3_batch(asset_list):
         if res: results.append(res)
             
     return pd.DataFrame(results)
+
+# ==============================================================================
+# 🎯 KESİN DÖNÜŞ SİNYALLERİ (GELİŞTİRME 2 - 3'LÜ KESİŞİM)
+# ==============================================================================
+def process_single_kesin_donus(symbol, df, benchmark_series=None):
+    if df is None or df.empty or len(df) < 60: return None
+
+    # 1. Ayı Tuzağı (Bear Trap) Kontrolü (Mevcut fonksiyonunuzu çağırıyoruz)
+    bt_res = process_single_bear_trap_live(df)
+    if not bt_res: return None
+
+    # 2. RSI Pozitif Uyumsuzluk Kontrolü (Optimize Edilmiş Kendi İçi Mantık)
+    close = df['Close']; open_ = df['Open']
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rsi_series = 100 - (100 / (1 + gain/loss))
+
+    curr_p = close.iloc[-5:]; prev_p = close.iloc[-20:-5]
+    curr_r = rsi_series.iloc[-5:]; prev_r = rsi_series.iloc[-20:-5]
+    
+    rsi_val = float(rsi_series.iloc[-1])
+    is_green_candle = close.iloc[-1] > open_.iloc[-1]
+
+    is_bull_div = (curr_p.min() <= prev_p.min()) and \
+                  (curr_r.min() > prev_r.min()) and \
+                  (rsi_val < 55) and \
+                  is_green_candle
+                  
+    if not is_bull_div: return None
+
+    # 3. Gizli Toplama (Akıllı Para) Kontrolü (Mevcut fonksiyonunuzu çağırıyoruz)
+    acc_res = process_single_accumulation(symbol, df, benchmark_series)
+    if not acc_res: return None
+
+    return {
+        "Sembol": symbol,
+        "Fiyat": f"{float(close.iloc[-1]):.2f}",
+        "Zaman": bt_res["Zaman"],
+        "Hacim_Gucu": acc_res["MF_Gucu_Goster"],
+        "RSI": int(rsi_val),
+        "Skor": acc_res["Skor"]
+    }
+
+@st.cache_data(ttl=900)
+def scan_kesin_donus_batch(asset_list):
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data.empty: return pd.DataFrame()
+
+    cat = st.session_state.get('category', 'S&P 500')
+    bench = get_benchmark_data(cat)
+
+    results = []
+    stock_dfs = []
+
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol in data.columns.levels[0]:
+                    stock_dfs.append((symbol, data[symbol]))
+            elif len(asset_list) == 1:
+                stock_dfs.append((symbol, data))
+        except: continue
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(process_single_kesin_donus, sym, df, bench) for sym, df in stock_dfs]
+        for future in concurrent.futures.as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+
+    if results:
+        return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+    return pd.DataFrame()
 
 # ==============================================================================
 # YENİ: TEMEL ANALİZ VE MASTER SKOR MOTORU (GLOBAL STANDART)
@@ -3519,6 +3521,7 @@ def fetch_technical_engine_data(ticker, sources_list):
     """
     # 1. ANA MODELLER (TABAN PUAN - BASE SCORES)
     base_powers = {
+        '🎯 Kesin Dönüş': 90,   # YENİ EKLENDİ: En yüksek taban puan
         '🩸 Royal Flush Dip Avcısı': 85,
         '🦅 ICT Sniper': 85,
         '🦁 Minervini': 80,
@@ -3568,7 +3571,7 @@ def fetch_technical_engine_data(ticker, sources_list):
     total_score = min(100, int(current_score))
     
     # İkonları ayıkla
-    all_icons = ['🩸', '🦅', '🦁', '🐻', '🏆', '📈', '🤫', '🔨', '📡', '🚀', '♠️', '⭐']
+    all_icons = ['🎯', '🩸', '🦅', '🦁', '🐻', '🏆', '📈', '🤫', '🔨', '📡', '🚀', '♠️', '⭐'] 
     icons = [src.split(' ')[0] for src in sources_list if any(src.startswith(i) for i in all_icons)]
     icon_str = " ".join(icons)
 
@@ -3581,6 +3584,7 @@ def fetch_technical_engine_data(ticker, sources_list):
     # ====================================================================
     
     # Sinyallerin varlık kontrolü
+    has_kd = '🎯 Kesin Dönüş' in sources_list
     has_dip = '🩸 Royal Flush Dip Avcısı' in sources_list
     has_ict = '🦅 ICT Sniper' in sources_list
     has_min = '🦁 Minervini' in sources_list
@@ -3596,6 +3600,10 @@ def fetch_technical_engine_data(ticker, sources_list):
 
     # Hissenin uygun olduğu tüm senaryoları bu sepete atacağız
     gecerli_senaryolar = []
+
+    # YENİ EKLENEN 0. SENARYO: KUSURSUZ KESİŞİM (En yüksek öncelik - Ağırlık: 95)
+    if has_kd:
+        gecerli_senaryolar.append((95, "🎯 Kusursuz Kesişim: Ayı tuzağı (Stop patlatma), RSI pozitif uyumsuzluğu ve akıllı para girişi (Gizli toplama) aynı anda devrede. Sistemdeki en nadir ve kazanma oranı en yüksek dipten dönüş sinyali!"))
 
     # 1. ZEHİRLİ KIRILIM (Acil Durum Kalkanı - Ağırlık: 999)
     # Sadece tamamen desteksiz, sığ ve trendi olmayan sahte kırılımları avlar.
@@ -3661,7 +3669,8 @@ def compile_top_20_summary():
                 if source_name not in candidates[sym]['sources']:
                     candidates[sym]['sources'].append(source_name)
 
-    # 1. HAVUZU OLUŞTUR (12 KAYNAK)
+    # 1. HAVUZU OLUŞTUR (13 KAYNAK)
+    add_candidates(st.session_state.get('kesin_donus_data'), '🎯 Kesin Dönüş')
     add_candidates(st.session_state.get('rf3_scan_data'), '🩸 Royal Flush Dip Avcısı')
     add_candidates(st.session_state.get('royal_results'), '♠️ Royal Flush (Klasik)') 
     add_candidates(st.session_state.get('ict_scan_data'), '🦅 ICT Sniper')
@@ -3899,54 +3908,21 @@ def calculate_sentiment_score(ticker):
         if ema20.iloc[-1] > sma50.iloc[-1]: score_tr += (W_TR * 0.2); reasons_tr.append("Hizalı")
 
         # =========================================================
-        # [GÜNCELLENMİŞ] 3. HACİM (ZAMAN AYARLI / PROJESİYONLU)
+        # 3. HACİM (ARTIK GLOBAL OLARAK PROJEKSİYONLU)
         # =========================================================
         score_vol = 0; reasons_vol = []
         
-        # A. Ortalamayı hesapla (Bugünü hariç tutarak son 20 günün ortalaması)
-        # Çünkü bugünün yarım yamalak hacmi ortalamayı bozmasın.
+        # A. Ortalamayı hesapla (Bugünü hariç tutarak)
         avg_vol_20 = volume.iloc[:-1].tail(20).mean()
         if pd.isna(avg_vol_20) or avg_vol_20 == 0: avg_vol_20 = 1
         
-        # B. Zaman İlerlemesini Hesapla (Progress 0.0 - 1.0)
-        last_date = df.index[-1].date()
-        today_date = datetime.now().date()
-        is_live_today = (last_date == today_date)
-        
-        progress = 1.0 # Varsayılan: Gün bitti
-        
-        if is_live_today:
-            now = datetime.now()
-            # BIST Saati Kontrolü (Global sunucuda TR saati ayarı gerekebilir, 
-            # burası sunucu saatine göre çalışır. Basitlik için 10:00-18:00 varsayıyoruz)
-            # Eğer sunucun UTC ise +3 eklemek gerekebilir: datetime.now() + timedelta(hours=3)
-            # Burayı standart yerel saat varsayıyoruz:
-            current_hour = now.hour
-            current_minute = now.minute
-            
-            # Kripto 7/24'tür ama hisse 10-18 arasıdır. Ayrım yapalım:
-            if is_crypto:
-                progress = (current_hour * 60 + current_minute) / 1440.0
-            else:
-                # Borsa İstanbul (10:00 - 18:00 = 480 dakika)
-                if current_hour < 10: progress = 0.1
-                elif current_hour >= 18: progress = 1.0
-                else:
-                    passed_mins = (current_hour - 10) * 60 + current_minute
-                    progress = passed_mins / 480.0
-            
-            progress = max(0.1, min(progress, 1.0)) # 0'a bölme hatası olmasın
-            
-        # C. Projeksiyonlu Hacim (Bu hızla giderse gün sonu ne olur?)
-        curr_vol_raw = float(volume.iloc[-1])
-        projected_vol = curr_vol_raw / progress
+        # B. Projeksiyonlu Hacim (Ana depodan zaten işlenmiş olarak geliyor)
+        projected_vol = float(volume.iloc[-1])
         
         # KURAL 1: Hacim Artışı (Ortalamadan Büyük mü?)
         if projected_vol > avg_vol_20:
             score_vol += (W_VOL * 0.6)
-            # Eğer saat erkense "Proj." ibaresi ekle ki kullanıcı anlasın
-            suffix = " (Proj.)" if (is_live_today and progress < 0.9) else ""
-            reasons_vol.append(f"Hacim Artışı{suffix}")
+            reasons_vol.append("Hacim Artışı")
             
         # KURAL 2: OBV (On Balance Volume)
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
@@ -7499,7 +7475,11 @@ with col_btn:
             # 13. ROYAL FLUSH 3.0 AJANI - %95
             my_bar.progress(95, text="🩸 Royal Flush 3.0 (Kusursuz Dipten Dönüş) Aranıyor...%95")
             st.session_state.rf3_scan_data = scan_rf3_batch(scan_list)
-
+            
+            # 14. KESİN DÖNÜŞ SİNYALLERİ - %97
+            my_bar.progress(97, text="🎯 Kesin Dönüşler (Tuzak+Uyumsuzluk+Hacim) Aranıyor...%97")
+            st.session_state.kesin_donus_data = scan_kesin_donus_batch(scan_list)
+            
             # --- YENİ EKLENEN TOP 20 YÖNETİCİ ÖZETİ (ÜÇLÜ DOĞRULAMA) - %99
             my_bar.progress(99, text="🏆 TOP 20 Yönetici Özeti Oluşturuluyor...%99")
             st.session_state.top_20_summary = compile_top_20_summary()
@@ -7656,10 +7636,16 @@ if st.session_state.generate_prompt:
     pat_df = scan_chart_patterns([t])                                
     bt_res = process_single_bear_trap_live(df_hist)                  
     r2_res = process_single_radar2(t, df_hist, idx_data, 0, 999999, 0)
+    kd_res = process_single_kesin_donus(t, df_hist, bench_series)
 
     # --- 3. SICAK İSTİHBARAT ÖZETİ (AI SİNYAL KUTUSU - DERİNLEŞTİRİLMİŞ) ---
+    kd_res = None
     scan_box_txt = []
     
+    # YENİ: KESİN DÖNÜŞ SİNYALİ (En Yüksek Öncelik)
+    if kd_res:
+        scan_box_txt.append("🎯 KESİN DÖNÜŞ SİNYALİ: 3'lü Kesişim (Ayı Tuzağı + Pozitif Uyumsuzluk + Akıllı Para Girişi) aynı anda tespit edildi! Bu, dipten dönüş ihtimali en yüksek, çok nadir ve güçlü bir setup'tır. Analizinde bunu vurgula!")
+
     # A. ELİT KURULUMLAR (Sistemin En Tepesi)
     if is_royal != "HAYIR": 
         scan_box_txt.append("👑 ELİT KURULUM: ROYAL FLUSH (4/4 Onay. Algoritmik kusursuzluk! Kurumsal fonların en sevdiği, başarı ihtimali en yüksek asimetrik risk/ödül noktası olabilir.)")
@@ -8547,6 +8533,35 @@ with col_left:
             st.warning("🧐 Şu anda 6 zorlu Royal Flush 3.0 kriterini (Aşırı Satım + Tuzak Yok) geçebilen hisse bulunamadı. Sabırlı olun, fırsat mutlaka gelecektir.")
     # ==============================================================================
 
+    # ==============================================================================
+    # 🎯 KESİN DÖNÜŞ SİNYALLERİ PANELİ (YENİ EKLENDİ)
+    # ==============================================================================
+    if 'kesin_donus_data' not in st.session_state:
+        st.session_state.kesin_donus_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 30px; margin-bottom: 5px; border-left: 5px solid #06b6d4;">🎯 Kesin Dönüş Sinyalleri (Tuzak + Uyumsuzluk + Hacim)</div>', unsafe_allow_html=True)
+
+    if st.button(f"🎯 KESİN DÖNÜŞLERİ TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_kesin_donus"):
+        with st.spinner("3'lü Venn Kesişimi (Ayı Tuzağı, Pozitif Uyumsuzluk, Akıllı Para) taranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            st.session_state.kesin_donus_data = scan_kesin_donus_batch(current_assets)
+            
+    if st.session_state.kesin_donus_data is not None:
+        df_kd = st.session_state.kesin_donus_data
+        if not df_kd.empty:
+            st.success(f"🎯 Nokta atışı! {len(df_kd)} adet 'Kesin Dönüş' adayı bulundu.")
+            st.dataframe(df_kd, use_container_width=True)
+            
+            cols_kd = st.columns(min(len(df_kd), 4))
+            for i, (index, row) in enumerate(df_kd.iterrows()):
+                sym = row["Sembol"]
+                with cols_kd[i % 4]:
+                    if st.button(f"🔎 {sym} İncele", key=f"kd_res_btn_{sym}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+        else:
+            st.info("🧐 Şu anda 'Ayı Tuzağı', 'RSI Pozitif Uyumsuzluk' ve 'Akıllı Para Girişi'nin AYNI ANDA yaşandığı bir hisse bulunamadı. Bu çok nadir ve kıymetli bir durumdur, çıktığında kaçırmayın.")
+
     # ---------------------------------------------------------
     # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
     # ---------------------------------------------------------
@@ -9070,7 +9085,12 @@ with col_right:
             elif stp_live['type'] == 'trend':
                 gun = stp_live['data'].get('Gun', '?')
                 scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_stp_t};'>✅ <span style='font-weight:700; color:{c_lbl};'>STP:</span> Trend ({gun} Gündür)</div>"
-
+        # 1.5 Kesin Dönüş
+        if kd_res:
+            found_any = True
+            c_kd = "#06b6d4" if is_dark else "#0891b2"
+            scan_results_html += f"<div style='font-size:0.8rem; margin-bottom:4px; color:{c_kd};'>🎯 <span style='font-weight:700; color:{c_lbl};'>Kesin Dönüş:</span> 3'lü Kesişim Onayı (Tuzak+Uyumsuzluk+Hacim)</div>"
+            
         # 2. Akıllı Para
         if acc_live:
             found_any = True
