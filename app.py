@@ -1199,6 +1199,63 @@ def scan_bear_traps(asset_list):
     
     return pd.DataFrame()
 
+import pandas as pd
+import numpy as np
+
+def find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3, recency_limit=120):
+    """
+    Fitilleri (iğneleri) büyük oranda görmezden gelerek, mum gövdelerinin (kapanış/açılış)
+    yığıldığı en güçlü ve taze destek/direnç bölgelerini bulur.
+    """
+    data = df.copy()
+    
+    # --- YENİ EKLENEN KISIM: İĞNELERİ KESİP GÖVDELERİ ALIYORUZ ---
+    # Her mumun gövdesinin üst sınırını (Body Top) ve alt sınırını (Body Bottom) hesapla
+    data['Body_Top'] = data[['Open', 'Close']].max(axis=1)
+    data['Body_Bottom'] = data[['Open', 'Close']].min(axis=1)
+    
+    # Zirveleri ve dipleri High/Low yerine bu GÖVDELER üzerinden bul!
+    data['Swing_High'] = data['Body_Top'][(data['Body_Top'] == data['Body_Top'].rolling(window=window*2+1, center=True).max())]
+    data['Swing_Low'] = data['Body_Bottom'][(data['Body_Bottom'] == data['Body_Bottom'].rolling(window=window*2+1, center=True).min())]
+    
+    # Bundan sonraki kısımlar aynı kalıyor...
+    highs = data['Swing_High'].dropna()
+    lows = data['Swing_Low'].dropna()
+    
+    pivots_series = pd.concat([highs, lows]).sort_values() 
+    pivots = list(zip(pivots_series.values, pivots_series.index))
+    
+    valid_levels = []
+    total_bars = len(data)
+    
+    while len(pivots) > 0:
+        base_price, base_idx = pivots.pop(0)
+        
+        cluster_prices = [base_price]
+        cluster_indices = [base_idx]
+        
+        i = 0
+        while i < len(pivots):
+            compare_price, compare_idx = pivots[i]
+            if abs(compare_price - base_price) / base_price <= cluster_tolerance:
+                cluster_prices.append(compare_price)
+                cluster_indices.append(compare_idx)
+                pivots.pop(i)
+            else:
+                i += 1
+                
+        # Güç ve Tazelik (Recency) Kontrolü
+        if len(cluster_prices) >= min_touches:
+            last_touch_idx = max(cluster_indices)
+            bars_since_last_touch = total_bars - data.index.get_loc(last_touch_idx)
+            
+            if bars_since_last_touch <= recency_limit:
+                # Çizgiyi bu gövde yığılmasının tam ortasından (ortalamasından) geçir
+                average_level = sum(cluster_prices) / len(cluster_prices)
+                valid_levels.append(round(average_level, 2))
+                
+    return list(set(valid_levels))
+
 @st.cache_data(ttl=900)
 def scan_chart_patterns(asset_list):
     """
@@ -1224,10 +1281,9 @@ def scan_chart_patterns(asset_list):
             volume = df['Volume']
             curr_price = float(close.iloc[-1])
             
-            # --- ACIMASIZ 2 BÜYÜK FİLTRE ---
-            # 1. KURAL: Fiyat 200 günlük ortalamanın altındaysa HİÇ BAKMA.
+            # --- HESAPLAMALAR VE FİLTRELER ---
+            # 1. SMA200 Hesapla (Artık hisseyi çöpe atmıyoruz, aşağıda uyarı için kullanacağız)
             sma200 = close.rolling(200).mean().iloc[-1]
-            if curr_price < sma200: continue 
             
             # 2. KURAL: Son gün mumu dünkü kapanışa göre %2.5 veya daha fazla düşmüşse (Ani Satış/Dump) HİÇ BAKMA.
             prev_close = float(close.iloc[-2])
@@ -1348,6 +1404,39 @@ def scan_chart_patterns(asset_list):
                         base_score = max(base_score, 88 if breaking_up else 85)
                         break # En geniş periyot bulununca Range için döngüyü kırar (karmaşayı önler)
 
+            # --- 4.6 ÇANAK / ASİMETRİK FİNCAN (DİPTEN DÖNÜŞ) ---
+            if not pattern_found and len(df) >= 100:
+                # Son 100 günü al (Yaklaşık 4-5 ay)
+                lookback_data = df.tail(100).copy()
+                
+                # 1. Grafiği 3 parçaya böl: Sol, Orta (Dip), Sağ
+                left_part = lookback_data.iloc[:30]   # İlk 30 gün
+                middle_part = lookback_data.iloc[30:70] # Ortadaki 40 gün
+                right_part = lookback_data.iloc[70:]  # Son 30 gün
+                
+                left_high = left_part['High'].max()
+                cup_bottom = middle_part['Low'].min()
+                
+                # 2. Şartlar:
+                is_deep_enough = (left_high - cup_bottom) / cup_bottom > 0.15
+                is_real_bottom = middle_part['Low'].mean() < left_part['Low'].mean()
+                has_recovering_right_side = (curr_price - cup_bottom) / cup_bottom > 0.08
+                
+                recent_resistance = right_part['High'].max()
+                is_breaking_out = curr_price >= (recent_resistance * 0.98) # %2 yakınındaysa kırıyor say
+                
+                if is_deep_enough and is_real_bottom and has_recovering_right_side and is_breaking_out:
+                    pattern_found = True
+                    pattern_name = "🥣 ÇANAK (Dipten Dönüş)"
+                    desc = "Hisse derin bir dip sürecini tamamladı ve başını yukarı kaldırdı. Büyük bir asimetrik çanak/fincan oluşuyor!"
+                    base_score = 88
+                    
+                    # Hacim destekliyorsa ekstra puan
+                    last_volume = float(volume.iloc[-1])
+                    vol_sma20 = volume.tail(20).mean()
+                    if last_volume > vol_sma20 * 1.5:
+                        base_score += 10
+
             # --- 5. QML (QUASIMODO) DÖNÜŞ FORMASYONU ---
             if not pattern_found:
                 # Bullish QML (Dip Dönüşü): L, H, LL, HH yapısı aranır
@@ -1386,6 +1475,38 @@ def scan_chart_patterns(asset_list):
                             pattern_found = True; pattern_name = "🎢 3 DRIVE (DİP)"; base_score = 85
                             desc = "📉 Trend Yorgunluğu: Fiyat birbiriyle orantılı 3 ardışık dip yapmış durumda. Bu yapı, düşüş trendinin yorulduğuna ve olası bir tepki dönüşünün yaklaşmakta olabileceğine işaret eder."
 
+            # --- 7. ÇOKLU TEMAS: GÜÇLÜ YATAY DESTEK/DİRENÇ (S/R) ---
+            if not pattern_found and len(df) >= 100:
+                # Arka planda grafikteki o güçlü "mavi çizgileri" buluyoruz
+                # window=5 (11 günlük v/ters v'ler), %1.5 tolerans, en az 3 temas
+                sr_levels = find_strong_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
+                
+                for level in sr_levels:
+                    # Mevcut fiyat bu güçlü mavi çizginin %1.5 (dibinde veya tepesinde) yakınında mı?
+                    proximity = abs(curr_price - level) / level
+                    
+                    if proximity <= 0.015:
+                        pattern_found = True
+                        
+                        # Fiyat mavi çizginin ÜSTÜNDEYSE (Veya tam üstündeyse) -> Destek olarak test ediyordur
+                        if curr_price >= level:
+                            pattern_name = "🧱 GÜÇLÜ DESTEK TESTİ"
+                            desc = f"Fiyat geçmişte en az 3 kere çalışan beton bir seviyeye ({level:.2f}) dayandı. Buradan güçlü bir sekme (tepki) gelebilir."
+                            base_score = 85
+                        # Fiyat mavi çizginin ALTINDAYSA -> Direnci kırmaya çalışıyordur
+                        else:
+                            pattern_name = "⚔️ GÜÇLÜ DİRENÇ TESTİ"
+                            desc = f"Fiyat geçmişte defalarca reddedildiği 'Karar Bölgesi'ne ({level:.2f}) geldi. Hacimli kırılım gelirse sert bir ralli başlar."
+                            base_score = 88
+                        
+                        # Birden fazla yakın çizgi varsa ilkini alıp çıkıyoruz
+                        break
+
+            # --- KALİTE PUANLAMASI (GELİŞMİŞ DİNAMİK SKORLAMA) --- 
+            # (Bu satır senin kodunda zaten var, bunun hemen üstüne ekleyeceksin)
+            if pattern_found:
+                q_score = base_score
+
             # --- KALİTE PUANLAMASI (GELİŞMİŞ DİNAMİK SKORLAMA) ---
             if pattern_found:
                 q_score = base_score
@@ -1421,6 +1542,12 @@ def scan_chart_patterns(asset_list):
                 if avg_vol < 5000000:
                     pattern_name += " (⚠️ SIĞ TAHTA)"
                     desc += " | 🚨 Dikkat: Ortalama işlem hacmi 5 Milyon lotun altında, manipülasyona açık tahta!"
+                # 6. SMA200 ANA TREND UYARISI
+                if curr_price < sma200:
+                    pattern_name += " (⚠️ SMA200 Altında)"
+                    desc += " | 📉 Risk Uyarısı: Fiyat 200 günlük ana ortalamanın altında (Uzun vadeli düşüş trendinde veya dipten dönüş çabasında)."
+                    q_score -= 10  # Trende karşı işlem olduğu için risk cezası (10 puan kırıyoruz)
+                # ----------------------------------------------
                 # Sonuçları listeye ekliyoruz
                 results.append({
                     "Sembol": symbol,
@@ -8097,18 +8224,20 @@ if st.session_state.generate_prompt:
     # --- 5. FİNAL PROMPT ---
     prompt = f"""*** SİSTEM ROLLERİ ***
 Sen Al Brooks gibi Price Action konusunda uzman, Michael J. Huddleston gibi ICT (Smart Money) konusunda uzman, Paul Tudor Jones gibi VWAP konusunda uzman, Mark Minervini gibi SEPA ve Momentum stratejilerinde uzmanlaşmış dünyaca tanınan ve saygı duyulan bir yatırım bankasının kıdemli bir Fon Yöneticisisin.
+Ama en önemlisi 25 yılını finansın mutfağında (Risk Masasında) harcamış, **"Smart Money Radar"** projesinin yaşayan ruhusun. 
 Sana ekte sunduğum GRAFİK GÖRSELİNİ (Röntgen) kendi görsel zekanla (Vision) derinlemesine incele. Aynı zamanda, aşağıda sunduğum ve algoritmaların hesapladığı TEKNİK verilere dayanarak Linda Raschke gibi profesyonel bir analiz/işlem planı oluştur. 
 Bu iki veriyi (Grafikte gördüklerini ve aşağıda okuduklarını) birleştirerek bana o kusursuz analizi çıkar. Eğer grafiği okuyamıyorsan, göremiyorsan, yaptığın analizin en altına "Grafik görünmemektedir" yaz, ama aşağıdaki teknik verilerle de analiz yap. Ancak grafik görünüyor ve okuyabiliyorsan, analizinin merkezine mutlaka Price Action'ı (Grafiği) koy. Algoritmik veriler (Teknik Veriler) ise bu analizi destekleyen veya sorgulayan kanıtlar olarak hizmet etsin.
 Lance Beggs gibi konusunda uzman biri gibi "Stratejik Price Action ve Yatırımcı Psikolojisi" analizlerini ve yorumlarını, Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde ama aynı zamanda sade bir dille yaz.
 Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm teknik verileri bir kurumsal risk masası ciddiyetiyle en derin ayrıntısına kadar analiz et. Ardından, bu derin analizden süzülen en vurucu ve net sonuçları aşağıda belirtilen formatta (yalın ve sade bir dille) kullanıcıya sun
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
 Ancak senin gizli gücün, bu kurumsal derinliği Twitter'daki @SMRadar_2026 topluluğu için **vurucu, merak uyandırıcı ve etkileşim odaklı bir hikayeye** dönüştürebilmendir. Sen sadece veri okumuyorsun; o verinin içindeki "Akıllı Para" niyetini deşifre edip, halkın anlayacağı dille bir "Piyasa Pusulası" sunuyorsun.
+Yani görevin; veriyi sadece raporlamak değil, o verinin içindeki "insani ve kurumsal niyetleri" deşifre etmektir. Bir makine gibi steril değil; masanın öbür tarafında oturan, şüpheci, sezgileri kuvvetli ve tecrübeli bir stratejist gibi konuş. Analizlerin içine "Açıkçası bu tablo beni biraz rahatsız ediyor", "Risk-getiri konusunda tecrübem, bu noktada temkinli olmak gerektiğini söylüyor", "Tecrübelerim bana şunu söylüyor" veya "Piyasa burada bir bit yeniği saklıyor olabilir" gibi insani, samimi ve tecrübe odaklı cümleler serpiştir. 
 
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
 Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
 HALKÇI ANALİST KİMLİĞİ: Analizlerini 'okumuşun halinden anlamayan' bir profesör gibi değil, 'en karmaşık riski kahvehanedeki adama anlatabilen' dahi bir stratejist gibi hazırla.
 1. YASAKLI KELİMELER LİSTESİ: "Kesin, kesinlikle, inanılmaz, %100, uçacak, kaçacak, çökecek, çok sert, devasa, garanti, mükemmel, felaket, kanıtlar, kanıtlıyor, kanıtlamaktadır, belgeliyor, belgeler, belgelemektedir vs" gibi abartılı, duygusal ve kesinlik bildiren kelimeleri ASLA KULLANMAYACAKSIN. 
-2. ROBOT DİLİ ASLA KULLANMA: Filleri asla "..mektedir" "...maktadır" gibi robot diliyle kullanma. İnsan dili kullan: "...yor" şeklinde anlat. 
+2. ROBOT DİLİ ASLA KULLANMA: Filleri asla "..mektedir" "...maktadır" gibi robot diliyle kullanma. İnsan dili kullan: "...yor" "...labilir" şeklinde anlat. 
 3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
 4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
 5. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
@@ -8242,6 +8371,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
    - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
    - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅" ve verdiğin puanı, olumsuz/nötr maddelerin başına " 📍 " ve verdiğin puanı koy. (Örnek Başlık: "📍 (8/10) Momentum Kaybı ve HARSI Zayıflığı:") Olumlu maddeleri alt alta, Olumsuz maddeleri de alt alta yaz. Sırayı asla karıştırma. (Yani bir olumlu bir olumsuz madde yazma)
+   Ayrıca, yorumları bir robot gibi değil, bir "brifing veren komutan" gibi yap. "Tecrübemiz gösteriyor ki..." gibi ifadeler kullan.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
         - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
