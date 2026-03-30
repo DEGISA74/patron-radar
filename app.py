@@ -1256,16 +1256,40 @@ def find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3, r
                 
     return list(set(valid_levels))
 
-@st.cache_data(ttl=900)
 def scan_chart_patterns(asset_list):
     """
-    V4 FİNAL: ERKEN SİNYALLERİ ELEYEN, SADECE 'OLMUŞ' FORMASYONLARI BULAN TARAMA
+    V5: SWING PIVOT TABANLI FORMASYON MOTORU
+    - Tüm formasyonlar kronolojik swing noktaları üzerinden tespit edilir.
+    - Zaman dilimi sabit dilimleme yerine gerçek pivot tespiti kullanır.
+    - find_smart_sr_levels (mevcut fonksiyon) kullanılır; ayrı bir fonksiyon gerekmez.
     """
-    data = get_batch_data_cached(asset_list, period="1y") 
+    data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
 
+    # ---------------------------------------------------------------
+    # YARDIMCI: Swing High / Low tespiti (kronolojik sıralı pivot listesi)
+    # Her pivot: (index_pozisyonu, fiyat, "H" veya "L")
+    # ---------------------------------------------------------------
+    def find_pivots(high_s, low_s, n=5):
+        """
+        Her iki yanında n mum olan local zirve ve dipleri bulur.
+        Döndürür: [(bar_idx, price, 'H'|'L'), ...]  kronolojik sırada
+        """
+        pivots = []
+        length = len(high_s)
+        for i in range(n, length - n):
+            # Swing High: i'deki yüksek, çevresindeki n mumun hepsinden büyük
+            if high_s.iloc[i] == high_s.iloc[i - n: i + n + 1].max():
+                pivots.append((i, float(high_s.iloc[i]), 'H'))
+            # Swing Low: i'deki düşük, çevresindeki n mumun hepsinden küçük
+            if low_s.iloc[i] == low_s.iloc[i - n: i + n + 1].min():
+                pivots.append((i, float(low_s.iloc[i]), 'L'))
+        # Kronolojik sırala, aynı bar'da H ve L varsa ikisi de kalsın
+        pivots.sort(key=lambda x: x[0])
+        return pivots
+
     results = []
-    
+
     for symbol in asset_list:
         try:
             if isinstance(data.columns, pd.MultiIndex):
@@ -1273,405 +1297,579 @@ def scan_chart_patterns(asset_list):
                 df = data[symbol].dropna()
             else:
                 df = data.dropna()
-            
-            # Daha güvenilir analiz için en az 150 gün veri
-            if len(df) < 150: continue 
 
-            close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
+            if len(df) < 150: continue
+
+            close  = df['Close']
+            high   = df['High']
+            low    = df['Low']
+            open_  = df['Open']
             volume = df['Volume']
             curr_price = float(close.iloc[-1])
-            
-            # --- HESAPLAMALAR VE FİLTRELER ---
-            # 1. SMA200 Hesapla (Artık hisseyi çöpe atmıyoruz, aşağıda uyarı için kullanacağız)
+
             sma200 = close.rolling(200).mean().iloc[-1]
-            
-            # 2. KURAL: Son gün mumu dünkü kapanışa göre %2.5 veya daha fazla düşmüşse (Ani Satış/Dump) HİÇ BAKMA.
+
+            # Ani dump filtresi
             prev_close = float(close.iloc[-2])
             if (curr_price - prev_close) / prev_close <= -0.025: continue
 
-            pattern_found = False; pattern_name = ""; desc = ""; base_score = 0
-            
-            # --- 1. BOĞA BAYRAĞI (BULL FLAG) ---
-            # Direk en az %15, Bayrak en fazla %6 genişlikte
-            p20 = float(close.iloc[-20]); p5 = float(close.iloc[-5])
-            pole = (p5 - p20) / p20
-            flag_h = high.iloc[-5:].max(); flag_l = low.iloc[-5:].min()
-            tight = (flag_h - flag_l) / flag_l
-            
-            # Kırılım %1 aşağıdan başlar, direncin en fazla %4 üzerine kadar taze kabul edilir
-            if pole > 0.15 and tight < 0.06 and (curr_price >= flag_h * 0.99) and (curr_price <= flag_h * 1.04):
-                pattern_found = True; pattern_name = "🚩 BOĞA BAYRAĞI"; base_score = 85
-                desc = f"Direk: %{pole*100:.1f} | Sıkışma: %{tight*100:.1f}"
+            pattern_found = False
+            pattern_name  = ""
+            desc           = ""
+            base_score     = 0
 
-            # --- 2. FİNCAN KULP DİNAMİK (10 Ay, 5 Ay) ---
-            for scale in [2, 1]:
-                if len(df) < 150 * scale: continue
-                rim_l = high.iloc[-(150*scale):-(40*scale)].max() 
-                cup_b = low.iloc[-(60*scale):-(20*scale)].min()
-                rim_r = high.iloc[-(25*scale):-(5*scale)].max() 
-                handle_low = low.iloc[-(10*scale):].min()
-                
-                aligned = abs(rim_l - rim_r) / rim_l < 0.05
-                deep = cup_b < rim_l * 0.85
-                handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b + (rim_r - cup_b)*0.5)
-                
-                # Kırılımın taze olması şartı: Maksimum %4 üstüne kadar kabul edilir.
-                breaking = (curr_price >= rim_r * 0.99) and (curr_price <= rim_r * 1.04)
-                approaching = (curr_price >= rim_r * 0.95) and not breaking
+            # Pivot listesini bir kez hesapla (tüm formasyonlar kullanır)
+            pivots_all = find_pivots(high, low, n=5)
+            # Son 200 bar içindeki pivotlar (çok eski yapıları eleriz)
+            bar_total = len(df)
+            pivots = [(i, p, t) for (i, p, t) in pivots_all if i >= bar_total - 200]
 
-                if aligned and deep and handle_exists:
-                    if breaking or approaching:
+            highs_piv = [(i, p) for (i, p, t) in pivots if t == 'H']
+            lows_piv  = [(i, p) for (i, p, t) in pivots if t == 'L']
+
+            # ---------------------------------------------------------------
+            # 1. BOĞA BAYRAĞI (BULL FLAG)
+            # Düzeltme: Direği son 5 mumdan önceki 15 muma dayandır.
+            # Bayrak = son 5 mum sıkışması, kırılım = fiyatın bayrak üstü yakınında olması.
+            # ---------------------------------------------------------------
+            if not pattern_found:
+                pole_start = float(close.iloc[-20])
+                pole_end   = float(close.iloc[-6])   # 5 mum önceki kapanış = direğin tepesi
+                pole       = (pole_end - pole_start) / pole_start
+
+                flag_h = float(high.iloc[-5:].max())
+                flag_l = float(low.iloc[-5:].min())
+                tight  = (flag_h - flag_l) / flag_l if flag_l > 0 else 1
+
+                # Direğin ortasından tepesine kadar düzelme (retracement) < %50 olmalı
+                retrace = (pole_end - curr_price) / (pole_end - pole_start) if (pole_end - pole_start) > 0 else 1
+
+                if (pole > 0.15 and tight < 0.06
+                        and retrace < 0.50          # Direği yarısından fazla geri vermemiş
+                        and curr_price >= flag_l * 0.99  # Bayrak dibini kırmamış
+                        and curr_price >= flag_h * 0.98): # Kırılım yakını
+                    pattern_found = True
+                    pattern_name  = "🚩 BOĞA BAYRAĞI"
+                    base_score    = 85
+                    desc = f"Direk: %{pole*100:.1f} | Sıkışma: %{tight*100:.1f} | Geri Alım: %{retrace*100:.0f}"
+
+            # ---------------------------------------------------------------
+            # 2. FİNCAN-KULP (CUP & HANDLE)
+            # Pivot tabanlı: Sol tepe H, dip L, sağ tepe H kronolojik sırada
+            # Sol tepe ≈ Sağ tepe (±%8), dip sol tepenin %85 altında,
+            # kulp = sağ tepe sonrası küçük geri çekilme, kırılım = sağ tepe yakını
+            # ---------------------------------------------------------------
+            if not pattern_found and len(highs_piv) >= 2 and len(lows_piv) >= 1:
+                for scale in [2, 1]:
+                    lookback = 150 * scale
+                    if bar_total < lookback: continue
+
+                    # Sol tepe: lookback penceresinin ilk yarısındaki en yüksek pivot
+                    mid_bar  = bar_total - lookback // 2
+                    left_h   = [(i, p) for (i, p) in highs_piv if i < mid_bar and i >= bar_total - lookback]
+                    right_h  = [(i, p) for (i, p) in highs_piv if i >= mid_bar]
+                    cup_lows = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
+
+                    if not left_h or not right_h or not cup_lows: continue
+
+                    # Sol tepenin en yükseği, sağ tepenin en yükseği, dibinin en düşüğü
+                    rim_l_idx, rim_l = max(left_h,  key=lambda x: x[1])
+                    rim_r_idx, rim_r = max(right_h, key=lambda x: x[1])
+                    cup_b_idx, cup_b = min(cup_lows, key=lambda x: x[1])
+
+                    # Kronoloji: sol tepe → dip → sağ tepe
+                    if not (rim_l_idx < cup_b_idx < rim_r_idx): continue
+
+                    aligned       = abs(rim_l - rim_r) / rim_l < 0.08
+                    deep          = cup_b < rim_l * 0.85
+                    # Kulp: sağ tepe sonrasında küçük geri çekilme var mı?
+                    handle_lows   = [p for (i, p) in lows_piv if i > rim_r_idx]
+                    handle_low    = min(handle_lows) if handle_lows else rim_r
+                    handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b + (rim_r - cup_b) * 0.5)
+
+                    breaking   = (curr_price >= rim_r * 0.99) and (curr_price <= rim_r * 1.05)
+                    approaching = (curr_price >= rim_r * 0.93) and not breaking
+
+                    if aligned and deep and handle_exists and (breaking or approaching):
                         pattern_found = True
                         p_name = f"☕ FİNCAN KULP ({scale*5} Ay)" if breaking else f"⏳ OLUŞAN FİNCAN KULP ({scale*5} Ay)"
-                        p_desc = f"{scale*150} mumluk kulp tamamlandı, kırılım var." if breaking else f"{scale*150} mumluk sağ tepeye/kulba yaklaşıyor, kırılım bekleniyor."
-                        if pattern_name: pattern_name += " & " + p_name; desc += " | " + p_desc
-                        else: pattern_name = p_name; desc = p_desc
-                        base_score = max(base_score, 95 if breaking else 75)
-
-            # --- 3. TOBO DİNAMİK (9 Ay, 6 Ay, 3 Ay) ---
-            for scale in [3, 2, 1]:
-                if len(df) < 60 * scale: continue
-                ml_idx, mh_idx, mr_idx = 60*scale, 40*scale, 15*scale
-                ml = low.iloc[-ml_idx:-mh_idx].min()
-                mh = low.iloc[-mh_idx:-mr_idx].min()
-                mr = low.iloc[-mr_idx:].min()
-                neck = high.iloc[-ml_idx:-10].max()
-                
-                head_deep = mh < ml * 0.98 and mh < mr * 0.98
-                sym = abs(ml - mr) / ml < 0.08
-                
-                is_breakout_fresh = (curr_price >= neck * 0.98) and (curr_price <= neck * 1.03)
-                is_forming = (curr_price > mr * 1.02) and (curr_price < neck * 0.98) # Sağ omuzdan sekmiş, boyuna gidiyor
-
-                if head_deep and sym:
-                    if is_breakout_fresh or is_forming:
-                        pattern_found = True
-                        p_name = f"🧛 TOBO ({scale*3} Ay)" if is_breakout_fresh else f"⏳ OLUŞAN TOBO ({scale*3} Ay)"
-                        p_desc = f"{scale*3} aylık ({ml_idx} mum) kırılım taze." if is_breakout_fresh else f"{scale*3} aylık yapıda Sağ Omuz oluştu, boyun çizgisine gidiyor."
-                        if pattern_name: pattern_name += " & " + p_name; desc += " | " + p_desc
-                        else: pattern_name = p_name; desc = p_desc
-                        base_score = max(base_score, 90 if is_breakout_fresh else 70)
-
-            # --- 4. YÜKSELEN ÜÇGEN DİNAMİK (135 Gün, 90 Gün, 45 Gün) ---
-            for scale in [3, 2, 1]:
-                if len(df) < 45 * scale: continue
-                h_peaks = high.iloc[-(45*scale):].nlargest(3).values
-                if len(h_peaks) > 0:
-                    avg_res = h_peaks.mean()
-                    flat = all(abs(p - avg_res)/avg_res < 0.02 for p in h_peaks)
-                    
-                    l3 = low.iloc[-(15*scale):].min()
-                    l2 = low.iloc[-(30*scale):-(15*scale)].min()
-                    l1 = low.iloc[-(45*scale):-(30*scale)].min()
-                    rising = l3 > l2 and l2 > l1
-                    
-                    # Direnç kırılımı taze olmalı (maks %4 tolerans)
-                    breaking = (curr_price >= avg_res * 0.99) and (curr_price <= avg_res * 1.04)
-                    approaching = (curr_price >= avg_res * 0.95) and not breaking
-
-                    if flat and rising:
-                        if breaking or approaching:
-                            pattern_found = True
-                            p_name = f"📐 YÜKS. ÜÇGEN ({scale*45} Gün)" if breaking else f"⏳ OLUŞAN ÜÇGEN ({scale*45} Gün)"
-                            p_desc = f"{scale*45} günlük direnç zorlanıyor/kırılıyor." if breaking else f"{scale*45} günlük daralma var, dirence yaklaşıyor."
-                            if pattern_name: pattern_name += " & " + p_name; desc += " | " + p_desc
-                            else: pattern_name = p_name; desc = p_desc
-                            base_score = max(base_score, 88 if breaking else 68)
-
-            # --- 4.5 EKSİK OLAN YENİ FORMASYON: RANGE (YATAY BANT) ---
-            for window in [180, 120, 90, 60]:
-                if len(df) < window: continue
-                recent_highs = high.iloc[-window:]
-                recent_lows = low.iloc[-window:]
-                
-                period_max = recent_highs.max()
-                period_min = recent_lows.min()
-                
-                range_width = (period_max - period_min) / period_min
-                
-                if range_width < 0.15: # Fiyat %15'lik yatay bir kanalda hapsolmuş
-                    # Yukarı kırılımın taze olması (maks %4 yukarıda)
-                    breaking_up = (curr_price >= period_max * 0.98) and (curr_price <= period_max * 1.04)
-                    # Destekten sekme (Desteğin hafif altına sarkabilir ama %4'ten fazla zıplamamış olmalı)
-                    bouncing_up = (curr_price >= period_min * 0.98) and (curr_price <= period_min * 1.04)
-                    
-                    if breaking_up or bouncing_up:
-                        pattern_found = True
-                        p_name = f"🧱 RANGE DİRENCİ ({window} Gün)" if breaking_up else f"🧱 RANGE DESTEĞİ ({window} Gün)"
-                        p_desc = f"{window} gündür süren yatay kanal direnci kırılıyor!" if breaking_up else f"{window} gündür süren bandın dibinden destek aldı."
-                        if pattern_name: pattern_name += " & " + p_name; desc += " | " + p_desc
-                        else: pattern_name = p_name; desc = p_desc
-                        base_score = max(base_score, 88 if breaking_up else 85)
-                        break # En geniş periyot bulununca Range için döngüyü kırar (karmaşayı önler)
-
-            # --- 4.6 ÇANAK / ASİMETRİK FİNCAN (DİPTEN DÖNÜŞ) ---
-            if not pattern_found and len(df) >= 100:
-                # Son 100 günü al (Yaklaşık 4-5 ay)
-                lookback_data = df.tail(100).copy()
-                
-                # 1. Grafiği 3 parçaya böl: Sol, Orta (Dip), Sağ
-                left_part = lookback_data.iloc[:30]   # İlk 30 gün
-                middle_part = lookback_data.iloc[30:70] # Ortadaki 40 gün
-                right_part = lookback_data.iloc[70:]  # Son 30 gün
-                
-                left_high = left_part['High'].max()
-                cup_bottom = middle_part['Low'].min()
-                
-                # 2. Şartlar:
-                is_deep_enough = (left_high - cup_bottom) / cup_bottom > 0.15
-                is_real_bottom = middle_part['Low'].mean() < left_part['Low'].mean()
-                has_recovering_right_side = (curr_price - cup_bottom) / cup_bottom > 0.08
-                
-                recent_resistance = right_part['High'].max()
-                is_breaking_out = curr_price >= (recent_resistance * 0.98) # %2 yakınındaysa kırıyor say
-                
-                if is_deep_enough and is_real_bottom and has_recovering_right_side and is_breaking_out:
-                    pattern_found = True
-                    pattern_name = "🥣 ÇANAK (Dipten Dönüş)"
-                    desc = "Hisse derin bir dip sürecini tamamladı ve başını yukarı kaldırdı. Büyük bir asimetrik çanak/fincan oluşuyor!"
-                    base_score = 88
-                    
-                    # Hacim destekliyorsa ekstra puan
-                    last_volume = float(volume.iloc[-1])
-                    vol_sma20 = volume.tail(20).mean()
-                    if last_volume > vol_sma20 * 1.5:
-                        base_score += 10
-
-            # --- 5. QML (QUASIMODO) DÖNÜŞ FORMASYONU ---
-            if not pattern_found:
-                # Bullish QML (Dip Dönüşü): L, H, LL, HH yapısı aranır
-                l_left = low.iloc[-60:-30].min()   # Sol Omuz (L)
-                h_mid = high.iloc[-50:-20].max()   # Orta Tepe (H)
-                ll_head = low.iloc[-30:-10].min()  # Baş (LL - Likidite Avı)
-                hh_right = high.iloc[-15:].max()   # Sağ Tepe (HH - Yapı Kırılımı)
-                
-                # Kurallar:
-                # 1. Baş, sol omuzdan düşük olmalı (SSL Likiditesi alındı)
-                cond_ll = ll_head < l_left * 0.98
-                # 2. Sağ tepe, orta tepeden yüksek olmalı (CHOCH / MSS Onayı)
-                cond_hh = hh_right > h_mid * 1.01
-                # 3. Fiyat şu an Sol Omuz (QML Çizgisi) seviyesine geri çekilmiş (Pullback) olmalı
-                cond_pullback = (curr_price >= l_left * 0.95) and (curr_price <= l_left * 1.05)
-                
-                if cond_ll and cond_hh and cond_pullback:
-                    pattern_found = True; pattern_name = "🧲 QUASIMODO (QML)"; base_score = 92
-                    desc = "🎢 Büyük Dönüş: Önce dipte likidite avı (LL) yapılmış, ardından sert bir kırılımla (HH) trend yön değiştirmiş görünüyor. Fiyat şu an potansiyel bir fırsat durağında (Sol Omuz) olabilir."
-
-            # --- 6. 3D (THREE DRIVE) YORGUNLUK FORMASYONU ---
-            if not pattern_found:
-                # Bullish 3D (3 Düşen Dip - Trend Yorgunluğu)
-                d1 = low.iloc[-60:-40].min()
-                d2 = low.iloc[-40:-20].min()
-                d3 = low.iloc[-20:].min()
-                
-                # 1. Şart: Dipler sırayla düşüyor olmalı
-                if d1 > d2 > d3:
-                    # 2. Şart: Simetri Kontrolü (Düşüş mesafeleri birbirine yakın mı?)
-                    drop1 = d1 - d2
-                    drop2 = d2 - d3
-                    if drop1 > 0 and abs(drop1 - drop2) / drop1 < 0.4:
-                        # 3. Şart: Fiyat son dipten sekmiş mi? (Onay)
-                        if curr_price > d3 * 1.02 and curr_price < d2:
-                            pattern_found = True; pattern_name = "🎢 3 DRIVE (DİP)"; base_score = 85
-                            desc = "📉 Trend Yorgunluğu: Fiyat birbiriyle orantılı 3 ardışık dip yapmış durumda. Bu yapı, düşüş trendinin yorulduğuna ve olası bir tepki dönüşünün yaklaşmakta olabileceğine işaret eder."
-
-            # --- 7. ÇOKLU TEMAS: GÜÇLÜ YATAY DESTEK/DİRENÇ (S/R) ---
-            if not pattern_found and len(df) >= 100:
-                # Arka planda grafikteki o güçlü "mavi çizgileri" buluyoruz
-                # window=5 (11 günlük v/ters v'ler), %1.5 tolerans, en az 3 temas
-                sr_levels = find_strong_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
-                
-                for level in sr_levels:
-                    # Mevcut fiyat bu güçlü mavi çizginin %1.5 (dibinde veya tepesinde) yakınında mı?
-                    proximity = abs(curr_price - level) / level
-                    
-                    if proximity <= 0.015:
-                        pattern_found = True
-                        
-                        # Fiyat mavi çizginin ÜSTÜNDEYSE (Veya tam üstündeyse) -> Destek olarak test ediyordur
-                        if curr_price >= level:
-                            pattern_name = "🧱 GÜÇLÜ DESTEK TESTİ"
-                            desc = f"Fiyat geçmişte en az 3 kere çalışan beton bir seviyeye ({level:.2f}) dayandı. Buradan güçlü bir sekme (tepki) gelebilir."
-                            base_score = 85
-                        # Fiyat mavi çizginin ALTINDAYSA -> Direnci kırmaya çalışıyordur
-                        else:
-                            pattern_name = "⚔️ GÜÇLÜ DİRENÇ TESTİ"
-                            desc = f"Fiyat geçmişte defalarca reddedildiği 'Karar Bölgesi'ne ({level:.2f}) geldi. Hacimli kırılım gelirse sert bir ralli başlar."
-                            base_score = 88
-                        
-                        # Birden fazla yakın çizgi varsa ilkini alıp çıkıyoruz
+                        p_desc = f"Sol Tepe: {rim_l:.2f} | Sağ Tepe: {rim_r:.2f} | Dip: {cup_b:.2f}"
+                        pattern_name = p_name; desc = p_desc
+                        base_score   = max(base_score, 95 if breaking else 75)
                         break
 
-            # --- KALİTE PUANLAMASI (GELİŞMİŞ DİNAMİK SKORLAMA) --- 
-            # (Bu satır senin kodunda zaten var, bunun hemen üstüne ekleyeceksin)
+            # ---------------------------------------------------------------
+            # 3. TOBO (Ters Omuz-Baş-Omuz)
+            # Pivot tabanlı: Sol omuz dibi L1, baş dibi L2 (L1'den düşük),
+            # sağ omuz dibi L3 (≈ L1), boyun çizgisi = L2'nin iki yanındaki tepeler
+            # Kronoloji: L1 → yüksek → L2 → yüksek (boyun) → L3 → kırılım
+            # ---------------------------------------------------------------
+            if not pattern_found and len(lows_piv) >= 3 and len(highs_piv) >= 2:
+                for scale in [3, 2, 1]:
+                    lookback = 60 * scale
+                    if bar_total < lookback: continue
+
+                    window_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
+                    window_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - lookback]
+
+                    if len(window_lows) < 3 or len(window_highs) < 2: continue
+
+                    # En derin dibi baş olarak al
+                    head_idx, head_p = min(window_lows, key=lambda x: x[1])
+
+                    # Sol omuz: baş'tan önceki dipler
+                    left_lows  = [(i, p) for (i, p) in window_lows if i < head_idx]
+                    # Sağ omuz: baş'tan sonraki dipler
+                    right_lows = [(i, p) for (i, p) in window_lows if i > head_idx]
+
+                    if not left_lows or not right_lows: continue
+
+                    # Sol omuz = baş'a en yakın sol dip, sağ omuz = baş'a en yakın sağ dip
+                    ls_idx, ls_p = max(left_lows,  key=lambda x: x[0])  # Kronolojik en yakın sol
+                    rs_idx, rs_p = min(right_lows, key=lambda x: x[0])  # Kronolojik en yakın sağ
+
+                    # Boyun çizgisi: baş'ın iki yanındaki en yakın tepelerin ortalaması
+                    left_neck  = [(i, p) for (i, p) in window_highs if ls_idx < i < head_idx]
+                    right_neck = [(i, p) for (i, p) in window_highs if head_idx < i < rs_idx + 20]
+
+                    if not left_neck or not right_neck: continue
+
+                    neck_l_p = max(left_neck,  key=lambda x: x[1])[1]
+                    neck_r_p = max(right_neck, key=lambda x: x[1])[1]
+                    neck     = (neck_l_p + neck_r_p) / 2  # Boyun ortalaması
+
+                    # Şartlar
+                    head_deep  = head_p < ls_p * 0.98 and head_p < rs_p * 0.98
+                    sym        = abs(ls_p - rs_p) / ls_p < 0.10  # Omuzlar ±%10
+                    neck_flat  = abs(neck_l_p - neck_r_p) / neck_l_p < 0.05  # Boyun yatay
+
+                    is_breakout = (curr_price >= neck * 0.98) and (curr_price <= neck * 1.04)
+                    is_forming  = (curr_price > rs_p * 1.01) and (curr_price < neck * 0.97)
+
+                    if head_deep and sym and neck_flat and (is_breakout or is_forming):
+                        pattern_found = True
+                        p_name = f"🧛 TOBO ({scale*3} Ay)" if is_breakout else f"⏳ OLUŞAN TOBO ({scale*3} Ay)"
+                        p_desc = f"Boyun: {neck:.2f} | Baş: {head_p:.2f} | Sol/Sağ Omuz: {ls_p:.2f}/{rs_p:.2f}"
+                        pattern_name = p_name; desc = p_desc
+                        base_score   = max(base_score, 90 if is_breakout else 70)
+                        break
+
+            # ---------------------------------------------------------------
+            # 4. YÜKSELEN ÜÇGEN
+            # Pivot tabanlı: En az 2 tepe aynı direnç seviyesinde (±%2),
+            # dipler kronolojik olarak yükseliyor (HL dizisi), en az 2 HL var.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(highs_piv) >= 2 and len(lows_piv) >= 2:
+                for scale in [3, 2, 1]:
+                    lookback = 45 * scale
+                    if bar_total < lookback: continue
+
+                    w_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - lookback]
+                    w_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
+
+                    if len(w_highs) < 2 or len(w_lows) < 2: continue
+
+                    # Direnç: tepelerin en büyüğüne göre %2 toleransla aynı hizadalar mı?
+                    top_val = max(p for _, p in w_highs)
+                    flat_tops = [p for _, p in w_highs if abs(p - top_val) / top_val < 0.02]
+                    flat = len(flat_tops) >= 2
+
+                    # Dipler kronolojik yükseliyor mu? (her dip bir öncekinden yüksek)
+                    lows_prices = [p for _, p in w_lows]
+                    rising = all(lows_prices[k] < lows_prices[k+1] for k in range(len(lows_prices)-1))
+
+                    if not (flat and rising): continue
+
+                    avg_res    = sum(flat_tops) / len(flat_tops)
+                    breaking   = (curr_price >= avg_res * 0.99) and (curr_price <= avg_res * 1.04)
+                    approaching = (curr_price >= avg_res * 0.95) and not breaking
+
+                    if breaking or approaching:
+                        pattern_found = True
+                        p_name = f"📐 YÜKS. ÜÇGEN ({scale*45} Gün)" if breaking else f"⏳ OLUŞAN ÜÇGEN ({scale*45} Gün)"
+                        p_desc = f"Direnç: {avg_res:.2f} | Dipler Yükseliyor: {len(lows_prices)} pivot"
+                        pattern_name = p_name; desc = p_desc
+                        base_score   = max(base_score, 88 if breaking else 68)
+                        break
+
+            # ---------------------------------------------------------------
+            # 4.5 RANGE (YATAY BANT)
+            # Fiyat uzun süre dar bir kanalda (<%15 genişlik) sıkışmış.
+            # En dar periyot önce bulunur; kırılım veya destek testi aranır.
+            # ---------------------------------------------------------------
+            if not pattern_found:
+                for rng_window in [60, 90, 120, 180]:
+                    if len(df) < rng_window: continue
+                    period_max = float(high.iloc[-rng_window:].max())
+                    period_min = float(low.iloc[-rng_window:].min())
+                    if period_min <= 0: continue
+                    range_width = (period_max - period_min) / period_min
+
+                    if range_width < 0.15:
+                        breaking_up  = (curr_price >= period_max * 0.98) and (curr_price <= period_max * 1.04)
+                        bouncing_up  = (curr_price >= period_min * 0.98) and (curr_price <= period_min * 1.04)
+
+                        if breaking_up or bouncing_up:
+                            pattern_found = True
+                            p_name = f"🧱 RANGE DİRENCİ ({rng_window} Gün)" if breaking_up else f"🧱 RANGE DESTEĞİ ({rng_window} Gün)"
+                            p_desc = (f"{rng_window} gündür süren yatay kanal direnci kırılıyor!"
+                                      if breaking_up else
+                                      f"{rng_window} gündür süren bandın dibinden destek aldı.")
+                            pattern_name = p_name; desc = p_desc
+                            base_score   = max(base_score, 88 if breaking_up else 85)
+                            break  # En dar bulunan periyotla çık
+
+            # ---------------------------------------------------------------
+            # 4.6 ÇANAK (Saucer / Rounding Bottom)
+            # Grafikte gördüğün "U" şekli: sol taraf yüksek, orta düşük, sağ toparlanıyor.
+            # Pivot tabanlı: sol bölgede H pivot, orta bölgede dip L pivot, sağ bölge toparlanıyor.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(df) >= 100:
+                lb = min(len(df), 120)
+                seg = lb // 3
+                left_part   = df.iloc[-lb    : -lb + seg]
+                middle_part = df.iloc[-lb + seg : -lb + 2*seg]
+                right_part  = df.iloc[-lb + 2*seg:]
+
+                if len(left_part) > 5 and len(middle_part) > 5 and len(right_part) > 5:
+                    left_high  = float(left_part['High'].max())
+                    cup_bottom = float(middle_part['Low'].min())
+                    right_high = float(right_part['High'].max())
+
+                    is_deep_enough    = (left_high - cup_bottom) / cup_bottom > 0.12
+                    is_real_bottom    = float(middle_part['Low'].mean()) < float(left_part['Low'].mean())
+                    is_recovering     = (curr_price - cup_bottom) / cup_bottom > 0.08
+                    # Sağ taraf sol yüksekliğinin en az %60'ına ulaşmış olmalı
+                    right_recovered   = right_high >= left_high * 0.60
+                    is_breaking_out   = curr_price >= right_high * 0.98
+
+                    if is_deep_enough and is_real_bottom and is_recovering and right_recovered and is_breaking_out:
+                        pattern_found = True
+                        pattern_name  = "🥣 ÇANAK (Dipten Dönüş)"
+                        base_score    = 88
+                        desc = f"Sol Tepe: {left_high:.2f} | Dip: {cup_bottom:.2f} | Sağ Direnç: {right_high:.2f}"
+                        last_volume = float(volume.iloc[-1])
+                        vol_sma20   = float(volume.tail(20).mean())
+                        if vol_sma20 > 0 and last_volume > vol_sma20 * 1.5:
+                            base_score += 10
+
+            # ---------------------------------------------------------------
+            # 5. QUASIMODO (QML) — Bullish Dönüş
+            # Kronoloji: L(sol omuz) → H(orta tepe) → LL(baş/likidite avı) → HH(yapı kırılımı) → pullback
+            # Pivotların kronolojik sırasını zorunlu tut.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(lows_piv) >= 2 and len(highs_piv) >= 2:
+                # Son 80 bar içindeki pivotlar
+                w_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - 80]
+                w_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - 80]
+
+                if len(w_lows) >= 2 and len(w_highs) >= 2:
+                    # İlk L (sol omuz), sonra H (orta tepe), sonra LL (baş), sonra HH (kırılım)
+                    for qi in range(len(w_lows) - 1):
+                        l_left_idx, l_left_p = w_lows[qi]
+                        # l_left sonrası bir H olmalı
+                        mid_h = [(i, p) for (i, p) in w_highs if i > l_left_idx]
+                        if not mid_h: continue
+                        h_mid_idx, h_mid_p = mid_h[0]
+                        # h_mid sonrası LL olmalı
+                        ll_list = [(i, p) for (i, p) in w_lows if i > h_mid_idx]
+                        if not ll_list: continue
+                        ll_idx, ll_p = ll_list[0]
+                        # ll sonrası HH olmalı
+                        hh_list = [(i, p) for (i, p) in w_highs if i > ll_idx]
+                        if not hh_list: continue
+                        hh_idx, hh_p = hh_list[0]
+
+                        cond_ll      = ll_p < l_left_p * 0.98          # LL < L (likidite avı)
+                        cond_hh      = hh_p > h_mid_p * 1.01           # HH > H (yapı kırılımı)
+                        cond_pullback = (curr_price >= l_left_p * 0.95 and
+                                         curr_price <= l_left_p * 1.05) # QML çizgisine geri çekilme
+
+                        if cond_ll and cond_hh and cond_pullback:
+                            pattern_found = True
+                            pattern_name  = "🧲 QUASIMODO (QML)"
+                            base_score    = 92
+                            desc = (f"QML Çizgisi: {l_left_p:.2f} | Baş Dip: {ll_p:.2f} | "
+                                    f"Kırılım Tepesi: {hh_p:.2f} | Fiyat Pullback'te")
+                            break
+
+            # ---------------------------------------------------------------
+            # 6. 3 DRIVE (Üç Düşen Dip — Trend Yorgunluğu)
+            # Pivot tabanlı: Son 3 L pivotu sırayla düşüyor,
+            # düşüş mesafeleri simetrik (±%25), fiyat son dipten sekmiş.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(lows_piv) >= 3:
+                w_lows = [(i, p) for (i, p) in lows_piv if i >= bar_total - 80]
+                if len(w_lows) >= 3:
+                    # Son 3 dibi al (kronolojik sırada)
+                    d1_idx, d1 = w_lows[-3]
+                    d2_idx, d2 = w_lows[-2]
+                    d3_idx, d3 = w_lows[-1]
+
+                    if d1 > d2 > d3:  # Düşen dipler
+                        drop1 = d1 - d2
+                        drop2 = d2 - d3
+                        # Simetri: iki düşüş birbirine ±%25 yakın
+                        sym_ok = drop1 > 0 and abs(drop1 - drop2) / drop1 < 0.25
+                        # Fiyat son dipten sekmiş ama bir önceki dibin altında
+                        bounce_ok = curr_price > d3 * 1.015 and curr_price < d2
+
+                        if sym_ok and bounce_ok:
+                            pattern_found = True
+                            pattern_name  = "🎢 3 DRIVE (DİP)"
+                            base_score    = 85
+                            desc = (f"Dip1: {d1:.2f} | Dip2: {d2:.2f} | Dip3: {d3:.2f} | "
+                                    f"Düşüş Simetrisi: %{abs(drop1-drop2)/drop1*100:.0f} sapma")
+
+            # ---------------------------------------------------------------
+            # 7. GÜÇLÜ DESTEK / DİRENÇ TESTİ
+            # find_smart_sr_levels (mevcut fonksiyon) ile pivot kümelerini bul.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(df) >= 100:
+                sr_levels = find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
+                for level in sorted(sr_levels, key=lambda x: abs(x - curr_price)):
+                    proximity = abs(curr_price - level) / level
+                    if proximity <= 0.015:
+                        pattern_found = True
+                        if curr_price >= level:
+                            pattern_name = "🧱 GÜÇLÜ DESTEK TESTİ"
+                            desc = f"Geçmişte ≥3 kez test edilen destek: {level:.2f} | Buradan sekme gelebilir."
+                            base_score = 85
+                        else:
+                            pattern_name = "⚔️ GÜÇLÜ DİRENÇ TESTİ"
+                            desc = f"Geçmişte ≥3 kez reddedilen direnç: {level:.2f} | Hacimli kırılım bekleniyor."
+                            base_score = 88
+                        break
+
+            # ---------------------------------------------------------------
+            # KALİTE PUANLAMASI (Orijinal mantık korundu)
+            # ---------------------------------------------------------------
             if pattern_found:
                 q_score = base_score
 
-            # --- KALİTE PUANLAMASI (GELİŞMİŞ DİNAMİK SKORLAMA) ---
-            if pattern_found:
-                q_score = base_score
-                
-                # 1. Hiyerarşi Düzenlemesi (Ağırlıklandırma)
-                # Kurumsal dönüş ve maliyetlenme formasyonlarına "VIP" ayrıcalığı.
                 if "FİNCAN" in pattern_name or "TOBO" in pattern_name or "QML" in pattern_name:
                     q_score += 15
-                    
-                # 2. Kademeli Hacim Puanlaması
-                avg_vol = volume.iloc[-20:].mean()
-                vol_ratio = volume.iloc[-1] / avg_vol if avg_vol > 0 else 1
-                
+
+                avg_vol   = float(volume.iloc[-20:].mean())
+                vol_ratio = float(volume.iloc[-1]) / avg_vol if avg_vol > 0 else 1
+
                 if vol_ratio > 2.5:
                     q_score += 25
                     desc += " (🚀 Ultra Hacim)"
                 elif vol_ratio > 1.5:
                     q_score += 12
-                    
-                # 3. Trend Uyumu (SMA50 Filtresi)
-                # Fiyat 50 günlük ortalamanın üzerindeyse trend arkasındadır, daha güvenlidir.
-                sma50 = close.rolling(50).mean().iloc[-1]
+
+                sma50 = float(close.rolling(50).mean().iloc[-1])
                 if curr_price > sma50:
                     q_score += 8
-                    
-                # 4. Kırmızı Mum / Düşüş Cezası
-                # Arka arkaya 2 gün kırmızı kapatan hisseleri dibe gönderir.
-                if close.iloc[-1] < open_.iloc[-1] and close.iloc[-2] < open_.iloc[-2]:
+
+                if float(close.iloc[-1]) < float(open_.iloc[-1]) and float(close.iloc[-2]) < float(open_.iloc[-2]):
                     q_score -= 35
                     desc += " (⚠️ Düşüşte)"
-                # 5. SIĞ TAHTA (LİKİDİTE) UYARISI
-                # Son 20 günlük ortalama hacim 5 Milyon lotun altındaysa formasyon adına uyarı ekler.
+
                 if avg_vol < 5000000:
                     pattern_name += " (⚠️ SIĞ TAHTA)"
                     desc += " | 🚨 Dikkat: Ortalama işlem hacmi 5 Milyon lotun altında, manipülasyona açık tahta!"
-                # 6. SMA200 ANA TREND UYARISI
-                if curr_price < sma200:
+
+                if not np.isnan(sma200) and curr_price < sma200:
                     pattern_name += " (⚠️ SMA200 Altında)"
-                    desc += " | 📉 Risk Uyarısı: Fiyat 200 günlük ana ortalamanın altında (Uzun vadeli düşüş trendinde veya dipten dönüş çabasında)."
-                    q_score -= 10  # Trende karşı işlem olduğu için risk cezası (10 puan kırıyoruz)
-                # ----------------------------------------------
-                # Sonuçları listeye ekliyoruz
+                    desc += " | 📉 Risk Uyarısı: Fiyat 200 günlük ana ortalamanın altında."
+                    q_score -= 10
+
                 results.append({
-                    "Sembol": symbol,
-                    "Fiyat": curr_price,
+                    "Sembol":    symbol,
+                    "Fiyat":     curr_price,
                     "Formasyon": pattern_name,
-                    "Detay": desc,
-                    "Skor": int(q_score), # Puanı tam sayı (integer) yapıyoruz
-                    "Hacim": float(volume.iloc[-1])
+                    "Detay":     desc,
+                    "Skor":      int(q_score),
+                    "Hacim":     float(volume.iloc[-1])
                 })
 
-        except Exception: continue
-            
+        except Exception:
+            continue
+
     if results:
-        # En yüksek puanlılar en üstte
         return pd.DataFrame(results).sort_values(by=["Skor", "Hacim"], ascending=[False, False])
-    
     return pd.DataFrame()
 
 @st.cache_data(ttl=900)
-def scan_rsi_divergence_batch(asset_list):
+def scan_golden_pattern_agent(asset_list):
     """
-    RSI UYUMSUZLUK TARAMASI (TEYİTLİ)
-    Sol: Negatif Uyumsuzluk (Ayı) - Teyit: Son Mum Kırmızı
-    Sağ: Pozitif Uyumsuzluk (Boğa) - Teyit: Son Mum Yeşil
+    💎 Altın Fırsat & VIP Formasyon Ajanı (Mesafe Kontrollü)
+    1. AŞAMA: Orijinal Altın Fırsat kriterlerini arar (Güç, Ucuzluk, Enerji).
+    2. AŞAMA: Sadece bu kriterleri geçenlerde formasyon ve "kırılıma kalan mesafe" hesaplaması yapar.
     """
-    data = get_batch_data_cached(asset_list, period="6mo")
-    if data.empty: return pd.DataFrame(), pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="1y") 
+    
+    if data.empty: 
+        return pd.DataFrame()
 
-    bull_results = []
-    bear_results = []
-    stock_dfs = []
-
-    # Veriyi hazırlama
+    results = []
+    
     for symbol in asset_list:
         try:
+            # Sütun yapısını kontrol et (MultiIndex vs Tekli)
             if isinstance(data.columns, pd.MultiIndex):
-                if symbol in data.columns.levels[0]:
-                    stock_dfs.append((symbol, data[symbol]))
-            elif len(asset_list) == 1:
-                stock_dfs.append((symbol, data))
-        except: continue
-
-    # İşçi Fonksiyon (KESİN FİLTRELİ VERSİYON)
-    def _worker_div(symbol, df):
-        try:
-            if df.empty or len(df) < 50: return None
+                if symbol not in data.columns.levels[0]: 
+                    continue
+                df = data[symbol].dropna()
+            else:
+                df = data.dropna()
             
-            close = df['Close']; open_ = df['Open']; volume = df['Volume']
-            if 'Volume' not in df.columns: volume = pd.Series([1]*len(df))
+            # Yeterli veri var mı?
+            if len(df) < 150: 
+                continue
             
-            # 1. Göstergeleri Hesapla (SMA50 ve RSI)
-            sma50 = close.rolling(50).mean()
-            
-            delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi_series = 100 - (100 / (1 + gain/loss))
-            
-            # Pencereler (Son 5 gün vs Önceki 15 gün)
-            curr_p = close.iloc[-5:]; prev_p = close.iloc[-20:-5]
-            curr_r = rsi_series.iloc[-5:]; prev_r = rsi_series.iloc[-20:-5]
+            # Temel verileri al
+            close = df['Close']
+            high = df['High']
+            low = df['Low']
+            volume = df['Volume']
+            open_ = df['Open']
             
             curr_price = float(close.iloc[-1])
-            curr_vol = float(volume.iloc[-1])
-            rsi_val = float(rsi_series.iloc[-1])
-            sma50_val = float(sma50.iloc[-1])
+            prev_close = float(close.iloc[-2])
             
-            # Mum Renkleri (Son gün)
-            is_red_candle = close.iloc[-1] < open_.iloc[-1]
-            is_green_candle = close.iloc[-1] > open_.iloc[-1]
-
-            # --- 1. POZİTİF UYUMSUZLUK (BOĞA) ---
-            # Kriterler: Fiyat yeni dip (veya eşit), RSI yükselen dip, RSI < 55 VE Son Mum Yeşil
-            is_bull = (curr_p.min() <= prev_p.min()) and \
-                      (curr_r.min() > prev_r.min()) and \
-                      (rsi_val < 55) and \
-                      is_green_candle 
+            # Hacim kontrolü (Sığ tahtaları ele)
+            avg_vol = volume.iloc[-20:].mean()
+            if avg_vol < 1000000: 
+                continue 
             
-            if is_bull:
-                return {
-                    "type": "bull",
-                    "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI": int(rsi_val)}
-                }
-
-            # --- 2. NEGATİF UYUMSUZLUK (AYI) ---
+            last_vol = float(volume.iloc[-1])
             
-            # ÖNCE FİLTRELER (RSI 75 üstüyse hiç bakma bile!)
-            is_rsi_saturated = rsi_val >= 75
-            is_parabolic = curr_price > (sma50_val * 1.20)
+            # =========================================================
+            # 🚀 1. AŞAMA: ORİJİNAL ALTIN FIRSAT KRİTERLERİ 
+            # =========================================================
             
-            # Eğer RSI şişkinse veya Fiyat koptuysa -> DİREKT İPTAL ET (None dön)
-            if is_rsi_saturated or is_parabolic:
-                return None
-
-            # Sadece normal şartlarda uyumsuzluk ara
-            if (curr_p.max() >= prev_p.max()) and (curr_r.max() < prev_r.max()) and (curr_r.max() > 45):
+            # 3 Aylık Konum / İskonto Hesabı
+            high_3m = high.iloc[-64:].max()
+            low_3m = low.iloc[-64:].min()
+            
+            if (high_3m - low_3m) > 0:
+                is_discount = curr_price <= (low_3m + (high_3m - low_3m) * 0.50)
+            else:
+                is_discount = False
+            
+            # RSI ve Güç Hesabı
+            delta = close.diff()
+            gain = delta.clip(lower=0).rolling(window=14).mean()
+            loss = -delta.clip(upper=0).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            last_rsi = rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50
+            
+            # Şartlar: Güçlü RSI ve Enerji (Hacim veya RSI desteği)
+            is_powerful = last_rsi > 55
+            is_energy = (last_vol > avg_vol * 1.05) or (last_rsi > 55)
+            
+            # Altın fırsat DEĞİLSE bir sonraki sembole geç
+            if not (is_powerful and is_discount and is_energy):
+                continue
                 
-                # Son Filtre: Mum Kırmızı mı?
-                if is_red_candle:
-                    return {
-                        "type": "bear",
-                        "data": {"Sembol": symbol, "Fiyat": curr_price, "Hacim": curr_vol, "RSI": int(rsi_val)}
-                    }
+            # =========================================================
+            # 🚀 2. AŞAMA: FORMASYON VE MESAFE (CEZA) ARAMASI
+            # =========================================================
+            
+            body_top = df[['Open', 'Close']].max(axis=1)
+            body_bottom = df[['Open', 'Close']].min(axis=1)
+            
+            vol_ratio = last_vol / avg_vol if avg_vol > 0 else 1
+            
+            warnings = []
+            if vol_ratio < 1.1: 
+                warnings.append("Hacim Cılız")
+            
+            pct_change = (curr_price - prev_close) / prev_close
+            if pct_change <= -0.01: 
+                warnings.append("Düşüşte")
+            
+            body_size = curr_price - open_.iloc[-1]
+            is_strong_candle = body_size > 0 and curr_price > (high.iloc[-1] + low.iloc[-1]) / 2
+            if not is_strong_candle and pct_change > -0.01: 
+                warnings.append("Kararsız Mum")
+            
+            # Hareketli Ortalama Kontrolleri
+            sma50 = close.rolling(50).mean().iloc[-1]
+            sma200 = close.rolling(200).mean().iloc[-1]
+            if curr_price < sma50: 
+                warnings.append("SMA50 Altında")
+            if curr_price < sma200: 
+                warnings.append("SMA200 Altında")
+            
+            warning_text = f" (⚠️ {', '.join(warnings)})" if warnings else " (✅ Kusursuz)"
+            
+            pattern_found = False
+            p_name = ""
+            base_score = 0
+            
+            # A) FİNCAN KULP
+            rim_l = body_top.iloc[-150:-40].max() 
+            cup_b = body_bottom.iloc[-60:-20].min()
+            rim_r = body_top.iloc[-30:-5].max() 
+            handle_low = body_bottom.iloc[-15:].min()
+            
+            aligned = abs(rim_l - rim_r) / rim_l < 0.08
+            handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b)
+            
+            if aligned and handle_exists:
+                if (curr_price >= rim_r * 0.98) and (curr_price <= rim_r * 1.05):
+                    pattern_found = True
+                    p_name = f"☕ FİNCAN KULP Kırılımı | Hacim: {vol_ratio:.1f}x"
+                    base_score = 90
+                elif (curr_price > handle_low) and (curr_price < rim_r * 0.98): 
+                    dist_pct = ((rim_r - curr_price) / curr_price) * 100
+                    penalty = int(dist_pct * 1.5)
+                    pattern_found = True
+                    p_name = f"⏳ OLUŞAN FİNCAN KULP (Kırılıma %{dist_pct:.1f}) | Hacim: {vol_ratio:.1f}x"
+                    base_score = 85 - penalty
+            
+            # B) TOBO
+            if not pattern_found:
+                ml = body_bottom.iloc[-60:-40].min()
+                mh = body_bottom.iloc[-40:-15].min()
+                mr = body_bottom.iloc[-15:].min()
+                neck = body_top.iloc[-60:-10].max()
                 
-            return None
-        except: return None
-
-    # Paralel Çalıştırma
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(_worker_div, sym, df) for sym, df in stock_dfs]
-        for future in concurrent.futures.as_completed(futures):
-            res = future.result()
-            if res:
-                if res['type'] == 'bull': bull_results.append(res['data'])
-                elif res['type'] == 'bear': bear_results.append(res['data'])
-
-    # DataFrame'e çevir ve Hacme göre sırala
-    df_bull = pd.DataFrame(bull_results)
-    if not df_bull.empty: df_bull = df_bull.sort_values(by="Hacim", ascending=False)
+                head_deep = mh < ml * 0.98 and mh < mr * 0.98
+                sym = abs(ml - mr) / ml < 0.08
+                
+                if head_deep and sym:
+                    if (curr_price >= neck * 0.98) and (curr_price <= neck * 1.04):
+                        pattern_found = True
+                        p_name = f"🧛 TOBO Kırılımı | Hacim: {vol_ratio:.1f}x"
+                        base_score = 90
+                    elif (curr_price > mr) and (curr_price < neck * 0.98):
+                        dist_pct = ((neck - curr_price) / curr_price) * 100
+                        penalty = int(dist_pct * 1.5)
+                        pattern_found = True
+                        p_name = f"⏳ OLUŞAN TOBO (Kırılıma %{dist_pct:.1f}) | Hacim: {vol_ratio:.1f}x"
+                        base_score = 85 - penalty
+            
+            # --- 3. LİSTEYE ALMA VE PUANLAMA ---
+            if pattern_found:
+                # Hacim çarpanı ekle
+                base_score += (vol_ratio * 5)
+                
+                # Ceza puanlarını uygula
+                if "Hacim Cılız" in warning_text: base_score -= 10
+                if "Düşüşte" in warning_text: base_score -= 15
+                if "SMA200 Altında" in warning_text: base_score -= 8
+                if "Kararsız Mum" in warning_text: base_score -= 5
+                
+                results.append({
+                    "Sembol": symbol,
+                    "Puan": int(min(max(base_score, 10), 100)),
+                    "Detay": p_name + warning_text
+                })
+                
+        except Exception as e:
+            # Hata durumunda (örneğin veri eksikliği) o sembolü atla
+            continue
+            
+    if results:
+        return pd.DataFrame(results).sort_values(by="Puan", ascending=False)
     
-    df_bear = pd.DataFrame(bear_results)
-    if not df_bear.empty: df_bear = df_bear.sort_values(by="Hacim", ascending=False)
-
-    return df_bull, df_bear
+    return pd.DataFrame()
 
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
@@ -3807,7 +4005,6 @@ def compile_top_20_summary():
     add_candidates(st.session_state.get('rs_leaders_data'), '🏆 RS Lideri')
     add_candidates(st.session_state.get('breakout_right'), '🔨 Breakout Yapan')
     add_candidates(st.session_state.get('bear_trap_data'), '🐻 Bear Trap')
-    add_candidates(st.session_state.get('rsi_div_bull'), '📈 RSI Pozitif Uyumsuzluk') 
     add_candidates(st.session_state.get('radar2_data'), '⭐ Yıldız Adayı')
     add_candidates(st.session_state.get('scan_data'), '📡 1-5 Günlük Yükseliş')
     
@@ -6073,7 +6270,7 @@ def render_price_action_panel(ticker):
     # Eğer formasyon bulunduysa, mevcut mum verisinin yanına ekliyoruz
     if pattern_name:
         pa_candle_title = f"{pa_candle_title} | 📐 {pattern_name} (Skor: {pattern_score})"
-        pa_candle_desc = f"{pa_candle_desc}<br><br><span style='color:#38bdf8; font-weight:bold;'>🎯 Tespit Edilen Formasyon:</span> {pattern_desc}"
+        pa_candle_desc = f"{pa_candle_desc}<br><br><div style='background:rgba(56,189,248,0.08); border-left:3px solid #38bdf8; border-radius:0 4px 4px 0; padding:6px 10px; margin-top:4px;'><span style='color:#38bdf8; font-weight:800; font-size:0.85rem;'>📐 {pattern_name}</span><br><span style='color:#94a3b8; font-size:0.78rem;'>{pattern_desc}</span></div>"
     # =========================================================
     display_ticker = ticker.replace(".IS", "").replace("=F", "")
     div_data = pa.get('div', {'type': 'neutral', 'title': '-', 'desc': '-'})
@@ -7053,6 +7250,14 @@ with st.sidebar:
         render_sentiment_card(sentiment_verisi)
 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+    st.divider()
+    # 4. AI ANALIST PANELİ
+    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
+        st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
+        if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
+            st.session_state.generate_prompt = True
+
     # LORENTZİAN PANELİ 
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_lorentzian_panel(st.session_state.ticker)
@@ -7288,12 +7493,6 @@ with st.sidebar:
             else:
                 st.info("Şu an hem tuzağa düşürüp hem uyumsuzluk veren (Kesişim) hisse yok.")
     
-    st.divider()
-    # 4. AI ANALIST PANELİ
-    with st.expander("🤖 AI Analist (Prompt)", expanded=True):
-        st.caption("Verileri toplayıp Yapay Zeka için hazır metin oluşturur.")
-        if st.button("📋 Analiz Metnini Hazırla", type="primary"): 
-            st.session_state.generate_prompt = True
 
     # -----------------------------------------------------------------------------
     # 🏆 ALTIN FIRSAT & ♠️ ROYAL FLUSH (SÜPER TARAMA MOTORU)
@@ -7588,12 +7787,10 @@ with col_btn:
             my_bar.progress(75, text="🦁Formasyon ve Tuzaklar Taranıyor...%75")
             st.session_state.pattern_data = scan_chart_patterns(scan_list)
             st.session_state.bear_trap_data = scan_bear_traps(scan_list)
-            
-            # 11. RSI UYUMSUZLUKLARI - %85
-            my_bar.progress(85, text="⚖️ RSI Uyumsuzlukları Hesaplanıyor...%85")
-            bull_df, bear_df = scan_rsi_divergence_batch(scan_list)
-            st.session_state.rsi_div_bull = bull_df
-            st.session_state.rsi_div_bear = bear_df
+
+            # 11. ALTIN FIRSATLAR ve FORMASYONLAR - %80
+            my_bar.progress(80, text="💎 Altın Fırsatlar ve Formasyonlar Taranıyor...%80")         
+            st.session_state.af_scan_data = scan_golden_pattern_agent(scan_list)
 
             # 12. MİNERVİNİ SEPA AJANI - %90
             my_bar.progress(90, text="🦁 Minervini Sepa Taranıyor...%90")
@@ -8667,6 +8864,40 @@ with col_left:
         else:
             st.warning("🧐 Şu anda 6 zorlu Royal Flush 3.0 kriterini (Aşırı Satım + Tuzak Yok) geçebilen hisse bulunamadı. Sabırlı olun, fırsat mutlaka gelecektir.")
     # ==============================================================================
+    # ---------------------------------------------------------
+    # 💎 YENİ: ALTIN FIRSAT & FORMASYON AJANI (Eski RSI Yeri)
+    # ---------------------------------------------------------
+    if 'golden_pattern_data' not in st.session_state: st.session_state.golden_pattern_data = None
+
+    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">💎 Altın Fırsat & VIP Formasyon Ajanı</div>', unsafe_allow_html=True)
+
+    if st.button(f"🚀 ALTIN FIRSATLARDA FORMASYON VARSA BUL ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden"):
+        with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
+            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+            # Yeni Tarama Fonksiyonunu Çağır
+            golden_df = scan_golden_pattern_agent(current_assets)
+            st.session_state.golden_pattern_data = golden_df
+            st.rerun()
+
+    if st.session_state.golden_pattern_data is not None:
+        st.markdown("<div style='text-align:center; color:#065f46; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#d1fae5; padding:5px; border-radius:4px; border:1px solid #6ee7b7;'>🔥 HEM ALTIN FIRSAT HEM FORMASYON </div>", unsafe_allow_html=True)
+        
+        with st.container(height=300): # Uyarılar ve uzun metinler sığsın diye yüksekliği 300 yaptım
+            if not st.session_state.golden_pattern_data.empty:
+                # Puanı en yüksek olanlardan ilk 20'yi al
+                for i, row in st.session_state.golden_pattern_data.head(20).iterrows():
+                    sym = row['Sembol']
+                    score = row['Puan']
+                    detail = row['Detay']
+                    
+                    # Sembol ve puanı butonun üstünde, formasyon ve uyarıları altında gösteriyoruz
+                    btn_label = f"🚀 {sym.replace('.IS', '')} | Skor: {score}\n{detail}"
+                    
+                    if st.button(btn_label, key=f"golden_btn_{sym}_{i}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
+            else:
+                st.caption("Şu an için Fincan-Kulp, TOBO veya Direnç Kırılımı yapan Altın Fırsat bulunamadı.")
 
     # ==============================================================================
     # 🎯 KESİN DÖNÜŞ SİNYALLERİ PANELİ (YENİ EKLENDİ)
@@ -8890,58 +9121,6 @@ with col_left:
                             st.rerun()
                 else:
                     st.info("Kırılım yapan hisse bulunamadı.")
-
-    # ---------------------------------------------------------
-    # ⚖️ YENİ: RSI UYUMSUZLUK TARAMASI (SOL: AYI | SAĞ: BOĞA)
-    # ---------------------------------------------------------
-    if 'rsi_div_bull' not in st.session_state: st.session_state.rsi_div_bull = None
-    if 'rsi_div_bear' not in st.session_state: st.session_state.rsi_div_bear = None
-
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">⚖️ RSI Uyumsuzluk Ajanı (70/100)</div>', unsafe_allow_html=True)
-
-    if st.button(f"⚖️ UYUMSUZLUKLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_div"):
-        with st.spinner("RSI ile Fiyat arasındaki yalanlar tespit ediliyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            # Tarama Fonksiyonunu Çağır
-            bull_df, bear_df = scan_rsi_divergence_batch(current_assets)
-            st.session_state.rsi_div_bull = bull_df
-            st.session_state.rsi_div_bear = bear_df
-            st.rerun()
-
-    if st.session_state.rsi_div_bull is not None or st.session_state.rsi_div_bear is not None:
-        c_div_left, c_div_right = st.columns(2)
-
-        # --- SOL SÜTUN: NEGATİF (AYI) ---
-        with c_div_left:
-            st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#fef2f2; padding:5px; border-radius:4px; border:1px solid #fecaca;'>🐻 NEGATİF (Satış?)</div>", unsafe_allow_html=True)
-            with st.container(height=150):
-                if st.session_state.rsi_div_bear is not None and not st.session_state.rsi_div_bear.empty:
-                    # Hacme göre sıralı geliyor zaten, ilk 20'yi al
-                    for i, row in st.session_state.rsi_div_bear.head(20).iterrows():
-                        sym = row['Sembol']
-                        # Buton Metni: 🔻 THYAO (250.0) | RSI: 68
-                        btn_label = f"🔻 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
-                        if st.button(btn_label, key=f"div_bear_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
-                else:
-                    st.caption("Negatif uyumsuzluk yok.")
-
-        # --- SAĞ SÜTUN: POZİTİF (BOĞA) ---
-        with c_div_right:
-            st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #bbf7d0;'>💎 POZİTİF (Alış?)</div>", unsafe_allow_html=True)
-            with st.container(height=150):
-                if st.session_state.rsi_div_bull is not None and not st.session_state.rsi_div_bull.empty:
-                    # Hacme göre sıralı
-                    for i, row in st.session_state.rsi_div_bull.head(20).iterrows():
-                        sym = row['Sembol']
-                        # Buton Metni: ✅ ASELS (45.0) | RSI: 32
-                        btn_label = f"✅ {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | RSI: {row['RSI']}"
-                        if st.button(btn_label, key=f"div_bull_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
-                else:
-                    st.caption("Pozitif uyumsuzluk yok.")
     # ---------------------------------------------------------
     # 📐 YENİ: FORMASYON AJANI (TOBO, BAYRAK, RANGE)
     # ---------------------------------------------------------
