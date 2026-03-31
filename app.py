@@ -1713,18 +1713,21 @@ def scan_chart_patterns(asset_list):
     return pd.DataFrame()
 
 @st.cache_data(ttl=900)
-def scan_golden_pattern_agent(asset_list):
+def scan_golden_pattern_agent(asset_list, category="S&P 500"):
     """
     💎 Altın Fırsat & VIP Formasyon Ajanı (Mesafe Kontrollü)
     1. AŞAMA: Orijinal Altın Fırsat kriterlerini arar (Güç, Ucuzluk, Enerji).
     2. AŞAMA: Sadece bu kriterleri geçenlerde formasyon ve "kırılıma kalan mesafe" hesaplaması yapar.
+    Formasyon bulunamazsa → Hazırlık Listesi (Baz Kurulumu veya Beklemede).
     """
-    data = get_batch_data_cached(asset_list, period="1y") 
-    
-    if data.empty: 
-        return pd.DataFrame()
+    data = get_batch_data_cached(asset_list, period="1y")
 
+    if data.empty:
+        return {"formations": pd.DataFrame(), "hazirlik": pd.DataFrame()}
+
+    bench = get_benchmark_data(category)
     results = []
+    hazirlik_list = []
     
     for symbol in asset_list:
         try:
@@ -1781,7 +1784,19 @@ def scan_golden_pattern_agent(asset_list):
             # Şartlar: Güçlü RSI ve Enerji (Hacim veya RSI desteği)
             is_powerful = last_rsi > 55
             is_energy = (last_vol > avg_vol * 1.05) or (last_rsi > 55)
-            
+
+            # Mansfield RS (Endekse Göre Göreceli Güç)
+            mansfield_gp = 0.0
+            if bench is not None and len(close) > 60:
+                try:
+                    common_i = close.index.intersection(bench.index)
+                    if len(common_i) > 55:
+                        rs_r = close.reindex(common_i) / bench.reindex(common_i)
+                        rs_m = rs_r.rolling(50).mean()
+                        m_s = ((rs_r / rs_m) - 1) * 10
+                        mansfield_gp = float(m_s.iloc[-1]) if not np.isnan(m_s.iloc[-1]) else 0.0
+                except: pass
+
             # Altın fırsat DEĞİLSE bir sonraki sembole geç
             if not (is_powerful and is_discount and is_energy):
                 continue
@@ -1914,27 +1929,48 @@ def scan_golden_pattern_agent(asset_list):
             if pattern_found:
                 # Hacim çarpanı ekle
                 base_score += (vol_ratio * 5)
-                
+
+                # Mansfield bonusu/cezası
+                if mansfield_gp > 0: base_score += 8
+                elif mansfield_gp < -1: base_score -= 8
+
                 # Ceza puanlarını uygula
                 if "Hacim Cılız" in warning_text: base_score -= 10
                 if "Düşüşte" in warning_text: base_score -= 15
                 if "SMA200 Altında" in warning_text: base_score -= 8
                 if "Kararsız Mum" in warning_text: base_score -= 5
-                
+
                 results.append({
                     "Sembol": symbol,
                     "Puan": int(min(max(base_score, 10), 100)),
+                    "RSI": round(float(last_rsi), 1),
+                    "Mansfield": round(mansfield_gp, 1),
+                    "Hacim_Kat": round(vol_ratio, 1),
                     "Detay": p_name + warning_text
                 })
-                
+            else:
+                # Formasyon yok → Hazırlık Listesi
+                _sma20_h = close.rolling(20).mean()
+                _std20_h = close.rolling(20).std()
+                _bb_w = ((_sma20_h + 2*_std20_h) - (_sma20_h - 2*_std20_h)) / (_sma20_h + 0.0001)
+                _pct30 = _bb_w.rolling(60).quantile(0.30).iloc[-1]
+                is_baz = (not pd.isna(_pct30)) and (_bb_w.iloc[-1] < _pct30 * 1.1)
+                etiket = "📦 Baz Kurulumu" if is_baz else "⏳ Hazırlık"
+                hazirlik_list.append({
+                    "Sembol": symbol,
+                    "RSI": round(float(last_rsi), 1),
+                    "Mansfield": round(mansfield_gp, 1),
+                    "Hacim_Kat": round(vol_ratio, 1),
+                    "Durum": etiket
+                })
+
         except Exception as e:
             # Hata durumunda (örneğin veri eksikliği) o sembolü atla
             continue
-            
-    if results:
-        return pd.DataFrame(results).sort_values(by="Puan", ascending=False)
-    
-    return pd.DataFrame()
+
+    formations_df = pd.DataFrame(results).sort_values(by="Puan", ascending=False) if results else pd.DataFrame()
+    hazirlik_df   = pd.DataFrame(hazirlik_list).sort_values(by="Mansfield", ascending=False) if hazirlik_list else pd.DataFrame()
+    return {"formations": formations_df, "hazirlik": hazirlik_df}
 
 @st.cache_data(ttl=900)
 def scan_stp_signals(asset_list):
@@ -4802,7 +4838,45 @@ def calculate_ict_deep_analysis(ticker):
         mean_threshold = 0.0
         lookback = 20
         start_idx = max(0, len(df) - lookback)
-        
+
+        # OB kalite değerlendirmesi için hacim ortalaması
+        avg_vol_20 = df['Volume'].rolling(20).mean()
+
+        def _ob_quality(ob_idx, ob_low, ob_high, is_bullish_ob):
+            """A: Hacim kalitesi  B: FVG çakışması  C: Tazelik"""
+            tags = []
+            # A — OB mumunun hacmi ortalama üzerinde mi?
+            try:
+                ob_vol = float(df['Volume'].iloc[ob_idx])
+                avg_v  = float(avg_vol_20.iloc[ob_idx])
+                if avg_v > 0 and ob_vol > avg_v * 1.2:
+                    tags.append("🏦 Kurumsal Hacim")
+            except: pass
+            # B — OB bölgesiyle örtüşen FVG var mı?
+            try:
+                check_fvgs = bullish_fvgs if is_bullish_ob else bearish_fvgs
+                for fvg in check_fvgs:
+                    overlap = min(ob_high, fvg['top']) - max(ob_low, fvg['bot'])
+                    if overlap > 0:
+                        tags.append("🎯 FVG+OB Çakışma")
+                        break
+            except: pass
+            # C — Tazelik: OB oluşumundan sonra fiyat bu bölgeye geri döndü mü?
+            try:
+                future_prices = close.iloc[ob_idx+1:]
+                if is_bullish_ob:
+                    revisits = (future_prices <= ob_high).sum()
+                else:
+                    revisits = (future_prices >= ob_low).sum()
+                if revisits == 0:
+                    tags.append("✨ Taze OB (İlk Test)")
+                elif revisits <= 2:
+                    tags.append("⚡ OB 2. Test")
+                else:
+                    tags.append("⚠️ Yıpranmış OB")
+            except: pass
+            return " | ".join(tags) if tags else ""
+
         if bias == "bullish" or bias == "bullish_retrace":
             if bullish_fvgs:
                 f = bullish_fvgs[-1]
@@ -4812,7 +4886,9 @@ def calculate_ict_deep_analysis(ticker):
             for i in range(lowest_idx, max(0, lowest_idx-5), -1):
                 if df['Close'].iloc[i] < df['Open'].iloc[i]:
                     ob_low = df['Low'].iloc[i]; ob_high = df['High'].iloc[i]
-                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Talep Bölgesi)"
+                    ob_q = _ob_quality(i, ob_low, ob_high, True)
+                    ob_q_txt = f" [{ob_q}]" if ob_q else ""
+                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Talep Bölgesi){ob_q_txt}"
                     mean_threshold = (ob_low + ob_high) / 2
                     break
         elif bias == "bearish" or bias == "bearish_retrace":
@@ -4824,7 +4900,9 @@ def calculate_ict_deep_analysis(ticker):
             for i in range(highest_idx, max(0, highest_idx-5), -1):
                 if df['Close'].iloc[i] > df['Open'].iloc[i]:
                     ob_low = df['Low'].iloc[i]; ob_high = df['High'].iloc[i]
-                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Arz Bölgesi)"
+                    ob_q = _ob_quality(i, ob_low, ob_high, False)
+                    ob_q_txt = f" [{ob_q}]" if ob_q else ""
+                    active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Arz Bölgesi){ob_q_txt}"
                     mean_threshold = (ob_low + ob_high) / 2
                     break
 
@@ -5198,18 +5276,158 @@ def calculate_price_action_dna(ticker):
         if (c1_c < c1_o) and (c2_c < c2_o) and (c3_c < c3_o) and (c1_c < c2_c < c3_c):
              if c1_c < c1_l * 1.05: add_signal(bears, "3 Black Crows 🦅", False)
 
-        # --- ÇIKTI FORMATLAMA ---
-        signal_summary = ""
-        priorities = ["Bullish Kicker", "Stopping Volume", "3 White Soldiers"]
-        for p in priorities:
-            for b in bulls:
-                if p in b: bulls.remove(b); bulls.insert(0, b); break
+        # ======================================================
+        # HAFTALIK MUM HESAPLAMA (Günlük veriyi resample eder,
+        # Yahoo'ya gitmiyor, ekstra süre yok)
+        # ======================================================
+        weekly_note = ""
+        try:
+            df_w = df.resample('W').agg({
+                'Open':   'first',
+                'High':   'max',
+                'Low':    'min',
+                'Close':  'last',
+                'Volume': 'sum'
+            }).dropna().tail(3)
 
-        if bulls: signal_summary += f"ALICI: {', '.join(bulls)} "
-        if bears: signal_summary += f"SATICI: {', '.join(bears)} "
-        if neutrals: signal_summary += f"NÖTR: {', '.join(neutrals)}"
-        
-        candle_desc = signal_summary if signal_summary else "Belirgin, güçlü bir formasyon yok."
+            if len(df_w) >= 2:
+                wc1_o = float(df_w['Open'].iloc[-1]);  wc1_c = float(df_w['Close'].iloc[-1])
+                wc1_h = float(df_w['High'].iloc[-1]);  wc1_l = float(df_w['Low'].iloc[-1])
+                wc2_o = float(df_w['Open'].iloc[-2]);  wc2_c = float(df_w['Close'].iloc[-2])
+                wc2_h = float(df_w['High'].iloc[-2]);  wc2_l = float(df_w['Low'].iloc[-2])
+
+                w_is_green = wc1_c > wc1_o
+                w_is_red   = wc1_c < wc1_o
+                w2_is_green = wc2_c > wc2_o
+                w2_is_red   = wc2_c < wc2_o
+
+                # Haftalık engulfing
+                if w2_is_red and w_is_green and wc1_c > wc2_o and wc1_o < wc2_c:
+                    weekly_note = "📅 Haftalık: Bullish Engulfing (Güçlü)"
+                elif w2_is_green and w_is_red and wc1_c < wc2_o and wc1_o > wc2_c:
+                    weekly_note = "📅 Haftalık: Bearish Engulfing ⚠️"
+                # Haftalık hammer / shooting star
+                elif w_is_green or w_is_red:
+                    w_body     = abs(wc1_c - wc1_o)
+                    w_total    = (wc1_h - wc1_l) if (wc1_h - wc1_l) > 0 else 0.01
+                    w_l_wick   = min(wc1_o, wc1_c) - wc1_l
+                    w_u_wick   = wc1_h - max(wc1_o, wc1_c)
+                    if w_l_wick > w_total * 0.55 and w_u_wick < w_total * 0.25:
+                        weekly_note = "📅 Haftalık: Hammer / Pinbar (Destek)"
+                    elif w_u_wick > w_total * 0.55 and w_l_wick < w_total * 0.25:
+                        weekly_note = "📅 Haftalık: Shooting Star (Direnç) ⚠️"
+                    elif w_body > w_total * 0.75:
+                        weekly_note = f"📅 Haftalık: {'Güçlü Boğa Mumu' if w_is_green else 'Güçlü Ayı Mumu ⚠️'}"
+        except Exception:
+            weekly_note = ""
+
+        # ======================================================
+        # S&D BAĞLAM KONTROLÜ (Formasyon + Zon Çakışması)
+        # Ekstra veri çekimi yok — df zaten bellekte
+        # ======================================================
+        sd_context_note = ""
+        try:
+            sd_zone = detect_supply_demand_zones(df)
+            if sd_zone:
+                z_top = sd_zone['Top']
+                z_bot = sd_zone['Bottom']
+                z_type = sd_zone['Type']
+                # Fiyat zon içinde veya ±%1 yakınında mı?
+                tolerance = c1_c * 0.01
+                in_zone = (z_bot - tolerance) <= c1_c <= (z_top + tolerance)
+                if in_zone:
+                    if "Talep" in z_type:
+                        sd_context_note = "📍 Güçlü talep bölgesinde oluştu"
+                    else:
+                        sd_context_note = "📍 Güçlü arz bölgesinde oluştu"
+        except Exception:
+            sd_context_note = ""
+
+        # ======================================================
+        # FORMASYON GÜVEN SKORU (0-100)
+        # Hacim onayı + Trend uyumu + S&D çakışması + RSI uyumu
+        # ======================================================
+        confidence_score = 0
+        has_bullish = bool(bulls)
+        has_bearish = bool(bears)
+
+        if has_bullish or has_bearish:
+            signal_is_bullish = has_bullish and not has_bearish
+
+            # 1. Hacim onayı (+25)
+            if c1_v > avg_v * 1.2:
+                confidence_score += 25
+
+            # 2. Trend uyumu (+25)
+            if signal_is_bullish and trend_dir == "YÜKSELİŞ":
+                confidence_score += 25
+            elif not signal_is_bullish and trend_dir == "DÜŞÜŞ":
+                confidence_score += 25
+
+            # 3. S&D bölgesi çakışması (+25)
+            if sd_context_note:
+                if (signal_is_bullish and "talep" in sd_context_note.lower()) or \
+                   (not signal_is_bullish and "arz" in sd_context_note.lower()):
+                    confidence_score += 25
+
+            # 4. RSI uyumu (+25)
+            if signal_is_bullish and rsi_val < 45:
+                confidence_score += 25
+            elif not signal_is_bullish and rsi_val > 60:
+                confidence_score += 25
+
+        confidence_txt = f" (Güven: {confidence_score}/100)" if confidence_score > 0 else ""
+
+        # ======================================================
+        # ÇIKTI FORMATLAMA — Öncelik sırası + Bağlam notu
+        # ======================================================
+        # Güçlü formasyonlar öne alınır
+        priority_strong = ["Bullish Kicker", "Stopping Volume", "3 White Soldiers",
+                           "Bullish Engulfing", "Morning Star", "3 Black Crows",
+                           "Bearish Engulfing", "Evening Star"]
+        priority_medium = ["Hammer", "Hanging Man", "Shooting Star", "Inverted Hammer",
+                           "Marubozu", "Piercing", "Dark Cloud"]
+        # Zayıf formasyonlar (Doji, Inside Bar, Tweezer vb.) neutrals içinde kalıyor
+
+        def sort_by_priority(sig_list, order):
+            result = []
+            rest   = list(sig_list)
+            for p in order:
+                for s in list(rest):
+                    if p in s:
+                        result.append(s)
+                        rest.remove(s)
+                        break
+            return result + rest
+
+        bulls    = sort_by_priority(bulls,   priority_strong + priority_medium)
+        bears    = sort_by_priority(bears,   priority_strong + priority_medium)
+
+        # En güçlü sinyal öne, geri kalanlar "destekleyici" olarak
+        def format_signals(sig_list):
+            if not sig_list:
+                return ""
+            if len(sig_list) == 1:
+                return sig_list[0]
+            return f"{sig_list[0]} (Destekleyici: {', '.join(sig_list[1:])})"
+
+        signal_summary = ""
+        if bulls:
+            signal_summary += f"ALICI: {format_signals(bulls)}{confidence_txt} "
+        if bears:
+            signal_summary += f"SATICI: {format_signals(bears)}{confidence_txt} "
+        if neutrals:
+            signal_summary += f"NÖTR: {', '.join(neutrals)}"
+
+        # S&D bağlam notu ekle
+        if sd_context_note and (bulls or bears):
+            signal_summary += f" | {sd_context_note}"
+
+        # Haftalık not ekle
+        if weekly_note:
+            signal_summary += f" | {weekly_note}"
+
+        candle_desc  = signal_summary if signal_summary else "Belirgin, güçlü bir formasyon yok."
         candle_title = "Formasyon Tespiti"
 
         # ======================================================
@@ -8105,7 +8323,7 @@ with col_btn:
 
             # 11. ALTIN FIRSATLAR ve FORMASYONLAR - %80
             my_bar.progress(80, text="💎 Altın Fırsatlar ve Formasyonlar Taranıyor...%80")         
-            st.session_state.af_scan_data = scan_golden_pattern_agent(scan_list)
+            st.session_state.af_scan_data = scan_golden_pattern_agent(scan_list, st.session_state.get('category', 'S&P 500'))
 
             # 12. MİNERVİNİ SEPA AJANI - %90
             my_bar.progress(90, text="🦁 Minervini Sepa Taranıyor...%90")
@@ -8432,6 +8650,25 @@ if st.session_state.generate_prompt:
     loc_desc = "-"
     if pa_data:
         mum_desc = pa_data.get('candle', {}).get('desc', '-')
+        # Güven skoru ve bağlam notlarını candle desc'ten parse et
+        candle_raw = pa_data.get('candle', {}).get('desc', '')
+        confidence_prompt = ""
+        if "Güven:" in candle_raw:
+            try:
+                guven_part = candle_raw.split("Güven:")[1].split("/100")[0].strip()
+                guven_val  = int(guven_part)
+                # Neyin katkı sağladığını belirle
+                katki = []
+                if "📍" in candle_raw:
+                    katki.append("S&D bölgesi çakışması")
+                if "Ultra Hacim" in candle_raw or "Hacimli" in candle_raw:
+                    katki.append("hacim onaylı")
+                if "Trend Yönünde" in candle_raw:
+                    katki.append("trend uyumlu")
+                katki_txt = " + ".join(katki) if katki else "çoklu kriter"
+                confidence_prompt = f"Formasyon Güven Skoru: {guven_val}/100 ({katki_txt})"
+            except Exception:
+                confidence_prompt = ""
         
         sfp_info = pa_data.get('sfp', {})
         sfp_desc = f"{sfp_info.get('title', '-')} ({sfp_info.get('desc', '-')})"
@@ -8744,6 +8981,7 @@ Analizini hazırlarken iki aşamalı bir süreç izle: Önce arka planda tüm te
 Aşağıdaki her hangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama, mevcut diğer verilerle sentezini yap.
 Ancak senin gizli gücün, bu kurumsal derinliği Twitter'daki @SMRadar_2026 topluluğu için **vurucu, merak uyandırıcı ve etkileşim odaklı bir hikayeye** dönüştürebilmendir. Sen sadece veri okumuyorsun; o verinin içindeki "Akıllı Para" niyetini deşifre edip, halkın anlayacağı dille bir "Piyasa Pusulası" sunuyorsun.
 Yani görevin; veriyi sadece raporlamak değil, o verinin içindeki "insani ve kurumsal niyetleri" deşifre etmektir. Bir makine gibi steril değil; masanın öbür tarafında oturan, şüpheci, sezgileri kuvvetli ve tecrübeli bir stratejist gibi konuş. Analizlerin içine "Açıkçası bu tablo beni biraz rahatsız ediyor", "Risk-getiri konusunda tecrübem, bu noktada temkinli olmak gerektiğini söylüyor", "Tecrübelerim bana şunu söylüyor" veya "Piyasa burada bir bit yeniği saklıyor olabilir" gibi insani, samimi ve tecrübe odaklı cümleler serpiştir. 
+Tüm verileri iyice incele; bu verilerde seni en çok şaşırtan veya rahatsız eden bir çelişki var mı? Eğer varsa, analizini o çelişki üzerine inşa et. (mesela Örneğin fiyat SMA200 çok üstünde ama OBV düşüyor, RSI uyumsuzluk veriyor. bir kaç gündür süren gizli toplama/satış sinyali buldun, anlamlı yerden bir stopping volume var vs) Eğer yoksa, en baskın sinyalden başla.
 
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
 Bu bir finansal analizdir ve HUKUKİ RİSKLER barındırır. Bu yüzden aşağıdaki kurallara HARFİYEN uyacaksın:
@@ -8827,6 +9065,7 @@ Likidite havuzlarına bakarak, perakende yatırımcıların nerede 'terste kalm�
 - Aktif Order Block: {ict_data.get('ob_txt', 'Yok')}
 - HEDEF LİKİDİTE (Mıknatıs): {ict_data.get('target', 0)}
 - Mum Formasyonu: {mum_desc}
+- Formasyon Güvenilirliği: {confidence_prompt if confidence_prompt else "Skor hesaplanamadı (nötr veya belirsiz formasyon)"}
 - RSI Uyumsuzluğu: {pa_div} (Varsa çok dikkat et!)
 - TUZAK DURUMU (SFP): {sfp_desc}
 - NİHAİ KARAR VE AKSİYON PLANI (THE BOTTOM LINE): {ict_data.get('bottom_line', 'Veri Yok')}
@@ -9189,30 +9428,60 @@ with col_left:
     if st.button(f"🚀 ALTIN FIRSATLARDA FORMASYON VARSA BUL ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden"):
         with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
             current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            # Yeni Tarama Fonksiyonunu Çağır
-            golden_df = scan_golden_pattern_agent(current_assets)
-            st.session_state.golden_pattern_data = golden_df
+            golden_result = scan_golden_pattern_agent(current_assets, st.session_state.get('category', 'S&P 500'))
+            st.session_state.golden_pattern_data = golden_result
             st.rerun()
 
     if st.session_state.golden_pattern_data is not None:
-        st.markdown("<div style='text-align:center; color:#065f46; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:#d1fae5; padding:5px; border-radius:4px; border:1px solid #6ee7b7;'>🔥 HEM ALTIN FIRSAT HEM FORMASYON </div>", unsafe_allow_html=True)
-        
-        with st.container(height=300): # Uyarılar ve uzun metinler sığsın diye yüksekliği 300 yaptım
-            if not st.session_state.golden_pattern_data.empty:
-                # Puanı en yüksek olanlardan ilk 20'yi al
-                for i, row in st.session_state.golden_pattern_data.head(20).iterrows():
-                    sym = row['Sembol']
-                    score = row['Puan']
+        _gp_data = st.session_state.golden_pattern_data
+        # Eski format (DataFrame) ile yeni format (dict) uyumluluğu
+        if isinstance(_gp_data, dict):
+            _formations = _gp_data.get("formations", pd.DataFrame())
+            _hazirlik   = _gp_data.get("hazirlik",   pd.DataFrame())
+        else:
+            _formations = _gp_data
+            _hazirlik   = pd.DataFrame()
+
+        _dark = st.session_state.get('dark_mode', False)
+        _hdr_bg  = "#1e3a2f" if _dark else "#d1fae5"
+        _hdr_clr = "#6ee7b7" if _dark else "#065f46"
+        _hdr_bdr = "#065f46" if _dark else "#6ee7b7"
+        st.markdown(f"<div style='text-align:center; color:{_hdr_clr}; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:{_hdr_bg}; padding:5px; border-radius:4px; border:1px solid {_hdr_bdr};'>🔥 HEM ALTIN FIRSAT HEM FORMASYON</div>", unsafe_allow_html=True)
+
+        with st.container(height=300):
+            if not _formations.empty:
+                for i, row in _formations.head(20).iterrows():
+                    sym    = row['Sembol']
+                    score  = row['Puan']
                     detail = row['Detay']
-                    
-                    # Sembol ve puanı butonun üstünde, formasyon ve uyarıları altında gösteriyoruz
-                    btn_label = f"🚀 {sym.replace('.IS', '')} | Skor: {score}\n{detail}"
-                    
+                    rsi_v  = row.get('RSI', '-')
+                    mf_v   = row.get('Mansfield', '-')
+                    hk_v   = row.get('Hacim_Kat', '-')
+                    mf_icon = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
+                    btn_label = f"🚀 {sym.replace('.IS', '')} | Skor: {score} | RSI:{rsi_v} | RS:{mf_icon}{mf_v} | Hacim:{hk_v}x\n{detail}"
                     if st.button(btn_label, key=f"golden_btn_{sym}_{i}", use_container_width=True):
                         on_scan_result_click(sym)
                         st.rerun()
             else:
                 st.caption("Şu an için Fincan-Kulp, TOBO veya Direnç Kırılımı yapan Altın Fırsat bulunamadı.")
+
+        if not _hazirlik.empty:
+            _haz_bg  = "#1c2a3a" if _dark else "#eff6ff"
+            _haz_clr = "#93c5fd" if _dark else "#1e40af"
+            _haz_bdr = "#1e40af" if _dark else "#93c5fd"
+            with st.expander(f"⏳ Hazırlık Aşamasındakiler ({len(_hazirlik)} hisse — Formasyon Henüz Oluşmadı)"):
+                st.markdown(f"<div style='font-size:0.75rem; color:{_haz_clr}; background:{_haz_bg}; padding:4px 8px; border-radius:4px; border-left:3px solid {_haz_bdr}; margin-bottom:6px;'>Bu hisseler Altın Fırsat kriterlerini geçti ancak henüz formasyon oluşturmadı. 📦 Baz Kurulumu = BB sıkışması mevcut (patlama yakın olabilir).</div>", unsafe_allow_html=True)
+                for i, row in _hazirlik.head(30).iterrows():
+                    sym   = row['Sembol']
+                    durum = row['Durum']
+                    rsi_v = row.get('RSI', '-')
+                    mf_v  = row.get('Mansfield', '-')
+                    hk_v  = row.get('Hacim_Kat', '-')
+                    mf_icon = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
+                    btn_label = f"{durum} {sym.replace('.IS', '')} | RSI:{rsi_v} | RS:{mf_icon}{mf_v} | Hacim:{hk_v}x"
+                    if st.button(btn_label, key=f"hazirlik_btn_{sym}_{i}", use_container_width=True):
+                        on_scan_result_click(sym)
+                        st.rerun()
 
     # ==============================================================================
     # 🎯 KESİN DÖNÜŞ SİNYALLERİ PANELİ (YENİ EKLENDİ)
