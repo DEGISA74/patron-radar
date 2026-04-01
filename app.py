@@ -5917,6 +5917,49 @@ def render_golden_trio_banner(ict_data, sent_data):
 </div>
 </div>""", unsafe_allow_html=True)
 
+def render_royal_flush_live_banner(ticker, ict_data, sent_data):
+    """Royal Flush (Elit): Tarama gerektirmeden canlı hesaplar. AF + SMA200 + SMA50 + RSI < 70."""
+    try:
+        df = get_safe_historical_data(ticker)
+        if df is None or len(df) < 200: return
+        c = df['Close']
+        cp = float(c.iloc[-1])
+        sma200 = float(c.rolling(200).mean().iloc[-1])
+        sma50  = float(c.rolling(50).mean().iloc[-1])
+        delta  = c.diff()
+        gain   = delta.where(delta > 0, 0).rolling(14).mean()
+        loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi    = float(100 - (100 / (1 + gain / loss)).iloc[-1])
+        # Kriter 1-3: SMA200 üstü + SMA50 üstü + RSI güvenli
+        if not (cp > sma200 and cp > sma50 and rsi < 70):
+            return
+        # Kriter 4: Altın Fırsat da sağlanıyor mu?
+        if ict_data and sent_data:
+            rs_text = sent_data.get('rs', '').lower()
+            cond_power  = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or
+                           sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
+            cond_loc    = ("DISCOUNT" in ict_data.get('zone', '') or
+                           "MSS" in ict_data.get('structure', '') or
+                           "BOS" in ict_data.get('structure', ''))
+            cond_energy = ("Güçlü" in ict_data.get('displacement', '') or
+                           "Hacim" in sent_data.get('vol', '') or
+                           sent_data.get('raw_rsi', 0) > 55)
+            if not (cond_power and cond_loc and cond_energy):
+                return
+        st.markdown("""<div style="background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:8px; padding:12px; margin-top:5px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<div style="display:flex; align-items:center; gap:10px;">
+<span style="font-size:1.6rem;">♠️</span>
+<div style="line-height:1.2;">
+<div style="font-weight:800; color:#ffffff; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH (ELİT)</div>
+<div style="font-size:0.75rem; color:#ffffff; opacity:0.95;">Uzun Vade Trend + Yapı Sağlam + Endeksten Güçlü + Aşırı Pahalı Değil.</div>
+</div>
+</div>
+<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:#ffffff; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">4/4</div>
+</div>
+</div>""", unsafe_allow_html=True)
+    except: pass
+
 def render_royal_flush_3_0_banner(ticker):
     """
     BİREYSEL HİSSE ANALİZİ (TARAMA SONUÇLARI PANELİ İÇİN)
@@ -10671,6 +10714,23 @@ with col_right:
         c_z1 = "#eab308" if is_dark else "#854d0e"
         scan_results_html += f"<div style='margin-top:6px; font-size:0.8rem; color:{c_z1};'>📈 Pahalılanıyor (Z-Score: {z_score_val:.2f})</div>"
 
+    # 11. ROYAL FLUSH (ELİT) CANLI KONTROL
+    try:
+        if df_live is not None and len(df_live) >= 200:
+            _c    = df_live['Close']
+            _cp   = float(_c.iloc[-1])
+            _s200 = float(_c.rolling(200).mean().iloc[-1])
+            _s50  = float(_c.rolling(50).mean().iloc[-1])
+            _d    = _c.diff()
+            _g    = _d.where(_d > 0, 0).rolling(14).mean()
+            _l    = (-_d.where(_d < 0, 0)).rolling(14).mean()
+            _rsi  = float(100 - (100 / (1 + _g / _l)).iloc[-1])
+            if _cp > _s200 and _cp > _s50 and _rsi < 70:
+                _rf_c = "#60a5fa" if is_dark else "#1d4ed8"
+                scan_results_html += f"<div style='font-size:0.8rem; margin-top:6px; margin-bottom:4px; color:{_rf_c}; font-weight:bold;'>♠️ <span style='font-weight:700; color:{c_lbl};'>Royal Flush (Elit):</span> Uzun vade trend güçlü, yapı sağlam, RSI güvenli bölge.</div>"
+                found_any = True
+    except: pass
+
     # --- HTML ÇIKTISI RENDER ---
     if found_any:
         star_title = " ⭐" if is_star_candidate else ""
@@ -10707,31 +10767,10 @@ with col_right:
     except Exception as e:
         pass # Bir hata olursa sessizce geç, ekranı bozma.
 
-    # Royal Flush Paneli (4/4 AI+ICT+RS+VWAP — nadir)
-    render_royal_flush_banner(ict_data_check, sent_data_check, st.session_state.ticker)
+    # Royal Flush (Elit) — tarama yapmadan canlı hesaplar (AF + SMA200 + SMA50 + RSI < 70)
+    render_royal_flush_live_banner(st.session_state.ticker, ict_data_check, sent_data_check)
 
-    # Royal Flush (Elitler) — tarama sonucunda bu hisse Royal listesinde ise göster
-    try:
-        _royal_df = st.session_state.get('royal_results')
-        _cur_ticker = st.session_state.ticker
-        if _royal_df is not None and not (hasattr(_royal_df, 'empty') and _royal_df.empty):
-            _royal_match = _royal_df[_royal_df['Hisse'] == _cur_ticker]
-            if not _royal_match.empty:
-                st.markdown(f"""<div style="background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:8px; padding:12px; margin-top:5px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<div style="display:flex; align-items:center; gap:10px;">
-<span style="font-size:1.6rem;">♠️</span>
-<div style="line-height:1.2;">
-<div style="font-weight:800; color:#ffffff; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH (ELİT)</div>
-<div style="font-size:0.75rem; color:#ffffff; opacity:0.95;">Uzun Vade Trend + Yapı Sağlam + Endeksten Güçlü + Aşırı Pahalı Değil.</div>
-</div>
-</div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:#ffffff; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">4/4</div>
-</div>
-</div>""", unsafe_allow_html=True)
-    except: pass
-
-    # --- YENİ EKLENEN SATIR: ROYAL FLUSH 3.0 BİREYSEL TARAMA ---
+    # Royal Flush 3.0 (Dipten Dönüş versiyonu)
     render_royal_flush_3_0_banner(st.session_state.ticker)
 
 
