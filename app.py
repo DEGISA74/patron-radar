@@ -11131,6 +11131,24 @@ with col_right:
     
     # 1. VERİYİ ÇEK (Tek Sefer)
     df_live = get_safe_historical_data(active_t)
+
+    # --- TARAYICI SEKMESİ BAŞLIĞI (TradingView tarzı) ---
+    try:
+        _dn  = get_display_name(active_t)
+        _cl  = df_live['Close'] if df_live is not None and not df_live.empty else None
+        if _cl is not None and len(_cl) >= 2:
+            _p   = float(_cl.iloc[-1])
+            _p0  = float(_cl.iloc[-2])
+            _chg = (_p - _p0) / _p0 * 100
+            _arr = "▼" if _chg < 0 else "▲"
+            _pfmt = f"{int(_p):,}" if _p >= 1000 else f"{_p:.2f}"
+            _tab_title = f"📊 {_dn}  {_pfmt} {_arr} {abs(_chg):.2f}%"
+        else:
+            _tab_title = f"📊 {_dn} — SMR"
+        st.markdown(f"<script>window.parent.document.title = '{_tab_title}';</script>", unsafe_allow_html=True)
+    except:
+        pass
+
     pa_data = None
     bt_live = None
     mini_live = None
