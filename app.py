@@ -1258,33 +1258,51 @@ def find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3, r
 
 def scan_chart_patterns(asset_list):
     """
-    V5: SWING PIVOT TABANLI FORMASYON MOTORU
-    - Tüm formasyonlar kronolojik swing noktaları üzerinden tespit edilir.
-    - Zaman dilimi sabit dilimleme yerine gerçek pivot tespiti kullanır.
-    - find_smart_sr_levels (mevcut fonksiyon) kullanılır; ayrı bir fonksiyon gerekmez.
+    V6: ZIGZAG TABANLI FORMASYON MOTORU
+    - Gürültüyü eler, yalnızca anlamlı salınımları (zigzag iskelet) kullanır.
+    - İnsan gözünün gördüğü şekli sayısal olarak tespit eder.
+    - TOBO: L,H,L*,H,L — son 5 anlamlı pivot üzerinden
+    - Fincan-Kulp: H,L,H≈ilk,L(kulp) — son 4 anlamlı pivot üzerinden
+    - 2 yıllık veri ile büyük formasyonlar kaçmaz.
     """
-    data = get_batch_data_cached(asset_list, period="1y")
+    data = get_batch_data_cached(asset_list, period="2y")
     if data.empty: return pd.DataFrame()
 
     current_cat = st.session_state.get('category', 'S&P 500')
     benchmark = get_benchmark_data(current_cat)
 
     # ---------------------------------------------------------------
-    # YARDIMCI: Swing High / Low tespiti — Vectorized (pandas rolling)
-    # Her pivot: (index_pozisyonu, fiyat, "H" veya "L")
+    # ZIGZAG ALGORİTMASI — %threshold kadar ters dönen hareketleri kaydet.
+    # İnsan gözünün grafik iskeleti olarak gördüğü anlamlı tepeler/dipler.
+    # Döndürür: [(bar_index, fiyat, 'H'/'L'), ...]
     # ---------------------------------------------------------------
-    def find_pivots(high_s, low_s, n=5):
-        window = 2 * n + 1
-        roll_max = high_s.rolling(window, center=True).max()
-        roll_min = low_s.rolling(window, center=True).min()
-        is_high = high_s == roll_max
-        is_low  = low_s  == roll_min
+    def zigzag_pivots(close, threshold=0.04):
         pivots = []
-        for i in range(n, len(high_s) - n):
-            if is_high.iloc[i]:
-                pivots.append((i, float(high_s.iloc[i]), 'H'))
-            if is_low.iloc[i]:
-                pivots.append((i, float(low_s.iloc[i]), 'L'))
+        if len(close) < 10: return pivots
+        direction = None
+        last_i, last_p = 0, float(close.iloc[0])
+        for i in range(1, len(close)):
+            p = float(close.iloc[i])
+            if direction is None:
+                if p >= last_p * (1 + threshold):
+                    direction = 'up'; last_i, last_p = i, p
+                elif p <= last_p * (1 - threshold):
+                    direction = 'down'; last_i, last_p = i, p
+            elif direction == 'up':
+                if p > last_p:
+                    last_i, last_p = i, p
+                elif p <= last_p * (1 - threshold):
+                    pivots.append((last_i, last_p, 'H'))
+                    direction = 'down'; last_i, last_p = i, p
+            else:
+                if p < last_p:
+                    last_i, last_p = i, p
+                elif p >= last_p * (1 + threshold):
+                    pivots.append((last_i, last_p, 'L'))
+                    direction = 'up'; last_i, last_p = i, p
+        # Son segment
+        if direction == 'up':   pivots.append((last_i, last_p, 'H'))
+        elif direction == 'down': pivots.append((last_i, last_p, 'L'))
         return pivots
 
     def process_single_pattern(symbol):
@@ -1297,16 +1315,17 @@ def scan_chart_patterns(asset_list):
 
             if len(df) < 150: return None
 
-            close  = df['Close']
-            high   = df['High']
-            low    = df['Low']
-            open_  = df['Open']
-            volume = df['Volume']
+            close      = df['Close']
+            high       = df['High']
+            low        = df['Low']
+            open_      = df['Open']
+            volume     = df['Volume']
             curr_price = float(close.iloc[-1])
+            bar_total  = len(df)
 
             sma200 = close.rolling(200).mean().iloc[-1]
 
-            # Mansfield RS hesabı
+            # Mansfield RS
             mansfield_val = 0.0
             if benchmark is not None:
                 try:
@@ -1324,372 +1343,323 @@ def scan_chart_patterns(asset_list):
 
             pattern_found = False
             pattern_name  = ""
-            desc           = ""
-            base_score     = 0
-
-            # Pivot listesini bir kez hesapla (tüm formasyonlar kullanır)
-            pivots_all = find_pivots(high, low, n=5)
-            # Son 200 bar içindeki pivotlar (çok eski yapıları eleriz)
-            bar_total = len(df)
-            pivots = [(i, p, t) for (i, p, t) in pivots_all if i >= bar_total - 200]
-
-            highs_piv = [(i, p) for (i, p, t) in pivots if t == 'H']
-            lows_piv  = [(i, p) for (i, p, t) in pivots if t == 'L']
+            desc          = ""
+            base_score    = 0
 
             # ---------------------------------------------------------------
-            # 1. BOĞA BAYRAĞI (BULL FLAG)
-            # Düzeltme: Direği son 5 mumdan önceki 15 muma dayandır.
-            # Bayrak = son 5 mum sıkışması, kırılım = fiyatın bayrak üstü yakınında olması.
+            # ZIGZAG İSKELETİ — %4 eşikli (insan gözüne yakın)
+            # ---------------------------------------------------------------
+            zz       = zigzag_pivots(close, threshold=0.04)
+            zz_chron = sorted(zz, key=lambda x: x[0])   # Kronolojik sıra
+            zz_h     = [(i, p) for (i, p, t) in zz_chron if t == 'H']
+            zz_l     = [(i, p) for (i, p, t) in zz_chron if t == 'L']
+
+            # ---------------------------------------------------------------
+            # 1. BOĞA BAYRAĞI — Kısa vadeli, ham fiyat bazlı (zigzag gerekmez)
             # ---------------------------------------------------------------
             if not pattern_found:
                 pole_start = float(close.iloc[-20])
-                pole_end   = float(close.iloc[-6])   # 5 mum önceki kapanış = direğin tepesi
+                pole_end   = float(close.iloc[-6])
                 pole       = (pole_end - pole_start) / pole_start
-
-                flag_h = float(high.iloc[-5:].max())
-                flag_l = float(low.iloc[-5:].min())
-                tight  = (flag_h - flag_l) / flag_l if flag_l > 0 else 1
-
-                # Direğin ortasından tepesine kadar düzelme (retracement) < %50 olmalı
-                retrace = (pole_end - curr_price) / (pole_end - pole_start) if (pole_end - pole_start) > 0 else 1
-
+                flag_h     = float(high.iloc[-5:].max())
+                flag_l     = float(low.iloc[-5:].min())
+                tight      = (flag_h - flag_l) / flag_l if flag_l > 0 else 1
+                retrace    = (pole_end - curr_price) / (pole_end - pole_start) if (pole_end - pole_start) > 0 else 1
                 if (pole > 0.15 and tight < 0.06
-                        and retrace < 0.50          # Direği yarısından fazla geri vermemiş
-                        and curr_price >= flag_l * 0.99  # Bayrak dibini kırmamış
-                        and curr_price >= flag_h * 0.98): # Kırılım yakını
+                        and retrace < 0.50
+                        and curr_price >= flag_l * 0.99
+                        and curr_price >= flag_h * 0.98):
                     pattern_found = True
                     pattern_name  = "🚩 BOĞA BAYRAĞI"
                     base_score    = 85
                     desc = f"Direk: %{pole*100:.1f} | Sıkışma: %{tight*100:.1f} | Geri Alım: %{retrace*100:.0f}"
 
             # ---------------------------------------------------------------
-            # 2. FİNCAN-KULP (CUP & HANDLE)
-            # Pivot tabanlı: Sol tepe H, dip L, sağ tepe H kronolojik sırada
-            # Sol tepe ≈ Sağ tepe (±%8), dip sol tepenin %85 altında,
-            # kulp = sağ tepe sonrası küçük geri çekilme, kırılım = sağ tepe yakını
+            # 2. FİNCAN-KULP — Zigzag şablonu: H → L → H(≈ilk) → L(kulp)
+            # Son 4 anlamlı pivot; fiyat sağ rimi test ediyor veya kırdı.
             # ---------------------------------------------------------------
-            if not pattern_found and len(highs_piv) >= 2 and len(lows_piv) >= 1:
-                for scale in [2, 1]:
-                    lookback = 150 * scale
-                    if bar_total < lookback: continue
+            if not pattern_found and len(zz_chron) >= 4:
+                # Son 20 pivot penceresini tara; 1 yıldan eski paterni dikkate alma
+                for start_offset in range(min(20, len(zz_chron) - 3)):
+                    p1_i, p1_v, p1_t = zz_chron[-(4 + start_offset)]
+                    p2_i, p2_v, p2_t = zz_chron[-(3 + start_offset)]
+                    p3_i, p3_v, p3_t = zz_chron[-(2 + start_offset)]
+                    p4_i, p4_v, p4_t = zz_chron[-(1 + start_offset)]
 
-                    # Sol tepe: lookback penceresinin ilk yarısındaki en yüksek pivot
-                    mid_bar  = bar_total - lookback // 2
-                    left_h   = [(i, p) for (i, p) in highs_piv if i < mid_bar and i >= bar_total - lookback]
-                    right_h  = [(i, p) for (i, p) in highs_piv if i >= mid_bar]
-                    cup_lows = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
+                    # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
+                    if p1_i < bar_total - 252: break
 
-                    if not left_h or not right_h or not cup_lows: continue
+                    # Şablon kontrolü: H, L, H, L
+                    if not (p1_t == 'H' and p2_t == 'L' and p3_t == 'H' and p4_t == 'L'):
+                        continue
 
-                    # Sol tepenin en yükseği, sağ tepenin en yükseği, dibinin en düşüğü
-                    rim_l_idx, rim_l = max(left_h,  key=lambda x: x[1])
-                    rim_r_idx, rim_r = max(right_h, key=lambda x: x[1])
-                    cup_b_idx, cup_b = min(cup_lows, key=lambda x: x[1])
+                    rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
 
-                    # Kronoloji: sol tepe → dip → sağ tepe
-                    if not (rim_l_idx < cup_b_idx < rim_r_idx): continue
+                    rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12       # Rimler ±%12
+                    cup_deep       = cup_b < rim_l * 0.88                     # Fincan min %12 derin
+                    handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4 # Kulp üst %60'ta
+                    handle_shallow = handle_l > rim_r * 0.85                  # Kulp çok derin değil
+                    cup_wide       = (p3_i - p1_i) >= 40                      # Min 40 bar (~2 ay) — noise elenir
 
-                    aligned       = abs(rim_l - rim_r) / rim_l < 0.15
-                    deep          = cup_b < rim_l * 0.85
-                    # Kulp: sağ tepe sonrasında küçük geri çekilme var mı?
-                    handle_lows   = [p for (i, p) in lows_piv if i > rim_r_idx]
-                    handle_low    = min(handle_lows) if handle_lows else rim_r
-                    handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b + (rim_r - cup_b) * 0.35)
+                    if start_offset == 0:
+                        # Son pivotlar: fiyat breakout veya kulp bölgesinde
+                        breaking  = curr_price >= rim_r * 0.97 and curr_price <= rim_r * 1.08
+                        forming   = curr_price >= handle_l * 0.99 and not breaking
+                        active    = breaking or forming
+                    else:
+                        # Eski pivotlar: kırılım zaten gerçekleşti mi?
+                        active = curr_price >= rim_r * 0.98
 
-                    breaking   = (curr_price >= rim_r * 0.99) and (curr_price <= rim_r * 1.05)
-                    approaching = (curr_price >= rim_r * 0.93) and not breaking
-
-                    if aligned and deep and handle_exists and (breaking or approaching):
+                    if rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide and active:
+                        dur_months = max(1, round((p3_i - p1_i) / 21))
+                        dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
+                        if start_offset == 0 and breaking:
+                            status_txt = "Kırılım Bölgesinde"
+                            p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                            base_score = 95
+                        elif start_offset == 0 and forming:
+                            status_txt = f"Tamamlanmasına %{dist_to_rim:.1f} kaldı"
+                            p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                            base_score = 78
+                        else:
+                            days_since = bar_total - p3_i
+                            status_txt = f"Tamamlandı ({days_since} gün önce)"
+                            p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                            base_score = 80
+                        p_desc = f"Sol Rim: {rim_l:.2f} | Dip: {cup_b:.2f} | Sağ Rim: {rim_r:.2f} | Kulp: {handle_l:.2f}"
                         pattern_found = True
-                        p_name = f"☕ FİNCAN KULP ({scale*5} Ay)" if breaking else f"⏳ OLUŞAN FİNCAN KULP ({scale*5} Ay)"
-                        p_desc = f"Sol Tepe: {rim_l:.2f} | Sağ Tepe: {rim_r:.2f} | Dip: {cup_b:.2f}"
                         pattern_name = p_name; desc = p_desc
-                        base_score   = max(base_score, 95 if breaking else 75)
                         break
 
             # ---------------------------------------------------------------
-            # 3. TOBO (Ters Omuz-Baş-Omuz)
-            # Pivot tabanlı: Sol omuz dibi L1, baş dibi L2 (L1'den düşük),
-            # sağ omuz dibi L3 (≈ L1), boyun çizgisi = L2'nin iki yanındaki tepeler
-            # Kronoloji: L1 → yüksek → L2 → yüksek (boyun) → L3 → kırılım
+            # 3. TOBO — Zigzag şablonu: L → H → L*(baş) → H(≈ilk H) → L(≈ilk L)
+            # Kritik kural: sağ omuz baş→boyun mesafesinin %50'sini geri almış olmalı.
+            # Bu kural insan gözünün "sağ omuz boyuna yakın" algısını sayısallaştırır.
             # ---------------------------------------------------------------
-            if not pattern_found and len(lows_piv) >= 3 and len(highs_piv) >= 2:
-                for scale in [3, 2, 1]:
-                    lookback = 60 * scale
-                    if bar_total < lookback: continue
+            if not pattern_found and len(zz_chron) >= 5:
+                for start_offset in range(min(15, len(zz_chron) - 4)):
+                    p1_i, p1_v, p1_t = zz_chron[-(5 + start_offset)]  # Sol omuz (L)
+                    p2_i, p2_v, p2_t = zz_chron[-(4 + start_offset)]  # Boyun sol (H)
+                    p3_i, p3_v, p3_t = zz_chron[-(3 + start_offset)]  # Baş (L, en derin)
+                    p4_i, p4_v, p4_t = zz_chron[-(2 + start_offset)]  # Boyun sağ (H)
+                    p5_i, p5_v, p5_t = zz_chron[-(1 + start_offset)]  # Sağ omuz (L)
 
-                    window_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
-                    window_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - lookback]
+                    # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
+                    if p1_i < bar_total - 252: break
 
-                    if len(window_lows) < 3 or len(window_highs) < 2: continue
+                    if not (p1_t=='L' and p2_t=='H' and p3_t=='L' and p4_t=='H' and p5_t=='L'):
+                        continue
 
-                    # En derin dibi baş olarak al
-                    head_idx, head_p = min(window_lows, key=lambda x: x[1])
+                    ls_p   = p1_v
+                    neck_l = p2_v
+                    head_p = p3_v
+                    neck_r = p4_v
+                    rs_p   = p5_v
+                    neck   = (neck_l + neck_r) / 2
 
-                    # Sol omuz: baş'tan önceki dipler
-                    left_lows  = [(i, p) for (i, p) in window_lows if i < head_idx]
-                    # Sağ omuz: baş'tan sonraki dipler
-                    right_lows = [(i, p) for (i, p) in window_lows if i > head_idx]
+                    head_deep   = head_p < ls_p * 0.95 and head_p < rs_p * 0.95
+                    sym         = abs(ls_p - rs_p) / ls_p < 0.10
+                    neck_flat   = abs(neck_l - neck_r) / neck_l < 0.06
+                    pat_wide    = (p5_i - p1_i) >= 40  # Min 40 bar (~2 ay) — downtrend içi noise elenir
+                    # Sağ omuz, baş→boyun mesafesinin en az %50'sini geri almış olmalı
+                    # (insan gözü: "sağ omuz boyuna yakın görünüyor")
+                    recovery    = (rs_p - head_p) / (neck - head_p) if (neck - head_p) > 0 else 0
+                    recovery_ok = recovery >= 0.50
 
-                    if not left_lows or not right_lows: continue
+                    if not (head_deep and sym and neck_flat and pat_wide and recovery_ok):
+                        continue
 
-                    # Sol omuz = baş'a en yakın sol dip, sağ omuz = baş'a en yakın sağ dip
-                    ls_idx, ls_p = max(left_lows,  key=lambda x: x[0])  # Kronolojik en yakın sol
-                    rs_idx, rs_p = min(right_lows, key=lambda x: x[0])  # Kronolojik en yakın sağ
+                    if start_offset == 0:
+                        is_breakout = curr_price >= neck * 0.97 and curr_price <= neck * 1.06
+                        is_forming  = curr_price > rs_p * 1.01 and curr_price < neck * 0.96
+                        active = is_breakout or is_forming
+                        is_breakout_flag = is_breakout
+                    else:
+                        active = curr_price >= neck * 0.97
+                        is_breakout_flag = active
 
-                    # Boyun çizgisi: baş'ın iki yanındaki en yakın tepelerin ortalaması
-                    left_neck  = [(i, p) for (i, p) in window_highs if ls_idx < i < head_idx]
-                    right_neck = [(i, p) for (i, p) in window_highs if head_idx < i < rs_idx + 20]
+                    if not active:
+                        continue
 
-                    if not left_neck or not right_neck: continue
+                    dur_months   = max(1, round((p5_i - p1_i) / 21))
+                    dist_to_neck = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
 
-                    neck_l_p = max(left_neck,  key=lambda x: x[1])[1]
-                    neck_r_p = max(right_neck, key=lambda x: x[1])[1]
-                    neck     = (neck_l_p + neck_r_p) / 2  # Boyun ortalaması
+                    if is_breakout_flag and start_offset == 0:
+                        status_txt = "Kırılım Bölgesinde"
+                        p_name = f"🧛 TOBO ({dur_months} Ay) — {status_txt}"
+                        base_score = 92
+                    elif start_offset == 0:
+                        status_txt = f"Tamamlanmasına %{dist_to_neck:.1f} kaldı"
+                        p_name = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — {status_txt}"
+                        base_score = 72
+                    else:
+                        days_since = bar_total - p5_i
+                        status_txt = f"Tamamlandı ({days_since} gün önce)"
+                        p_name = f"🧛 TOBO ({dur_months} Ay) — {status_txt}"
+                        base_score = 80
 
-                    # Şartlar
-                    head_deep  = head_p < ls_p * 0.98 and head_p < rs_p * 0.98
-                    sym        = abs(ls_p - rs_p) / ls_p < 0.20  # Omuzlar ±%20
-                    neck_flat  = abs(neck_l_p - neck_r_p) / neck_l_p < 0.1  # Boyun yatay
-
-                    is_breakout = (curr_price >= neck * 0.98) and (curr_price <= neck * 1.04)
-                    is_forming  = (curr_price > rs_p * 1.01) and (curr_price < neck * 0.97)
-
-                    if head_deep and sym and neck_flat and (is_breakout or is_forming):
-                        pattern_found = True
-                        p_name = f"🧛 TOBO ({scale*3} Ay)" if is_breakout else f"⏳ OLUŞAN TOBO ({scale*3} Ay)"
-                        p_desc = f"Boyun: {neck:.2f} | Baş: {head_p:.2f} | Sol/Sağ Omuz: {ls_p:.2f}/{rs_p:.2f}"
-                        pattern_name = p_name; desc = p_desc
-                        base_score   = max(base_score, 90 if is_breakout else 70)
-                        break
-
-            # ---------------------------------------------------------------
-            # 4. YÜKSELEN ÜÇGEN
-            # Pivot tabanlı: En az 2 tepe aynı direnç seviyesinde (±%2),
-            # dipler kronolojik olarak yükseliyor (HL dizisi), en az 2 HL var.
-            # ---------------------------------------------------------------
-            if not pattern_found and len(highs_piv) >= 2 and len(lows_piv) >= 2:
-                for scale in [3, 2, 1]:
-                    lookback = 45 * scale
-                    if bar_total < lookback: continue
-
-                    w_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - lookback]
-                    w_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - lookback]
-
-                    if len(w_highs) < 2 or len(w_lows) < 2: continue
-
-                    # Direnç: tepelerin en büyüğüne göre %2 toleransla aynı hizadalar mı?
-                    top_val = max(p for _, p in w_highs)
-                    flat_tops = [p for _, p in w_highs if abs(p - top_val) / top_val < 0.02]
-                    flat = len(flat_tops) >= 2
-
-                    # Dipler kronolojik yükseliyor mu? (her dip bir öncekinden yüksek)
-                    lows_prices = [p for _, p in w_lows]
-                    rising = all(lows_prices[k] < lows_prices[k+1] for k in range(len(lows_prices)-1))
-
-                    if not (flat and rising): continue
-
-                    avg_res    = sum(flat_tops) / len(flat_tops)
-                    breaking   = (curr_price >= avg_res * 0.99) and (curr_price <= avg_res * 1.04)
-                    approaching = (curr_price >= avg_res * 0.95) and not breaking
-
-                    if breaking or approaching:
-                        pattern_found = True
-                        p_name = f"📐 YÜKS. ÜÇGEN ({scale*45} Gün)" if breaking else f"⏳ OLUŞAN ÜÇGEN ({scale*45} Gün)"
-                        p_desc = f"Direnç: {avg_res:.2f} | Dipler Yükseliyor: {len(lows_prices)} pivot"
-                        pattern_name = p_name; desc = p_desc
-                        base_score   = max(base_score, 88 if breaking else 68)
-                        break
+                    p_desc = f"Boyun: {neck:.2f} | Baş: {head_p:.2f} | Sol/Sağ Omuz: {ls_p:.2f}/{rs_p:.2f} | Geri Alım: %{recovery*100:.0f}"
+                    pattern_found = True
+                    pattern_name = p_name; desc = p_desc
+                    base_score_final = base_score
+                    break
 
             # ---------------------------------------------------------------
-            # 4.5 RANGE (YATAY BANT)
-            # Fiyat uzun süre dar bir kanalda (<%15 genişlik) sıkışmış.
-            # En dar periyot önce bulunur; kırılım veya destek testi aranır.
+            # 4. YÜKSELEN ÜÇGEN — Son 8 zigzag pivotu: tepeler yatay, dipler yükseliyor
+            # ---------------------------------------------------------------
+            if not pattern_found and len(zz_chron) >= 4:
+                recent  = zz_chron[-8:]
+                r_highs = [(i, p) for (i, p, t) in recent if t == 'H']
+                r_lows  = [(i, p) for (i, p, t) in recent if t == 'L']
+                if len(r_highs) >= 2 and len(r_lows) >= 2:
+                    top_val   = max(p for _, p in r_highs)
+                    flat_tops = [p for _, p in r_highs if abs(p - top_val) / top_val < 0.03]
+                    flat      = len(flat_tops) >= 2
+                    lows_s    = sorted(r_lows, key=lambda x: x[0])
+                    rising    = all(lows_s[k][1] < lows_s[k+1][1] for k in range(len(lows_s)-1))
+                    if flat and rising:
+                        avg_res    = sum(flat_tops) / len(flat_tops)
+                        dur_bars   = recent[-1][0] - recent[0][0]
+                        breaking   = curr_price >= avg_res * 0.99 and curr_price <= avg_res * 1.04
+                        approaching = curr_price >= avg_res * 0.94 and not breaking
+                        if breaking or approaching:
+                            pattern_found = True
+                            p_name = f"📐 YÜKS. ÜÇGEN ({dur_bars} Gün)" if breaking else f"⏳ OLUŞAN ÜÇGEN ({dur_bars} Gün)"
+                            p_desc = f"Direnç: {avg_res:.2f} | Yükselen Dip: {len(r_lows)} pivot"
+                            pattern_name = p_name; desc = p_desc
+                            base_score   = 88 if breaking else 68
+
+            # ---------------------------------------------------------------
+            # 4.5 RANGE (YATAY BANT) — Ham fiyat bazlı
             # ---------------------------------------------------------------
             if not pattern_found:
                 for rng_window in [60, 90, 120, 180]:
                     if len(df) < rng_window: continue
-                    period_max = float(high.iloc[-rng_window:].max())
-                    period_min = float(low.iloc[-rng_window:].min())
+                    period_max  = float(high.iloc[-rng_window:].max())
+                    period_min  = float(low.iloc[-rng_window:].min())
                     if period_min <= 0: continue
                     range_width = (period_max - period_min) / period_min
-
                     if range_width < 0.15:
-                        breaking_up  = (curr_price >= period_max * 0.98) and (curr_price <= period_max * 1.04)
-                        bouncing_up  = (curr_price >= period_min * 0.98) and (curr_price <= period_min * 1.04)
-
+                        breaking_up = curr_price >= period_max * 0.98 and curr_price <= period_max * 1.04
+                        bouncing_up = curr_price >= period_min * 0.98 and curr_price <= period_min * 1.04
                         if breaking_up or bouncing_up:
                             pattern_found = True
                             p_name = f"🧱 RANGE DİRENCİ ({rng_window} Gün)" if breaking_up else f"🧱 RANGE DESTEĞİ ({rng_window} Gün)"
-                            p_desc = (f"{rng_window} gündür süren yatay kanal direnci kırılıyor!"
-                                      if breaking_up else
-                                      f"{rng_window} gündür süren bandın dibinden destek aldı.")
+                            p_desc = (f"{rng_window} gündür süren yatay kanal direnci kırılıyor!" if breaking_up
+                                      else f"{rng_window} gündür süren bandın dibinden destek aldı.")
                             pattern_name = p_name; desc = p_desc
-                            base_score   = max(base_score, 88 if breaking_up else 85)
-                            break  # En dar bulunan periyotla çık
+                            base_score   = 88 if breaking_up else 85
+                            break
 
             # ---------------------------------------------------------------
             # 4.6 ÇANAK (Saucer / Rounding Bottom)
-            # Grafikte gördüğün "U" şekli: sol taraf yüksek, orta düşük, sağ toparlanıyor.
-            # Pivot tabanlı: sol bölgede H pivot, orta bölgede dip L pivot, sağ bölge toparlanıyor.
             # ---------------------------------------------------------------
             if not pattern_found and len(df) >= 100:
-                lb = min(len(df), 120)
+                lb  = min(len(df), 120)
                 seg = lb // 3
-                left_part   = df.iloc[-lb    : -lb + seg]
-                middle_part = df.iloc[-lb + seg : -lb + 2*seg]
+                left_part   = df.iloc[-lb:        -lb + seg]
+                middle_part = df.iloc[-lb + seg:  -lb + 2*seg]
                 right_part  = df.iloc[-lb + 2*seg:]
-
                 if len(left_part) > 5 and len(middle_part) > 5 and len(right_part) > 5:
                     left_high  = float(left_part['High'].max())
                     cup_bottom = float(middle_part['Low'].min())
                     right_high = float(right_part['High'].max())
-
-                    is_deep_enough    = (left_high - cup_bottom) / cup_bottom > 0.12
-                    is_real_bottom    = float(middle_part['Low'].mean()) < float(left_part['Low'].mean())
-                    is_recovering     = (curr_price - cup_bottom) / cup_bottom > 0.08
-                    # Sağ taraf sol yüksekliğinin en az %60'ına ulaşmış olmalı
-                    right_recovered   = right_high >= left_high * 0.60
-                    is_breaking_out   = curr_price >= right_high * 0.98
-
-                    if is_deep_enough and is_real_bottom and is_recovering and right_recovered and is_breaking_out:
+                    if ((left_high - cup_bottom) / cup_bottom > 0.12
+                            and float(middle_part['Low'].mean()) < float(left_part['Low'].mean())
+                            and (curr_price - cup_bottom) / cup_bottom > 0.08
+                            and right_high >= left_high * 0.60
+                            and curr_price >= right_high * 0.98):
                         pattern_found = True
                         pattern_name  = "🥣 ÇANAK (Dipten Dönüş)"
                         base_score    = 88
                         desc = f"Sol Tepe: {left_high:.2f} | Dip: {cup_bottom:.2f} | Sağ Direnç: {right_high:.2f}"
-                        last_volume = float(volume.iloc[-1])
-                        vol_sma20   = float(volume.tail(20).mean())
-                        if vol_sma20 > 0 and last_volume > vol_sma20 * 1.5:
-                            base_score += 10
 
             # ---------------------------------------------------------------
-            # 5. QUASIMODO (QML) — Bullish Dönüş
-            # Kronoloji: L(sol omuz) → H(orta tepe) → LL(baş/likidite avı) → HH(yapı kırılımı) → pullback
-            # Pivotların kronolojik sırasını zorunlu tut.
+            # 5. QUASIMODO (QML) — Son 6 zigzag pivotu üzerinden
             # ---------------------------------------------------------------
-            if not pattern_found and len(lows_piv) >= 2 and len(highs_piv) >= 2:
-                # Son 80 bar içindeki pivotlar
-                w_lows  = [(i, p) for (i, p) in lows_piv  if i >= bar_total - 80]
-                w_highs = [(i, p) for (i, p) in highs_piv if i >= bar_total - 80]
-
-                if len(w_lows) >= 2 and len(w_highs) >= 2:
-                    # İlk L (sol omuz), sonra H (orta tepe), sonra LL (baş), sonra HH (kırılım)
-                    for qi in range(len(w_lows) - 1):
-                        l_left_idx, l_left_p = w_lows[qi]
-                        # l_left sonrası bir H olmalı
-                        mid_h = [(i, p) for (i, p) in w_highs if i > l_left_idx]
+            if not pattern_found and len(zz_chron) >= 4:
+                recent = zz_chron[-6:]
+                r_l = [(i, p) for (i, p, t) in recent if t == 'L']
+                r_h = [(i, p) for (i, p, t) in recent if t == 'H']
+                if len(r_l) >= 2 and len(r_h) >= 2:
+                    for qi in range(len(r_l) - 1):
+                        l_left_idx, l_left_p = r_l[qi]
+                        mid_h = [(i, p) for (i, p) in r_h if i > l_left_idx]
                         if not mid_h: continue
                         h_mid_idx, h_mid_p = mid_h[0]
-                        # h_mid sonrası LL olmalı
-                        ll_list = [(i, p) for (i, p) in w_lows if i > h_mid_idx]
+                        ll_list = [(i, p) for (i, p) in r_l if i > h_mid_idx]
                         if not ll_list: continue
                         ll_idx, ll_p = ll_list[0]
-                        # ll sonrası HH olmalı
-                        hh_list = [(i, p) for (i, p) in w_highs if i > ll_idx]
+                        hh_list = [(i, p) for (i, p) in r_h if i > ll_idx]
                         if not hh_list: continue
                         hh_idx, hh_p = hh_list[0]
-
-                        cond_ll      = ll_p < l_left_p * 0.98          # LL < L (likidite avı)
-                        cond_hh      = hh_p > h_mid_p * 1.01           # HH > H (yapı kırılımı)
-                        cond_pullback = (curr_price >= l_left_p * 0.95 and
-                                         curr_price <= l_left_p * 1.05) # QML çizgisine geri çekilme
-
-                        if cond_ll and cond_hh and cond_pullback:
+                        if (ll_p < l_left_p * 0.98 and hh_p > h_mid_p * 1.01
+                                and curr_price >= l_left_p * 0.95 and curr_price <= l_left_p * 1.05):
                             pattern_found = True
                             pattern_name  = "🧲 QUASIMODO (QML)"
                             base_score    = 92
-                            desc = (f"QML Çizgisi: {l_left_p:.2f} | Baş Dip: {ll_p:.2f} | "
-                                    f"Kırılım Tepesi: {hh_p:.2f} | Fiyat Pullback'te")
+                            desc = f"QML Çizgisi: {l_left_p:.2f} | Baş Dip: {ll_p:.2f} | Kırılım Tepesi: {hh_p:.2f}"
                             break
 
             # ---------------------------------------------------------------
-            # 6. 3 DRIVE (Üç Düşen Dip — Trend Yorgunluğu)
-            # Pivot tabanlı: Son 3 L pivotu sırayla düşüyor,
-            # düşüş mesafeleri simetrik (±%25), fiyat son dipten sekmiş.
+            # 6. 3 DRIVE (Üç Düşen Dip) — Son 3 zigzag dibi
             # ---------------------------------------------------------------
-            if not pattern_found and len(lows_piv) >= 3:
-                w_lows = [(i, p) for (i, p) in lows_piv if i >= bar_total - 80]
-                if len(w_lows) >= 3:
-                    # Son 3 dibi al (kronolojik sırada)
-                    d1_idx, d1 = w_lows[-3]
-                    d2_idx, d2 = w_lows[-2]
-                    d3_idx, d3 = w_lows[-1]
-
-                    if d1 > d2 > d3:  # Düşen dipler
-                        drop1 = d1 - d2
-                        drop2 = d2 - d3
-                        # Simetri: iki düşüş birbirine ±%25 yakın
-                        sym_ok = drop1 > 0 and abs(drop1 - drop2) / drop1 < 0.25
-                        # Fiyat son dipten sekmiş ama bir önceki dibin altında
-                        bounce_ok = curr_price > d3 * 1.015 and curr_price < d2
-
-                        if sym_ok and bounce_ok:
+            if not pattern_found and len(zz_l) >= 3:
+                (d1_i, d1), (d2_i, d2), (d3_i, d3) = zz_l[-3], zz_l[-2], zz_l[-1]
+                if d1 > d2 > d3:
+                    drop1 = d1 - d2; drop2 = d2 - d3
+                    if drop1 > 0 and abs(drop1 - drop2) / drop1 < 0.25:
+                        if curr_price > d3 * 1.015 and curr_price < d2:
                             pattern_found = True
                             pattern_name  = "🎢 3 DRIVE (DİP)"
                             base_score    = 85
-                            desc = (f"Dip1: {d1:.2f} | Dip2: {d2:.2f} | Dip3: {d3:.2f} | "
-                                    f"Düşüş Simetrisi: %{abs(drop1-drop2)/drop1*100:.0f} sapma")
+                            desc = f"Dip1: {d1:.2f} | Dip2: {d2:.2f} | Dip3: {d3:.2f} | Simetri Sapması: %{abs(drop1-drop2)/drop1*100:.0f}"
 
             # ---------------------------------------------------------------
             # 7. GÜÇLÜ DESTEK / DİRENÇ TESTİ
-            # find_smart_sr_levels (mevcut fonksiyon) ile pivot kümelerini bul.
             # ---------------------------------------------------------------
             if not pattern_found and len(df) >= 100:
                 sr_levels = find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
                 for level in sorted(sr_levels, key=lambda x: abs(x - curr_price)):
-                    proximity = abs(curr_price - level) / level
-                    if proximity <= 0.015:
+                    if abs(curr_price - level) / level <= 0.015:
                         pattern_found = True
                         if curr_price >= level:
                             pattern_name = "🧱 GÜÇLÜ DESTEK TESTİ"
-                            desc = f"Geçmişte ≥3 kez test edilen destek: {level:.2f} | Buradan sekme gelebilir."
+                            desc = f"Geçmişte ≥3 kez test edilen destek: {level:.2f}"
                             base_score = 85
                         else:
                             pattern_name = "⚔️ GÜÇLÜ DİRENÇ TESTİ"
-                            desc = f"Geçmişte ≥3 kez reddedilen direnç: {level:.2f} | Hacimli kırılım bekleniyor."
+                            desc = f"Geçmişte ≥3 kez reddedilen direnç: {level:.2f}"
                             base_score = 88
                         break
 
             # ---------------------------------------------------------------
-            # KALİTE PUANLAMASI (Orijinal mantık korundu)
+            # KALİTE PUANLAMASI
             # ---------------------------------------------------------------
             if pattern_found:
                 q_score = base_score
-
                 if "FİNCAN" in pattern_name or "TOBO" in pattern_name or "QML" in pattern_name:
                     q_score += 15
-
                 avg_vol   = float(volume.iloc[-20:].mean())
                 vol_ratio = float(volume.iloc[-1]) / avg_vol if avg_vol > 0 else 1
-
                 if vol_ratio > 2.5:
-                    q_score += 25
-                    desc += " (🚀 Ultra Hacim)"
+                    q_score += 25; desc += " (🚀 Ultra Hacim)"
                 elif vol_ratio > 1.5:
                     q_score += 12
-
                 sma50 = float(close.rolling(50).mean().iloc[-1])
-                if curr_price > sma50:
-                    q_score += 8
-
-                if float(close.iloc[-1]) < float(open_.iloc[-1]) and float(close.iloc[-2]) < float(open_.iloc[-2]):
-                    q_score -= 35
-                    desc += " (⚠️ Düşüşte)"
-
+                if curr_price > sma50: q_score += 8
+                if (float(close.iloc[-1]) < float(open_.iloc[-1])
+                        and float(close.iloc[-2]) < float(open_.iloc[-2])):
+                    q_score -= 35; desc += " (⚠️ Düşüşte)"
                 if avg_vol < 5000000:
                     pattern_name += " (⚠️ SIĞ TAHTA)"
-                    desc += " | 🚨 Dikkat: Ortalama işlem hacmi 5 Milyon lotun altında, manipülasyona açık tahta!"
-
+                    desc += " | 🚨 Dikkat: Ortalama işlem hacmi 5 Milyon lotun altında."
                 if not np.isnan(sma200) and curr_price < sma200:
                     pattern_name += " (⚠️ SMA200 Altında)"
                     desc += " | 📉 Risk Uyarısı: Fiyat 200 günlük ana ortalamanın altında."
                     q_score -= 10
-
-                if mansfield_val > 0:
-                    q_score += 10
-                elif mansfield_val < 0:
-                    q_score -= 10
-
+                if mansfield_val > 0:   q_score += 10
+                elif mansfield_val < 0: q_score -= 10
                 return {
                     "Sembol":    symbol,
                     "Fiyat":     curr_price,
@@ -1839,93 +1809,121 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
             p_name = ""
             base_score = 0
 
-            # Pivot tespiti (scan_chart_patterns ile aynı yöntem)
-            def _find_pivots_gp(h_s, l_s, n=5):
-                pvts = []
-                length = len(h_s)
-                for i in range(n, length - n):
-                    if h_s.iloc[i] == h_s.iloc[i - n: i + n + 1].max():
-                        pvts.append((i, float(h_s.iloc[i]), 'H'))
-                    if l_s.iloc[i] == l_s.iloc[i - n: i + n + 1].min():
-                        pvts.append((i, float(l_s.iloc[i]), 'L'))
-                pvts.sort(key=lambda x: x[0])
-                return pvts
+            # Zigzag iskelet — scan_chart_patterns ile aynı fonksiyon
+            def _zigzag_gp(c, threshold=0.04):
+                pivots = []
+                if len(c) < 10: return pivots
+                direction = None
+                last_i, last_p = 0, float(c.iloc[0])
+                for i in range(1, len(c)):
+                    p = float(c.iloc[i])
+                    if direction is None:
+                        if p >= last_p * (1 + threshold):   direction = 'up';   last_i, last_p = i, p
+                        elif p <= last_p * (1 - threshold): direction = 'down'; last_i, last_p = i, p
+                    elif direction == 'up':
+                        if p > last_p: last_i, last_p = i, p
+                        elif p <= last_p * (1 - threshold):
+                            pivots.append((last_i, last_p, 'H'))
+                            direction = 'down'; last_i, last_p = i, p
+                    else:
+                        if p < last_p: last_i, last_p = i, p
+                        elif p >= last_p * (1 + threshold):
+                            pivots.append((last_i, last_p, 'L'))
+                            direction = 'up'; last_i, last_p = i, p
+                if direction == 'up':   pivots.append((last_i, last_p, 'H'))
+                elif direction == 'down': pivots.append((last_i, last_p, 'L'))
+                return pivots
 
-            bar_total_gp = len(df)
-            pivots_gp    = _find_pivots_gp(high, low, n=5)
-            pivots_w     = [(i, p, t) for (i, p, t) in pivots_gp if i >= bar_total_gp - 200]
-            highs_piv_gp = [(i, p) for (i, p, t) in pivots_w if t == 'H']
-            lows_piv_gp  = [(i, p) for (i, p, t) in pivots_w if t == 'L']
+            zz_gp      = _zigzag_gp(close, threshold=0.04)
+            zz_chron   = sorted(zz_gp, key=lambda x: x[0])
 
-            # A) FİNCAN KULP (Pivot Tabanlı)
-            if len(highs_piv_gp) >= 2 and len(lows_piv_gp) >= 1:
-                for scale in [2, 1]:
-                    lookback = 150 * scale
-                    if bar_total_gp < lookback: continue
-                    mid_bar  = bar_total_gp - lookback // 2
-                    left_h   = [(i, p) for (i, p) in highs_piv_gp if i < mid_bar and i >= bar_total_gp - lookback]
-                    right_h  = [(i, p) for (i, p) in highs_piv_gp if i >= mid_bar]
-                    cup_lows = [(i, p) for (i, p) in lows_piv_gp  if i >= bar_total_gp - lookback]
-                    if not left_h or not right_h or not cup_lows: continue
-                    rim_l_idx, rim_l = max(left_h,  key=lambda x: x[1])
-                    rim_r_idx, rim_r = max(right_h, key=lambda x: x[1])
-                    cup_b_idx, cup_b = min(cup_lows, key=lambda x: x[1])
-                    if not (rim_l_idx < cup_b_idx < rim_r_idx): continue
-                    aligned = abs(rim_l - rim_r) / rim_l < 0.12
-                    deep    = cup_b < rim_l * 0.87
-                    handle_lows   = [p for (i, p) in lows_piv_gp if i > rim_r_idx]
-                    handle_low    = min(handle_lows) if handle_lows else rim_r
-                    handle_exists = (handle_low < rim_r * 0.97) and (handle_low > cup_b)
-                    breaking    = (curr_price >= rim_r * 0.98) and (curr_price <= rim_r * 1.05)
-                    approaching = (curr_price >= rim_r * 0.93) and not breaking
-                    if aligned and deep and handle_exists and (breaking or approaching):
-                        pattern_found = True
-                        if breaking:
-                            p_name = f"☕ FİNCAN KULP Kırılımı | Hacim: {vol_ratio:.1f}x"
-                            base_score = 90
-                        else:
-                            dist_pct = ((rim_r - curr_price) / curr_price) * 100
-                            penalty = int(dist_pct * 1.5)
-                            p_name = f"⏳ OLUŞAN FİNCAN KULP (Kırılıma %{dist_pct:.1f}) | Hacim: {vol_ratio:.1f}x"
-                            base_score = 85 - penalty
-                        break
+            # A) FİNCAN KULP — Zigzag şablonu: H → L → H(≈ilk) → L(kulp)
+            if not pattern_found and len(zz_chron) >= 4:
+                for start_offset in range(min(20, len(zz_chron) - 3)):
+                    p1_i, p1_v, p1_t = zz_chron[-(4 + start_offset)]
+                    p2_i, p2_v, p2_t = zz_chron[-(3 + start_offset)]
+                    p3_i, p3_v, p3_t = zz_chron[-(2 + start_offset)]
+                    p4_i, p4_v, p4_t = zz_chron[-(1 + start_offset)]
+                    # 1 yıldan önce başlayan paterni atla
+                    if p1_i < len(close) - 252: break
+                    if not (p1_t=='H' and p2_t=='L' and p3_t=='H' and p4_t=='L'): continue
+                    rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
+                    rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12
+                    cup_deep       = cup_b < rim_l * 0.88
+                    handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4
+                    handle_shallow = handle_l > rim_r * 0.85
+                    cup_wide       = (p3_i - p1_i) >= 40  # Min 40 bar (~2 ay)
+                    if not (rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide): continue
+                    if start_offset == 0:
+                        breaking   = curr_price >= rim_r * 0.97 and curr_price <= rim_r * 1.08
+                        forming    = curr_price >= rim_r * 0.88 and not breaking  # Rim'e %12 yakın
+                        active     = breaking or forming
+                    else:
+                        active = curr_price >= rim_r * 0.98
+                        breaking = active
+                    if not active: continue
+                    dur_months = max(1, round((p3_i - p1_i) / 21))
+                    if breaking and start_offset == 0:
+                        p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — Kırılım Bölgesinde"
+                        base_score = 90
+                    elif breaking:  # start_offset > 0 → tarihsel formasyon
+                        days_since = len(close) - p3_i
+                        p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — Tamamlandı ({days_since} gün önce)"
+                        base_score = 80
+                    else:  # forming
+                        dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
+                        p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — Tamamlanmasına %{dist_to_rim:.1f} kaldı"
+                        base_score = max(50, 85 - int(dist_to_rim * 1.5))
+                    pattern_found = True
+                    break
 
-            # B) TOBO (Pivot Tabanlı)
-            if not pattern_found and len(lows_piv_gp) >= 3 and len(highs_piv_gp) >= 2:
-                for scale in [3, 2, 1]:
-                    lookback = 60 * scale
-                    if bar_total_gp < lookback: continue
-                    window_lows  = [(i, p) for (i, p) in lows_piv_gp  if i >= bar_total_gp - lookback]
-                    window_highs = [(i, p) for (i, p) in highs_piv_gp if i >= bar_total_gp - lookback]
-                    if len(window_lows) < 3 or len(window_highs) < 2: continue
-                    head_idx, head_p = min(window_lows, key=lambda x: x[1])
-                    left_lows  = [(i, p) for (i, p) in window_lows if i < head_idx]
-                    right_lows = [(i, p) for (i, p) in window_lows if i > head_idx]
-                    if not left_lows or not right_lows: continue
-                    ls_idx, ls_p = max(left_lows,  key=lambda x: x[0])
-                    rs_idx, rs_p = min(right_lows, key=lambda x: x[0])
-                    left_neck  = [(i, p) for (i, p) in window_highs if ls_idx < i < head_idx]
-                    right_neck = [(i, p) for (i, p) in window_highs if head_idx < i < rs_idx + 20]
-                    if not left_neck or not right_neck: continue
-                    _, ln_p = max(left_neck,  key=lambda x: x[1])
-                    _, rn_p = max(right_neck, key=lambda x: x[1])
-                    neck = (ln_p + rn_p) / 2
-                    sym_ok    = abs(ls_p - rs_p) / ls_p < 0.10
-                    head_deep = head_p < ls_p * 0.97 and head_p < rs_p * 0.97
-                    if sym_ok and head_deep:
-                        breaking    = (curr_price >= neck * 0.98) and (curr_price <= neck * 1.04)
-                        approaching = curr_price > rs_p and not breaking
-                        if breaking or approaching:
-                            pattern_found = True
-                            if breaking:
-                                p_name = f"🧛 TOBO Kırılımı | Hacim: {vol_ratio:.1f}x"
-                                base_score = 90
-                            else:
-                                dist_pct = ((neck - curr_price) / curr_price) * 100
-                                penalty = int(dist_pct * 1.5)
-                                p_name = f"⏳ OLUŞAN TOBO (Kırılıma %{dist_pct:.1f}) | Hacim: {vol_ratio:.1f}x"
-                                base_score = 85 - penalty
-                            break
+            # B) TOBO — Zigzag şablonu: L → H → L*(baş) → H → L(sağ omuz)
+            # Kritik kural: fiyat neckline'ın %25'inden uzakta olamaz → %-54 yanlış pozitif yok
+            if not pattern_found and len(zz_chron) >= 5:
+                for start_offset in range(min(15, len(zz_chron) - 4)):
+                    p1_i, p1_v, p1_t = zz_chron[-(5 + start_offset)]
+                    p2_i, p2_v, p2_t = zz_chron[-(4 + start_offset)]
+                    p3_i, p3_v, p3_t = zz_chron[-(3 + start_offset)]
+                    p4_i, p4_v, p4_t = zz_chron[-(2 + start_offset)]
+                    p5_i, p5_v, p5_t = zz_chron[-(1 + start_offset)]
+                    # 1 yıldan önce başlayan paterni atla
+                    if p1_i < len(close) - 252: break
+                    if not (p1_t=='L' and p2_t=='H' and p3_t=='L' and p4_t=='H' and p5_t=='L'): continue
+                    ls_p, neck_l, head_p, neck_r, rs_p = p1_v, p2_v, p3_v, p4_v, p5_v
+                    neck = (neck_l + neck_r) / 2
+                    head_deep   = head_p < ls_p * 0.95 and head_p < rs_p * 0.95
+                    sym         = abs(ls_p - rs_p) / ls_p < 0.10
+                    neck_flat   = abs(neck_l - neck_r) / neck_l < 0.06
+                    pat_wide    = (p5_i - p1_i) >= 40  # Min 40 bar (~2 ay) — downtrend içi noise elenir
+                    recovery    = (rs_p - head_p) / (neck - head_p) if (neck - head_p) > 0 else 0
+                    recovery_ok = recovery >= 0.50  # Sağ omuz boyuna en az %50 yaklaşmış olmalı
+                    if not (head_deep and sym and neck_flat and pat_wide and recovery_ok): continue
+                    if start_offset == 0:
+                        breaking  = curr_price >= neck * 0.97 and curr_price <= neck * 1.06
+                        # Neckline'a %25'ten fazla uzak olamaz → BURCE gibi %-54 yok
+                        forming   = (curr_price > rs_p * 1.01
+                                     and curr_price >= neck * 0.75    # Max %25 uzakta
+                                     and curr_price < neck * 0.96)
+                        active    = breaking or forming
+                        is_breakout = breaking
+                    else:
+                        active = curr_price >= neck * 0.97
+                        is_breakout = active
+                    if not active: continue
+                    dur_months = max(1, round((p5_i - p1_i) / 21))
+                    if is_breakout and start_offset == 0:
+                        p_name = f"🧛 TOBO ({dur_months} Ay) — Kırılım Bölgesinde"
+                        base_score = 92
+                    elif is_breakout:  # start_offset > 0 → tarihsel formasyon
+                        days_since = len(close) - p5_i
+                        p_name = f"🧛 TOBO ({dur_months} Ay) — Tamamlandı ({days_since} gün önce)"
+                        base_score = 80
+                    else:  # forming
+                        dist_to_neck = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
+                        p_name = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — Tamamlanmasına %{dist_to_neck:.1f} kaldı"
+                        base_score = 72
+                    pattern_found = True
+                    break
             
             # --- 3. LİSTEYE ALMA VE PUANLAMA ---
             if pattern_found:
@@ -4956,6 +4954,7 @@ def calculate_ict_deep_analysis(ticker):
             sweep_txt = f"🧹 SSL Sweep (Dip Avı): {last_sl:.2f}"
         # --- 👆 ------------------------------------------------------------- 👆 ---
         # FVG ve OB Taraması
+        _ob_l = _ob_h = _fvg_l = _fvg_h = 0.0   # Fiyat cetveli için sayısal değerler
         bullish_fvgs = []; bearish_fvgs = []
         active_fvg_txt = "Yok"
         for i in range(len(df)-30, len(df)-1):
@@ -5019,6 +5018,7 @@ def calculate_ict_deep_analysis(ticker):
                 f = bullish_fvgs[-1]
                 active_fvg_txt = f"Açık FVG var (Destek): {f['bot']:.2f} - {f['top']:.2f}"
                 fvg_bar_idx = f['idx']
+                _fvg_l = f['bot']; _fvg_h = f['top']
             lowest_idx = df['Low'].iloc[start_idx:].idxmin()
             if isinstance(lowest_idx, pd.Timestamp): lowest_idx = df.index.get_loc(lowest_idx)
             for i in range(lowest_idx, max(0, lowest_idx-5), -1):
@@ -5030,6 +5030,7 @@ def calculate_ict_deep_analysis(ticker):
                         break  # OB fiyatın üstünde → Talep değil, gösterme
                     active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Talep Bölgesi){ob_q_txt}"
                     mean_threshold = (ob_low + ob_high) / 2
+                    _ob_l = ob_low; _ob_h = ob_high
                     ob_bar_idx = i
                     break
         elif bias == "bearish" or bias == "bearish_retrace":
@@ -5037,6 +5038,7 @@ def calculate_ict_deep_analysis(ticker):
                 f = bearish_fvgs[-1]
                 active_fvg_txt = f"Açık FVG var (Direnç): {f['bot']:.2f} - {f['top']:.2f}"
                 fvg_bar_idx = f['idx']
+                _fvg_l = f['bot']; _fvg_h = f['top']
             highest_idx = df['High'].iloc[start_idx:].idxmax()
             if isinstance(highest_idx, pd.Timestamp): highest_idx = df.index.get_loc(highest_idx)
             for i in range(highest_idx, max(0, highest_idx-5), -1):
@@ -5048,6 +5050,7 @@ def calculate_ict_deep_analysis(ticker):
                         break  # OB fiyatın altında → Arz değil, gösterme
                     active_ob_txt = f"{ob_low:.2f} - {ob_high:.2f} (Arz Bölgesi){ob_q_txt}"
                     mean_threshold = (ob_low + ob_high) / 2
+                    _ob_l = ob_low; _ob_h = ob_high
                     ob_bar_idx = i
                     break
 
@@ -5270,6 +5273,8 @@ def calculate_ict_deep_analysis(ticker):
             "sweep_txt": sweep_txt,
             "model_score": model_score, "model_checks": model_checks,
             "ob_age": ob_age, "fvg_age": fvg_age, "struct_age": struct_age,
+            "ob_low_num": _ob_l, "ob_high_num": _ob_h,
+            "fvg_low_num": _fvg_l, "fvg_high_num": _fvg_h,
         }
 
     except Exception: return error_ret
@@ -7315,6 +7320,113 @@ def render_ict_deep_panel(ticker):
         else:                  _snote = f" <span style='color:#ef4444;font-size:0.72rem;'>⚠️ Eski yapı ({struct_age} gün önce)</span>"
         struct_desc = struct_desc + _snote
 
+    # ---------------------------------------------------------------
+    # FİYAT HARİTASI — seviyeleri fiyat sırasına göre liste olarak göster
+    # ---------------------------------------------------------------
+    def _price_ruler_html(d, dark):
+        cp   = d.get('curr_price', 0)
+        ob_l = d.get('ob_low_num', 0);  ob_h = d.get('ob_high_num', 0)
+        fg_l = d.get('fvg_low_num', 0); fg_h = d.get('fvg_high_num', 0)
+        mt   = d.get('mean_threshold', 0)
+        tgt  = d.get('target', 0)
+        is_bull = "bullish" in d.get('bias', '')
+        if cp == 0: return ""
+
+        def fmt(p):
+            if p >= 10000: return f"{p:,.0f}"
+            elif p >= 100: return f"{p:.0f}"
+            else:          return f"{p:.2f}"
+
+        # Her seviye: (fiyat, etiket, renk, bant_grubu, band_bg)
+        # bant_grubu: aynı gruba alanlar arası dolgu çizgisi çekiliyor
+        levels = []
+        ob_col  = "#ef4444" if not is_bull else "#38bdf8"
+        ob_bg   = "rgba(239,68,68,0.08)" if not is_bull else "rgba(56,189,248,0.08)"
+        ob_lbl  = "OB Arz" if not is_bull else "OB Talep"
+        if ob_h > 0: levels.append((ob_h, f"{ob_lbl} Üst", ob_col, "ob", ob_bg))
+        if ob_l > 0: levels.append((ob_l, f"{ob_lbl} Alt", ob_col, "ob", ob_bg))
+        if fg_h > 0: levels.append((fg_h, "FVG Üst", "#a78bfa", "fvg", "rgba(139,92,246,0.08)"))
+        if fg_l > 0: levels.append((fg_l, "FVG Alt", "#a78bfa", "fvg", "rgba(139,92,246,0.08)"))
+        if mt  > 0:  levels.append((mt,   "Denge",   "#f59e0b", None, None))
+        if tgt > 0 and abs(tgt - cp) / cp > 0.002:
+            tc = "#10b981" if tgt > cp else "#fb923c"
+            levels.append((tgt, "Hedef", tc, None, None))
+
+        # Mevcut fiyatı da listeye ekle (işaretçi olarak)
+        levels.append((cp, "▶ MEVCUT", "#10b981" if is_bull else "#f87171", "current", None))
+
+        # Fiyata göre azalan sırala (yüksek → düşük)
+        levels.sort(key=lambda x: x[0], reverse=True)
+
+        txt_main  = "#e2e8f0" if dark else "#1e293b"
+        txt_muted = "#64748b" if dark else "#94a3b8"
+        border_c  = "rgba(255,255,255,0.06)" if dark else "rgba(0,0,0,0.06)"
+
+        rows = []
+        prev_group = None
+        for price, label, color, group, band_bg in levels:
+            is_current = group == "current"
+            row_bg = ""
+            if is_current:
+                row_bg = f"background:rgba({'16,185,129' if is_bull else '248,113,113'},0.12);border-radius:4px;border:1px solid {color}40;"
+            elif band_bg:
+                row_bg = f"background:{band_bg};"
+
+            # Bant değişimlerinde ince ayraç
+            sep = ""
+            if prev_group and group != prev_group and not is_current:
+                sep = f"<div style='height:6px;'></div>"
+            prev_group = group
+
+            weight = "800" if is_current else "600"
+            size   = "0.75rem" if is_current else "0.7rem"
+
+            rows.append(
+                sep +
+                f"<div style='display:flex;align-items:center;padding:3px 6px;{row_bg}'>"
+                f"<div style='width:3px;height:14px;background:{color};border-radius:2px;margin-right:7px;flex-shrink:0;'></div>"
+                f"<span style='flex:1;font-size:{size};color:{color if is_current else txt_muted};font-weight:{weight};'>{label}</span>"
+                f"<span style='font-family:monospace;font-size:{size};color:{color if is_current else txt_main};font-weight:{weight};'>{fmt(price)}</span>"
+                f"</div>"
+            )
+
+        if not rows:
+            return ""
+
+        bg_c = "rgba(17,24,39,0.3)" if dark else "rgba(248,250,252,0.8)"
+        return (
+            f"<div style='background:{bg_c};border-radius:6px;padding:4px 2px;margin-bottom:8px;'>"
+            + "".join(rows) +
+            "</div>"
+        )
+
+    ruler_html = _price_ruler_html(data, st.session_state.dark_mode)
+
+    # --- BASİT AÇIKLAMALAR (yeni başlayanlar için, sol sütun) ---
+    zone_simple = ("Fiyat şu an 'pahalı bölge'de. Büyük oyuncular bu seviyelerde satış yapmayı veya kâr almayı tercih eder."
+                   if "PREMIUM" in data['zone'] else
+                   "Fiyat şu an 'ucuz bölge'de. Büyük oyuncular bu seviyelerden alım yapmayı sever.")
+    if _ob_none:
+        ob_simple = "Yakınlarda net bir kurum bloğu tespit edilemedi — fiyat belirsiz bir alanda."
+    elif _ob_worn:
+        ob_simple = "Kurum bloğu var ama defalarca test edilmiş. Sipariş duvarı büyük ölçüde eridi — dikkatli ol."
+    elif _ob_fresh:
+        ob_simple = "Taze kurum bloğu! Büyük fonların emirleri burada duruyor. Fiyat gelirse güçlü tepki beklenir."
+    elif _ob_second:
+        ob_simple = "Kısmen tüketilmiş kurum bloğu. Hâlâ tepki verebilir ama taze kadar güçlü değil."
+    else:
+        ob_simple = "Kurumsal işlem bölgesi mevcut. Fiyat buraya gelirse tepki verebilir."
+    if "Destek" in data['fvg_txt']:
+        fvg_simple = "Doldurulmamış fiyat boşluğu var. Fiyat bu alana geri döndüğünde destek görebilir."
+    elif "Direnç" in data['fvg_txt']:
+        fvg_simple = "Doldurulmamış fiyat boşluğu var. Fiyat bu alana ulaştığında direnç görebilir."
+    else:
+        fvg_simple = "Fiyat boşluğu tespit edilemedi — temiz bir alan."
+    if is_bullish_bias:
+        tgt_simple = f"Kısa vadeli ilk hedef: <b>{data['target']:.2f}</b>. Fiyat buraya yaklaşınca kâr satışları gelebilir."
+    else:
+        tgt_simple = f"Kısa vadeli ilk destek: <b>{data['target']:.2f}</b>. Fiyat burada alıcı bulup bulamayacağını test edecek."
+
     if st.session_state.dark_mode:
         mc = "#10b981" if "bullish" in data['bias'] else "#ef4444" if "bearish" in data['bias'] else "#8b5cf6"
         bg = "rgba(16, 185, 129, 0.1)" if "bullish" in data['bias'] else "rgba(239, 68, 68, 0.1)" if "bearish" in data['bias'] else "rgba(139, 92, 246, 0.1)"
@@ -7337,12 +7449,35 @@ def render_ict_deep_panel(ticker):
             with hc2: st.markdown(f"""<div style="border:1px solid rgba(239, 68, 68, 0.3); background:rgba(239, 68, 68, 0.1); padding:12px; border-radius:8px; margin-top:12px; margin-bottom:12px; height: 100%;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><div style="font-weight:800; color:#f87171; font-size:0.9rem; text-transform: uppercase;">🎯 Yakın Hedef</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.2rem; color:#f87171; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 6px;">{data['target']:.2f}</div></div><div style="font-size:0.75rem; color:#cbd5e1; line-height:1.4; margin-bottom:10px;">{liq_desc}</div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px;"><div style="font-weight:800; color:#fb923c; font-size:0.9rem;">{struct_target_label}</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.1rem; color:#fb923c; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 6px;">{structural_target_val:.2f}</div></div><div style="font-size:0.75rem; color:#cbd5e1; line-height:1.4;">{struct_target_desc}</div></div>""", unsafe_allow_html=True)
         with c2:
             st.markdown(f"""
-            <div style="border:1px solid rgba(255,255,255,0.1); background:rgba(17, 24, 39, 0.6); border-radius:8px; padding:16px; height:100%;">
-                <div style="font-weight:800; color:#f472b6; font-size:0.9rem; text-transform: uppercase; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px; margin-bottom:12px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#fb7185; font-size:0.85rem; margin-bottom: 2px;">KONUM: <span style="color:#e2e8f0; font-weight: 600; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">{data['zone']}</span></div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{zone_desc}</div></div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#c084fc; font-size:0.85rem; margin-bottom: 2px;">GAP (FVG): <span style="color:#e2e8f0; font-family: 'JetBrains Mono'; font-weight: 700; background: rgba(139, 92, 246, 0.15); padding: 2px 6px; border-radius: 4px;">{data['fvg_txt']}</span>{fvg_age_badge}</div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{fvg_desc}</div></div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#38bdf8; font-size:0.85rem; margin-bottom: 2px;">AKTİF OB: <span style="color:#e2e8f0; font-family: 'JetBrains Mono'; font-weight: 700; background: rgba(56, 189, 248, 0.15); padding: 2px 6px; border-radius: 4px;">{data['ob_txt']}</span>{ob_age_badge}</div><div style="font-size:0.8rem; color:#94a3b8; line-height:1.3;">{ob_desc}</div></div>
-                <div style="margin-bottom:14px; background: rgba(245, 158, 11, 0.05); padding: 8px; border-radius: 6px; border-left: 3px solid #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2);"><div style="font-weight:800; color:#fbbf24; font-size:0.85rem; margin-bottom: 4px;">HAVUZ / SWEEP: <span style="color:#e2e8f0; font-weight: 600;">{data.get('eqh_eql_txt', '-')} | {data.get('sweep_txt', '-')}</span></div><div style="font-size:0.75rem; color:#94a3b8; line-height:1.3;">🧲 <b>Mıknatıs & Av:</b> EQH/EQL, potansiyel tuzak alanlarıdır. Fiyat buraları kırıp hızla geri dönüyorsa (Sweep), büyük fonlar stopları patlatıp yönü değiştiriyor olabilir.</div></div>
+            <div style="border:1px solid rgba(255,255,255,0.1); background:rgba(17,24,39,0.6); border-radius:8px; padding:12px; height:100%;">
+                <div style="font-weight:800; color:#f472b6; font-size:0.9rem; text-transform:uppercase; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:6px; margin-bottom:10px;">📍 FİYAT HARİTASI</div>
+                <div style="display:grid; grid-template-columns:54% 44%; gap:10px; align-items:start;">
+                    <div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size:0.67rem; font-weight:800; color:#fb7185; margin-bottom:3px;">📍 KONUM — {data['zone']}</div>
+                            <div style="font-size:0.71rem; color:#cbd5e1; line-height:1.45;">{zone_simple}</div>
+                        </div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size:0.67rem; font-weight:800; color:#38bdf8; margin-bottom:3px;">🧱 KURUM BLOĞU {ob_age_badge}</div>
+                            <div style="font-size:0.71rem; color:#cbd5e1; line-height:1.45;">{ob_simple}</div>
+                        </div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                            <div style="font-size:0.67rem; font-weight:800; color:#a78bfa; margin-bottom:3px;">⚡ BOŞLUK (FVG) {fvg_age_badge}</div>
+                            <div style="font-size:0.71rem; color:#cbd5e1; line-height:1.45;">{fvg_simple}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.67rem; font-weight:800; color:#fb923c; margin-bottom:3px;">🎯 HEDEF</div>
+                            <div style="font-size:0.71rem; color:#cbd5e1; line-height:1.45;">{tgt_simple}</div>
+                        </div>
+                    </div>
+                    <div>
+                        {ruler_html}
+                        <div style="font-size:0.65rem; line-height:1.6; margin-top:4px;">
+                          <div><span style="color:#6ee7b7; font-weight:700;">HAVUZ:</span> <span style="color:#94a3b8;">{data.get('eqh_eql_txt','-')}</span></div>
+                          <div><span style="color:#fca5a5; font-weight:700;">SWEEP:</span> <span style="color:#94a3b8;">{data.get('sweep_txt','-')}</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>""", unsafe_allow_html=True)
         st.markdown(f"""<div style="background:rgba(56, 189, 248, 0.07); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:16px; margin-top:10px; text-align: center;"><div style="font-weight:800; color:#7dd3fc; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#e2e8f0; font-style:italic; line-height:1.5; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
     else:
@@ -7363,12 +7498,35 @@ def render_ict_deep_panel(ticker):
             with hc2: st.markdown(f"""<div style="border:2px solid #e11d48; background:#fff1f2; padding:12px; border-radius:8px; margin-top:12px; margin-bottom:12px; height: 100%;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase;">🎯 Yakın Hedef</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.2rem; color:#be185d; background: white; padding: 2px 8px; border-radius: 6px;">{data['target']:.2f}</div></div><div style="font-size:0.75rem; color:#7f1d1d; line-height:1.4; margin-bottom:10px;">{liq_desc}</div><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; border-top:2px solid #fecdd3; padding-top:6px;"><div style="font-weight:800; color:#c2410c; font-size:0.9rem;">{struct_target_label}</div><div style="font-weight:800; font-family:'JetBrains Mono'; font-size:1.1rem; color:#c2410c; background: white; padding: 2px 8px; border-radius: 6px;">{structural_target_val:.2f}</div></div><div style="font-size:0.75rem; color:#7f1d1d; line-height:1.4;">{struct_target_desc}</div></div>""", unsafe_allow_html=True)
         with c2:
             st.markdown(f"""
-            <div style="border:2px solid #cbd5e1; background:white; border-radius:8px; padding:16px; height:100%;">
-                <div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform: uppercase; border-bottom:2px solid #e2e8f0; padding-bottom:8px; margin-bottom:12px;">📍 GİRİŞ/ÇIKIŞ REFERANSLARI</div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#9f1239; font-size:0.85rem; margin-bottom: 2px;">KONUM: <span style="color:#0f172a; font-weight: 600; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{data['zone']}</span></div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{zone_desc}</div></div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#7e22ce; font-size:0.85rem; margin-bottom: 2px;">GAP (FVG): <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #f3e8ff; padding: 2px 6px; border-radius: 4px;">{data['fvg_txt']}</span>{fvg_age_badge}</div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{fvg_desc}</div></div>
-                <div style="margin-bottom:14px;"><div style="font-weight:800; color:#0369a1; font-size:0.85rem; margin-bottom: 2px;">AKTİF OB: <span style="color:#0f172a; font-family: 'JetBrains Mono'; font-weight: 700; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">{data['ob_txt']}</span>{ob_age_badge}</div><div style="font-size:0.8rem; color:#475569; line-height:1.3;">{ob_desc}</div></div>
-                <div style="margin-bottom:14px; background: #f8fafc; padding: 8px; border-radius: 6px; border-left: 4px solid #ea580c; border: 2px solid #cbd5e1;"><div style="font-weight:800; color:#ea580c; font-size:0.85rem; margin-bottom: 4px;">HAVUZ / SWEEP: <span style="color:#0f172a; font-weight: 600;">{data.get('eqh_eql_txt', '-')} | {data.get('sweep_txt', '-')}</span></div><div style="font-size:0.75rem; color:#475569; line-height:1.3;">🧲 <b>Mıknatıs & Av:</b> EQH/EQL, potansiyel tuzak alanlarıdır. Fiyat buraları kırıp hızla geri dönüyorsa (Sweep), büyük fonlar stopları patlatıp yönü değiştiriyor olabilir.</div></div>
+            <div style="border:2px solid #cbd5e1; background:white; border-radius:8px; padding:12px; height:100%;">
+                <div style="font-weight:800; color:#be185d; font-size:0.9rem; text-transform:uppercase; border-bottom:2px solid #e2e8f0; padding-bottom:6px; margin-bottom:10px;">📍 FİYAT HARİTASI</div>
+                <div style="display:grid; grid-template-columns:54% 44%; gap:10px; align-items:start;">
+                    <div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                            <div style="font-size:0.67rem; font-weight:800; color:#9f1239; margin-bottom:3px;">📍 KONUM — {data['zone']}</div>
+                            <div style="font-size:0.71rem; color:#334155; line-height:1.45;">{zone_simple}</div>
+                        </div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                            <div style="font-size:0.67rem; font-weight:800; color:#0369a1; margin-bottom:3px;">🧱 KURUM BLOĞU {ob_age_badge}</div>
+                            <div style="font-size:0.71rem; color:#334155; line-height:1.45;">{ob_simple}</div>
+                        </div>
+                        <div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                            <div style="font-size:0.67rem; font-weight:800; color:#7e22ce; margin-bottom:3px;">⚡ BOŞLUK (FVG) {fvg_age_badge}</div>
+                            <div style="font-size:0.71rem; color:#334155; line-height:1.45;">{fvg_simple}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.67rem; font-weight:800; color:#ea580c; margin-bottom:3px;">🎯 HEDEF</div>
+                            <div style="font-size:0.71rem; color:#334155; line-height:1.45;">{tgt_simple}</div>
+                        </div>
+                    </div>
+                    <div>
+                        {ruler_html}
+                        <div style="font-size:0.65rem; line-height:1.6; margin-top:4px;">
+                          <div><span style="color:#16a34a; font-weight:700;">HAVUZ:</span> <span style="color:#475569;">{data.get('eqh_eql_txt','-')}</span></div>
+                          <div><span style="color:#dc2626; font-weight:700;">SWEEP:</span> <span style="color:#475569;">{data.get('sweep_txt','-')}</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>""", unsafe_allow_html=True)
         st.markdown(f"""<div style="background:#dbeafe; border:2px solid #3b82f6; border-radius:8px; padding:16px; margin-top:10px; text-align: center;"><div style="font-weight:800; color:#1e40af; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#1e3a8a; font-style:italic; line-height:1.5; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
 
@@ -7725,7 +7883,21 @@ def calculate_8_point_roadmap(ticker):
         ema_puan = 8 if abs(cp - sma50)/sma50 < 0.02 else 5
         # Max toplam = 8+7+8 = 23 → /8 skalasına normalize
         enerji_skor = (sq_puan + vol_puan + ema_puan) / 23 * 8
-        m4 = f"<b>Sıkışma:</b> {sq_puan}/8 | <b>Daralma:</b> {vol_puan}/8<br><b>Genel Enerji Skoru:</b> {enerji_skor:.1f} / 8"
+        def _m4_bar(label, val, max_val):
+            pct = (val / max_val) * 100
+            c = "139,92,246"
+            score_color = "#fff" if val >= max_val else "rgba(76,29,149,0.9)"
+            return (
+                f"<div style='margin-bottom:3px;'>"
+                f"<div style='background:rgba({c},0.12);border-radius:3px;height:15px;position:relative;overflow:hidden;'>"
+                f"<div style='width:{pct:.0f}%;background:rgba({c},0.72);height:100%;border-radius:3px;'></div>"
+                f"<span style='position:absolute;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;"
+                f"justify-content:space-between;padding:0 5px;box-sizing:border-box;'>"
+                f"<span style='font-size:0.6rem;font-weight:700;color:#fff;'>{label}</span>"
+                f"<span style='font-size:0.6rem;font-weight:800;color:{score_color};'>{val}/{max_val}</span>"
+                f"</span></div></div>"
+            )
+        m4 = _m4_bar("Sıkışma", sq_puan, 8) + _m4_bar("Daralma", vol_puan, 8) + _m4_bar(f"Enerji", round(enerji_skor, 1), 8)
 
         # --- 5. HACİM ALGORİTMASI (Kurumsal Ayak İzi) ---
         m5_abs = f"<b>Absorption:</b> {fmt(sup_20)} bandında alım ihtimali." if alt_fitil > atr*0.5 else "<b>Absorption:</b> Belirgin bir kurumsal emilim yok."
@@ -7760,11 +7932,25 @@ def calculate_8_point_roadmap(ticker):
                 boga_w += 5 if _stock_ret > _bench_ret else -5
         except: pass
         boga_w = int(min(max(boga_w, 15), 85))
+        ayi_w  = 100 - boga_w
         if boga_w >= 65:   kisa_baski = "Alıcılar baskın, momentum güçlü."
         elif boga_w >= 50: kisa_baski = "Alıcılar hafif önde, trend desteği var."
         elif boga_w >= 35: kisa_baski = "Satış baskısı hafif üstün, dikkatli ol."
         else:              kisa_baski = "Satıcılar baskın, momentum zayıf."
-        m6 = f"<b>Boğa:</b> %{boga_w} | <b>Ayı:</b> %{100-boga_w}<br><b>Durum:</b> {kisa_baski}"
+        m6 = (
+            f"<div style='background:rgba(100,116,139,0.12);border-radius:4px;height:18px;"
+            f"position:relative;overflow:hidden;margin-bottom:4px;'>"
+            f"<div style='width:{boga_w}%;background:rgba(22,163,74,0.78);height:100%;"
+            f"border-radius:4px 0 0 4px;position:absolute;left:0;top:0;'></div>"
+            f"<div style='width:{ayi_w}%;background:rgba(239,68,68,0.75);height:100%;"
+            f"border-radius:0 4px 4px 0;position:absolute;right:0;top:0;'></div>"
+            f"<span style='position:absolute;left:5px;top:50%;transform:translateY(-50%);"
+            f"font-size:0.62rem;font-weight:800;color:#fff;'>🐂 %{boga_w}</span>"
+            f"<span style='position:absolute;right:5px;top:50%;transform:translateY(-50%);"
+            f"font-size:0.62rem;font-weight:800;color:#fff;'>🐻 %{ayi_w}</span>"
+            f"</div>"
+            f"<div style='font-size:0.65rem;line-height:1.3;'>{kisa_baski}</div>"
+        )
 
         # --- 7. AYI BOĞA SENARYOLARI (Kompakt ve Hedefli) ---
         h1 = res_20 + (atr*1.5)
@@ -9546,7 +9732,7 @@ Bu iki veriyi (grafikte gördüklerini ve aşağıda okuduklarını) birleştire
 Aşağıdaki herhangi bir veri noktası 'Bilinmiyor' veya 'Yok' olarak gelmişse, o alanı yorumlamaya zorlama — mevcut diğer verilerle sentezini yap.
 
 Senin gizli gücün, bu kurumsal derinliği Twitter'daki @SMRadar_2026 topluluğu için vurucu, merak uyandırıcı ve etkileşim odaklı bir hikayeye dönüştürebilmendir. Sen sadece veri okumuyorsun; o verinin içindeki Akıllı Para niyetini deşifre edip halkın anlayacağı dille bir "Piyasa Pusulası" sunuyorsun.
-Görevin veriyi sadece raporlamak değil, içindeki insani ve kurumsal niyetleri deşifre etmektir. Bir makine gibi steril değil; masanın öbür tarafında oturan, şüpheci, sezgileri kuvvetli ve tecrübeli bir stratejist gibi konuş. Analizlerin içine "Açıkçası bu tablo beni biraz rahatsız ediyor", "Risk-getiri konusunda tecrübem bu noktada temkinli olmayı söylüyor", "Tecrübelerim bana şunu söylüyor", "Piyasa burada bir bit yeniği saklıyor olabilir", "Bu kadar uyum beni düşündürüyor — gerçekten bu kadar temiz mi?" gibi insani, samimi ve tecrübe odaklı cümleler serpiştir.
+Görevin veriyi sadece raporlamak değil, içindeki insani ve kurumsal niyetleri deşifre etmektir. Bir makine gibi steril değil; masanın öbür tarafında oturan, şüpheci, sezgileri kuvvetli ve tecrübeli bir stratejist gibi konuş. Analizlerin içine "Açıkçası bu tablo beni biraz rahatsız ediyor", "Risk-getiri konusunda tecrübem bu noktada temkinli olmayı söylüyor", "Tecrübelerim bana şunu söylüyor", "Tecrübelerime göre...", "Piyasa burada bir bit yeniği saklıyor olabilir", "Bu kadar uyum beni düşündürüyor — gerçekten bu kadar temiz mi?" gibi insani, samimi ve tecrübe odaklı cümleler serpiştir. Arada cümlelere "Dostlar" diyerek  başla.
 {kanca_talimat}
     
 *** KESİN DİL VE HUKUKİ GÜVENLİK PROTOKOLÜ ***
@@ -9799,7 +9985,7 @@ EĞER TOBO, Fincan-Kulp veya Yükselen Üçgen kırılımı varsa:
 → Analizi büyük yapısal formasyonun tamamlanması üzerine kur.
 
 EĞER yukarıdakilerin hiçbiri yoksa (Nötr/Konsolidasyon):
-→ Sıralama: Birinci → Üçüncü → Dördüncü → İkinci
+→ Sıralama: Dördüncü → Üçüncü → Birinci → İkinci
 → Analizi "neden beklemek gerekir" ve kırılım şartları üzerine kur.
 NOT: Hangi sırayı seçersen seç, tüm 4 görevi eksiksiz tamamla. 
 Sadece sunum sırası değişiyor.
