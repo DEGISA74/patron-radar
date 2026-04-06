@@ -29,7 +29,9 @@ def is_yahoo_update_needed(ticker, local_last_date):
     """
     Piyasa saatlerine göre Yahoo'ya gitmenin gerekip gerekmediğini denetler.
     """
-    now = datetime.now()
+    from datetime import timezone, timedelta as _td
+    _TR = timezone(_td(hours=3))
+    now = datetime.now(_TR).replace(tzinfo=None)   # tz-naive TR saati
     weekday = now.weekday()  # 0=Pazartesi, 5=Cumartesi, 6=Pazar
     hour_min = now.hour * 100 + now.minute
     local_date = local_last_date.date()
