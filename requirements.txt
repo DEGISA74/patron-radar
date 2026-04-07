@@ -6,4 +6,4 @@ textblob
 google-generativeai
 ta>=0.11.0
 matplotlib
-
+plotly
