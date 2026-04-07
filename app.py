@@ -4049,7 +4049,8 @@ def compile_top_20_summary():
     elif isinstance(_gp_raw, pd.DataFrame):
         add_candidates(_gp_raw, '💎 Altın Fırsat', limit=10)
     add_candidates(st.session_state.get('harmonic_data'), '🔮 Harmonik PRZ', limit=5)
-    
+    add_candidates(st.session_state.get('harmonic_confluence_data'), '⚡ Harmonik Confluence (3\'lü Teyit)', limit=5)
+
     candidate_list = [{'Sembol': k, **v} for k, v in candidates.items()]
     
     # 2. TEKNİK SINAV (HİYERARŞİK SKORLAMA)
@@ -4114,6 +4115,12 @@ def compile_confluence_hits():
     add_to_group('formasyon', st.session_state.get('accum_data'),     'Gizli Birikim')
     add_to_group('formasyon', st.session_state.get('breakout_right'), 'Confirmed Breakout')
     add_to_group('formasyon', st.session_state.get('harmonic_data'),  'Harmonik PRZ')
+    # Harmonik Confluence = 3 bağımsız metodoloji (Harmonik + ICT + RSI) → her 3 gruba ekle
+    _hconf_df = st.session_state.get('harmonic_confluence_data')
+    if _hconf_df is not None and not (hasattr(_hconf_df, 'empty') and _hconf_df.empty):
+        add_to_group('yapi',      _hconf_df, 'Harmonik Confluence')
+        add_to_group('momentum',  _hconf_df, 'Harmonik Confluence')
+        add_to_group('formasyon', _hconf_df, 'Harmonik Confluence')
 
     # --- KAÇ GRUP TARANMIŞ ---
     scanned_groups = [k for k, v in groups.items() if v['scanned']]
@@ -6022,6 +6029,11 @@ def calculate_harmonic_patterns(ticker, df):
                     continue
 
                 _pidx = [Xi, Ai, Bi, Ci, Di]
+                # Bullish: X=low,A=high,B=low,C=high,D=low  /  Bearish: X=high,A=low,B=high,C=low,D=high
+                if direction == 'Bullish':
+                    _pprices = [l[Xi], h[Ai], l[Bi], h[Ci], l[Di]]
+                else:
+                    _pprices = [h[Xi], l[Ai], h[Bi], l[Ci], h[Di]]
 
                 pat = None
                 if ok(AB_XA, 0.618) and ok(BC_AB, lo=0.382, hi=0.886) and ok(CD_BC, lo=1.272, hi=1.618) and ok(XD_XA, 0.786):
@@ -6039,7 +6051,7 @@ def calculate_harmonic_patterns(ticker, df):
                     return {'pattern': pat, 'direction': direction, 'prz': prz,
                             'AB_XA': round(AB_XA, 3), 'XD_XA': round(XD_XA, 3),
                             'bars_ago': bars_ago, 'curr_price': curr_price,
-                            'pivot_idx': _pidx, 'state': 'fresh'}
+                            'pivot_idx': _pidx, 'pivot_prices': _pprices, 'state': 'fresh'}
 
         # ── AŞAMA 2: YAKLAŞAN (XABC tamamlandı, D henüz oluşmadı) ─────────
         # CD bacağının tahmini bitiş noktasını Fibonacci ortalamasıyla hesapla
@@ -6103,10 +6115,15 @@ def calculate_harmonic_patterns(ticker, df):
                         (direction == 'Bearish' and curr_price >= projected * 0.92)
                     )
                     if dist <= 8 and heading_right:
+                        if direction == 'Bullish':
+                            _app = [l[Xi], h[Ai], l[Bi], h[Ci], None]
+                        else:
+                            _app = [h[Xi], l[Ai], h[Bi], l[Ci], None]
                         return {'pattern': pat, 'direction': direction, 'prz': projected,
                                 'AB_XA': round(AB_XA, 3), 'XD_XA': 0,
                                 'bars_ago': 0, 'curr_price': curr_price,
                                 'pivot_idx': [Xi, Ai, Bi, Ci, None],
+                                'pivot_prices': _app,
                                 'state': 'approaching',
                                 'bars_since_c': bars_since_c}
 
@@ -6210,20 +6227,24 @@ def render_harmonic_banner(ticker):
         # XABCD tarihleri
         pivot_labels = ['X', 'A', 'B', 'C', 'D']
         pivot_dates_html = ""
-        p_idx = res.get('pivot_idx', [])
+        p_idx    = res.get('pivot_idx', [])
+        p_prices = res.get('pivot_prices', [])
         if p_idx and len(p_idx) == 5:
             rows = []
-            for lbl, idx in zip(pivot_labels, p_idx):
+            for k, (lbl, idx) in enumerate(zip(pivot_labels, p_idx)):
                 try:
                     if idx is None:
-                        dt_str = "bekleniyor"
+                        dt_str  = "bekleniyor"
+                        px_str  = ""
                     else:
-                        dt = df.index[idx]
-                        dt_str = pd.Timestamp(dt).strftime('%d/%m/%Y')
+                        dt      = df.index[idx]
+                        dt_str  = pd.Timestamp(dt).strftime('%d/%m/%Y')
+                        px_val  = p_prices[k] if k < len(p_prices) and p_prices[k] is not None else None
+                        px_str  = f" <span style='color:#94a3b8;'>{px_val:.2f}</span>" if px_val else ""
                 except Exception:
-                    dt_str = "?"
-                rows.append(f"<span style='display:inline-block;min-width:130px;'>"
-                            f"<b style='color:#aaa;'>{lbl}:</b> {dt_str}</span>")
+                    dt_str = "?"; px_str = ""
+                rows.append(f"<span style='display:inline-block;min-width:150px;'>"
+                            f"<b style='color:#aaa;'>{lbl}:</b> {dt_str}{px_str}</span>")
             pivot_dates_html = (
                 "<div style='margin-top:8px; font-size:0.75rem; color:#ccc; "
                 "background:rgba(255,255,255,0.05); border-radius:5px; padding:6px 10px; "
@@ -6278,6 +6299,167 @@ def render_harmonic_banner(ticker):
         ''', unsafe_allow_html=True)
     except Exception:
         pass
+
+
+# ==============================================================================
+# ⚡ HARMONİK CONFLUENCE MOTORU (Harmonic PRZ + ICT Discount + RSI Div)
+# ==============================================================================
+
+def calculate_harmonic_confluence(ticker, df=None):
+    """
+    Üç metodolojinin aynı anda çakışmasını kontrol eder:
+      1. Harmonik formasyon (fresh veya approaching)
+      2. ICT Discount (Bullish) veya Premium (Bearish) bölgesi
+      3. RSI Uyumsuzluğu (Bullish → bullish div, Bearish → bearish div)
+    Tümü sağlanıyorsa dict döner, aksi halde None.
+    """
+    try:
+        if df is None:
+            df = get_safe_historical_data(ticker, period="1y")
+        if df is None or df.empty:
+            return None
+
+        harm = calculate_harmonic_patterns(ticker, df)
+        if not harm:
+            return None
+
+        ict = calculate_ict_deep_analysis(ticker) or {}
+        zone = ict.get('zone', '')
+        direction = harm['direction']
+
+        if direction == 'Bullish' and 'DISCOUNT' not in zone.upper():
+            return None
+        if direction == 'Bearish' and not any(k in zone.upper() for k in ('PREMIUM', 'SUPPLY', 'OB')):
+            return None
+
+        pa = calculate_price_action_dna(ticker) or {}
+        div_type = pa.get('div', {}).get('type', 'neutral')
+
+        if direction == 'Bullish' and div_type != 'bullish':
+            return None
+        if direction == 'Bearish' and div_type != 'bearish':
+            return None
+
+        return {
+            'pattern':   harm['pattern'],
+            'direction': direction,
+            'prz':       harm['prz'],
+            'state':     harm.get('state', 'fresh'),
+            'zone':      zone,
+            'div_type':  div_type,
+            'AB_XA':     harm['AB_XA'],
+            'XD_XA':     harm['XD_XA'],
+            'bars_ago':  harm['bars_ago'],
+        }
+    except Exception:
+        return None
+
+
+def render_harmonic_confluence_banner(ticker):
+    """
+    BİREYSEL HİSSE — Harmonik Confluence varsa özel mor rozet gösterir.
+    """
+    try:
+        df = get_safe_historical_data(ticker, period="1y")
+        res = calculate_harmonic_confluence(ticker, df)
+        if not res:
+            return
+
+        _EMOJI = {'Gartley': '🦋', 'Butterfly': '🦋', 'Bat': '🦇', 'Crab': '🦀', 'Shark': '🦈'}
+        emoji   = _EMOJI.get(res['pattern'], '🔮')
+        dir_lbl = "🟢 LONG" if res['direction'] == 'Bullish' else "🔴 SHORT"
+        state_lbl = "PRZ'de" if res['state'] == 'fresh' else "PRZ'ye Yaklaşıyor"
+
+        st.markdown(f'''
+        <div style="background:#1e0f3a; border:2px solid #7c3aed; border-radius:8px;
+                    padding:13px; margin-top:8px; margin-bottom:10px;
+                    box-shadow:0 0 12px rgba(124,58,237,0.3);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-size:1.3rem;">⚡</span>
+                    <span style="color:#e9d5ff; font-weight:900; font-size:1rem; margin-left:8px;">
+                        HARMONİK CONFLUENCE — {res["pattern"].upper()}
+                    </span>
+                    <span style="color:#c4b5fd; font-size:0.78rem; margin-left:8px;">{dir_lbl}</span>
+                </div>
+                <span style="background:rgba(124,58,237,0.35); color:#e9d5ff; padding:3px 10px;
+                             border-radius:10px; font-weight:800; font-size:0.85rem;">
+                    PRZ: {res["prz"]:.2f}
+                </span>
+            </div>
+            <div style="margin-top:9px; display:flex; flex-wrap:wrap; gap:7px;">
+                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
+                             border-radius:5px; font-size:0.78rem; font-weight:700;">
+                    {emoji} Harmonik: {res["pattern"]} ({state_lbl})
+                </span>
+                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
+                             border-radius:5px; font-size:0.78rem; font-weight:700;">
+                    🧭 ICT: {res["zone"]}
+                </span>
+                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
+                             border-radius:5px; font-size:0.78rem; font-weight:700;">
+                    💎 RSI Diverjans: {"Pozitif (Boğa)" if res["div_type"] == "bullish" else "Negatif (Ayı)"}
+                </span>
+            </div>
+            <div style="margin-top:8px; font-size:0.73rem; color:#a78bfa; font-style:italic;">
+                3 bağımsız metodoloji aynı PRZ'yi işaret ediyor. En yüksek kaliteli harmonik setup.
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
+@st.cache_data(ttl=900)
+def scan_harmonic_confluence_batch(asset_list):
+    """
+    Tüm listede Harmonic + ICT Discount + RSI Div üçlü confluence tarar.
+    """
+    data = get_batch_data_cached(asset_list, period="1y")
+    if data is None or (hasattr(data, 'empty') and data.empty):
+        return pd.DataFrame()
+
+    results = []
+    _EMOJI = {'Gartley': '🦋', 'Butterfly': '🦋', 'Bat': '🦇', 'Crab': '🦀', 'Shark': '🦈'}
+
+    for symbol in asset_list:
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if symbol not in data.columns.levels[0]:
+                    continue
+                df = data[symbol].dropna()
+            else:
+                df = data.dropna()
+
+            if len(df) < 60:
+                continue
+
+            res = calculate_harmonic_confluence(symbol, df)
+            if res:
+                emoji = _EMOJI.get(res['pattern'], '🔮')
+                dir_e = '🟢' if res['direction'] == 'Bullish' else '🔴'
+                results.append({
+                    'Sembol':    symbol,
+                    'Fiyat':     round(res['prz'], 2),
+                    'Pattern':   f"{emoji} {res['pattern']}",
+                    'Yön':       f"{dir_e} {res['direction']}",
+                    'PRZ':       round(res['prz'], 2),
+                    'ICT_Zone':  res['zone'],
+                    'RSI_Div':   res['div_type'],
+                    'Durum':     '✅ Taze' if res['state'] == 'fresh' else '📍 Yaklaşıyor',
+                })
+        except Exception:
+            continue
+
+    if not results:
+        return pd.DataFrame()
+    df_out = pd.DataFrame(results)
+    # Bullish önce
+    df_out['_s'] = df_out['Yön'].apply(lambda x: 0 if 'Bullish' in x else 1)
+    df_out.sort_values('_s', inplace=True)
+    df_out.drop(columns=['_s'], inplace=True)
+    df_out.reset_index(drop=True, inplace=True)
+    return df_out
 
 
 # --- ROYAL FLUSH HESAPLAYICI ---
@@ -6578,10 +6760,10 @@ def _gauge_chart_b64(score, dark_mode):
         ang = np.radians(180 - (v / 100) * 180)
         cx, cy = np.cos(ang), np.sin(ang)
         ax.plot([1.02 * cx, 1.14 * cx], [1.02 * cy, 1.14 * cy],
-                color=fg, lw=1.0, alpha=0.55)
-        ax.text(1.24 * cx, 1.24 * cy, str(v),
-                ha='center', va='center', fontsize=7,
-                color=fg, alpha=0.7, fontfamily='monospace')
+                color=fg, lw=1.2, alpha=0.75)
+        ax.text(1.26 * cx, 1.26 * cy, str(v),
+                ha='center', va='center', fontsize=10,
+                color=fg, alpha=1.0, fontweight='bold', fontfamily='monospace')
 
     # Needle — koyu lacivert
     ang_rad = np.radians(180 - (score / 100) * 180)
@@ -6981,7 +7163,7 @@ def _main_price_chart_plotly(symbol, dark_mode):
         sma200_full = close_full.rolling(200).mean()
         ema144_full = close_full.ewm(span=144, adjust=False).mean()
 
-        # Son 90 barı al
+        # Son 90 günü al
         df = df_full.tail(90).copy()
         sma50_arr  = sma50_full.iloc[-90:]
         sma100_arr = sma100_full.iloc[-90:]
@@ -7005,8 +7187,8 @@ def _main_price_chart_plotly(symbol, dark_mode):
         fig = make_subplots(
             rows=2, cols=1,
             shared_xaxes=True,
-            row_heights=[0.78, 0.22],
-            vertical_spacing=0.02,
+            row_heights=[0.87, 0.13],
+            vertical_spacing=0.0,
         )
 
         # Fiyat formatı: >=1000 → tam sayı, <1000 → 2 ondalık
@@ -7030,11 +7212,22 @@ def _main_price_chart_plotly(symbol, dark_mode):
         ), row=1, col=1)
 
         # ── MA çizgileri ──────────────────────────────────────────────
+        def _ma_lbl(name, arr):
+            v = arr.dropna()
+            if v.empty: return name
+            val = v.iloc[-1]
+            return f"{name}: {int(val):,}" if val >= 1000 else f"{name}: {val:.2f}"
+
+        _l50  = _ma_lbl('SMA 50',  sma50_arr)
+        _l100 = _ma_lbl('SMA 100', sma100_arr)
+        _l144 = _ma_lbl('EMA 144', ema144_arr)
+        _l200 = _ma_lbl('SMA 200', sma200_arr)
+
         for arr, color, name, width in [
-            (sma50_arr,  '#ef5350', 'SMA 50',  1.3),
-            (sma100_arr, '#2196F3', 'SMA 100', 1.3),
-            (ema144_arr, '#a78bfa', 'EMA 144', 1.5),
-            (sma200_arr, '#ff7043', 'SMA 200', 1.3),
+            (sma50_arr,  '#ef5350', _l50,  1.3),
+            (sma100_arr, '#2196F3', _l100, 1.3),
+            (ema144_arr, '#a78bfa', _l144, 1.5),
+            (sma200_arr, '#ff7043', _l200, 1.3),
         ]:
             fig.add_trace(go.Scatter(
                 x=dates, y=arr,
@@ -7172,14 +7365,19 @@ def _main_price_chart_plotly(symbol, dark_mode):
             paper_bgcolor=paper_bg,
             plot_bgcolor=bg,
             font=dict(color=fg, size=10),
-            margin=dict(l=8, r=60, t=36, b=8),
+            margin=dict(l=8, r=60, t=42, b=4),
             height=480,
             title=dict(
-                text=f"<b>{disp}</b>  ·  SMC  ·  Son {n} Bar",
+                text=(
+                    f"<b>{disp}</b>  ·  SMC  ·  Son {n} Gün"
+                    f"    <span style='color:#26a69a; font-size:11px;'>▬ Fiyat</span>"
+                    f"  <span style='color:#ef5350; font-size:12px;'>— {_l50}</span>"
+                    f"  <span style='color:#2196F3; font-size:12px;'>— {_l100}</span>"
+                    f"  <span style='color:#a78bfa; font-size:12px;'>— {_l144}</span>"
+                    f"  <span style='color:#ff7043; font-size:12px;'>— {_l200}</span>"
+                ),
                 font=dict(size=11, color=fg), x=0.01, xanchor='left'),
-            legend=dict(
-                orientation='h', x=0, y=1.02, xanchor='left',
-                bgcolor='rgba(0,0,0,0)', font=dict(size=9)),
+            showlegend=False,
             xaxis_rangeslider_visible=False,
             hovermode='x unified',
             dragmode='pan',
@@ -9238,13 +9436,7 @@ def render_roadmap_8_panel(ticker):
         ):
             _formasyon_dialog(ticker, _m2_chart, current_price, display_ticker, _pat_label, _is_dark)
 
-#
-# ==============================================================================
-# 5. SIDEBAR UI
-# ==============================================================================
-with st.sidebar:
-    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
-    
+def _render_health_signals_panel():
     # --- YENİ YERİ: GENEL SAĞLIK PANELİ (SIDEBAR İÇİN OPTİMİZE EDİLDİ) ---
     try:
         if "ticker" in st.session_state and st.session_state.ticker:
@@ -9377,7 +9569,7 @@ with st.sidebar:
     try:
         t_alert = st.session_state.ticker
         df_alert = get_safe_historical_data(t_alert)
-        
+
         if df_alert is not None and not df_alert.empty:
             alert_items = []
 
@@ -9460,7 +9652,7 @@ with st.sidebar:
                 if not st.session_state.dark_mode:
                     lor_color = "#15803d" if lor['signal'] == "YÜKSELİŞ" else "#dc2626"
                 alert_items.append(("🧠", f"Lorentzian: {lor['signal']} %{int(lor['prob'])}", lor_color))
-            
+
             # 11. OBV UYUMSUZLUK (Gizli Para Girişi / Dağıtım)
             obv_title, obv_color, obv_desc = get_obv_divergence_status(t_alert)
             if "ZAYIF" not in obv_title and "Veri Yok" not in obv_title and "Hesaplanamadı" not in obv_title:
@@ -9477,18 +9669,18 @@ with st.sidebar:
             try:
                 ict_data_check = calculate_ict_deep_analysis(t_alert)
                 sent_data_check = calculate_sentiment_score(t_alert)
-                
+
                 if ict_data_check and sent_data_check:
                     # 1. GÜÇ KONTROLÜ
                     rs_text = sent_data_check.get('rs', '').lower()
                     cond_power = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or sent_data_check.get('total', 0) >= 50 or sent_data_check.get('raw_rsi', 0) > 50)
-                    
+
                     # 2. KONUM KONTROLÜ (Ucuzluk veya Kırılım)
                     cond_loc = "DISCOUNT" in ict_data_check.get('zone', '') or "MSS" in ict_data_check.get('structure', '') or "BOS" in ict_data_check.get('structure', '')
-                    
+
                     # 3. ENERJİ KONTROLÜ (Hacim ve Momentum)
                     cond_energy = ("Güçlü" in ict_data_check.get('displacement', '') or "Hacim" in sent_data_check.get('vol', '') or sent_data_check.get('raw_rsi', 0) > 55)
-                    
+
                     # 3'te 3 Onay varsa Sinyal Paneline Ekle
                     if cond_power and cond_loc and cond_energy:
                         altin_renk = "#ca8a04" if st.session_state.dark_mode else "#a16207"
@@ -9542,6 +9734,15 @@ with st.sidebar:
             except Exception:
                 pass
 
+            # 14. HARMONİK CONFLUENCE (3'lü Teyit — En Güçlü Setup)
+            try:
+                _hc_res = calculate_harmonic_confluence(t_alert, df_alert)
+                if _hc_res:
+                    _hc_col = "#a78bfa" if st.session_state.dark_mode else "#6d28d9"
+                    alert_items.append(("⚡", f"Harmonik Confluence: {_hc_res['pattern']} + ICT {_hc_res['zone']} + RSI Div — PRZ:{_hc_res['prz']:.2f}", _hc_col))
+            except Exception:
+                pass
+
             # --- RENDER ---
             # Karara göre panel renkleri
             if master_score >= 70:
@@ -9566,19 +9767,19 @@ with st.sidebar:
                 # item formatı: (icon, text, color)
                 color_str = str(item[2]).lower()
                 text_str = str(item[1]).lower()
-                
+
                 # 1. Öncelik: Yeşiller (Zirveye)
                 if any(c in color_str for c in ['10b981', '22c55e', '16a34a', '4ade80', '15803d', '059669', 'green']):
                     return 1
-                
+
                 # 2. Öncelik: Sarı/Turuncu/Altın (Araya)
                 if any(c in color_str for c in ['f59e0b', 'ca8a04', 'eab308', 'd97706', 'f97316', 'b45309', 'orange', 'yellow']):
                     return 2
-                
+
                 # 4. Öncelik: Kırmızı/Bordo (En Alta)
                 if any(c in color_str for c in ['ef4444', 'dc2626', 'f87171', '991b1b', 'e11d48', 'b91c1c', 'red']) or any(k in text_str for k in ['ayı', 'düşüş', 'zayıf', 'satış']):
                     return 4
-                
+
                 # 3. Öncelik: Mor, Mavi gibi diğer nötr/bilgi renkleri (Ortanın altına)
                 return 3
 
@@ -9610,6 +9811,16 @@ with st.sidebar:
             """, unsafe_allow_html=True)
     except Exception:
         pass
+
+
+#
+# ==============================================================================
+# 5. SIDEBAR UI
+# ==============================================================================
+with st.sidebar:
+    st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
+
+    # (Genel Sağlık + Canlı Sinyaller artık _render_health_signals_panel() ile sağ sütunda gösteriliyor)
 
     # --------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
@@ -10094,9 +10305,13 @@ with col_btn:
             st.session_state.af_scan_data = scan_golden_pattern_agent(scan_list, st.session_state.get('category', 'S&P 500'))
             st.session_state.golden_pattern_data = st.session_state.af_scan_data
 
-            # 11.5 HARMONİK FORMASYON AJANI - %85
-            my_bar.progress(85, text="🔮 Harmonik Formasyonlar (XABCD Fibonacci) Taranıyor...%85")
+            # 11.5 HARMONİK FORMASYON AJANI - %83
+            my_bar.progress(83, text="🔮 Harmonik Formasyonlar (XABCD Fibonacci) Taranıyor...%83")
             st.session_state.harmonic_data = scan_harmonic_patterns_batch(scan_list)
+
+            # 11.7 HARMONİK CONFLUENCE AJANI - %86
+            my_bar.progress(86, text="⚡ Harmonik Confluence (3'lü Teyit) Aranıyor...%86")
+            st.session_state.harmonic_confluence_data = scan_harmonic_confluence_batch(scan_list)
 
             # 12. MİNERVİNİ SEPA AJANI - %90
             my_bar.progress(90, text="🦁 Minervini Sepa Taranıyor...%90")
@@ -10369,6 +10584,21 @@ if st.session_state.generate_prompt:
             scan_box_txt.append("🐋 BALİNA İZİ (Stopping Volume): Düşüş nihayet yüksek bir hacimle karşılanmış görünüyor. (Kurumsal fren mekanizması devrede, düşüş durduruluyor olabilir.)")
         if sv_data.get('climax') != 'Yok': 
             scan_box_txt.append("🌋 BALİNA İZİ (Climax Volume): Rallinin zirvesinde anormal bir hacim var. (Müzik durmak üzere ve akıllı para malı küçük yatırımcıya boşaltıyor olabilir!)")
+
+    # E3. HARMONİK CONFLUENCE (3 Metodoloji Çakışması)
+    try:
+        _hconf = calculate_harmonic_confluence(t, df_hist)
+        if _hconf:
+            _hc_dir_tr = "YUKARI" if _hconf['direction'] == 'Bullish' else "AŞAĞI"
+            scan_box_txt.insert(0,
+                f"⚡ HARMONİK CONFLUENCE (3'LÜ TEYİT — EN YÜKSEK KALİTE): "
+                f"{_hconf['pattern']} {_hc_dir_tr} | ICT Bölge: {_hconf['zone']} | RSI Diverjans: Teyitli | "
+                f"PRZ: {_hconf['prz']:.2f} "
+                f"(Fibonacci yapısı, kurumsal fiyat bölgesi ve momentum uyumsuzluğunun aynı noktada çakışması. "
+                f"Üç bağımsız metodoloji aynı dönüş seviyesini işaret ediyor — bu türden kurulumların başarı ihtimali tekil sinyallerden belirgin şekilde yüksektir.)"
+            )
+    except Exception:
+        pass
 
     # Eğer hiçbir sıcak sinyal yoksa:
     if not scan_box_txt:
@@ -11125,11 +11355,62 @@ TEKNİK KART:
 8) Teknik Okuma Özeti
 (Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 
-* Dördüncü Görevin: 
-Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın. 
+* Dördüncü Görevin:
+Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın.
 Bu değerlendirme, abonelerin hızlıca anlayabileceği şekilde, ilk 3 görevin en kritik noktalarını ve sonuçlarını içermelidir. Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde özetini çıkaracaksın.
+
+Değerlendirmeye BAŞLAMADAN ÖNCE, aşağıdaki formatta bir SOSYAL MEDYA KANCASI (HOOK) yaz.
+Bu kanca Twitter'da thread'in önüne yapıştırılacak ilk tweet olacak — dikkat çekmeli, merak uyandırmalı, ama analizi ele vermemeli.
+
+─── [HOOK FORMATI] ───────────────────────────────────────────
+[AÇILIŞ EMOJİSİ] #{clean_ticker}: [GERİLİM CÜMLESİ]. [SONUÇ NOTU]👇
+📊 TEKNİK KANITLAR:
+[SİNYAL 1 — en baskın bulgu, uygun emoji ile]
+[SİNYAL 2 — destekleyici veya çelişkili ikinci bulgu]
+[KRİTİK FİYAT SEVİYESİ — destek veya direnç]
+Detaylı analiz ve çok detaylı risk haritası görseli için:
+────────────────────────────────────────────────────────────
+
+HOOK YAZMA KURALLARI:
+
+1. AÇILIŞ EMOJİSİ — analizin dominant tonuna göre seç (birini seç, karıştırma):
+   🏆 = Golden Trio / Altın Fırsat tetiklendiyse
+   🔥 = Güçlü momentum, göstergeler hizalanmış, ivme yüksek
+   🧟 = Fiyat yükseliyor ama altyapı çürük / çelişkili tablo
+   🚜 = Bearish baskı, ağır hareket, düşüş işaretleri baskın
+   ⚡ = Harmonik Confluence veya 3'lü metodoloji çakışması
+   🎯 = Kırılım eşiğinde bekleme, net senaryo var
+   ⚠️ = Risk yüksek, uyarı baskın, belirsizlik hâkim
+
+2. GERİLİM CÜMLESİ — en önemli kural:
+   - ASLA sadece bullish veya sadece bearish yazma — her zaman bir gerilim / "ancak" olsun
+   - Analizin en şaşırtıcı, en çelişkili ya da en kritik bulgusunu tek cümleyle özetle
+   - Soru formatı veya zıtlık formatı kullan:
+     Örnek: "Radar kırmızıya döndü ancak ana skor hâlâ temkinli"
+     Örnek: "Golden Trio onayıyla yükseliş sürüyor ama fiyat aşırı fiyatlanmış olabilir mi?"
+     Örnek: "Skor yüksek ama RS (Endeks Gücü) yerlerde — yükseliş gerçek mi?"
+     Örnek: "Denge skoru düşük, hareket yok. Oluşan Bearish Marubozu tehlike sinyali mi?"
+   - "ANCAK", "ama", "oysa", "peki", "?" — bunlardan en az biri cümlede olmalı
+
+3. SONUÇ NOTU (sabit, ikisinden birini seç):
+   - Uyarı baskınsa: "SONUÇ ve UYARI kısmına dikkat👇"
+   - Genel durumsa: "UYARI kısmına dikkat👇"
+
+4. TEKNİK KANITLAR — max 3 satır, uygun emoji ile:
+   🏆 = Altın Fırsat (Golden Trio onayı)
+   🐳 = Smart Money / ICT analizi / Market yapısı
+   🧱 = Direnç seviyesi (Duvar)
+   🛡️ = Destek seviyesi (Kale)
+   ⚖️ = Denge / Algoritmik Skor (orta seviye)
+   🩸 = Algoritmik Skor düşükse / Yüksek risk
+   🔹 = Diğer sinyal veya bulgu
+   - Fiyat seviyesini (destek veya direnç) mutlaka ekle
+   - Skor varsa ve anlamlıysa ekle (örn: "Algoritmik Skor: 18.0/100 (Yüksek Risk)")
+   - En kritik 2-3 tanesi yeterli — hepsini sıralama
+
+─── HOOK BİTTİ, DEVAM: ABONE ÖZETİ ───────────────────────
 Değerlendirme şu formatta olmalıdır:
-İlk Başlık daima"SMART MONEY RADAR #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸" formatında olmalıdır. Asla tarih ve saat yazma. 
+İlk Başlık daima"SMART MONEY RADAR #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸" formatında olmalıdır. Asla tarih ve saat yazma.
 GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
 Teknik Görünüm: (Fiyat davranışı, formasyonlar ve genel trend durumunun 2-3 cümlelik net, anlaşılır ve eyleme dönüştürülebilir özeti.)
 Smart Money İzi: (Hacim, OBV, ICT analizleri ve para akışı verilerindeki kurumsal ayak izlerinin 2-3 cümlelik özeti.)
@@ -11169,32 +11450,32 @@ Sadece sunum sırası değişiyor.
 
 info = fetch_stock_info(st.session_state.ticker)
 
-# ── ANA FİYAT GRAFİĞİ (Tab dışında, sayfanın tepesinde) ──────────────────────
-try:
-    _mpc_fig = _main_price_chart_plotly(st.session_state.ticker, st.session_state.dark_mode)
-    if _mpc_fig is None:
-        st.warning("⚠️ Grafik oluşturulamadı (None döndü)")
-    elif isinstance(_mpc_fig, str):
-        st.error(f"⚠️ Grafik hatası: {_mpc_fig}")
-    else:
-        st.plotly_chart(
-            _mpc_fig,
-            use_container_width=True,
-            config={
-                'scrollZoom': True,
-                'displayModeBar': True,
-                'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d'],
-                'displaylogo': False,
-            },
-        )
-except Exception as _chart_err:
-    st.error(f"Grafik hatası: {_chart_err}")
-# ─────────────────────────────────────────────────────────────────────────────
-
 col_left, col_right = st.columns([4, 1])
 
 # --- SOL SÜTUN ---
 with col_left:
+    # ── ANA FİYAT GRAFİĞİ ────────────────────────────────────────────────────
+    try:
+        _mpc_fig = _main_price_chart_plotly(st.session_state.ticker, st.session_state.dark_mode)
+        if _mpc_fig is None:
+            st.warning("⚠️ Grafik oluşturulamadı (None döndü)")
+        elif isinstance(_mpc_fig, str):
+            st.error(f"⚠️ Grafik hatası: {_mpc_fig}")
+        else:
+            st.plotly_chart(
+                _mpc_fig,
+                use_container_width=True,
+                config={
+                    'scrollZoom': True,
+                    'displayModeBar': True,
+                    'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d'],
+                    'displaylogo': False,
+                },
+            )
+    except Exception as _chart_err:
+        st.error(f"Grafik hatası: {_chart_err}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     # 1. PARA AKIŞ İVMESİ & FİYAT DENGESİ (EN TEPE)
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
     if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
@@ -11476,6 +11757,7 @@ with col_left:
     # 🔮 HARMONİK FORMASYON AJANI (Fibonacci PRZ: 58/100)
     # ---------------------------------------------------------
     if 'harmonic_data' not in st.session_state: st.session_state.harmonic_data = None
+    if 'harmonic_confluence_data' not in st.session_state: st.session_state.harmonic_confluence_data = None
 
     st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🔮 Harmonik Formasyon Ajanı (Fibonacci PRZ: 58/100)</div>', unsafe_allow_html=True)
 
@@ -11788,8 +12070,10 @@ with col_left:
 
 # --- SAĞ SÜTUN ---
 with col_right:
+    _render_health_signals_panel()
+
     if not info: info = fetch_stock_info(st.session_state.ticker)
-    
+
     # 1. Fiyat (YENİ TERMİNAL GÖRÜNÜMÜ)
     if info and info.get('price'):
         display_ticker = get_display_name(st.session_state.ticker)
@@ -12082,6 +12366,23 @@ with col_right:
                 found_any = True
     except: pass
 
+    # 13. HARMONİK CONFLUENCE (3'lü Teyit)
+    try:
+        if df_live is not None:
+            _hc_live = calculate_harmonic_confluence(active_t, df_live)
+            if _hc_live:
+                _hc_col = "#a78bfa" if is_dark else "#6d28d9"
+                scan_results_html += (
+                    f"<div style='font-size:0.8rem; margin-top:5px; margin-bottom:4px; "
+                    f"color:{_hc_col}; font-weight:900; border-left:3px solid {_hc_col}; padding-left:5px;'>"
+                    f"⚡ <span style='font-weight:700; color:{c_lbl};'>Harmonik Confluence:</span> "
+                    f"{_hc_live['pattern']} + ICT {_hc_live['zone']} + RSI Div "
+                    f"| PRZ: {_hc_live['prz']:.2f}"
+                    f"</div>"
+                )
+                found_any = True
+    except: pass
+
     # --- HTML ÇIKTISI RENDER ---
     if found_any:
         star_title = " ⭐" if is_star_candidate else ""
@@ -12126,6 +12427,9 @@ with col_right:
 
     # Harmonik Formasyon — bireysel hisse banner'ı
     render_harmonic_banner(st.session_state.ticker)
+
+    # Harmonik Confluence (3'lü teyit) — varsa Royal Flush/Altın Fırsat seviyesinde rozet
+    render_harmonic_confluence_banner(st.session_state.ticker)
 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
@@ -12193,6 +12497,45 @@ with col_right:
                     _warn_clr = "#fca5a5" if _dark else "#991b1b"
                     st.markdown(f"<div style='background:{_warn_bg}; border:1px solid {_warn_clr}; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:0.82rem; color:{_warn_clr}; font-weight:700;'>🐻 BEAR MODE — Benchmark 200 SMA altında. Long sinyaller daha riskli, pozisyon büyüklüğünü küçült.</div>", unsafe_allow_html=True)
         except: pass
+
+        # --- HARMONİK CONFLUENCE ÖZEL PANEL (en tepede) ---
+        _hc_df = st.session_state.get('harmonic_confluence_data')
+        if _hc_df is not None and not (hasattr(_hc_df, 'empty') and _hc_df.empty):
+            st.markdown("""<div style='background:linear-gradient(90deg,#2d1060,#1e0f3a); border:2px solid #7c3aed; border-radius:8px; padding:8px 14px; margin-bottom:10px;'>
+  <span style='font-size:0.85rem; font-weight:900; color:#c084fc;'>⚡ HARMONİK CONFLUENCE — 3 BAĞIMSIZ METODOLOJİ ÇAKIŞIYOR</span><br>
+  <span style='font-size:0.72rem; color:#a78bfa;'>Fibonacci yapısı + ICT zone + RSI diverjansı → En yüksek kalite setup</span>
+</div>""", unsafe_allow_html=True)
+            for _ci, _cr in _hc_df.iterrows():
+                _cs = str(_cr.get('Sembol', '')).replace('.IS', '')
+                _cp = _cr.get('Fiyat', 0)
+                _cp_str = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
+                _cyon = str(_cr.get('Yön', ''))
+                _cyon_lbl = "🟢 LONG" if 'Bullish' in _cyon or 'LONG' in _cyon else "🔴 SHORT"
+                _cpat = _cr.get('Pattern', '')
+                _cprz = _cr.get('PRZ', 0)
+                _cprz_str = f"{int(_cprz)}" if _cprz and _cprz >= 1000 else f"{_cprz:.2f}" if _cprz else "—"
+                _cict = _cr.get('ICT_Zone', '—')
+                _cdiv = _cr.get('RSI_Div', '—')
+                _cstate = _cr.get('Durum', '')
+                st.markdown(f"""<div style='background:#1e0f3a; border:1px solid #7c3aed; border-radius:7px; padding:9px 12px; margin-bottom:5px; box-shadow:0 0 10px rgba(124,58,237,0.25);'>
+  <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;'>
+    <span style='font-weight:900; font-size:1.05rem; color:#f1f5f9;'>{_cs}</span>
+    <span style='background:linear-gradient(90deg,#7c3aed,#4f46e5); color:white; border-radius:10px; padding:2px 10px; font-size:0.72rem; font-weight:800;'>⚡ 3'lü Teyit</span>
+  </div>
+  <div style='margin-bottom:4px;'>
+    <span style='background:#1e3a2f; color:#4ade80; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>{_cyon_lbl} — {_cpat}</span>
+    <span style='background:#2d1b4e; color:#c084fc; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>PRZ: {_cprz_str}</span>
+    <span style='background:#1e2d3a; color:#7dd3fc; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>ICT: {_cict}</span>
+    <span style='background:#2d1b4e; color:#a78bfa; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700;'>RSI Div: {_cdiv}</span>
+  </div>
+  <div style='font-size:0.65rem; color:#94a3b8; font-style:italic;'>Fiyat: {_cp_str} · {_cstate}</div>
+</div>""", unsafe_allow_html=True)
+                if st.button(f"⚡ {_cs} İncele ({_cp_str})", key=f"hconf_btn_{_cs}_{_ci}", use_container_width=True):
+                    _full_sym = _cr.get('Sembol', _cs)
+                    st.session_state.ticker = _full_sym
+                    on_scan_result_click(_full_sym)
+                    st.rerun()
+            st.markdown("<hr style='border-color:#2d1b4e; margin:12px 0;'>", unsafe_allow_html=True)
 
         if not hits:
             _info_clr = "#94a3b8" if _dark else "#64748b"
