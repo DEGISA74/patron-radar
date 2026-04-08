@@ -76,48 +76,76 @@ def _yahoo_record_success():
 
 def is_yahoo_update_needed(ticker, local_last_date):
     """
-    Piyasa saatlerine göre Yahoo'ya gitmenin gerekip gerekmediğini denetler.
-    Tüm saatler Türkiye saati (UTC+3) — Streamlit Cloud UTC'de çalıştığından
-    datetime.now() yerine UTC+3 sabit offset kullanılır.
+    BIST (.IS / XU*)  seans: 09:00–19:00 TR,  kapanış ref: 19:00 TR
+    ABD  (diğerleri)  seans: 16:00–00:00 TR,  kapanış ref: 23:00 TR
+
+    Kurallar:
+      - Kripto/Vadeli : her zaman git
+      - Haftasonu     : son iş günü kapanışından sonra çekildiyse gitme
+      - Seans içi     : bugün herhangi bir saatte çekildiyse gitme (günde 1 kez yeter)
+      - Seans dışı    : son kapanış saatinden sonra çekildiyse gitme
     """
     from datetime import timezone, timedelta as _td
     _TR = timezone(_td(hours=3))
-    now      = datetime.now(_TR).replace(tzinfo=None)   # tz-naive TR saati
-    weekday  = now.weekday()   # 0=Pzt … 4=Cum, 5=Cmt, 6=Paz
+    now      = datetime.now(_TR).replace(tzinfo=None)
+    weekday  = now.weekday()
     hour_min = now.hour * 100 + now.minute
     today    = now.date()
-    yesterday  = (now - timedelta(days=1)).date()
-    local_date = local_last_date.date()
 
-    # ── Ban koruması: aktif ban varsa Yahoo'ya gitme ─────────────────
+    # ── Ban koruması ──────────────────────────────────────────────────
     if _yahoo_is_banned():
         return False
 
-    # ── Kripto / Vadeli: 7/24 — her zaman güncelle ───────────────────
-    # (ttl=300 cache + ban koruması zaten sıklığı sınırlıyor)
+    # ── Kripto / Vadeli: 7/24 ────────────────────────────────────────
     if "-USD" in ticker or "=F" in ticker:
         return True
 
-    # ── Hafta sonu (BIST + ABD hisseleri) ───────────────────────────
-    if weekday >= 5:
-        last_friday = (now - timedelta(days=weekday - 4)).date()
-        return local_date < last_friday   # Cuma verisi varsa GİTME
-
-    # ── BIST (.IS veya XU) ───────────────────────────────────────────
-    if ".IS" in ticker or ticker.startswith("XU"):
-        if hour_min < 915:    # Seans öncesi: dünkü veri yeterliyse GİTME
-            return local_date < yesterday
-        if hour_min >= 1900:  # Seans sonrası (kapanış yerleşme payı): bugünkü veri varsa GİTME
-            return local_date < today
-        return True           # 09:15–19:00 arası: her zaman GİT (18:15–19:00 kapanış fiyatı yerleşsin)
-
-    # ── ABD hisseleri (NYSE/NASDAQ kapanışı TR'de ~23:00) ────────────
+    # ── Borsa türü ve cache yolu ─────────────────────────────────────
+    is_bist = ".IS" in ticker or ticker.startswith("XU")
+    if is_bist:
+        clean = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
+        cache_path = os.path.join(CACHE_DIR, f"{clean}_1d.parquet")
+        seans_start, seans_end = 900, 1900
+        close_hour = 19
     else:
-        if hour_min >= 2315:
-            return local_date < today
-        if hour_min < 1615:
-            return local_date < yesterday
-        return True           # 16:15–23:15 arası: GİT
+        cache_path = os.path.join(CACHE_DIR, f"{ticker}_1d.parquet")
+        seans_start, seans_end = 1600, 2400   # 16:00–00:00
+        close_hour = 23
+
+    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+
+    def _close_ts(day, ch=close_hour):
+        return datetime(day.year, day.month, day.day, ch, 0,
+                        tzinfo=timezone(_td(hours=3))).timestamp()
+
+    def _last_workday(ref):
+        d = ref - timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        return d
+
+    # ── Haftasonu ────────────────────────────────────────────────────
+    if weekday >= 5:
+        last_friday = now - timedelta(days=weekday - 4)
+        return mtime < _close_ts(last_friday)
+
+    # ── Haftaiçi, seans içi ──────────────────────────────────────────
+    # ABD için seans 16:00'dan başlar, gece yarısına kadar sürer
+    in_seans = (seans_start <= hour_min) if not is_bist else (seans_start <= hour_min < seans_end)
+    if in_seans:
+        last_write = datetime.fromtimestamp(mtime).date() if mtime else None
+        return last_write != today
+
+    # ── Haftaiçi, seans dışı ─────────────────────────────────────────
+    if is_bist:
+        # 19:00–24:00: bugün kapanıştan sonra çekildiyse gitme
+        if hour_min >= 1900:
+            return mtime < _close_ts(now)
+        # 00:00–09:00: önceki iş günü kapanışından sonra çekildiyse gitme
+        return mtime < _close_ts(_last_workday(now))
+    else:
+        # ABD: 00:00–16:00 arası → dünkü kapanış (23:00) referansı
+        return mtime < _close_ts(_last_workday(now))
 
 # ==============================================================================
 # 1. AYARLAR VE STİL
@@ -702,9 +730,16 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             df_cached = pd.read_parquet(file_path)
             df_cached = safe_clean_columns(df_cached)
             df_cached.index = df_cached.index.tz_localize(None)
-            
+
             if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
-                # 👇 YENİ HALİ:
+                # Cache kullanılıyor — UI'ya bir kez bildir
+                try:
+                    if not st.session_state.get('_cache_toast_shown'):
+                        age_h = (datetime.now().timestamp() - os.path.getmtime(file_path)) / 3600
+                        age_str = f"{int(age_h)} sa {int((age_h % 1) * 60)} dk" if age_h >= 1 else f"{int(age_h * 60)} dk"
+                        st.session_state['_cache_toast_shown'] = True
+                        st.session_state['_cache_toast_msg'] = f"📦 Disk cache kullanılıyor — son Yahoo güncellemesi {age_str} önce. Veri taze, Yahoo'ya gidilmedi."
+                except: pass
                 return apply_volume_projection(df_cached.tail(500).copy(), ticker)
 
             df_new = yf.download(clean_ticker, period="2y", interval=interval, progress=False, auto_adjust=True)
@@ -867,7 +902,7 @@ def get_ma_data_for_ui(ticker):
     except Exception as e:
         return None
     
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)
 def fetch_stock_info(ticker):
     try:
         t = yf.Ticker(ticker)
@@ -881,12 +916,32 @@ def fetch_stock_info(ticker):
         except: pass
 
         if price is None or prev_close is None:
-            df = get_safe_historical_data(ticker, period="5d")
-            if df is not None and not df.empty:
-                 price = float(df["Close"].iloc[-1])
-                 prev_close = float(df["Close"].iloc[-2]) if len(df) > 1 else price
-                 volume = float(df["Volume"].iloc[-1])
-            else: return None
+            try:
+                # Yahoo quirk: period="5d" gives older close (good for prev_close),
+                # period="1d" gives the most recent close (good for current price).
+                h1 = yf.Ticker(ticker).history(period="1d")
+                h5 = yf.Ticker(ticker).history(period="5d")
+            except Exception:
+                h1 = h5 = None
+            if h1 is not None and not h1.empty:
+                price  = float(h1["Close"].iloc[-1])
+                volume = float(h1["Volume"].iloc[-1])
+                if h5 is not None and not h5.empty:
+                    # h1 ve h5 farklı son tarihte ise, h5'in son satırı önceki kapanış
+                    if h1.index[-1].date() != h5.index[-1].date():
+                        prev_close = float(h5["Close"].iloc[-1])
+                    elif len(h5) > 1:
+                        prev_close = float(h5["Close"].iloc[-2])
+                    else:
+                        prev_close = price
+                else:
+                    prev_close = price
+            elif h5 is not None and not h5.empty:
+                price      = float(h5["Close"].iloc[-1])
+                prev_close = float(h5["Close"].iloc[-2]) if len(h5) > 1 else price
+                volume     = float(h5["Volume"].iloc[-1])
+            else:
+                return None
 
         change_pct = ((price - prev_close) / prev_close * 100) if prev_close else 0
         return { "price": price, "change_pct": change_pct, "volume": volume or 0, "sector": "-", "target": "-" }
@@ -8497,7 +8552,6 @@ def render_ict_deep_panel(ticker):
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
-        st.markdown(f"""<div style="background:rgba(56, 189, 248, 0.07); border:1px solid rgba(56, 189, 248, 0.3); border-radius:8px; padding:16px; margin-top:10px; text-align: center;"><div style="font-weight:800; color:#7dd3fc; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#e2e8f0; font-style:italic; line-height:1.5; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
     else:
         mc = "#16a34a" if "bullish" in data['bias'] else "#dc2626" if "bearish" in data['bias'] else "#7c3aed"
         bg = "#f0fdf4" if "bullish" in data['bias'] else "#fef2f2" if "bearish" in data['bias'] else "#f5f3ff"
@@ -8546,7 +8600,6 @@ def render_ict_deep_panel(ticker):
                     </div>
                 </div>
             </div>""", unsafe_allow_html=True)
-        st.markdown(f"""<div style="background:#dbeafe; border:2px solid #3b82f6; border-radius:8px; padding:16px; margin-top:10px; text-align: center;"><div style="font-weight:800; color:#1e40af; font-size:0.9rem; margin-bottom:8px; text-transform: uppercase;">🖥️ BOTTOM LINE (SONUÇ)</div><div style="font-size:1.05rem; color:#1e3a8a; font-style:italic; line-height:1.5; font-weight: 500;">"{data.get('bottom_line', '-')}"</div></div>""", unsafe_allow_html=True)
 
 def render_levels_card(ticker):
     data = get_advanced_levels_data(ticker)
@@ -9819,6 +9872,29 @@ def _render_health_signals_panel():
 # ==============================================================================
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
+
+    # --- ICT BOTTOM LINE (SONUÇ) ---
+    try:
+        if st.session_state.get('ticker'):
+            _bl_data = calculate_ict_deep_analysis(st.session_state.ticker)
+            _bl_text = _bl_data.get('bottom_line', '') if _bl_data else ''
+            if _bl_text:
+                _dark = st.session_state.get('dark_mode', False)
+                _bl_ticker = get_display_name(st.session_state.ticker)
+                _bl_info = fetch_stock_info(st.session_state.ticker)
+                _bl_price = _bl_info.get('price', 0) if _bl_info else 0
+                _bl_price_str = f"{int(_bl_price):,}" if _bl_price >= 1000 else f"{_bl_price:.2f}"
+                if _dark:
+                    st.markdown(f"""<div style="background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.3);border-radius:8px;padding:10px 12px;margin-bottom:8px;text-align:center;">
+<div style="font-weight:700;color:#94a3b8;font-size:0.68rem;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">🖥️ ICT Bottom Line / Sonuç :</div>
+<div style="display:inline-block;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);border-radius:5px;padding:3px 14px;margin-bottom:7px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:0.95rem;color:#38bdf8;letter-spacing:0.03em;">{_bl_ticker}&nbsp;&nbsp;—&nbsp;&nbsp;{_bl_price_str}</div>
+<div style="font-size:0.78rem;color:#e2e8f0;font-style:italic;line-height:1.5;">"{_bl_text}"</div></div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""<div style="background:#dbeafe;border:2px solid #3b82f6;border-radius:8px;padding:10px 12px;margin-bottom:8px;text-align:center;">
+<div style="font-weight:700;color:#64748b;font-size:0.68rem;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em;">🖥️ ICT Bottom Line / Sonuç :</div>
+<div style="display:inline-block;background:#1e40af;border-radius:5px;padding:3px 14px;margin-bottom:7px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:0.95rem;color:#ffffff;letter-spacing:0.03em;">{_bl_ticker}&nbsp;&nbsp;—&nbsp;&nbsp;{_bl_price_str}</div>
+<div style="font-size:0.78rem;color:#1e3a8a;font-style:italic;line-height:1.5;">"{_bl_text}"</div></div>""", unsafe_allow_html=True)
+    except: pass
 
     # (Genel Sağlık + Canlı Sinyaller artık _render_health_signals_panel() ile sağ sütunda gösteriliyor)
 
@@ -11449,6 +11525,11 @@ Sadece sunum sırası değişiyor.
     st.session_state.generate_prompt = False
 
 info = fetch_stock_info(st.session_state.ticker)
+
+# --- CACHE TOAST BİLDİRİMİ ---
+if st.session_state.get('_cache_toast_msg'):
+    st.toast(st.session_state.pop('_cache_toast_msg'), icon="📦")
+    st.session_state['_cache_toast_shown'] = False  # sonraki tarama için sıfırla
 
 col_left, col_right = st.columns([4, 1])
 
