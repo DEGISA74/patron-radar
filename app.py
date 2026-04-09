@@ -9537,139 +9537,345 @@ def calculate_8_point_roadmap(ticker):
         return None
 
 def _pattern_side_info_html(chart_data, curr_price, dark_mode):
-    """Formasyon tipi için sağ panel açıklama + kilit seviyeler HTML'i."""
+    """Geriye dönük uyumluluk için korundu — dialog artık _build_pattern_analysis kullanır."""
+    return ""
+
+
+def _build_pattern_analysis(chart_data, curr_price, ticker):
+    """Formasyon için zenginleştirilmiş analiz verisi üretir."""
+    import datetime as _dt
+
     pat_type = chart_data.get('type', '')
-    bg     = "rgba(13,17,23,0.0)"
-    txt_c  = "#f1f5f9" if dark_mode else "#0f172a"
-    sub_c  = "#cbd5e1" if dark_mode else "#334155"
-    lbl_c  = "#94a3b8" if dark_mode else "#64748b"
-    brd_c  = "rgba(255,255,255,0.10)" if dark_mode else "rgba(0,0,0,0.10)"
+    def fp(v):
+        try: return f"{v:,.2f}" if v < 1000 else f"{int(v):,}"
+        except: return str(v)
+    def pct(a, b):
+        try: return f"{((a - b) / b * 100):+.1f}%"
+        except: return ""
 
     _LABELS = {
-        "cup":         ("☕", "Fincan-Kulp"),
-        "tobo":        ("📐", "TOBO"),
+        "cup":         ("☕", "Fincan & Kulp"),
+        "tobo":        ("📐", "Ters OBO (TOBO)"),
         "flag":        ("🚩", "Boğa Bayrağı"),
         "triangle":    ("📈", "Yükselen Üçgen"),
-        "range":       ("↔️", "Range"),
-        "saucer":      ("🥣", "Çanak"),
-        "qml":         ("🎯", "Quasimodo"),
+        "range":       ("↔️", "Range / Konsolidasyon"),
+        "saucer":      ("🥣", "Çanak (Saucer)"),
+        "qml":         ("🎯", "Quasimodo (QML)"),
         "three_drive": ("3️⃣", "3 Drive"),
-        "sr_level":    ("🧱", "Destek/Direnç"),
+        "sr_level":    ("🧱", "Destek / Direnç"),
     }
     emoji, name = _LABELS.get(pat_type, ("📊", "Formasyon"))
 
-    desc   = ""
-    levels = []  # (label, price, color)
-    target = None
-    invalid = None
+    target = None; invalid = None; levels = []
+    stage = 2; stage_total = 4; stage_label = "Gelişiyor"
+    story = ""; conclusion = ""
 
     if pat_type == "cup":
-        neck   = chart_data['neck']
-        bottom = chart_data['pivot_prices'][1]
-        desc   = "Fiyat büyük bir düşüş sonrası <b>U şeklinde</b> toparlandı. Boyun çizgisi kırılırsa yükseliş ivme kazanır."
-        levels = [("Boyun Çizgisi", neck, "#f59e0b"), ("Kupa Dibi", bottom, "#38bdf8")]
-        target = neck + (neck - bottom)
-        invalid = bottom
+        neck = chart_data['neck']; bottom = chart_data['pivot_prices'][1]
+        target = neck + (neck - bottom); invalid = bottom * 0.99
+        levels = [("Boyun Çizgisi (Kırılım)", neck, "#f59e0b"), ("Kupa Dibi", bottom, "#38bdf8")]
+        stage = 3 if curr_price > neck * 0.97 else 2
+        stage_label = "Boyun Yaklaşıyor" if stage == 3 else "Sağ Taraf Oluşuyor"
+        story = (f"Fiyat büyük bir düşüşün ardından yavaş yavaş toparlandı ve U şekilli bir kupa oluşturdu. "
+                 f"Boyun çizgisi olan <b>{fp(neck)}</b> bölgesine yaklaşılıyor. "
+                 f"Burası geçilirse formasyon tamamlanmış sayılır ve ölçü hedefi devreye girer.")
+        conclusion = ((f"Fiyat boyun çizgisini kırdı — formasyon aktif. Hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                       f"<b>{fp(invalid)}</b> altına kapanış formasyonu geçersiz kılar.")
+                      if curr_price > neck else
+                      (f"Fiyat henüz boyun çizgisi <b>{fp(neck)}</b>'i kırmadı — sabırla bekle. "
+                       f"Kırılım gelirse hedef <b>{fp(target)}</b>. <b>{fp(invalid)}</b> altına kapanış bozulma sinyali."))
+
     elif pat_type == "tobo":
-        neck   = chart_data['neck']
-        bottom = chart_data['pivot_prices'][2]
-        desc   = "Üç dip oluştu, orta dip en düşük — <b>ters omuz-baş-omuz</b>. Boyun kırılırsa trend tersine döner."
-        levels = [("Boyun Çizgisi", neck, "#f59e0b"), ("Orta Dip", bottom, "#38bdf8")]
-        target = neck + (neck - bottom)
-        invalid = bottom
+        neck = chart_data['neck']; bottom = chart_data['pivot_prices'][2]
+        target = neck + (neck - bottom); invalid = bottom * 0.98
+        levels = [("Boyun Çizgisi (Kırılım)", neck, "#f59e0b"), ("Orta Dip (Baş)", bottom, "#38bdf8")]
+        stage = 3 if curr_price > neck * 0.97 else 2
+        stage_label = "Boyun Yaklaşıyor" if stage == 3 else "Sağ Omuz Oluşuyor"
+        story = (f"Üç dip noktası oluştu; ortadaki en düşük seviye olan <b>{fp(bottom)}</b> 'baş' konumunda. "
+                 f"Bu klasik dip dönüş formasyonunda boyun çizgisi <b>{fp(neck)}</b>. "
+                 f"Boyun kırılırsa uzun süredir baskı altında olan satıcılar teslim olmuş demektir.")
+        conclusion = (f"Boyun çizgisi <b>{fp(neck)}</b> kırılırsa formasyon tamamlanır, hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                      f"Stop için <b>{fp(invalid)}</b> altı kullanılabilir. "
+                      f"Bu formasyon özellikle uzun bir düşüş trendinin sonunda görünce anlamlıdır.")
+
     elif pat_type == "flag":
         fh, fl = chart_data['flag_h'], chart_data['flag_l']
-        desc   = "Güçlü yükseliş sonrası fiyat <b>daralan bir kanalda</b> sıkıştı. Üst sınır kırılırsa hareket hız kazanır."
-        levels = [("Üst Sınır (Kırılım)", fh, "#ef4444"), ("Alt Sınır", fl, "#10b981")]
-        target = fh + (fh - fl)
-        invalid = fl
+        target = fh + (fh - fl); invalid = fl * 0.99
+        levels = [("Üst Sınır / Kırılım", fh, "#ef4444"), ("Alt Destek", fl, "#10b981")]
+        stage = 3 if curr_price > fh * 0.98 else 2
+        stage_label = "Kırılıma Hazır" if stage == 3 else "Bayrak Kanalında"
+        story = (f"Sert bir yükseliş ('direk') sonrasında fiyat <b>{fp(fl)}–{fp(fh)}</b> aralığında daralarak nefes alıyor. "
+                 f"Bu daralma satışın değil, normal bir sindirim sürecinin göstergesi. "
+                 f"Üst sınır kırılırsa direk boyu kadar ek yükseliş beklenir.")
+        conclusion = (f"<b>{fp(fh)}</b> üzerinde hacimli kapanış kırılım sinyali, hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                      f"Alt destek <b>{fp(fl)}</b> kırılırsa formasyon bozulur. "
+                      f"Bant ne kadar dar ve uzun sürerse kırılım o kadar güçlü olur.")
+
     elif pat_type == "triangle":
-        res  = chart_data['resistance']
-        desc = "Fiyat <b>giderek yükselen dipler</b> yaparken dirençte takılı. Direnç kırılırsa sert yükseliş gelebilir."
-        levels  = [("Direnç (Kırılım)", res, "#ef4444")]
-        invalid = res * 0.97
+        res = chart_data['resistance']; invalid = res * 0.96
+        levels = [("Direnç / Kırılım Noktası", res, "#ef4444")]
+        stage = 3 if curr_price > res * 0.97 else 2
+        stage_label = "Direce Dayandı" if stage == 3 else "Dipler Yükseliyor"
+        story = (f"Fiyat giderek yükselen dip noktaları yaparken <b>{fp(res)}</b> direncinde takılmış durumda. "
+                 f"Bu sıkışma, alıcıların her seferinde daha pahalıya almaya razı olduğunu gösteriyor. "
+                 f"Direnç kırılırsa birikmiş enerji serbest kalır.")
+        conclusion = (f"<b>{fp(res)}</b> üzerinde kapanış kırılım sayılır. Stop için <b>{fp(invalid)}</b> altı mantıklı. "
+                      f"Kırılım ne kadar hacimli olursa formasyon o kadar güvenilirdir.")
+
     elif pat_type == "range":
         res, sup = chart_data['resistance'], chart_data['support']
-        desc = "Fiyat belirli bir <b>bant içinde</b> gidip geliyor. Üst bant kırılırsa bant genişliği kadar yükseliş beklenir."
-        levels  = [("Üst Bant (Kırılım)", res, "#ef4444"), ("Alt Bant", sup, "#10b981")]
-        target  = res + (res - sup)
-        invalid = sup
+        target = res + (res - sup); invalid = sup * 0.99
+        levels = [("Üst Bant / Kırılım", res, "#ef4444"), ("Alt Destek", sup, "#10b981")]
+        stage = 3 if curr_price > res * 0.97 else (2 if curr_price > sup * 1.01 else 1)
+        stage_label = "Kırılım Eşiğinde" if stage == 3 else "Bant İçinde"
+        story = (f"Fiyat <b>{fp(sup)}–{fp(res)}</b> bandında gidip geliyor. "
+                 f"Her üst banda gelişte satıcılar baskı uyguluyor, her dipte alıcılar tutuyor. "
+                 f"Bu kutu kırılırsa bant genişliği kadar ek hareket beklenir.")
+        conclusion = (f"<b>{fp(res)}</b> üzerinde kapanış uzun vadeli kırılım sinyali, hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                      f"Tersine <b>{fp(invalid)}</b> altına kapanış düşüş sinyali. Bant ne kadar uzun sürerse kırılım o kadar güçlüdür.")
+
     elif pat_type == "saucer":
-        boyun  = chart_data['right_high']
-        bottom = chart_data['cup_bottom']
-        desc   = "Fiyat uzun süre yatay seyredip dip oluşturduktan sonra toparlanıyor. <b>Boyun kırılırsa</b> yükseliş hızlanır."
-        levels  = [("Boyun Çizgisi", boyun, "#a78bfa"), ("Çanak Dibi", bottom, "#38bdf8")]
-        target  = boyun + (boyun - bottom)
-        invalid = bottom
+        boyun = chart_data['right_high']; bottom = chart_data['cup_bottom']
+        target = boyun + (boyun - bottom); invalid = bottom * 0.99
+        levels = [("Boyun Çizgisi", boyun, "#a78bfa"), ("Çanak Dibi", bottom, "#38bdf8")]
+        stage = 3 if curr_price > boyun * 0.97 else 2
+        stage_label = "Boyun Yaklaşıyor" if stage == 3 else "Sağ Taraf Toparlanıyor"
+        story = (f"Fiyat uzun süre yatay seyrettikten sonra yuvarlak bir dip oluşturdu. "
+                 f"Çanak dibi <b>{fp(bottom)}</b>, boyun çizgisi <b>{fp(boyun)}</b>. "
+                 f"Bu formasyon kurumsal para birikiminin yavaş yavaş gerçekleştiğini gösterir.")
+        conclusion = (f"Boyun çizgisi <b>{fp(boyun)}</b> kırılırsa hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                      f"<b>{fp(invalid)}</b> altına kapanış bozulma sinyali. "
+                      f"Fincan-Kulp'a göre daha yavaş ama daha güvenilir bir formasyon olarak bilinir.")
+
     elif pat_type == "qml":
-        qml  = chart_data['qml_line']
-        desc = "Fiyat eski düşük seviyeyi <b>test edip geri döndü</b>. QML üstünde tutunursa güçlü toparlanma gelebilir."
-        levels  = [("QML Çizgisi", qml, "#f59e0b")]
-        invalid = qml
+        qml = chart_data['qml_line']; invalid = qml * 0.995
+        levels = [("QML Çizgisi", qml, "#f59e0b")]
+        above = curr_price > qml; margin = abs(curr_price - qml) / qml
+        stage = (3 if above and margin > 0.03 else 2)
+        stage_label = "QML Üstünde Tutunuyor" if (above and margin > 0.03) else ("QML Üstünde — Teyit Bekleniyor" if above else "QML Test Ediliyor")
+        target = qml * 1.10
+        story = (f"Fiyat önce <b>{fp(qml)}</b> seviyesini aşağı kırdı (sahte kırılım) ve satıcıları tuzağa düşürdü. "
+                 f"Ardından hızla geri dönerek QML çizgisinin üstüne çıktı — bu 'tuzak' hareketi Quasimodo formasyonunun özüdür. "
+                 f"Şimdi kritik soru: fiyat bu seviyede tutunabilecek mi?")
+        conclusion = ((f"Fiyat QML çizgisi <b>{fp(qml)}</b> üzerinde — olumlu işaret. "
+                       f"Tutunulursa tahmini hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                       f"Ancak <b>{fp(invalid)}</b> altına kapanış formasyonu geçersiz kılar; stop buraya konulabilir. "
+                       f"Hacimle desteklenmiş yeşil mumlar teyit olarak değerlendirilebilir.")
+                      if above else
+                      (f"Fiyat hâlâ QML çizgisi <b>{fp(qml)}</b> altında. Formasyon henüz tamamlanmadı. "
+                       f"QML üzerine çıkış ve orada kapanış beklenmeli. "
+                       f"Tutunursa hedef <b>{fp(target)}</b>, tutunmazsa formasyon bozulur."))
+
     elif pat_type == "three_drive":
         pivots = chart_data['pivot_prices']
-        desc   = "Her biri öncekinden yüksek <b>üç dip noktası</b> oluştu. Alıcılar giderek daha yüksek fiyattan giriyor."
-        levels  = [(f"D{i+1}", float(p), "#fb923c") for i, p in enumerate(pivots)]
-        invalid = float(pivots[0]) if pivots else None
+        invalid = float(pivots[0]) * 0.99 if pivots else None
+        levels = [(f"Dip {i+1}", float(p), "#fb923c") for i, p in enumerate(pivots)]
+        stage = min(len(pivots), 3); stage_total = 3
+        stage_label = f"Dip {stage}/3 Oluştu"
+        story = (f"Üç ardışık dip noktası oluştu; her biri bir öncekinden daha yüksek. "
+                 f"Bu, alıcıların giderek artan iştahını ve satıcıların güç kaybettiğini gösteriyor. "
+                 f"Üçüncü dipten sonra gelen yükseliş formasyonun tamamlanma sinyalidir.")
+        conclusion = (f"Üçüncü dip oluştu ve fiyat yukarı döndüyse alım bölgesindeyiz. "
+                      f"Stop için <b>{fp(invalid)}</b> altı kullanılabilir. "
+                      f"Her yeni dip bir öncekinden yüksekte olduğu sürece formasyon geçerliliğini korur.")
+
     elif pat_type == "sr_level":
-        lvl    = chart_data['level']
-        is_sup = chart_data['is_support']
-        lbl_t  = "destek" if is_sup else "direnç"
-        col    = "#10b981" if is_sup else "#ef4444"
-        desc   = f"Fiyat geçmişte defalarca test edilen <b>güçlü bir {lbl_t}</b> bölgesinde. Bölge tutunursa güçlü hareket beklenir."
-        levels = [(("Destek" if is_sup else "Direnç") + " Bölgesi", lvl, col)]
+        lvl = chart_data['level']; is_sup = chart_data['is_support']
+        col = "#10b981" if is_sup else "#ef4444"
+        levels = [(("Kritik Destek" if is_sup else "Kritik Direnç"), lvl, col)]
+        invalid = lvl * (0.985 if is_sup else 1.015); target = lvl * (1.08 if is_sup else 0.92)
+        stage = 2; stage_label = "Bölge Test Ediliyor"
+        story = (f"<b>{fp(lvl)}</b> seviyesi geçmişte defalarca test edilmiş, her seferinde güçlü tepki vermiş. "
+                 f"Bu tür seviyeler piyasanın 'hafızasında' olan yerlerdir — kurumlar burada pozisyon almayı sever. "
+                 f"Mevcut test de aynı tepkiyi verebilir.")
+        conclusion = (f"{'Destek' if is_sup else 'Direnç'} bölgesi <b>{fp(lvl)}</b> tutunursa hedef <b>{fp(target)}</b> ({pct(target, curr_price)}). "
+                      f"<b>{fp(invalid)}</b> {'altına' if is_sup else 'üstüne'} kapanış bölgenin kırıldığını gösterir. "
+                      f"Ne kadar çok test edilmişse o kadar güçlüdür — ama çok kez test sonunda kırılma riski de artar.")
 
-    def fp(v): return f"{v:,.2f}" if v < 1000 else f"{int(v):,}"
+    # Hacim teyidi
+    vol_dip_ok = None; vol_bounce_ok = None
+    try:
+        df_vol = get_safe_historical_data(ticker)
+        if df_vol is not None and len(df_vol) >= 22:
+            volume = df_vol['Volume'].squeeze(); vol20 = volume.rolling(20).mean()
+            pivot_dates = chart_data.get('pivot_dates', [])
+            if len(pivot_dates) >= 2:
+                dip_date = pd.Timestamp(pivot_dates[-2]); bounce_date = pd.Timestamp(pivot_dates[-1])
+                di = df_vol.index.get_indexer([dip_date], method='nearest')[0]
+                bi = df_vol.index.get_indexer([bounce_date], method='nearest')[0]
+                dr = float(volume.iloc[di] / vol20.iloc[di]) if vol20.iloc[di] > 0 else 1.0
+                br = float(volume.iloc[bi] / vol20.iloc[bi]) if vol20.iloc[bi] > 0 else 1.0
+                vol_dip_ok = dr < 0.85; vol_bounce_ok = br > 1.15
+    except: pass
 
-    lvl_rows = ""
-    for lbl, price, color in levels:
-        arrow   = "&#9650;" if curr_price > price else "&#9660;"
-        arrow_c = "#10b981" if curr_price > price else "#ef4444"
-        lvl_rows += (f'<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid {brd_c};">'
-                     f'<span style="color:{sub_c};font-size:12px;">{lbl}</span>'
-                     f'<span style="color:{color};font-weight:800;font-size:13px;font-family:monospace;">'
-                     f'{fp(price)}<span style="color:{arrow_c};font-size:10px;"> {arrow}</span></span></div>')
+    # Formasyon yaşı
+    pat_age_days = 0; pat_start_str = "—"
+    try:
+        pivot_dates = chart_data.get('pivot_dates', [])
+        if pivot_dates:
+            start = _dt.date.fromisoformat(str(pivot_dates[0])[:10])
+            pat_age_days = (_dt.date.today() - start).days
+            _ay = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
+            pat_start_str = f"{start.day} {_ay[start.month-1]} '{str(start.year)[2:]}"
+    except: pass
 
-    target_row = ""
-    if target:
-        target_row = (f'<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:rgba(16,185,129,0.12);border-left:3px solid #10b981;">'
-                      f'<div style="color:{lbl_c};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Tahmini Hedef</div>'
-                      f'<div style="color:#10b981;font-weight:800;font-size:17px;font-family:monospace;">{fp(target)}</div></div>')
+    # R/R hesabı
+    rr_ratio = None; rr_str = "—"
+    if target and invalid and curr_price:
+        try:
+            reward = abs(target - curr_price); risk = abs(curr_price - invalid)
+            if risk > 0:
+                rr_ratio = reward / risk
+                rr_str = f"1 : {rr_ratio:.1f}"
+        except: pass
 
-    invalid_row = ""
-    if invalid:
-        invalid_row = (f'<div style="margin-top:5px;padding:6px 8px;border-radius:5px;background:rgba(239,68,68,0.10);border-left:3px solid #ef4444;">'
-                       f'<div style="color:{lbl_c};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Gecersizlik</div>'
-                       f'<div style="color:#ef4444;font-weight:700;font-size:13px;font-family:monospace;">{fp(invalid)} alti</div></div>')
-
-    return (f'<div style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:7px;border:1px solid {brd_c};">'
-            f'<div style="font-size:15px;font-weight:800;color:{txt_c};margin-bottom:2px;">{emoji} {name}</div>'
-            f'<div style="font-size:15px;color:{sub_c};line-height:1.55;margin-bottom:6px;">{desc}</div>'
-            f'<div style="font-size:10px;font-weight:700;color:{lbl_c};text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;">Kilit Seviyeler</div>'
-            f'{lvl_rows}{target_row}{invalid_row}</div>')
+    return {"emoji": emoji, "name": name, "target": target, "invalid": invalid, "levels": levels,
+            "stage": stage, "stage_total": stage_total, "stage_label": stage_label,
+            "rr_ratio": rr_ratio, "rr_str": rr_str,
+            "vol_dip_ok": vol_dip_ok, "vol_bounce_ok": vol_bounce_ok,
+            "pat_age_days": pat_age_days, "pat_start_str": pat_start_str,
+            "story": story, "conclusion": conclusion, "fp": fp, "pct": pct}
 
 
 @st.dialog("📊 Formasyon Grafiği", width="large")
 def _formasyon_dialog(ticker, chart_data, current_price, display_ticker, pat_label, is_dark):
+    """Zenginleştirilmiş formasyon popup: grafik + tam analiz + sahne hikayesi."""
+    _a  = _build_pattern_analysis(chart_data, current_price, ticker)
+    fp  = _a["fp"]
+    txt = "#f1f5f9" if is_dark else "#0f172a"
+    sub = "#94a3b8" if is_dark else "#475569"
+    brd = "rgba(255,255,255,0.08)" if is_dark else "#e2e8f0"
+    lbl = "#64748b"
+    card = "rgba(30,41,59,0.5)" if is_dark else "#f8fafc"
+
     st.markdown(
-        f"<div style='font-size:16px;font-weight:800;color:#1e3a8a;margin-bottom:10px;'>"
-        f"🔍 {display_ticker} için Oluşan {pat_label} Formasyon Grafiği</div>",
+        f"<div style='font-size:1.35rem;font-weight:800;color:{'#38bdf8' if is_dark else '#1e3a8a'};margin-bottom:12px;'>"
+        f"{_a['emoji']} {display_ticker} — {_a['name']}</div>",
         unsafe_allow_html=True
     )
+
     _b64 = _mini_pattern_chart_b64(ticker, chart_data, is_dark)
-    if _b64:
-        _col_chart, _col_info = st.columns([58, 40], gap="small")
-        with _col_chart:
-            st.markdown(
-                f"<img src='data:image/png;base64,{_b64}' "
-                f"style='width:100%;border-radius:6px;display:block;margin:0;'/>",
-                unsafe_allow_html=True
+    _col_chart, _col_info = st.columns([60, 40], gap="medium")
+
+    with _col_chart:
+        if _b64:
+            st.markdown(f"<img src='data:image/png;base64,{_b64}' style='width:100%;border-radius:8px;display:block;'/>", unsafe_allow_html=True)
+        else:
+            st.warning("Grafik oluşturulamadı.")
+
+    with _col_info:
+        # Aşama göstergesi
+        dots = "".join(
+            f'<span style="width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:5px;'
+            f'background:{"#3b82f6" if j <= _a["stage"] else ("#334155" if is_dark else "#e2e8f0")};"></span>'
+            for j in range(1, _a["stage_total"] + 1)
+        )
+        stage_html = (f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">'
+                      f'<div>{dots}</div>'
+                      f'<div style="font-size:0.95rem;font-weight:700;color:#3b82f6;">Aşama {_a["stage"]}/{_a["stage_total"]} — {_a["stage_label"]}</div>'
+                      f'</div>')
+
+        # ── Kompakt kart grid: her öğe label üstte, değer altında, 2 kolon ──
+        def _info_card(label, val_html, bg, border_color, full_width=False):
+            span = "1 / span 2" if full_width else "auto"
+            return (f'<div style="grid-column:{span};background:{bg};border-left:3px solid {border_color};'
+                    f'border-radius:7px;padding:7px 10px;">'
+                    f'<div style="font-size:0.84rem;font-weight:600;color:{border_color};margin-bottom:3px;">{label}</div>'
+                    f'<div style="font-size:0.97rem;font-weight:800;color:{txt};font-family:monospace;line-height:1.3;">{val_html}</div>'
+                    f'</div>')
+
+        cards_html = f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+
+        # Kilit seviye kartları
+        for lbl_t, price, color in _a["levels"]:
+            arrow = "▲" if current_price >= price else "▼"
+            arrow_c = "#10b981" if current_price >= price else "#ef4444"
+            note = "üstünde ✓" if current_price >= price else "altında"
+            bg_lvl = f"rgba(100,116,139,0.08)"
+            cards_html += _info_card(
+                lbl_t,
+                f'{fp(price)} <span style="font-size:0.78rem;font-weight:600;color:{arrow_c};">{arrow} {note}</span>',
+                bg_lvl, color
             )
-        with _col_info:
-            _info_html = _pattern_side_info_html(chart_data, current_price, is_dark)
-            st.markdown(_info_html, unsafe_allow_html=True)
-    else:
-        st.warning("Grafik oluşturulamadı.")
+
+        # Hedef
+        if _a["target"]:
+            t_pct = _a["pct"](_a["target"], current_price)
+            cards_html += _info_card(
+                "🎯 Tahmini Hedef",
+                f'{fp(_a["target"])} <span style="font-size:0.82rem;color:#10b981;font-weight:600;">({t_pct})</span>',
+                "rgba(16,185,129,0.10)", "#10b981"
+            )
+
+        # Stop
+        if _a["invalid"]:
+            s_pct = _a["pct"](_a["invalid"], current_price)
+            cards_html += _info_card(
+                "🔴 Stop / Geçersizlik",
+                f'{fp(_a["invalid"])} <span style="font-size:0.82rem;color:#ef4444;font-weight:600;">({s_pct})</span>',
+                "rgba(239,68,68,0.08)", "#ef4444"
+            )
+
+        # R/R
+        if _a["rr_ratio"]:
+            rr_c = "#10b981" if _a["rr_ratio"] >= 2.0 else ("#f59e0b" if _a["rr_ratio"] >= 1.0 else "#ef4444")
+            rr_lbl = "Mükemmel" if _a["rr_ratio"] >= 3.0 else ("İyi" if _a["rr_ratio"] >= 2.0 else ("Kabul" if _a["rr_ratio"] >= 1.0 else "Zayıf"))
+            cards_html += _info_card(
+                "📐 Risk / Ödül",
+                f'<span style="color:{rr_c};">{_a["rr_str"]}</span> <span style="font-size:0.78rem;font-weight:600;color:{rr_c};">({rr_lbl})</span>',
+                f"rgba(100,116,139,0.08)", rr_c
+            )
+
+        # Formasyon yaşı
+        if _a["pat_age_days"] > 0:
+            cards_html += _info_card(
+                "📅 Formasyon Yaşı",
+                f'{_a["pat_age_days"]} gün <span style="font-size:0.82rem;font-weight:600;color:{sub};">({_a["pat_start_str"]})</span>',
+                f"rgba(100,116,139,0.06)", lbl
+            )
+
+        cards_html += '</div>'
+
+        # Hacim teyidi (kart içinde tam genişlik)
+        vol_html = ""
+        if _a["vol_dip_ok"] is not None or _a["vol_bounce_ok"] is not None:
+            def _vrow(lbl_v, ok):
+                c = "#10b981" if ok else "#f59e0b"
+                ic = "✅" if ok else "⚠️"
+                note = ("Düşük hacim — tükenme işareti" if ok else "Yüksek hacim — baskı hâlâ var") if "Dip" in lbl_v \
+                       else ("Yüksek hacim — güçlü dönüş" if ok else "Zayıf hacim — teyit bekleniyor")
+                return (f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid {brd};">'
+                        f'<span style="font-size:0.88rem;color:{sub};">{ic} {lbl_v}</span>'
+                        f'<span style="font-size:0.84rem;font-weight:600;color:{c};">{note}</span></div>')
+            vol_inner = ""
+            if _a["vol_dip_ok"] is not None:    vol_inner += _vrow("Dip testi hacmi", _a["vol_dip_ok"])
+            if _a["vol_bounce_ok"] is not None: vol_inner += _vrow("Dönüş hacmi",     _a["vol_bounce_ok"])
+            vol_html = (f'<div style="padding:8px 10px;border-radius:7px;background:{card};border:1px solid {brd};margin-bottom:6px;">'
+                        f'<div style="font-size:0.84rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;">Hacim Teyidi</div>'
+                        f'{vol_inner}</div>')
+
+        st.markdown(
+            f'<div style="padding:2px 0;">{stage_html}'
+            f'<div style="font-size:0.84rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Kilit Seviyeler</div>'
+            f'{cards_html}{vol_html}</div>',
+            unsafe_allow_html=True
+        )
+
+    # Alt bölüm: Sahne Hikayesi + SONUÇ
+    st.markdown("<hr style='margin:14px 0 10px 0;border-color:#334155;'>", unsafe_allow_html=True)
+    story_bg  = "rgba(30,41,59,0.5)" if is_dark else "#f1f5f9"
+    concl_bg  = "rgba(16,185,129,0.08)" if is_dark else "#f0fdf4"
+    st.markdown(
+        f'<div style="background:{story_bg};border-radius:10px;padding:14px 18px;margin-bottom:10px;">'
+        f'<div style="font-size:0.88rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">📖 Sahne Hikayesi</div>'
+        f'<div style="font-size:1.0rem;color:{txt};line-height:1.7;">{_a["story"]}</div>'
+        f'</div>'
+        f'<div style="background:{concl_bg};border:1px solid #10b98140;border-left:3px solid #10b981;border-radius:10px;padding:14px 18px;">'
+        f'<div style="font-size:0.88rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">⚡ SONUÇ — Ne Yapılmalı?</div>'
+        f'<div style="font-size:1.0rem;color:{txt};line-height:1.7;">{_a["conclusion"]}</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 
 def render_roadmap_8_panel(ticker):
