@@ -8176,7 +8176,7 @@ def calculate_smart_money_score(ticker):
         trigger_edu  = "Kırılım; fiyatın son 20 günün en yüksek kapanışını aşmasıyla ve hacimin 20 günlük ortalamasının %20 üstünde olmasıyla teyit edilir. Hacimsiz kırılımlar sıklıkla başarısız olur — bu yüzden hacim onayı kritiktir."
 
         # ── SKOR ─────────────────────────────────────────────────
-        w = {"trend": 1.0, "rs": 1.0, "accum": 1.5, "squeeze": 1.2, "trigger": 1.8}
+        w = {"trend": 1.0, "rs": 1.5, "accum": 1.7, "squeeze": 1.1, "trigger": 1.0}
 
         def _bool(v): return 1.0 if v is True else 0.0
 
@@ -8189,19 +8189,34 @@ def calculate_smart_money_score(ticker):
 
         score = round((raw / max_w) * 100)
 
-        if   score >= 85: status, status_color, status_bg = "🚀 FIRLATMAYA HAZIR",   "#10b981", "#ecfdf5"
-        elif score >= 65: status, status_color, status_bg = "⚡ KUVVETLİ KURULUM",   "#3b82f6", "#eff6ff"
-        elif score >= 45: status, status_color, status_bg = "👀 İZLEMEDE TUT",       "#f59e0b", "#fffbeb"
-        elif score >= 25: status, status_color, status_bg = "⏳ GELİŞİYOR",          "#94a3b8", "#f8fafc"
-        else:             status, status_color, status_bg = "😴 HENÜZ ERKEN",        "#64748b", "#f1f5f9"
+        # ── PRE-LAUNCH TESPİTİ ────────────────────────────────────
+        # Diğer 4 kriter geçiyor ama tetikleyici henüz ateşlenmedi
+        # → En iyi giriş penceresi: fiyat henüz hareket etmemiş
+        non_trigger_ok = (
+            trend_pass and
+            accum_pass and
+            squeeze_pass and
+            (rs_pass is True or rs_pass is None)
+        )
+        pre_launch = non_trigger_ok and (not trigger_pass)
+
+        if pre_launch:
+            status, status_color, status_bg = "🎯 FİTİL ÇEKİLİYOR",         "#06b6d4", "#ecfeff"
+        elif score >= 85: status, status_color, status_bg = "🔥 Harekete geç",        "#10b981", "#ecfdf5"
+        elif score >= 65: status, status_color, status_bg = "⚡ LONG İÇİN HAZIR",     "#3b82f6", "#eff6ff"
+        elif score >= 45: status, status_color, status_bg = "🏕 Henüz değil, takipte","#f59e0b", "#fffbeb"
+        elif score >= 25: status, status_color, status_bg = "🌱 Çok erken, sıra gelecek","#94a3b8","#f8fafc"
+        else:             status, status_color, status_bg = "😴 Boşver şimdilik",     "#64748b", "#f1f5f9"
 
         # AI prompt için özet metin
+        pre_launch_note = " ⚠️ PRE-LAUNCH: 4 kriter hazır, tetikleyici bekleniyor — ideal giriş penceresi." if pre_launch else ""
         criteria_summary = (
             f"Trend: {'✅ ' + trend_desc if trend_pass else '❌ ' + trend_desc} | "
             f"RS: {'✅ ' + rs_desc if rs_pass else ('N/A' if rs_pass is None else '❌ ' + rs_desc)} | "
             f"Birikim OBV: {'✅ ' + accum_desc if accum_pass else '❌ ' + accum_desc} | "
             f"BB Squeeze: {'✅ ' + squeeze_desc if squeeze_pass else '❌ ' + squeeze_desc} | "
             f"Tetikleyici: {'✅ ' + trigger_desc if trigger_pass else '❌ ' + trigger_desc}"
+            f"{pre_launch_note}"
         )
 
         return {
@@ -8209,6 +8224,7 @@ def calculate_smart_money_score(ticker):
             "status":         status,
             "status_color":   status_color,
             "status_bg":      status_bg,
+            "pre_launch":     pre_launch,
             "criteria": {
                 "trend":   {"pass": trend_pass,   "desc": trend_desc,   "edu": trend_edu,   "label": "Trend Zemini"},
                 "rs":      {"pass": rs_pass,      "desc": rs_desc,      "edu": rs_edu,      "label": "Relatif Güç"},
@@ -8237,18 +8253,26 @@ def render_smart_money_panel(ticker):
     status       = data["status"]
     s_color      = data["status_color"]
     criteria     = data["criteria"]
+    pre_launch   = data.get("pre_launch", False)
     display_name = get_display_name(ticker)
 
-    card_bg     = "#0f172a" if is_dark else "#ffffff"
-    card_border = "#1e3a5f" if is_dark else "#bfdbfe"
-    head_bg     = "#172554" if is_dark else "#dbeafe"
-    text_main   = "#e2e8f0" if is_dark else "#0f172a"
-    text_muted  = "#94a3b8" if is_dark else "#64748b"
-    edu_color   = "#94a3b8" if is_dark else "#475569"
-    row_bg      = "#1e293b" if is_dark else "#f8fafc"
-    row_border  = "#334155" if is_dark else "#e2e8f0"
-    bar_track   = "#1e293b" if is_dark else "#e2e8f0"
-    s_bg        = "#1e293b" if is_dark else data["status_bg"]
+    # Pre-launch: kart kenarlığı ve başlık rengi cyan'a döner
+    card_bg     = "#0f172a"  if is_dark else "#ffffff"
+    card_border = ("#164e63" if is_dark else "#a5f3fc") if pre_launch else ("#1e3a5f" if is_dark else "#bfdbfe")
+    head_bg     = ("#0c4a6e" if is_dark else "#cffafe") if pre_launch else ("#172554" if is_dark else "#dbeafe")
+    text_main   = "#e2e8f0"  if is_dark else "#0f172a"
+    text_muted  = "#94a3b8"  if is_dark else "#64748b"
+    edu_color   = "#94a3b8"  if is_dark else "#475569"
+    row_bg      = "#1e293b"  if is_dark else "#f8fafc"
+    row_border  = "#334155"  if is_dark else "#e2e8f0"
+    bar_track   = "#1e293b"  if is_dark else "#e2e8f0"
+    s_bg        = "#1e293b"  if is_dark else data["status_bg"]
+
+    # Pre-launch pulse animasyonu (tetikleyici satırı bekliyor)
+    pulse_css = (
+        "@keyframes sms-pulse{0%,100%{box-shadow:0 0 0 0 rgba(6,182,212,0.4);}50%{box-shadow:0 0 0 5px rgba(6,182,212,0);}}"
+        ".sms-pre-launch{animation:sms-pulse 2s ease-in-out infinite;}"
+    ) if pre_launch else ""
 
     # CSS hover: her kriter satırı için (roadmap panel ile aynı teknik)
     hover_css = "".join(
@@ -8274,10 +8298,22 @@ def render_smart_money_panel(ticker):
             lbl_clr  = "#ef4444"
             dot_rgb  = "239,68,68"
 
+        # Pre-launch: tetikleyici satırı (index 4) özel vurgu — "bekleniyor" hissi
+        is_trigger_row = (key == "trigger")
+        if pre_launch and is_trigger_row:
+            row_extra_cls  = " sms-pre-launch"
+            row_extra_sty  = f"border:1px dashed #06b6d4;border-left:3px solid #06b6d4;background:{'rgba(6,182,212,0.08)' if is_dark else 'rgba(236,254,255,0.9)'};"
+            lbl_clr        = "#06b6d4"
+            dot            = f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#06b6d4;box-shadow:0 0 6px #06b6d4;flex-shrink:0;margin-top:3px;"></span>'
+            desc_clr       = "#06b6d4"
+            dot_rgb        = "6,182,212"
+        else:
+            row_extra_cls  = ""
+            row_extra_sty  = f"background:{row_bg};border:1px solid {row_border};border-left:3px solid rgba({dot_rgb},0.6);"
+
         rows_html += (
-            f'<div class="sms-row-{i}" style="background:{row_bg};border:1px solid {row_border};'
-            f'border-left:3px solid rgba({dot_rgb},0.6);border-radius:7px;padding:7px 9px 5px 9px;'
-            f'margin-bottom:4px;cursor:default;position:relative;">'
+            f'<div class="sms-row-{i}{row_extra_cls}" style="{row_extra_sty}'
+            f'border-radius:7px;padding:7px 9px 5px 9px;margin-bottom:4px;cursor:default;position:relative;">'
             f'<div style="display:flex;align-items:flex-start;gap:7px;">'
             f'{dot}'
             f'<div style="flex:1;min-width:0;">'
@@ -8294,33 +8330,34 @@ def render_smart_money_panel(ticker):
         )
 
     html = (
-        f'<style>{hover_css}</style>'
+        f'<style>{hover_css}{pulse_css}</style>'
         f'<div style="background:{card_bg};border:2px solid {card_border};border-radius:12px;'
         f'overflow:hidden;margin-bottom:10px;font-family:Inter,sans-serif;'
         f'box-shadow:0 4px 16px rgba(0,0,0,0.12);">'
-        # Başlık bandı
-        f'<div style="background:{head_bg};padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">'
-        f'<div>'
-        f'<div style="font-size:0.58rem;font-weight:700;color:{text_muted};text-transform:uppercase;letter-spacing:1px;">&#127919; Akilli Para Skoru</div>'
-        f'<div style="font-size:0.8rem;font-weight:800;color:{text_main};margin-top:2px;">{display_name}</div>'
+        # ── Başlık bandı: isim sol, skor sağ — tek satır, sarkmaz
+        f'<div style="background:{head_bg};padding:9px 14px;display:flex;align-items:center;justify-content:space-between;">'
+        f'<div style="min-width:0;">'
+        f'<div style="font-size:0.55rem;font-weight:700;color:{text_muted};text-transform:uppercase;letter-spacing:0.8px;white-space:nowrap;">&#128640; KALKIS (LONG) RADARI</div>'
+        f'<div style="font-size:0.85rem;font-weight:800;color:{text_main};margin-top:2px;">{display_name}</div>'
         f'</div>'
-        f'<div style="text-align:right;">'
+        f'<div style="text-align:right;flex-shrink:0;margin-left:8px;">'
         f'<div style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:900;color:{s_color};line-height:1;">{score}</div>'
-        f'<div style="font-size:0.55rem;color:{text_muted};font-weight:600;margin-top:-2px;">/100</div>'
+        f'<div style="font-size:0.52rem;color:{text_muted};font-weight:600;margin-top:-1px;">/100</div>'
         f'</div>'
         f'</div>'
-        # Beden
+        # ── Status şeridi: tam genişlik, sarkmaz
+        f'<div style="background:{s_bg};border-top:1px solid {s_color}30;border-bottom:1px solid {s_color}30;'
+        f'padding:5px 14px;text-align:center;">'
+        f'<span style="font-size:0.72rem;font-weight:800;color:{s_color};letter-spacing:0.3px;white-space:nowrap;">{status}</span>'
+        f'</div>'
+        # ── Beden
         f'<div style="padding:10px 12px 8px 12px;">'
         # Progress bar
         f'<div style="position:relative;background:{bar_track};border-radius:99px;height:6px;margin:0 0 2px 0;overflow:hidden;">'
         f'<div style="background:linear-gradient(90deg,{s_color}88,{s_color});width:{score}%;height:100%;border-radius:99px;"></div>'
         f'</div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.52rem;color:{text_muted};font-family:JetBrains Mono,monospace;margin-bottom:6px;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.52rem;color:{text_muted};font-family:JetBrains Mono,monospace;margin-bottom:8px;">'
         f'<span>0</span><span>50</span><span>100</span>'
-        f'</div>'
-        # Durum etiketi
-        f'<div style="background:{s_bg};border:1px solid {s_color}40;border-radius:7px;padding:5px 10px;text-align:center;margin-bottom:8px;">'
-        f'<span style="font-size:0.75rem;font-weight:800;color:{s_color};">{status}</span>'
         f'</div>'
         # Kriter satırları
         f'{rows_html}'
