@@ -8030,6 +8030,307 @@ def render_price_action_panel(ticker):
             </div>""", unsafe_allow_html=True)
 
 
+def calculate_smart_money_score(ticker):
+    """
+    5 kriterli Akıllı Para Skoru hesaplar. 0-100 arası normalize edilmiş skor döner.
+    Hem panel render hem AI prompt için kullanılır.
+    Döndürür: dict (score, status, criteria, summary_text) veya None
+    """
+    try:
+        df = get_safe_historical_data(ticker)
+        if df is None or len(df) < 60:
+            return None
+
+        is_index = (ticker.startswith("XU") or ticker.startswith("^") or
+                    ticker.endswith("=F") or "-USD" in ticker or ticker == "GC=F")
+        is_bist  = ".IS" in ticker or ticker.startswith("XU")
+
+        close  = df['Close'].squeeze()
+        volume = df['Volume'].squeeze()
+
+        # ── KRİTER 1: TREND ZEMİNİ ───────────────────────────────
+        sma50       = close.rolling(50).mean()
+        above_sma50 = bool(close.iloc[-1] > sma50.iloc[-1])
+        sma50_up    = bool(sma50.iloc[-1] > sma50.iloc[-6])
+        trend_pass  = above_sma50 and sma50_up
+
+        trend_days = 0
+        if trend_pass:
+            for i in range(1, min(60, len(df) - 1)):
+                if close.iloc[-i-1] > sma50.iloc[-i-1] and sma50.iloc[-i-1] > sma50.iloc[-i-6] if i+6 < len(df) else True:
+                    trend_days += 1
+                else:
+                    break
+        trend_days = max(1, trend_days) if trend_pass else 0
+        trend_desc = (f"{trend_days} gündür 50MA üstünde ve yönü yukarı"
+                      if trend_pass else
+                      ("Fiyat 50MA altında" if not above_sma50 else "50MA yönü aşağı"))
+        trend_edu  = "50 günlük hareketli ortalama trendin omurgasıdır. Fiyat bu çizginin üstündeyken ve çizgi yukarı eğimliyken, piyasanın genel eğilimi alış yönünde demektir. Kurumsal fonlar genellikle bu koşulu karşılayan hisseler için pozisyon açar."
+
+        # ── KRİTER 2: RELATİF GÜÇ ───────────────────────────────
+        rs_pass = None  # None = N/A (endeks)
+        rs_days = 0
+        rs_desc = "Endeks — kıyaslama yapılmaz"
+        rs_edu  = "Relatif güç, bir hissenin kendi endeksine kıyasla ne kadar iyi performans gösterdiğini ölçer. Endeksten güçlü seyreden hisseler kurumsal ilgi görüyor anlamına gelir; zayıf piyasada bile ayakta kalabilirler."
+
+        if not is_index:
+            try:
+                bench_t  = "XU100.IS" if is_bist else "^GSPC"
+                bench_df = get_safe_historical_data(bench_t)
+                if bench_df is not None and len(bench_df) >= 25:
+                    bench_close = bench_df['Close'].squeeze()
+                    common = close.index.intersection(bench_close.index)
+                    if len(common) >= 22:
+                        s_ret = float(close.loc[common].iloc[-1] / close.loc[common].iloc[-21] - 1)
+                        b_ret = float(bench_close.loc[common].iloc[-1] / bench_close.loc[common].iloc[-21] - 1)
+                        diff  = (s_ret - b_ret) * 100
+                        rs_pass = diff > 0
+                        for i in range(1, min(30, len(common) - 21)):
+                            sr = float(close.loc[common].iloc[-i-1] / close.loc[common].iloc[-i-22] - 1)
+                            br = float(bench_close.loc[common].iloc[-i-1] / bench_close.loc[common].iloc[-i-22] - 1)
+                            if sr > br:
+                                rs_days += 1
+                            else:
+                                break
+                        rs_days = max(1, rs_days) if rs_pass else 0
+                        rs_desc = (f"{rs_days} gündür endeksten %{abs(diff):.1f} güçlü"
+                                   if rs_pass else f"Endeksten %{abs(diff):.1f} zayıf")
+            except:
+                rs_pass = False
+                rs_desc = "RS hesaplanamadı"
+
+        # ── KRİTER 3: BIRIKIM (OBV DİVERJANS) ──────────────────
+        price_chg  = close.diff()
+        direction  = price_chg.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+        obv        = (volume * direction).cumsum()
+        obv_sma20  = obv.rolling(20).mean()
+        obv_above  = bool(obv.iloc[-1] > obv_sma20.iloc[-1])
+        obv_rising = bool(obv.iloc[-1] > obv.iloc[-6])
+        accum_pass = obv_above and obv_rising
+
+        accum_days = 0
+        if accum_pass:
+            for i in range(1, min(30, len(df) - 20)):
+                if obv.iloc[-i-1] > obv_sma20.iloc[-i-1]:
+                    accum_days += 1
+                else:
+                    break
+        accum_days  = max(1, accum_days) if accum_pass else 0
+        price_flat  = abs(float(close.iloc[-1] / close.iloc[-11] - 1)) < 0.03
+        accum_desc  = (f"{accum_days} gündür OBV yükseliyor, fiyat henüz hareketsiz (diverjans)" if (accum_pass and price_flat)
+                       else f"{accum_days} gündür OBV ortalaması üstünde birikim var" if accum_pass
+                       else "Net birikim sinyali yok")
+        accum_edu   = "OBV (On-Balance Volume), fiyat hareketinden bağımsız olarak para akışını izler. Fiyat yatay veya aşağıdayken OBV yükseliyorsa, akıllı para sessizce alım yapıyor demektir. Bu diverjans genellikle büyük kırılımların habercisidir."
+
+        # ── KRİTER 4: SIKIŞTMA (BB SQUEEZE) ────────────────────
+        sq_now, sq_prev = check_lazybear_squeeze_breakout(df)
+        squeeze_pass    = sq_now or sq_prev
+
+        squeeze_days = 0
+        if squeeze_pass:
+            for i in range(1, min(30, len(df) - 22)):
+                try:
+                    sq_i, _ = check_lazybear_squeeze_breakout(df.iloc[:-(i)])
+                    if sq_i:
+                        squeeze_days += 1
+                    else:
+                        break
+                except:
+                    break
+        squeeze_days = max(1, squeeze_days) if squeeze_pass else 0
+        squeeze_desc = (f"{squeeze_days} gündür BB sıkışması aktif — enerji birikimi"
+                        if squeeze_pass else "Aktif volatilite sıkışması yok")
+        squeeze_edu  = "Bollinger Bantları Keltner Kanalı'nın içine girdiğinde 'squeeze' oluşur. Bu, fiyatın bir yay gibi gerildiği anlamına gelir. Tarihsel olarak squeeze sonrası güçlü yönlü hareketler gelir. Hacim ve OBV ile birlikte değerlendirildiğinde yönü anlamak kolaylaşır."
+
+        # ── KRİTER 5: TETİKLEYİCİ ───────────────────────────────
+        vol_sma20   = volume.rolling(20).mean()
+        high20      = close.iloc[-21:-1].max()
+        trigger_pass = False
+        trigger_days_ago = 0
+
+        for i in range(1, 4):
+            try:
+                idx      = -(i)
+                day_cl   = float(close.iloc[idx])
+                prev_cl  = float(close.iloc[idx - 1])
+                day_vol  = float(volume.iloc[idx])
+                avg_vol  = float(vol_sma20.iloc[idx])
+                is_green = day_cl > prev_cl
+                vol_high = day_vol > avg_vol * 1.2
+                breakout = day_cl > float(high20)
+                if (is_green and vol_high) or breakout:
+                    trigger_pass     = True
+                    trigger_days_ago = i
+                    break
+            except:
+                continue
+
+        if trigger_pass:
+            trigger_desc = ("Bugün: Yüksek hacimli kırılım sinyali oluştu"
+                            if trigger_days_ago == 1
+                            else f"{trigger_days_ago} gün önce kırılım başladı")
+        elif squeeze_pass and accum_pass:
+            trigger_desc = "Henüz kırılım yok — ama hazır"
+        else:
+            trigger_desc = "Tetikleyici henüz oluşmadı"
+        trigger_edu  = "Kırılım; fiyatın son 20 günün en yüksek kapanışını aşmasıyla ve hacimin 20 günlük ortalamasının %20 üstünde olmasıyla teyit edilir. Hacimsiz kırılımlar sıklıkla başarısız olur — bu yüzden hacim onayı kritiktir."
+
+        # ── SKOR ─────────────────────────────────────────────────
+        w = {"trend": 1.0, "rs": 1.0, "accum": 1.5, "squeeze": 1.2, "trigger": 1.8}
+
+        def _bool(v): return 1.0 if v is True else 0.0
+
+        if is_index:
+            raw     = _bool(trend_pass)*w["trend"] + _bool(accum_pass)*w["accum"] + _bool(squeeze_pass)*w["squeeze"] + _bool(trigger_pass)*w["trigger"]
+            max_w   = w["trend"] + w["accum"] + w["squeeze"] + w["trigger"]
+        else:
+            raw     = _bool(trend_pass)*w["trend"] + _bool(rs_pass)*w["rs"] + _bool(accum_pass)*w["accum"] + _bool(squeeze_pass)*w["squeeze"] + _bool(trigger_pass)*w["trigger"]
+            max_w   = sum(w.values())
+
+        score = round((raw / max_w) * 100)
+
+        if   score >= 85: status, status_color, status_bg = "🚀 FIRLATMAYA HAZIR",   "#10b981", "#ecfdf5"
+        elif score >= 65: status, status_color, status_bg = "⚡ KUVVETLİ KURULUM",   "#3b82f6", "#eff6ff"
+        elif score >= 45: status, status_color, status_bg = "👀 İZLEMEDE TUT",       "#f59e0b", "#fffbeb"
+        elif score >= 25: status, status_color, status_bg = "⏳ GELİŞİYOR",          "#94a3b8", "#f8fafc"
+        else:             status, status_color, status_bg = "😴 HENÜZ ERKEN",        "#64748b", "#f1f5f9"
+
+        # AI prompt için özet metin
+        criteria_summary = (
+            f"Trend: {'✅ ' + trend_desc if trend_pass else '❌ ' + trend_desc} | "
+            f"RS: {'✅ ' + rs_desc if rs_pass else ('N/A' if rs_pass is None else '❌ ' + rs_desc)} | "
+            f"Birikim OBV: {'✅ ' + accum_desc if accum_pass else '❌ ' + accum_desc} | "
+            f"BB Squeeze: {'✅ ' + squeeze_desc if squeeze_pass else '❌ ' + squeeze_desc} | "
+            f"Tetikleyici: {'✅ ' + trigger_desc if trigger_pass else '❌ ' + trigger_desc}"
+        )
+
+        return {
+            "score":          score,
+            "status":         status,
+            "status_color":   status_color,
+            "status_bg":      status_bg,
+            "criteria": {
+                "trend":   {"pass": trend_pass,   "desc": trend_desc,   "edu": trend_edu,   "label": "Trend Zemini"},
+                "rs":      {"pass": rs_pass,      "desc": rs_desc,      "edu": rs_edu,      "label": "Relatif Güç"},
+                "accum":   {"pass": accum_pass,   "desc": accum_desc,   "edu": accum_edu,   "label": "Akıllı Para Birikimi"},
+                "squeeze": {"pass": squeeze_pass, "desc": squeeze_desc, "edu": squeeze_edu, "label": "Volatilite Sıkışması"},
+                "trigger": {"pass": trigger_pass, "desc": trigger_desc, "edu": trigger_edu, "label": "Kırılım Tetikleyici"},
+            },
+            "is_index":       is_index,
+            "summary_text":   criteria_summary,
+        }
+    except Exception:
+        return None
+
+
+def render_smart_money_panel(ticker):
+    """
+    Akıllı Para Skoru paneli — Sidebar: ICT Bottom Line altında, Kurumsal Para İştahı üstünde.
+    Edu-notlar CSS hover ile açılır/kaybolur (roadmap panel tekniği).
+    """
+    data = calculate_smart_money_score(ticker)
+    if data is None:
+        return
+
+    is_dark      = st.session_state.get('dark_mode', False)
+    score        = data["score"]
+    status       = data["status"]
+    s_color      = data["status_color"]
+    criteria     = data["criteria"]
+    display_name = get_display_name(ticker)
+
+    card_bg     = "#0f172a" if is_dark else "#ffffff"
+    card_border = "#1e3a5f" if is_dark else "#bfdbfe"
+    head_bg     = "#172554" if is_dark else "#dbeafe"
+    text_main   = "#e2e8f0" if is_dark else "#0f172a"
+    text_muted  = "#94a3b8" if is_dark else "#64748b"
+    edu_color   = "#94a3b8" if is_dark else "#475569"
+    row_bg      = "#1e293b" if is_dark else "#f8fafc"
+    row_border  = "#334155" if is_dark else "#e2e8f0"
+    bar_track   = "#1e293b" if is_dark else "#e2e8f0"
+    s_bg        = "#1e293b" if is_dark else data["status_bg"]
+
+    # CSS hover: her kriter satırı için (roadmap panel ile aynı teknik)
+    hover_css = "".join(
+        f".sms-row-{i}:hover .sms-tip-{i}{{opacity:1!important;max-height:120px!important;}}"
+        for i in range(len(criteria))
+    )
+
+    rows_html = ""
+    for i, (key, c) in enumerate(criteria.items()):
+        if c["pass"] is None:
+            dot     = f'<span style="color:#64748b;font-size:0.8rem;flex-shrink:0;">&#8211;</span>'
+            desc_clr = text_muted
+            lbl_clr  = text_muted
+            dot_rgb  = "100,116,139"
+        elif c["pass"]:
+            dot     = f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;box-shadow:0 0 4px #10b981;flex-shrink:0;margin-top:3px;"></span>'
+            desc_clr = text_main
+            lbl_clr  = "#10b981"
+            dot_rgb  = "16,185,129"
+        else:
+            dot     = f'<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ef4444;box-shadow:0 0 4px #ef4444;flex-shrink:0;margin-top:3px;"></span>'
+            desc_clr = text_muted
+            lbl_clr  = "#ef4444"
+            dot_rgb  = "239,68,68"
+
+        rows_html += (
+            f'<div class="sms-row-{i}" style="background:{row_bg};border:1px solid {row_border};'
+            f'border-left:3px solid rgba({dot_rgb},0.6);border-radius:7px;padding:7px 9px 5px 9px;'
+            f'margin-bottom:4px;cursor:default;position:relative;">'
+            f'<div style="display:flex;align-items:flex-start;gap:7px;">'
+            f'{dot}'
+            f'<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:0.62rem;font-weight:700;color:{lbl_clr};text-transform:uppercase;letter-spacing:0.5px;line-height:1.2;">{c["label"]}</div>'
+            f'<div style="font-size:0.72rem;color:{desc_clr};margin-top:2px;line-height:1.3;">{c["desc"]}</div>'
+            f'</div>'
+            f'<span style="font-size:0.5rem;color:{text_muted};flex-shrink:0;margin-top:2px;opacity:0.6;">&#9432;</span>'
+            f'</div>'
+            f'<div class="sms-tip-{i}" style="opacity:0;max-height:0;overflow:hidden;transition:opacity 0.22s,max-height 0.22s;'
+            f'font-size:0.65rem;color:{edu_color};line-height:1.5;padding-top:0;margin-left:16px;">'
+            f'<div style="border-top:1px dashed rgba({dot_rgb},0.25);margin-top:5px;padding-top:4px;">'
+            f'&#128161; {c["edu"]}</div></div>'
+            f'</div>'
+        )
+
+    html = (
+        f'<style>{hover_css}</style>'
+        f'<div style="background:{card_bg};border:2px solid {card_border};border-radius:12px;'
+        f'overflow:hidden;margin-bottom:10px;font-family:Inter,sans-serif;'
+        f'box-shadow:0 4px 16px rgba(0,0,0,0.12);">'
+        # Başlık bandı
+        f'<div style="background:{head_bg};padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">'
+        f'<div>'
+        f'<div style="font-size:0.58rem;font-weight:700;color:{text_muted};text-transform:uppercase;letter-spacing:1px;">&#127919; Akilli Para Skoru</div>'
+        f'<div style="font-size:0.8rem;font-weight:800;color:{text_main};margin-top:2px;">{display_name}</div>'
+        f'</div>'
+        f'<div style="text-align:right;">'
+        f'<div style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:900;color:{s_color};line-height:1;">{score}</div>'
+        f'<div style="font-size:0.55rem;color:{text_muted};font-weight:600;margin-top:-2px;">/100</div>'
+        f'</div>'
+        f'</div>'
+        # Beden
+        f'<div style="padding:10px 12px 8px 12px;">'
+        # Progress bar
+        f'<div style="position:relative;background:{bar_track};border-radius:99px;height:6px;margin:0 0 2px 0;overflow:hidden;">'
+        f'<div style="background:linear-gradient(90deg,{s_color}88,{s_color});width:{score}%;height:100%;border-radius:99px;"></div>'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.52rem;color:{text_muted};font-family:JetBrains Mono,monospace;margin-bottom:6px;">'
+        f'<span>0</span><span>50</span><span>100</span>'
+        f'</div>'
+        # Durum etiketi
+        f'<div style="background:{s_bg};border:1px solid {s_color}40;border-radius:7px;padding:5px 10px;text-align:center;margin-bottom:8px;">'
+        f'<span style="font-size:0.75rem;font-weight:800;color:{s_color};">{status}</span>'
+        f'</div>'
+        # Kriter satırları
+        f'{rows_html}'
+        f'</div>'
+        f'</div>'
+    )
+
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_ict_certification_card(ticker):
     """
     Sadece 5 şartı geçen hisselerde 'Onay Sertifikası' gösterir.
@@ -9428,21 +9729,21 @@ def render_roadmap_8_panel(ticker):
     """
     st.markdown(html_content.replace('\n', ''), unsafe_allow_html=True)
 
-    # --- Formasyon mini grafiği — popup dialog ---
+    # --- Formasyon mini grafiği — butonu fiyat paneli altında göster (col_right) ---
     _m2_chart = data.get('M2_chart_data')
+    _type_labels = {
+        "cup": "Fincan-Kulp", "tobo": "TOBO", "flag": "Boğa Bayrağı",
+        "triangle": "Yükselen Üçgen", "range": "Range", "saucer": "Çanak",
+        "qml": "Quasimodo", "three_drive": "3 Drive", "sr_level": "Destek/Direnç"
+    }
     if _m2_chart and isinstance(_m2_chart, dict):
-        _type_labels = {
-            "cup": "Fincan-Kulp", "tobo": "TOBO", "flag": "Boğa Bayrağı",
-            "triangle": "Yükselen Üçgen", "range": "Range", "saucer": "Çanak",
-            "qml": "Quasimodo", "three_drive": "3 Drive", "sr_level": "Destek/Direnç"
-        }
-        _pat_label = _type_labels.get(_m2_chart.get('type', ''), "Formasyon")
-        _is_dark   = st.session_state.get('dark_mode', False)
-        if st.button(
-            f"🔍 {display_ticker} için Oluşan {_pat_label} Formasyon Grafiğini Görüntüle",
-            type="primary", use_container_width=False, key="btn_formasyon_dialog"
-        ):
-            _formasyon_dialog(ticker, _m2_chart, current_price, display_ticker, _pat_label, _is_dark)
+        st.session_state['_formasyon_chart_data']    = _m2_chart
+        st.session_state['_formasyon_pat_label']     = _type_labels.get(_m2_chart.get('type', ''), "Formasyon")
+        st.session_state['_formasyon_current_price'] = current_price
+        st.session_state['_formasyon_ticker']        = ticker
+        st.session_state['_formasyon_display']       = display_ticker
+    else:
+        st.session_state['_formasyon_chart_data'] = None
 
 def render_unified_signals_panel(ticker):
     """
@@ -9745,7 +10046,7 @@ def render_unified_signals_panel(ticker):
             neg_sec = (
                 f"<div style='display:flex;align-items:center;gap:6px;padding:5px 10px 3px;"
                 f"font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;"
-                f"color:#f87171;border-top:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.04);'>"
+                f"color:#8D4B5B;border-top:1px solid rgba(239,68,68,0.2);background:rgba(239,68,68,0.04);'>"
                 f"<span style='flex:1;'>Olumsuz</span>"
                 f"<span style='font-size:0.65rem;padding:0 6px;border-radius:999px;"
                 f"background:rgba(248,113,113,0.15);color:#f87171;font-weight:800;'>{len(neg_sigs)}</span></div>"
@@ -9756,10 +10057,10 @@ def render_unified_signals_panel(ticker):
         <style>.usp-row:hover .usp-edu{{max-height:100px!important;opacity:1!important;}}</style>
         <div style="background:{panel_bg};border:2px solid {panel_border};border-radius:8px;overflow:hidden;margin-bottom:8px;">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid {border_dim};">
-                <span style="font-size:0.85rem;font-weight:800;color:{title_col};">🔔 SİNYALLER</span>
+                <span style="font-size:0.85rem;font-weight:800;color:{title_col};">🔔 CANLI SİNYALLER</span>
                 <span style="font-size:0.78rem;font-weight:900;color:{karar_color};background:{karar_color}20;padding:2px 8px;border-radius:6px;border:1px solid {karar_color};white-space:nowrap;">{karar_icon} {karar_txt}</span>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;padding:5px 10px 3px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;background:rgba(255,255,255,0.03);">
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 10px 3px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#1A237E;background:rgba(255,255,255,0.03);">
                 <span style="flex:1;">Olumlu</span>{pc}
             </div>
             <div style="padding:4px 8px;">{pos_html}</div>
@@ -9930,12 +10231,16 @@ with st.sidebar:
 <div style="font-size:0.78rem;color:#1e3a8a;font-style:italic;line-height:1.5;">"{_bl_text}"</div></div>""", unsafe_allow_html=True)
     except: pass
 
+    # 🎯 AKILLI PARA SKORU — ICT Bottom Line altında, Kurumsal Para İştahı üstünde
+    if st.session_state.get('ticker'):
+        render_smart_money_panel(st.session_state.ticker)
+
     # (Genel Sağlık + Canlı Sinyaller artık _render_health_signals_panel() ile sağ sütunda gösteriliyor)
 
     # --------------------------------------------------
     # --- TEMEL ANALİZ DETAYLARI (DÜZELTİLMİŞ & TEK PARÇA) ---
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
-    
+
     # 1. PİYASA DUYGUSU (En Üstte)
     sentiment_verisi = calculate_sentiment_score(st.session_state.ticker)
     if sentiment_verisi:
@@ -11291,10 +11596,14 @@ Algoritma ve Grafik birbiriyle uyumlu mu? Örneğin; algoritma "Boğa" diyorsa, 
 2. BOĞA TUZAĞI (BULL TRAP) KONTROLÜ: 
 Algoritma "Yükseliş / Pozitif" gösteriyor olabilir (RSI şişmiş, fiyat ortalamaların üstünde olabilir). Ancak grafiğe baktığında; direnç bölgelerinde oluşan uzun üst fitiller (Rejection/SFP), hacimli yutan kırmızı mumlar (Bearish Engulfing) veya Omuz-Baş-Omuz (OBO) gibi yorgunluk formasyonları görüyorsan, ALGORİTMAYI REDDET. Kullanıcıyı "Ekranda yeşil rakamlar var ama grafikte mal dağıtılıyor (Dağıtım/Distribution)" şeklinde uyar.
 NİHAİ KURAL: Matematik (Algoritma) ile Göz (Price Action) çeliştiğinde, daima GÖZÜNE ve LİKİDİTE MANTIĞINA (Smart Money) öncelik ver!)
+*** AKILLI PARA HAZIRLIK SKORU (5 KRİTERLİ ALGORİTMİK ANALİZ) ***
+{(lambda d: f"Skor: {d['score']}/100 — Durum: {d['status']}\n{d['summary_text']}" if d else "Hesaplanamadı")(calculate_smart_money_score(t))}
+
 *** CANLI TARAMA SONUÇLARI (SİNYAL KUTUSU) ***
 (Burası sistemin tespit ettiği en sıcak sinyallerdir, )
 {scan_summary_str}
 Eğer sinyal kutusunda "AKILLI PARA BİRİKİMİ" sinyali varsa: Bu sinyalin ne anlama geldiğini aboneye düz dille açıkla (Force Index, fiyat yataylığı), ardından ICT bölgesi (OB/FVG/bias) ile bağla — "kurumsal birikim + ICT alım bölgesi çakışması" varsa bunu öne çıkar.
+Eğer Akıllı Para Hazırlık Skoru 65 veya üzerindeyse, bunu analizinin içine doğal bir şekilde eriştir — "sistem bu hissenin kırılım hazırlığında olduğuna dair güçlü sinyaller veriyor" gibi bir bağlam kur.
 
 *** VARLIK KİMLİĞİ ***
 - Sembol: {t}
@@ -12218,6 +12527,17 @@ with col_right:
     
     else:
         st.warning("Fiyat verisi alınamadı.")
+
+    # --- FORMASYON BUTONU — fiyat paneli hemen altında ---
+    _fcd = st.session_state.get('_formasyon_chart_data')
+    if _fcd and isinstance(_fcd, dict):
+        _fpl  = st.session_state.get('_formasyon_pat_label', 'Formasyon')
+        _fpr  = st.session_state.get('_formasyon_current_price', 0)
+        _ftk  = st.session_state.get('_formasyon_ticker', st.session_state.ticker)
+        _fdsp = st.session_state.get('_formasyon_display', get_display_name(st.session_state.ticker))
+        _fdrk = st.session_state.get('dark_mode', False)
+        if st.button(f"📊 {_fdsp}-{_fpl}", use_container_width=True, key="btn_formasyon_dialog"):
+            _formasyon_dialog(_ftk, _fcd, _fpr, _fdsp, _fpl, _fdrk)
 
     # --- BİRLEŞİK SİNYAL PANELİ (Canlı Sinyaller + Tarama Sonuçları) ---
     render_unified_signals_panel(st.session_state.ticker)
