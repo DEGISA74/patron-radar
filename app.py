@@ -8317,13 +8317,13 @@ def render_smart_money_panel(ticker):
             f'<div style="display:flex;align-items:flex-start;gap:7px;">'
             f'{dot}'
             f'<div style="flex:1;min-width:0;">'
-            f'<div style="font-size:0.62rem;font-weight:700;color:{lbl_clr};text-transform:uppercase;letter-spacing:0.5px;line-height:1.2;">{c["label"]}</div>'
-            f'<div style="font-size:0.72rem;color:{desc_clr};margin-top:2px;line-height:1.3;">{c["desc"]}</div>'
+            f'<div style="font-size:0.75rem;font-weight:700;color:{lbl_clr};text-transform:uppercase;letter-spacing:0.5px;line-height:1.2;">{c["label"]}</div>'
+            f'<div style="font-size:0.80rem;color:{desc_clr};margin-top:2px;line-height:1.3;">{c["desc"]}</div>'
             f'</div>'
             f'<span style="font-size:0.5rem;color:{text_muted};flex-shrink:0;margin-top:2px;opacity:0.6;">&#9432;</span>'
             f'</div>'
             f'<div class="sms-tip-{i}" style="opacity:0;max-height:0;overflow:hidden;transition:opacity 0.22s,max-height 0.22s;'
-            f'font-size:0.65rem;color:{edu_color};line-height:1.5;padding-top:0;margin-left:16px;">'
+            f'font-size:0.80rem;color:{edu_color};line-height:1.5;padding-top:0;margin-left:16px;">'
             f'<div style="border-top:1px dashed rgba({dot_rgb},0.25);margin-top:5px;padding-top:4px;">'
             f'&#128161; {c["edu"]}</div></div>'
             f'</div>'
@@ -8337,18 +8337,18 @@ def render_smart_money_panel(ticker):
         # ── Başlık bandı: isim sol, skor sağ — tek satır, sarkmaz
         f'<div style="background:{head_bg};padding:9px 14px;display:flex;align-items:center;justify-content:space-between;">'
         f'<div style="min-width:0;">'
-        f'<div style="font-size:0.55rem;font-weight:700;color:{text_muted};text-transform:uppercase;letter-spacing:0.8px;white-space:nowrap;">&#128640; KALKIS (LONG) RADARI</div>'
+        f'<div style="font-size:0.77rem;font-weight:700;color:{text_muted};text-transform:uppercase;letter-spacing:0.8px;white-space:nowrap;">&#128640; KALKIS (LONG) RADARI</div>'
         f'<div style="font-size:0.85rem;font-weight:800;color:{text_main};margin-top:2px;">{display_name}</div>'
         f'</div>'
         f'<div style="text-align:right;flex-shrink:0;margin-left:8px;">'
-        f'<div style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:900;color:{s_color};line-height:1;">{score}</div>'
-        f'<div style="font-size:0.52rem;color:{text_muted};font-weight:600;margin-top:-1px;">/100</div>'
+        f'<div style="font-family:JetBrains Mono,monospace;font-size:2.0rem;font-weight:900;color:{s_color};line-height:1;">{score}</div>'
+        f'<div style="font-size:0.73rem;color:{text_muted};font-weight:600;margin-top:-1px;">/100</div>'
         f'</div>'
         f'</div>'
         # ── Status şeridi: tam genişlik, sarkmaz
         f'<div style="background:{s_bg};border-top:1px solid {s_color}30;border-bottom:1px solid {s_color}30;'
         f'padding:5px 14px;text-align:center;">'
-        f'<span style="font-size:0.72rem;font-weight:800;color:{s_color};letter-spacing:0.3px;white-space:nowrap;">{status}</span>'
+        f'<span style="font-size:0.85rem;font-weight:800;color:{s_color};letter-spacing:0.3px;white-space:nowrap;">{status}</span>'
         f'</div>'
         # ── Beden
         f'<div style="padding:10px 12px 8px 12px;">'
@@ -8356,7 +8356,7 @@ def render_smart_money_panel(ticker):
         f'<div style="position:relative;background:{bar_track};border-radius:99px;height:6px;margin:0 0 2px 0;overflow:hidden;">'
         f'<div style="background:linear-gradient(90deg,{s_color}88,{s_color});width:{score}%;height:100%;border-radius:99px;"></div>'
         f'</div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.52rem;color:{text_muted};font-family:JetBrains Mono,monospace;margin-bottom:8px;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.73rem;color:{text_muted};font-family:JetBrains Mono,monospace;margin-bottom:8px;">'
         f'<span>0</span><span>50</span><span>100</span>'
         f'</div>'
         # Kriter satırları
@@ -12370,7 +12370,8 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
 3. SENARYO B: ELİNDE OLMAYANLAR İÇİN 
    - Yöntem: [ALINABİLİR / GERİ ÇEKİLME BEKLENEBİLİR / UZAK DURULMASI İYİ OLUR]
    - Risk/Ödül Analizi: Şu an girmek finansal açıdan olumlu mu? yoksa "FOMO" (Tepeden alma) riski taşıyabilir mi? Fiyat çok mu şişkin yoksa çok mu ucuz?
-   - İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
+   -İdeal Giriş: Güvenli alım için fiyatın hangi seviyeye (FVG/Destek/EMA8/EMA13/SMA20) gelmesi beklenebilir? 
+    Mümkünse bu girişin önümüzdeki kaç günde oluşabileceğini de tahmin et. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Sadece olasılıkları belirt.
    - Tezin İptal Noktası (sadece Senaryo B için geçerli): Analizdeki yükseliş/düşüş beklentisinin hangi seviyede tamamen geçersiz kalacağını (Invalidation) net fiyatla belirt. Bu seviyeye gelinirse, mevcut teknik yapının çökmüş olabileceği ve yeni bir analiz yapılması gerektiği yorumunu yap.
 4. SONUÇ VE UYARI: Önce "SONUÇ:" başlığı aç "Teknik Okuma Özeti" kısmındaki yorumlarını aynen buraya da ekle. (Yani: Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
 Ardından, bir alt satıra "UYARI:" başlığı aç ve eğer RSI pozitif-negatif uyumsuzluğu, Hacim düşüklüğü, stopping volume, Trend tersliği, Ayı-Boğa Tuzağı, gizli satışlar (satış işareti olan tekli-ikili-üçlü mumlar) vb varsa büyük harflerle uyar. 
