@@ -7024,10 +7024,10 @@ def _main_price_chart_b64(symbol, dark_mode):
         # ── LAYER 6: MA lines ─────────────────────────────────────────
         x = np.arange(n)
         ma_cfg = [
-            (sma50_arr,  "#df460a", 'SMA 50',  1.2),
-            (sma100_arr, "#0790ca", 'SMA 100', 1.2),
-            (ema144_arr, '#a78bfa', 'EMA 144', 1.4),
-            (sma200_arr, "#eb920c", 'SMA 200', 1.2),
+            (sma50_arr,  "#df460a", 'SMA 50',  0.5),
+            (sma100_arr, "#0790ca", 'SMA 100', 0.5),
+            (ema144_arr, '#a78bfa', 'EMA 144', 0.5),
+            (sma200_arr, "#eb920c", 'SMA 200', 0.5),
         ]
         legend_handles = []
         for arr, color, label, lw in ma_cfg:
@@ -9737,6 +9737,365 @@ def _build_pattern_analysis(chart_data, curr_price, ticker):
             "story": story, "conclusion": conclusion, "fp": fp, "pct": pct}
 
 
+def _mini_harmonic_chart_b64(symbol, harm_res, dark_mode):
+    """XABCD Harmonik formasyon için mum grafik — base64 PNG."""
+    try:
+        from matplotlib.patches import Rectangle as _Rect
+        df = get_safe_historical_data(symbol, period="1y")
+        if df is None or df.empty:
+            return ""
+
+        h_arr = df['High'].values; l_arr = df['Low'].values
+        o_arr = df['Open'].values; c_arr = df['Close'].values
+        n_total = len(df)
+
+        p_idx     = harm_res.get('pivot_idx', [])
+        p_prices  = harm_res.get('pivot_prices', [])
+        state     = harm_res.get('state', 'fresh')
+        prz       = harm_res.get('prz', 0)
+        direction = harm_res.get('direction', 'Bullish')
+
+        valid_idx = [i for i in p_idx if i is not None]
+        if not valid_idx:
+            return ""
+        first_bar = max(0, min(valid_idx) - 5)
+        last_bar  = min(n_total - 1, max(valid_idx) + 8 if state == 'fresh' else n_total - 1)
+        if last_bar - first_bar < 40:
+            first_bar = max(0, last_bar - 40)
+        n = last_bar - first_bar + 1
+
+        sl_o = list(o_arr[first_bar:last_bar + 1]); sl_h = list(h_arr[first_bar:last_bar + 1])
+        sl_l = list(l_arr[first_bar:last_bar + 1]); sl_c = list(c_arr[first_bar:last_bar + 1])
+        y_all = sl_h + sl_l; y_range = (max(y_all) - min(y_all)) or 1
+
+        bg_c  = "#0d1117" if dark_mode else "#f0f4f8"
+        up_c  = "#26a69a"; dn_c = "#ef5350"
+        zz_c  = "#a78bfa" if direction == 'Bullish' else "#f472b6"
+        prz_c = "#f59e0b"
+        axis_c = "#334155" if dark_mode else "#94a3b8"
+
+        fig, ax = plt.subplots(figsize=(5.4, 2.8), facecolor=bg_c)
+        ax.set_facecolor(bg_c)
+        cw = 0.55
+        for i, (o, h, l, c_) in enumerate(zip(sl_o, sl_h, sl_l, sl_c)):
+            color = up_c if c_ >= o else dn_c
+            ax.plot([i, i], [l, h], color=color, linewidth=0.7, zorder=3)
+            body_bot = min(o, c_); body_h = abs(c_ - o) or y_range * 0.002
+            rect = _Rect((i - cw / 2, body_bot), cw, body_h,
+                         facecolor=color, edgecolor=color, linewidth=0, zorder=4, alpha=0.9)
+            ax.add_patch(rect)
+
+        # XABCD zigzag
+        labels = ['X', 'A', 'B', 'C', 'D']
+        xs = []; ys = []
+        for k, (idx, price) in enumerate(zip(p_idx, p_prices)):
+            if idx is None or price is None:
+                continue
+            bar_x = idx - first_bar
+            if 0 <= bar_x < n:
+                xs.append(bar_x); ys.append(price)
+                is_high = (k % 2 == 1) if direction == 'Bullish' else (k % 2 == 0)
+                dy = -y_range * 0.07 if is_high else y_range * 0.07
+                lbl_col = zz_c if k < 4 else prz_c
+                ax.text(bar_x, price + dy, labels[k], color=bg_c, fontsize=7.5,
+                        ha='center', va='top' if is_high else 'bottom', fontweight='bold',
+                        bbox=dict(boxstyle='round,pad=0.18', facecolor=lbl_col, alpha=0.92, edgecolor='none'))
+        if len(xs) >= 2:
+            ax.plot(xs, ys, color=zz_c, lw=2.0, marker='o', ms=5, zorder=5, alpha=0.9)
+
+        # PRZ line
+        ax.hlines(prz, xmin=0, xmax=n - 1, colors=prz_c, linewidths=1.4, linestyles='--', alpha=0.9)
+        ax.text(n - 2, prz, f" PRZ {prz:.2f}", color=prz_c, fontsize=6, va='bottom', ha='right', fontweight='bold')
+
+        if state == 'approaching':
+            ax.text(n - 1, prz, " D?", color=bg_c, fontsize=6.5, ha='left', va='center', fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.15', facecolor=prz_c, alpha=0.95, edgecolor='none'))
+
+        ax.spines[:].set_visible(False)
+        ax.tick_params(left=False, bottom=True, colors=axis_c, labelsize=5.5)
+        ax.yaxis.set_visible(False)
+        step = max(1, n // 4)
+        ticks = list(range(0, n, step))
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([
+            pd.Timestamp(df.index[first_bar + t]).strftime("%d %b '%y") if first_bar + t < n_total else ""
+            for t in ticks], color=axis_c)
+        ax.set_xlim(-0.5, n - 0.5)
+        ax.set_ylim(min(y_all) - y_range * 0.05, max(y_all) + y_range * 0.14)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=110, bbox_inches='tight', facecolor=bg_c, pad_inches=0.1)
+        plt.close(fig); buf.seek(0)
+        return base64.b64encode(buf.read()).decode()
+    except Exception:
+        return ""
+
+
+def _build_harmonic_analysis(harm_res, curr_price, ticker, df=None):
+    """Harmonik formasyon için zenginleştirilmiş analiz verisi üretir."""
+    import datetime as _dt
+
+    def fp(v):
+        try: return f"{v:,.2f}" if v < 1000 else f"{int(v):,}"
+        except: return str(v)
+    def pct(a, b):
+        try: return f"{((a - b) / b * 100):+.1f}%"
+        except: return ""
+
+    pat       = harm_res.get('pattern', 'Harmonik')
+    direction = harm_res.get('direction', 'Bullish')
+    prz       = harm_res.get('prz', curr_price)
+    state     = harm_res.get('state', 'fresh')
+    ab_xa     = harm_res.get('AB_XA', 0)
+    xd_xa     = harm_res.get('XD_XA', 0)
+    bars_ago  = harm_res.get('bars_ago', 0)
+    p_prices  = harm_res.get('pivot_prices', [])
+    p_idx     = harm_res.get('pivot_idx', [])
+
+    _EMOJI = {'Gartley': '🦋', 'Butterfly': '🦋', 'Bat': '🦇', 'Crab': '🦀', 'Shark': '🦈'}
+    emoji  = _EMOJI.get(pat, '🔮')
+    is_bull = direction == 'Bullish'
+
+    # Hedef: D'den A'ya mesafenin 0.618'i
+    a_price = p_prices[1] if len(p_prices) > 1 and p_prices[1] is not None else None
+    target  = None
+    if a_price:
+        target = (prz + abs(a_price - prz) * 0.618) if is_bull else (prz - abs(a_price - prz) * 0.618)
+    invalid = prz * 0.975 if is_bull else prz * 1.025
+
+    # Stage
+    if state == 'approaching':
+        stage = 3; stage_total = 4; stage_label = "D Noktası Yaklaşıyor"
+    else:
+        stage = 4; stage_total = 4; stage_label = "PRZ Tamamlandı"
+
+    # R/R
+    rr_ratio = None; rr_str = "—"
+    if target and invalid and curr_price:
+        try:
+            reward = abs(target - curr_price); risk = abs(curr_price - invalid)
+            if risk > 0:
+                rr_ratio = reward / risk; rr_str = f"1 : {rr_ratio:.1f}"
+        except: pass
+
+    # Formasyon yaşı
+    pat_age_days = 0; pat_start_str = "—"
+    try:
+        if df is not None and p_idx and p_idx[0] is not None:
+            start_date  = df.index[p_idx[0]]
+            pat_age_days = (_dt.date.today() - pd.Timestamp(start_date).date()).days
+            _ay = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"]
+            sd  = pd.Timestamp(start_date).date()
+            pat_start_str = f"{sd.day} {_ay[sd.month-1]} '{str(sd.year)[2:]}"
+    except: pass
+
+    # Fibonacci hedef tablosu
+    _FIB_TARGET = {
+        'Gartley':   {'AB/XA': '0.618',        'XD/XA': '0.786'},
+        'Butterfly': {'AB/XA': '0.786',        'XD/XA': '1.27–1.618'},
+        'Bat':       {'AB/XA': '0.382–0.500',  'XD/XA': '0.886'},
+        'Crab':      {'AB/XA': '0.382–0.618',  'XD/XA': '1.618'},
+        'Shark':     {'AB/XA': '0.382–0.618',  'XD/XA': '0.886–1.13'},
+    }
+    fib_table = _FIB_TARGET.get(pat, {})
+
+    # Story
+    _STORIES = {
+        'Gartley': (
+            f"Gartley, harmonik formasyonların klasiğidir. AB dalgası XA'nın %61.8'ini geri çekiyor; "
+            f"D noktası XA'nın %78.6'sında tamamlanıyor. "
+            f"Bu seviye ({fp(prz)}) kurumsal {'alıcıların' if is_bull else 'satıcıların'} sıklıkla pozisyon açtığı Fibonacci kesişimidir."
+        ),
+        'Butterfly': (
+            f"Butterfly'da D noktası X'in ötesine uzanır — bu 'aşırı uzantı' hareketi yapar. "
+            f"Satıcılar ({'' if is_bull else 'alıcılar'}) aşırı bastırmış; "
+            f"PRZ bölgesi {fp(prz)} sert bir tersine dönüş için zemin hazırlıyor."
+        ),
+        'Bat': (
+            f"Bat formasyonunda AB, XA'nın %38.2–50'sini geri çeker; D ise XA'nın %88.6'sında oluşur. "
+            f"Bu çok derin ama güçlü bir dönüş noktasıdır. "
+            f"PRZ {fp(prz)} yakınında {'alıcıların' if is_bull else 'satıcıların'} devreye girmesi beklenir."
+        ),
+        'Crab': (
+            f"Crab, en geniş CD uzantısına sahip harmonik formasyondur — D XA'nın %161.8 uzantısında oluşur. "
+            f"Bu 'aşırı uzatılmış' hareket çok sert bir tersine dönüşe zemin hazırlar. "
+            f"PRZ {fp(prz)} güçlü bir {'dip' if is_bull else 'zirve'} noktası olabilir."
+        ),
+        'Shark': (
+            f"Shark standart XABCD yapısından ayrışır — C noktası AB'yi aşarak likidite avı yapar. "
+            f"Bu agresif hareket genellikle kurumların 'stop tuzağı' kurduğunu gösterir. "
+            f"Fiyat {fp(prz)} bölgesine yaklaştığında {'alım' if is_bull else 'satım'} fırsatı doğabilir."
+        ),
+    }
+    story = _STORIES.get(pat, f"{pat} formasyonu PRZ bölgesinde {'dip' if is_bull else 'zirve'} dönüşü sinyali veriyor.")
+
+    # Conclusion
+    dir_note = "üzerinde tutunabilirse" if is_bull else "altında kalabilirse"
+    stop_dir = "altına" if is_bull else "üstüne"
+    if state == 'approaching':
+        conclusion = (
+            f"D noktası henüz oluşmadı — fiyat tahmini PRZ olan <b>{fp(prz)}</b>'e yaklaşıyor. "
+            f"Aceleci olma; D oluştuktan sonra teyit mumunu bekle. "
+            f"PRZ onaylanırsa hedef <b>{fp(target) if target else '—'}</b> "
+            f"({pct(target, curr_price) if target else ''}). "
+            f"Stop için <b>{fp(invalid)}</b> {stop_dir} kapanış kullanılabilir."
+        )
+    else:
+        conclusion = (
+            f"D noktası {bars_ago} gün önce tamamlandı. "
+            f"Fiyat PRZ <b>{fp(prz)}</b> {dir_note} hedef <b>{fp(target) if target else '—'}</b> "
+            f"({pct(target, curr_price) if target else ''}) devreye girer. "
+            f"<b>{fp(invalid)}</b> {stop_dir} kapanış formasyonu geçersiz kılar. "
+            f"AB/XA: {ab_xa} — Fibonacci oranı {'teyit edildi' if xd_xa > 0 else 'yaklaşık'}."
+        )
+
+    return {
+        "emoji": emoji, "name": f"{pat} ({direction})", "pat": pat,
+        "direction": direction, "is_bull": is_bull,
+        "prz": prz, "target": target, "invalid": invalid,
+        "stage": stage, "stage_total": stage_total, "stage_label": stage_label,
+        "rr_ratio": rr_ratio, "rr_str": rr_str,
+        "fib_table": fib_table, "ab_xa": ab_xa, "xd_xa": xd_xa,
+        "state": state, "bars_ago": bars_ago,
+        "pat_age_days": pat_age_days, "pat_start_str": pat_start_str,
+        "story": story, "conclusion": conclusion, "fp": fp, "pct": pct,
+    }
+
+
+@st.dialog("🔮 Harmonik Formasyon", width="large")
+def _harmonik_dialog(ticker, harm_res, current_price, display_ticker, is_dark):
+    """Harmonik formasyon popup: XABCD grafik + zengin analiz."""
+    try:
+        df_h = get_safe_historical_data(ticker, period="1y")
+    except Exception:
+        df_h = None
+    _a  = _build_harmonic_analysis(harm_res, current_price, ticker, df_h)
+    fp  = _a["fp"]
+    txt = "#f1f5f9" if is_dark else "#0f172a"
+    sub = "#94a3b8" if is_dark else "#475569"
+    brd = "rgba(255,255,255,0.08)" if is_dark else "#e2e8f0"
+    lbl = "#64748b"
+    card = "rgba(30,41,59,0.5)" if is_dark else "#f8fafc"
+    acc  = "#a78bfa"
+
+    st.markdown(
+        f"<div style='font-size:1.35rem;font-weight:800;color:{acc};margin-bottom:12px;'>"
+        f"{_a['emoji']} {display_ticker} — {_a['name']}</div>",
+        unsafe_allow_html=True
+    )
+
+    _b64 = _mini_harmonic_chart_b64(ticker, harm_res, is_dark)
+    _col_chart, _col_info = st.columns([60, 40], gap="medium")
+
+    with _col_chart:
+        if _b64:
+            st.markdown(f"<img src='data:image/png;base64,{_b64}' style='width:100%;border-radius:8px;display:block;'/>", unsafe_allow_html=True)
+        else:
+            st.warning("Grafik oluşturulamadı.")
+
+    with _col_info:
+        # Aşama
+        dots = "".join(
+            f'<span style="width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:5px;'
+            f'background:{acc if j <= _a["stage"] else ("#334155" if is_dark else "#e2e8f0")};"></span>'
+            for j in range(1, _a["stage_total"] + 1)
+        )
+        stage_html = (f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">'
+                      f'<div>{dots}</div>'
+                      f'<div style="font-size:0.95rem;font-weight:700;color:{acc};">Aşama {_a["stage"]}/{_a["stage_total"]} — {_a["stage_label"]}</div>'
+                      f'</div>')
+
+        def _card(label, val_html, bg, border_color):
+            return (f'<div style="background:{bg};border-left:3px solid {border_color};'
+                    f'border-radius:7px;padding:7px 10px;">'
+                    f'<div style="font-size:0.84rem;font-weight:600;color:{border_color};margin-bottom:3px;">{label}</div>'
+                    f'<div style="font-size:0.97rem;font-weight:800;color:{txt};font-family:monospace;line-height:1.3;">{val_html}</div>'
+                    f'</div>')
+
+        cards_html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+
+        # PRZ
+        prz_ac = "#10b981" if current_price >= _a["prz"] else "#ef4444"
+        prz_ar = "▲ üstünde ✓" if current_price >= _a["prz"] else "▼ altında"
+        cards_html += _card("🎯 PRZ (Dönüş Bölgesi)",
+            f'{fp(_a["prz"])} <span style="font-size:0.78rem;color:{prz_ac};">{prz_ar}</span>',
+            "rgba(167,139,250,0.10)", acc)
+
+        # Yön
+        dir_c = "#10b981" if _a["is_bull"] else "#ef4444"
+        cards_html += _card("Beklenti Yönü",
+            f'<span style="color:{dir_c};">{"🟢 Bullish" if _a["is_bull"] else "🔴 Bearish"}</span>',
+            "rgba(100,116,139,0.06)", dir_c)
+
+        # Hedef
+        if _a["target"]:
+            t_pct = _a["pct"](_a["target"], current_price)
+            cards_html += _card("📈 Tahmini Hedef",
+                f'{fp(_a["target"])} <span style="font-size:0.82rem;color:#10b981;font-weight:600;">({t_pct})</span>',
+                "rgba(16,185,129,0.10)", "#10b981")
+
+        # Stop
+        s_pct = _a["pct"](_a["invalid"], current_price)
+        cards_html += _card("🔴 Stop / Geçersizlik",
+            f'{fp(_a["invalid"])} <span style="font-size:0.82rem;color:#ef4444;font-weight:600;">({s_pct})</span>',
+            "rgba(239,68,68,0.08)", "#ef4444")
+
+        # R/R
+        if _a["rr_ratio"]:
+            rr_c = "#10b981" if _a["rr_ratio"] >= 2.0 else ("#f59e0b" if _a["rr_ratio"] >= 1.0 else "#ef4444")
+            rr_lbl = "Mükemmel" if _a["rr_ratio"] >= 3.0 else ("İyi" if _a["rr_ratio"] >= 2.0 else ("Kabul" if _a["rr_ratio"] >= 1.0 else "Zayıf"))
+            cards_html += _card("📐 Risk / Ödül",
+                f'<span style="color:{rr_c};">{_a["rr_str"]}</span> <span style="font-size:0.78rem;color:{rr_c};">({rr_lbl})</span>',
+                "rgba(100,116,139,0.08)", rr_c)
+
+        # Formasyon yaşı
+        if _a["pat_age_days"] > 0:
+            cards_html += _card("📅 Formasyon Yaşı",
+                f'{_a["pat_age_days"]} gün <span style="font-size:0.82rem;color:{sub};">({_a["pat_start_str"]})</span>',
+                "rgba(100,116,139,0.06)", lbl)
+
+        cards_html += '</div>'
+
+        # Fibonacci oranları
+        fib_table = _a.get("fib_table", {})
+        fib_rows = ""
+        for fib_key, ideal_val in fib_table.items():
+            actual_val = str(_a["ab_xa"]) if "AB" in fib_key else str(_a["xd_xa"])
+            fib_rows += (f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                         f'padding:4px 0;border-bottom:1px solid {brd};">'
+                         f'<span style="font-size:0.84rem;color:{sub};">{fib_key}</span>'
+                         f'<div><span style="font-family:monospace;font-weight:700;font-size:0.9rem;color:{acc};">{actual_val}</span>'
+                         f'<span style="font-size:0.75rem;color:{lbl};margin-left:6px;">(hedef: {ideal_val})</span></div></div>')
+        fib_html = ""
+        if fib_rows:
+            fib_html = (f'<div style="padding:7px 10px;border-radius:7px;background:{card};border:1px solid {brd};margin-bottom:6px;">'
+                        f'<div style="font-size:0.84rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;">Fibonacci Oranları</div>'
+                        f'{fib_rows}</div>')
+
+        st.markdown(
+            f'<div style="padding:2px 0;">{stage_html}'
+            f'<div style="font-size:0.84rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Kilit Seviyeler</div>'
+            f'{cards_html}{fib_html}</div>',
+            unsafe_allow_html=True
+        )
+
+    # Alt bölüm: Sahne Hikayesi + SONUÇ
+    st.markdown("<hr style='margin:14px 0 10px 0;border-color:#334155;'>", unsafe_allow_html=True)
+    story_bg = "rgba(30,41,59,0.5)" if is_dark else "#f1f5f9"
+    concl_bg = "rgba(167,139,250,0.08)" if is_dark else "#faf5ff"
+    st.markdown(
+        f'<div style="background:{story_bg};border-radius:10px;padding:14px 18px;margin-bottom:10px;">'
+        f'<div style="font-size:0.88rem;font-weight:700;color:{lbl};text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">📖 Sahne Hikayesi</div>'
+        f'<div style="font-size:1.0rem;color:{txt};line-height:1.7;">{_a["story"]}</div>'
+        f'</div>'
+        f'<div style="background:{concl_bg};border:1px solid {acc}40;border-left:3px solid {acc};border-radius:10px;padding:14px 18px;">'
+        f'<div style="font-size:0.88rem;font-weight:700;color:{acc};text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px;">⚡ SONUÇ — Ne Yapılmalı?</div>'
+        f'<div style="font-size:1.0rem;color:{txt};line-height:1.7;">{_a["conclusion"]}</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+
 @st.dialog("📊 Formasyon Grafiği", width="large")
 def _formasyon_dialog(ticker, chart_data, current_price, display_ticker, pat_label, is_dark):
     """Zenginleştirilmiş formasyon popup: grafik + tam analiz + sahne hikayesi."""
@@ -11809,19 +12168,21 @@ YASAKLI CÜMLE KALIPLARI — Aşağıdaki kalıpları ASLA kullanma, bunları ku
    YASAKLI: "...göze çarpmaktadır" → YERİNE: Ne gördüğünü söyle ("Dikkat çeken şu:")
    YASAKLI: "...dikkat çekmektedir" → YERİNE: Neden önemli olduğunu açıkla
    YASAKLI: "...söylemek mümkündür" → YERİNE: Söyle, izin istemene gerek yok
+   YASAKLI: "...kanıtlıyor" → YERİNE: "gösteriyor olabilir", "gibi görünüyor", "gibi duruyor"
    YASAKLI: "Bu bağlamda..." → YERİNE: Cümleyi direkt başlat
    YASAKLI: "Öte yandan..." → YERİNE: "Ama", "Bununla birlikte", "Şu da var ki"
-   YASAKLI: "Sonuç itibarıyla..." → YERİNE: "Kısacası", "Net konuşmak gerekirse"
+   YASAKLI: "Sonuç itibarıyla..." → YERİNE: "Kısacası", "Uzun lafın kısası" "Özetle"
    YASAKLI: "...önem arz etmektedir" → YERİNE: Neden önemli olduğunu bir cümleyle açıkla
    YASAKLI: "Bu veriler ışığında..." → YERİNE: Direkt veriye gönderme yap
-   YASAKLI: "...olduğu görülmektedir" → YERİNE: "...görünüyor", "...gibi"
+   YASAKLI: "...olduğu görülmektedir" → YERİNE: "...olabileceği görünüyor", "...gibi"
    YASAKLI: "...tespit edilmiştir" → YERİNE: "...görülüyor", "...çıkıyor"
    YASAKLI: "İncelendiğinde..." → YERİNE: Doğrudan bulgunu yaz
    YASAKLI: "Genel itibarıyla..." → YERİNE: "Tablonun özü şu:", "Kısaca:"
-   YASAKLI: "...olduğu anlaşılmaktadır" → YERİNE: "...anlaşılıyor", "...görünüyor"
+   YASAKLI: "...olduğu anlaşılmaktadır" → YERİNE: "...olabileceği anlaşılıyor", "...görünüyor"
    YASAKLI: Her paragrafı "X tespit edilmiştir, bu durum Y anlamına gelmektedir" yapısıyla bitirmek
    YASAKLI: Her bölümü "Bu veriler ışığında şunu söyleyebiliriz ki..." ile açmak
    YASAKLI: Sonuç paragrafını her zaman "Genel itibarıyla değerlendirildiğinde..." ile başlatmak
+   YASAKLI: "çok ciddi" "çok büyük" "oldukça riskli" "sert" "aşırı" gibi abartılı sıfatlar kullanmak
 3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
 4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
 5. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
@@ -12779,8 +13140,55 @@ with col_right:
         _ftk  = st.session_state.get('_formasyon_ticker', st.session_state.ticker)
         _fdsp = st.session_state.get('_formasyon_display', get_display_name(st.session_state.ticker))
         _fdrk = st.session_state.get('dark_mode', False)
+        # Yön: sr_level'de is_support=False → Short, diğer tüm formasyon tipleri → Long
+        _f_bull = not (_fcd.get('type') == 'sr_level' and not _fcd.get('is_support', True))
+        _fbtn_bg  = "#81bb96" if _f_bull else "#9B7C99"
+        _fbtn_brd = "#3d8c5a" if _f_bull else "#6b3a5c"
+        _fbtn_hov = "#6aaa82" if _f_bull else "#876a85"
+        st.markdown(f"""<style>
+            div.st-key-btn_formasyon_dialog button {{
+                background:{_fbtn_bg} !important;
+                border:2px solid {_fbtn_brd} !important;
+                color:white !important;
+                font-weight:700 !important;
+            }}
+            div.st-key-btn_formasyon_dialog button:hover {{
+                background:{_fbtn_hov} !important;
+                border-color:{_fbtn_brd} !important;
+            }}
+        </style>""", unsafe_allow_html=True)
         if st.button(f"📊 {_fdsp}-{_fpl}", use_container_width=True, key="btn_formasyon_dialog"):
             _formasyon_dialog(_ftk, _fcd, _fpr, _fdsp, _fpl, _fdrk)
+
+    # --- HARMONİK FORMASYON BUTONU — formasyon butonunun hemen altında ---
+    try:
+        _hdf = get_safe_historical_data(st.session_state.ticker, period="1y")
+        _hres = calculate_harmonic_patterns(st.session_state.ticker, _hdf) if _hdf is not None else None
+    except Exception:
+        _hres = None
+    if _hres and isinstance(_hres, dict):
+        _hdsp   = get_display_name(st.session_state.ticker)
+        _hpat   = _hres.get('pattern', 'Harmonik')
+        _hprice = float(_hres.get('curr_price', info.get('price', 0) if info else 0))
+        _hdrk   = st.session_state.get('dark_mode', False)
+        _h_bull   = _hres.get('direction', 'Bullish') == 'Bullish'
+        _hbtn_bg  = "#81bb96" if _h_bull else "#9B7C99"
+        _hbtn_brd = "#3d8c5a" if _h_bull else "#6b3a5c"
+        _hbtn_hov = "#6aaa82" if _h_bull else "#876a85"
+        st.markdown(f"""<style>
+            div.st-key-btn_harmonik_dialog button {{
+                background:{_hbtn_bg} !important;
+                border:2px solid {_hbtn_brd} !important;
+                color:white !important;
+                font-weight:700 !important;
+            }}
+            div.st-key-btn_harmonik_dialog button:hover {{
+                background:{_hbtn_hov} !important;
+                border-color:{_hbtn_brd} !important;
+            }}
+        </style>""", unsafe_allow_html=True)
+        if st.button(f"🔮 {_hdsp}-{_hpat}", use_container_width=True, key="btn_harmonik_dialog"):
+            _harmonik_dialog(st.session_state.ticker, _hres, _hprice, _hdsp, _hdrk)
 
     # --- BİRLEŞİK SİNYAL PANELİ (Canlı Sinyaller + Tarama Sonuçları) ---
     render_unified_signals_panel(st.session_state.ticker)
