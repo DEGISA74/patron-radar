@@ -5153,36 +5153,49 @@ def calculate_ict_deep_analysis(ticker):
             safety_lvl = last_sl
 
         # ====================================================================
-        # YENİ: ICT UYUMLU YAKIN LİKİDİTE (DEALING RANGE) HESAPLAMASI
+        # ICT UYUMLU YAKIN LİKİDİTE (DEALING RANGE) HESAPLAMASI
+        # Minimum mesafe filtreleri: anlamsız gürültü hedefleri engellenir
+        # Yakın hedef: en az %0.8 uzakta | Asıl hedef: yakın hedeften en az %1.5 uzakta
         # ====================================================================
-        # 1. Sadece yakın geçmişteki (son 20 mum) İşlem Aralığına odaklan
+        MIN_NEAR  = 0.008   # Yakın hedef minimum %0.8 uzaklık
+        MIN_FAR   = 0.015   # Asıl hedef, yakın hedeften minimum %1.5 daha uzakta
+
         recent_df = df.iloc[-20:]
-        
-        # 2. Fiyatın altındaki dipleri bul (Sell-Side Liquidity - SSL)
-        lows_below = recent_df[recent_df['Low'] < curr_price]['Low'].drop_duplicates()
+
+        # Fiyatın altındaki dipler (SSL) — minimum mesafe filtreli
+        lows_below = recent_df[recent_df['Low'] < curr_price * (1 - MIN_NEAR)]['Low'].drop_duplicates()
         nearest_ssl = lows_below.sort_values(ascending=False)
-        
-        # 3. Fiyatın üstündeki tepeleri bul (Buy-Side Liquidity - BSL)
-        highs_above = recent_df[recent_df['High'] > curr_price]['High'].drop_duplicates()
+
+        # Fiyatın üstündeki tepeler (BSL) — minimum mesafe filtreli
+        highs_above = recent_df[recent_df['High'] > curr_price * (1 + MIN_NEAR)]['High'].drop_duplicates()
         nearest_bsl = highs_above.sort_values(ascending=True)
 
-        # 4. Yön (Bias) durumuna göre dinamik hedefleri ata
-        if "bearish" in bias:
-            final_target = nearest_ssl.iloc[0] if len(nearest_ssl) > 0 else curr_price * 0.98
-            derin_hedef = nearest_ssl.iloc[1] if len(nearest_ssl) > 1 else final_target * 0.98
-            ileri_hedef = curr_price * 1.02 # Ayı'da anlamsızdır ama hata vermesin diye tutuyoruz
-            safety_lvl = nearest_bsl.iloc[0] if len(nearest_bsl) > 0 else curr_price * 1.02
-        else:
-            final_target = nearest_bsl.iloc[0] if len(nearest_bsl) > 0 else curr_price * 1.02
-            ileri_hedef = nearest_bsl.iloc[1] if len(nearest_bsl) > 1 else final_target * 1.02
-            derin_hedef = curr_price * 0.98 # Boğa'da anlamsızdır ama hata vermesin diye tutuyoruz
-            safety_lvl = nearest_ssl.iloc[0] if len(nearest_ssl) > 0 else curr_price * 0.98
+        # Yapısal swing high/low (tüm geçmiş) — asıl hedef için
+        struct_bsl_list = sorted([h[1] for h in sw_highs if h[1] > curr_price * (1 + MIN_NEAR)], reverse=False)
+        struct_ssl_list = sorted([l[1] for l in sw_lows  if l[1] < curr_price * (1 - MIN_NEAR)], reverse=True)
 
-        # Matematiksel Emniyet Kilidi (İkinci hedef, ilk hedeften daha geride olamaz)
+        if "bearish" in bias:
+            # Yakın hedef: son 20 mumun en yakın SSL'i (min %0.8 aşağıda)
+            final_target = float(nearest_ssl.iloc[0]) if len(nearest_ssl) > 0 else curr_price * (1 - MIN_NEAR * 2)
+            # Asıl hedef: yapısal SSL — yakın hedeften en az %1.5 daha aşağıda
+            _far_ssl = [v for v in struct_ssl_list if v < final_target * (1 - MIN_FAR)]
+            derin_hedef = _far_ssl[0] if _far_ssl else final_target * (1 - MIN_FAR)
+            ileri_hedef = curr_price * 1.02
+            safety_lvl  = float(nearest_bsl.iloc[0]) if len(nearest_bsl) > 0 else curr_price * (1 + MIN_NEAR)
+        else:
+            # Yakın hedef: son 20 mumun en yakın BSL'i (min %0.8 yukarıda)
+            final_target = float(nearest_bsl.iloc[0]) if len(nearest_bsl) > 0 else curr_price * (1 + MIN_NEAR * 2)
+            # Asıl hedef: yapısal BSL — yakın hedeften en az %1.5 daha yukarıda
+            _far_bsl = [v for v in struct_bsl_list if v > final_target * (1 + MIN_FAR)]
+            ileri_hedef = _far_bsl[0] if _far_bsl else final_target * (1 + MIN_FAR)
+            derin_hedef = curr_price * 0.98
+            safety_lvl  = float(nearest_ssl.iloc[0]) if len(nearest_ssl) > 0 else curr_price * (1 - MIN_NEAR)
+
+        # Emniyet kilidi — sıra garantisi
         if "bearish" in bias and derin_hedef >= final_target:
-            derin_hedef = final_target * 0.98
+            derin_hedef = final_target * (1 - MIN_FAR)
         if "bullish" in bias and ileri_hedef <= final_target:
-            ileri_hedef = final_target * 1.02
+            ileri_hedef = final_target * (1 + MIN_FAR)
 
         # KARAR MATRİSİ: Yön (Bias) x Konum (Zone) Çaprazlaması (HİBRİT SENARYOLAR)
         is_bullish = "bullish" in bias
@@ -5288,7 +5301,7 @@ def calculate_ict_deep_analysis(ticker):
         return {
             "status": "OK", "structure": structure, "bias": bias, "zone": zone,
             "setup_type": setup_type, "entry": entry_price, "stop": stop_loss,
-            "target": final_target, "structural_target": structural_target,
+            "target": final_target, "structural_target": ileri_hedef if "bullish" in bias else derin_hedef,
             "rr": rr_ratio, "desc": setup_desc, "last_sl": last_sl, "last_sh": last_sh,
             "displacement": displacement_txt, "fvg_txt": active_fvg_txt, "ob_txt": active_ob_txt,
             "mean_threshold": mean_threshold, "curr_price": curr_price,
@@ -8653,31 +8666,47 @@ def render_ict_deep_panel(ticker):
     _ob_source = data.get('ob_age', 0) > 0 and data.get('ob_txt', 'Yok') != 'Yok'
     _level_label = "OB Orta Noktası" if _ob_source else "60G Denge Noktası"
 
+    # Mesafe hesabı — başlık bağlamı için
+    _mt_dist_pct = abs(_cp - _mt) / _cp * 100 if (_cp > 0 and _mt > 0) else 0
+    _mt_dist_str = f"%{_mt_dist_pct:.1f}"
+    _ob_h_num = data.get('ob_high_num', 0)
+    _ob_l_num = data.get('ob_low_num', 0)
+    _in_ob = (_ob_l_num > 0 and _ob_h_num > 0 and _ob_l_num <= _cp <= _ob_h_num)
+    _below_ob = (_ob_l_num > 0 and _cp < _ob_l_num)
+
     mt_title = "Kritik Denge Seviyesi"
     mt_desc  = "Fiyat kritik orta noktanın altına sarktı/üstüne çıktı. Yapı bozulmuş olabilir."
     if "bearish" in data['bias']:
-        mt_title = "Satıcılar Baskın"
+        if _in_ob:
+            mt_title = "Arz Bölgesinde! ⚠️"
+        elif _cp > _mt:
+            mt_title = f"Satıcılar Baskın — Direnç ({_mt_dist_str} aşağıda)"
+        else:
+            mt_title = f"Satıcılar Baskın — OB Kırıldı ⚠️"
         if _mt > 0 and _mt < _cp:
-            # Doğru senaryo: denge noktası fiyatın altında → direnç
             mt_desc = (f"⚖️ <b>{_level_label}: {_mt:.2f}</b> — Fiyat bu seviyeyi aşağı kırdı; "
                        f"{_mt:.2f} artık <b>direnç</b> işlevi görüyor. Kurumsal sipariş akışı (Order Flow) satıcılar lehine. "
                        f"Fiyat bu seviyeyi yeniden yukarı kıramadığı sürece yapı bozuk kalır; yeni alım açmak riskli.")
         elif _mt > 0:
-            # Denge noktası fiyatın üstünde → price dropped below range mid
             mt_desc = (f"⚖️ <b>{_level_label}: {_mt:.2f}</b> — Fiyat bu denge seviyesinin <b>altında</b> işlem görüyor. "
                        f"Satıcılar baskın; {_mt:.2f} seviyesi kısa vadeli hedef direnç. "
                        f"Fiyatın bu seviyeyi net geçip geçemeyeceği, trendin devamını belirleyecek.")
         else:
             mt_desc = "Kurumsal sipariş akışı (Order Flow) satıcılar lehine. Yeni alım pozisyonları için erken; yapı bozuk kalmaya devam ediyor."
     elif "bullish" in data['bias']:
-        mt_title = "Alıcılar Baskın"
+        if _in_ob:
+            mt_title = "OB'de! Destek Test Ediliyor 🎯"
+        elif _below_ob:
+            mt_title = "OB Kırıldı ⚠️"
+        elif _mt > 0 and _mt <= _cp:
+            mt_title = f"Alıcılar Baskın — OB Desteği ({_mt_dist_str} aşağıda)"
+        else:
+            mt_title = f"Alıcılar Baskın — Geri Çekilme Bölgesi ({_mt_dist_str} aşağıda)"
         if _mt > 0 and _mt <= _cp:
-            # Doğru senaryo: denge noktası fiyatın altında → destek
             mt_desc = (f"⚖️ <b>{_level_label}: {_mt:.2f}</b> — Fiyat bu seviyenin üzerinde işlem görüyor; "
                        f"{_mt:.2f} <b>destek</b> görevi üstlendi. Olası geri çekilmelerde bu bölgeye yakın alım fırsatı doğabilir. "
                        f"Kapanışlar bu seviyenin altına sarkarsa pozisyon korunmalıdır.")
         elif _mt > 0:
-            # Denge noktası fiyatın üstünde → fiyat iskontolu bölgede, dengeye ulaşması gerekiyor
             mt_desc = (f"⚖️ <b>{_level_label}: {_mt:.2f}</b> — Fiyat şu an bu seviyenin <b>altında</b> (iskontolu bölge). "
                        f"Sipariş akışı alıcılar lehine olmakla birlikte, fiyatın önce {_mt:.2f} seviyesine <b>ulaşması gerekiyor</b> — "
                        f"bu aşamalı bir yükseliş hedefidir, mevcut fiyattan destek değil.")
@@ -10617,7 +10646,7 @@ def render_unified_signals_panel(ticker):
         try:
             obv_title, obv_color, _ = get_obv_divergence_status(ticker)
             if "ZAYIF" not in obv_title and "Veri Yok" not in obv_title and "Hesaplanamadı" not in obv_title:
-                is_obv_pos = any(k in obv_title.upper() for k in ["GİRİŞ","GÜÇLÜ","POZİTİF","ALIŞ"])
+                is_obv_pos = any(k in obv_title.upper() for k in ["GİRİŞ","GÜÇLÜ","POZİTİF","ALIŞ","DİRENÇ","EMİLİM","BİRİKİM"])
                 signals.append(("📊",f"OBV: {obv_title}",obv_color,"On-Balance Volume fiyatla uyumsuz hareket ediyor. Fiyat düşerken OBV yükseliyorsa kurumsal birikim (Akümülasyon) sinyali.",is_obv_pos))
         except: pass
 
