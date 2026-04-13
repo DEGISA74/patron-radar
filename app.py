@@ -2087,7 +2087,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
         # --- 3. MEVCUT MANTIK (TOPLAMA & FORCE INDEX) ---
         delta = close.diff()
         force_index = delta * volume 
-        mf_smooth = force_index.ewm(span=5, adjust=False).mean()
+        mf_smooth = force_index.ewm(span=2, adjust=False).mean()
 
         last_10_mf = mf_smooth.tail(10)
         last_10_close = close.tail(10)
@@ -2141,7 +2141,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
         
         is_down_day = close < open_
         down_volumes = volume.where(is_down_day, 0)
-        max_down_vol_10 = down_volumes.iloc[-11:-1].max()
+        max_down_vol_10 = down_volumes.iloc[-4:-1].max()
         
         is_up_day = float(close.iloc[-1]) > float(open_.iloc[-1])
         
@@ -3377,7 +3377,7 @@ def process_single_ict_setup(symbol, df):
     v2 İyileştirmeleri:
     1. Fractal pivot tespiti (2-bar her yanda) — _compute_smc_elements ile tutarlı
     2. Mitigated FVG filtresi — zaten dolmuş gap'ler dışlanır
-    3. OTE/Fibonacci kaldırıldı — FVG CE (50%) yeterli ve daha temiz
+    3. OTE/Fibonacci bonus katman — FVG CE (50%) zorunlu, OTE confluence varsa +bonus
     4. Displacement + RRR >= 2.5 korundu
     """
     try:
@@ -3465,12 +3465,21 @@ def process_single_ict_setup(symbol, df):
                                     target_price = min(targets)
                                     rrr = (target_price - entry_price) / risk
                                     if rrr >= 2.5:
+                                        # --- BONUS: Fibonacci OTE Confluence (0.618–0.786) ---
+                                        ote_bonus = ""
+                                        ote_skor = 99
+                                        if recent_low < last_sh_val:
+                                            fib_618 = last_sh_val - (last_sh_val - recent_low) * 0.618
+                                            fib_786 = last_sh_val - (last_sh_val - recent_low) * 0.786
+                                            if (fib_786 * 0.99) <= fvg_ce <= (fib_618 * 1.01):
+                                                ote_bonus = " | ⭐ OTE Confluence (Bonus)"
+                                                ote_skor  = 100
                                         return {
                                             "Sembol": symbol, "Fiyat": current_price,
                                             "Yön": "LONG", "İkon": "🎯", "Renk": "#16a34a",
-                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}",
+                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}{ote_bonus}",
                                             "Stop_Loss": f"{stop_loss:.2f}",
-                                            "Skor": 99
+                                            "Skor": ote_skor
                                         }
 
         # =========================================================
@@ -3514,12 +3523,21 @@ def process_single_ict_setup(symbol, df):
                                     target_price = max(targets)
                                     rrr = (entry_price - target_price) / risk
                                     if rrr >= 2.5:
+                                        # --- BONUS: Fibonacci OTE Confluence (0.618–0.786) ---
+                                        ote_bonus = ""
+                                        ote_skor  = 99
+                                        if recent_high > last_sl_val:
+                                            fib_618 = last_sl_val + (recent_high - last_sl_val) * 0.618
+                                            fib_786 = last_sl_val + (recent_high - last_sl_val) * 0.786
+                                            if (fib_618 * 0.99) <= fvg_ce <= (fib_786 * 1.01):
+                                                ote_bonus = " | ⭐ OTE Confluence (Bonus)"
+                                                ote_skor  = 100
                                         return {
                                             "Sembol": symbol, "Fiyat": current_price,
                                             "Yön": "SHORT", "İkon": "🎯", "Renk": "#dc2626",
-                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}",
+                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}{ote_bonus}",
                                             "Stop_Loss": f"{stop_loss:.2f}",
-                                            "Skor": 99
+                                            "Skor": ote_skor
                                         }
 
         return None
@@ -4359,31 +4377,47 @@ def calculate_sentiment_score(ticker):
         is_crypto = "-USD" in ticker
         is_index = is_global_index or is_bist_index or is_crypto
         
-        # --- PUAN AĞIRLIKLARI ---
+        # --- PUAN AĞIRLIKLARI (Fama-French ampirik consensus: momentum+RS en prediktif) ---
         if is_index:
-            W_STR, W_TR, W_VOL = 25, 25, 25
-            W_MOM, W_VOLA = 15, 10
+            W_STR, W_TR, W_VOL = 10, 25, 25
+            W_MOM, W_VOLA = 25, 15
             W_RS = 0
         else:
-            W_STR, W_TR, W_VOL = 20, 20, 20
-            W_MOM, W_VOLA = 15, 10
-            W_RS = 15
+            W_STR, W_TR, W_VOL = 10, 20, 20
+            W_MOM, W_VOLA = 20, 10
+            W_RS = 20
 
         # =========================================================
-        # 1. YAPI (MARKET STRUCTURE)
+        # 1. YAPI (MARKET STRUCTURE) — HH+HL zinciri (ICT mantığı)
         # =========================================================
         score_str = 0; reasons_str = []
-        recent_high = high.rolling(20).max().shift(1).iloc[-1]
-        recent_low = low.rolling(20).min().shift(1).iloc[-1]
-        curr_close = close.iloc[-1]
-        
-        if curr_close > recent_high:
-            score_str += (W_STR * 0.6); reasons_str.append("BOS: Zirve Kırılımı")
-        elif curr_close >= (recent_high * 0.97):
-            score_str += (W_STR * 0.6); reasons_str.append("Zirveye Yakın (Güçlü)")
-            
-        if low.iloc[-1] > recent_low:
-            score_str += (W_STR * 0.4); reasons_str.append("HL: Yükselen Dip")
+        curr_close = float(close.iloc[-1])
+
+        # Son 40 barda pivot noktaları tespit et (2-bar her yanda)
+        _hh_count = 0; _hl_count = 0
+        _prev_ph = None; _prev_pl = None
+        _h_arr = high.values; _l_arr = low.values; _c_arr = close.values
+        _n = len(_h_arr)
+        for _i in range(2, min(_n - 2, 40)):
+            _ri = _n - 1 - _i  # geriden say
+            if _ri < 2: continue
+            _ph = _h_arr[_ri]
+            if (_ph > _h_arr[_ri-1] and _ph >= _h_arr[_ri-2] and
+                    _ph > _h_arr[_ri+1] and _ph >= _h_arr[_ri+2]):
+                if _prev_ph is not None and _ph > _prev_ph:
+                    _hh_count += 1
+                _prev_ph = _ph
+            _pl = _l_arr[_ri]
+            if (_pl < _l_arr[_ri-1] and _pl <= _l_arr[_ri-2] and
+                    _pl < _l_arr[_ri+1] and _pl <= _l_arr[_ri+2]):
+                if _prev_pl is not None and _pl > _prev_pl:
+                    _hl_count += 1
+                _prev_pl = _pl
+
+        if _hh_count >= 2 and _hl_count >= 2:
+            score_str += W_STR; reasons_str.append("HH+HL Zinciri (Güçlü Yapı)")
+        elif _hh_count >= 1 and _hl_count >= 1:
+            score_str += (W_STR * 0.5); reasons_str.append("Gelişen HH+HL Yapısı")
 
         # =========================================================
         # 2. TREND
@@ -4413,12 +4447,14 @@ def calculate_sentiment_score(ticker):
             score_vol += (W_VOL * 0.6)
             reasons_vol.append("Hacim Artışı")
             
-        # KURAL 2: OBV (On Balance Volume)
+        # KURAL 2: OBV — EMA(20) smoothing + eğim kontrolü
         obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
-        obv_ma = obv.rolling(10).mean()
-        if obv.iloc[-1] > obv_ma.iloc[-1]: 
-            score_vol += (W_VOL * 0.4)
-            reasons_vol.append("OBV+")
+        obv_ema = obv.ewm(span=20, adjust=False).mean()
+        obv_slope = float(obv_ema.iloc[-1]) - float(obv_ema.iloc[-5])
+        if obv.iloc[-1] > obv_ema.iloc[-1]:
+            score_vol += (W_VOL * 0.25); reasons_vol.append("OBV>EMA")
+        if obv_slope > 0:
+            score_vol += (W_VOL * 0.15); reasons_vol.append("OBV Eğim+")
 
         # =========================================================
         # 4. MOMENTUM
@@ -4432,22 +4468,57 @@ def calculate_sentiment_score(ticker):
         
         if rsi.iloc[-1] > 50: score_mom += 5; reasons_mom.append("RSI>50")
         if rsi.iloc[-1] > rsi.iloc[-5]: score_mom += 5; reasons_mom.append("RSI İvme")
-        
+
         ema12 = close.ewm(span=12, adjust=False).mean(); ema26 = close.ewm(span=26, adjust=False).mean()
         macd = ema12 - ema26; signal = macd.ewm(span=9, adjust=False).mean()
         if macd.iloc[-1] > signal.iloc[-1]: score_mom += 5; reasons_mom.append("MACD Al")
 
+        # --- DIVERGENCE TESPİTİ (Bullish RSI + OBV) ---
+        try:
+            _w = 20  # son 20 bar içinde bakıyoruz
+            _c_w  = close.iloc[-_w:].values
+            _r_w  = rsi.iloc[-_w:].values
+            _obve = obv_ema.iloc[-_w:].values  # obv_ema yukarıda hesaplandı
+
+            # Fiyat yeni dip yaptı mı?
+            _price_low_now  = float(_c_w[-1])
+            _price_low_prev = float(_c_w[:-1].min())
+            _price_new_low  = _price_low_now < _price_low_prev * 0.995
+
+            # Bullish RSI divergence: fiyat dip → RSI önceki dipten yüksek
+            _rsi_now  = float(_r_w[-1])
+            _rsi_prev = float(_r_w[:-1].min())
+            if _price_new_low and _rsi_now > (_rsi_prev + 3):
+                score_mom += 5; reasons_mom.append("📈 RSI Div (Bullish)")
+
+            # Bullish OBV divergence: fiyat düşüyor ama OBV EMA artıyor
+            _obv_slope_w = float(_obve[-1]) - float(_obve[-6])
+            _price_slope = float(_c_w[-1]) - float(_c_w[-6])
+            if _price_slope < 0 and _obv_slope_w > 0:
+                score_mom += 5; reasons_mom.append("📈 OBV Div (Kurumsal Toplama)")
+        except Exception:
+            pass
+
         # =========================================================
-        # 5. VOLATİLİTE
+        # 5. HACİM KALİTESİ (Chaikin Money Flow mantığı)
         # =========================================================
         score_vola = 0; reasons_vola = []
-        std = close.rolling(20).std()
-        upper = close.rolling(20).mean() + (2 * std)
-        lower = close.rolling(20).mean() - (2 * std)
-        bb_width = (upper - lower) / close.rolling(20).mean()
-        
-        if bb_width.iloc[-1] < bb_width.rolling(20).mean().iloc[-1]:
-            score_vola += 10; reasons_vola.append("Sıkışma")
+        try:
+            _is_up = close > close.shift(1)
+            # Kriter 1: Son 20 günde yükseliş hacmi ort. > düşüş hacmi ort.
+            _up_vol   = volume.where(_is_up, 0).iloc[-20:]
+            _down_vol = volume.where(~_is_up, 0).iloc[-20:]
+            _avg_up   = _up_vol[_up_vol > 0].mean() if (_up_vol > 0).any() else 0
+            _avg_down = _down_vol[_down_vol > 0].mean() if (_down_vol > 0).any() else 1
+            if _avg_up > _avg_down:
+                score_vola += 8; reasons_vola.append("Alım Hacmi > Satım")
+            # Kriter 2: Son 10 günde hacmin %60'ı yükseliş günlerinde mi?
+            _last10_up_vol   = float(volume.where(_is_up, 0).iloc[-10:].sum())
+            _last10_total_vol = float(volume.iloc[-10:].sum())
+            if _last10_total_vol > 0 and (_last10_up_vol / _last10_total_vol) >= 0.60:
+                score_vola += 7; reasons_vola.append("Birikim Ağırlıklı (10G)")
+        except Exception:
+            pass
             
         # =========================================================
         # 6. GÜÇ (RS)
@@ -6044,8 +6115,8 @@ def calculate_harmonic_patterns(ticker, df):
                 bars_ago = n - 1 - Di
                 fark_pct = abs(curr_price - prz) / (prz + 1e-9) * 100
 
-                # TAZE FİLTRE: D en fazla 5 gün önce, fiyat %8'den uzakta değil
-                if bars_ago > 5 or fark_pct > 8:
+                # TAZE FİLTRE: D en fazla 10 gün önce, fiyat %8'den uzakta değil
+                if bars_ago > 10 or fark_pct > 8:
                     continue
 
                 _pidx = [Xi, Ai, Bi, Ci, Di]
@@ -6068,10 +6139,18 @@ def calculate_harmonic_patterns(ticker, df):
                     pat = 'Shark'
 
                 if pat:
+                    # D noktası major destek/direnç confluence kontrolü
+                    d_sr_confluence = False
+                    try:
+                        sr_levels = find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
+                        d_sr_confluence = any(abs(prz - lvl) / (lvl + 1e-9) <= 0.015 for lvl in sr_levels)
+                    except Exception:
+                        pass
                     return {'pattern': pat, 'direction': direction, 'prz': prz,
                             'AB_XA': round(AB_XA, 3), 'XD_XA': round(XD_XA, 3),
                             'bars_ago': bars_ago, 'curr_price': curr_price,
-                            'pivot_idx': _pidx, 'pivot_prices': _pprices, 'state': 'fresh'}
+                            'pivot_idx': _pidx, 'pivot_prices': _pprices, 'state': 'fresh',
+                            'd_sr_confluence': d_sr_confluence}
 
         # ── AŞAMA 2: YAKLAŞAN (XABC tamamlandı, D henüz oluşmadı) ─────────
         # CD bacağının tahmini bitiş noktasını Fibonacci ortalamasıyla hesapla
@@ -6139,13 +6218,21 @@ def calculate_harmonic_patterns(ticker, df):
                             _app = [l[Xi], h[Ai], l[Bi], h[Ci], None]
                         else:
                             _app = [h[Xi], l[Ai], h[Bi], l[Ci], None]
+                        # D tahmini major destek/direnç confluence kontrolü
+                        d_sr_confluence = False
+                        try:
+                            sr_levels = find_smart_sr_levels(df, window=5, cluster_tolerance=0.015, min_touches=3)
+                            d_sr_confluence = any(abs(projected - lvl) / (lvl + 1e-9) <= 0.015 for lvl in sr_levels)
+                        except Exception:
+                            pass
                         return {'pattern': pat, 'direction': direction, 'prz': projected,
                                 'AB_XA': round(AB_XA, 3), 'XD_XA': 0,
                                 'bars_ago': 0, 'curr_price': curr_price,
                                 'pivot_idx': [Xi, Ai, Bi, Ci, None],
                                 'pivot_prices': _app,
                                 'state': 'approaching',
-                                'bars_since_c': bars_since_c}
+                                'bars_since_c': bars_since_c,
+                                'd_sr_confluence': d_sr_confluence}
 
         return None
     except Exception:
@@ -6313,6 +6400,7 @@ def render_harmonic_banner(ticker):
                              border-radius:5px; font-size:0.78rem; font-weight:700;">
                     🕒 {"D Tahmini — Henüz Oluşmadı" if state == "approaching" else f"D Noktası: {res['bars_ago']} Gün Önce"}
                 </span>
+                {('<span style="background:rgba(34,197,94,0.18); color:#86efac; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">🧲 D = S/R Confluence (Güçlü)</span>' if res.get('d_sr_confluence') else '')}
             </div>
             {pivot_dates_html}
         </div>
@@ -7519,9 +7607,14 @@ def render_sentiment_card(sent):
     else: 
         color = "#7f1d1d"; icon = "❄️"; status = "ÇÖKÜŞ"; bg_tone = "#fef2f2"; border_tone = "#fecaca"
     
-    # Etiketler
-    p_label = '25p' if sent.get('is_index', False) else '20p'
-    rs_label = 'Devre Dışı' if sent.get('is_index', False) else '15p'
+    # Etiketler — ağırlıklarla senkron
+    _idx = sent.get('is_index', False)
+    lbl_str  = '10p'
+    lbl_tr   = '25p' if _idx else '20p'
+    lbl_vol  = '25p' if _idx else '20p'
+    lbl_mom  = '25p' if _idx else '20p'
+    lbl_vola = '15p' if _idx else '10p'
+    lbl_rs   = 'Devre Dışı' if _idx else '20p'
 
     # --- KART OLUŞTURUCU (SOLA YASLI - HATA VERMEZ) ---
     def make_card(num, title, score_lbl, val, desc, emo):
@@ -7542,19 +7635,19 @@ def render_sentiment_card(sent):
 
     # --- KARTLARI OLUŞTUR ---
     cards_html = ""
-    cards_html += make_card("1", "YAPI", p_label, sent['str'], "Market Yapısı- Son 20 günün %97-100 zirvesinde (12). Son 5 günün en düşük seviyesi, önceki 20 günün en düşük seviyesinden yukarıdaysa: HL (8)", "🏗️")
-    cards_html += make_card("2", "TREND", p_label, sent['tr'], "Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4)", "📈")
-    cards_html += make_card("3", "HACİM", p_label, sent['vol'], "Hacmin 20G ortalamaya oranını ve On-Balance Volume (OBV) denetler. Bugünün hacmi son 20G ort.üstünde (12) Para girişi var: 10G ortalamanın üstünde (8)", "🌊")
+    cards_html += make_card("1", "YAPI", lbl_str, sent['str'], "Piyasa yapısını HH+HL zinciriyle ölçer. Son 40 barda 2+ Higher High ve 2+ Higher Low zinciri varsa güçlü yapı (10). 1 HH+1 HL varsa gelişen yapı (5).", "🏗️")
+    cards_html += make_card("2", "TREND", lbl_tr, sent['tr'], "Ortalamalara bakar. Hisse fiyatı SMA200 üstünde (8). EMA20 üstünde (8). Kısa vadeli ortalama, orta vadeli ortalamanın üzerinde, yani EMA20 > SMA50 (4)", "📈")
+    cards_html += make_card("3", "HACİM", lbl_vol, sent['vol'], "Hacmin 20G ortalamaya oranını ve OBV'yi denetler. Bugünün hacmi son 20G ort.üstünde (12). OBV, EMA(20) üstünde (5). OBV eğimi pozitif (3)", "🌊")
     _rsi_raw = sent.get('raw_rsi', 50)
     _rsi_bar = _rsi_bar_html(_rsi_raw)
-    cards_html += make_card("4", "MOMENTUM", "15p", sent['mom'], f"RSI ve MACD ile itki gücünü ölçer. 50 üstü RSI (5) RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5){_rsi_bar}", "🚀")
-    cards_html += make_card("5", "SIKIŞMA", "10p", sent['vola'], "Bollinger Bant genişliğini inceler. Bant genişliği son 20G ortalamasından dar (10)", "📐")
-    cards_html += make_card("6", "GÜÇ", rs_label, sent['rs'], "Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)", "💪")
+    cards_html += make_card("4", "MOMENTUM", lbl_mom, sent['mom'], f"RSI, MACD ve divergence ile itki gücünü ölçer. 50 üstü RSI (5). RSI ivmesi artıyor (5). MACD sinyal çizgisi üstünde (5). Bullish RSI/OBV divergence tespiti (+5 bonus her biri){_rsi_bar}", "🚀")
+    cards_html += make_card("5", "HACİM KALİTESİ", lbl_vola, sent['vola'], "Para akışının yönünü ölçer. Son 20 günde yükseliş günlerinin ortalama hacmi, düşüş günlerinden fazlaysa kurumlar topluyor (8). Son 10 günde hacmin %60'ı yükseliş günlerine düşüyorsa birikim ağırlıklı (7).", "💰")
+    cards_html += make_card("6", "GÜÇ", lbl_rs, sent['rs'], "Hissenin Endekse göre relatif gücünü (RS) ölçer. Mansfield RS göstergesi 0'ın üzerinde (5). RS trendi son 5 güne göre yükselişte (5). Endeks düşerken hisse artıda (Alpha) (5)", "💪")
 
     # --- ANA HTML (SOLA YASLI) ---
     final_html = f"""<div class="info-card" style="border-top: 3px solid {color}; background-color: #f8fafc; padding-bottom: 2px;">
 <div class="info-header" style="color:#1e3a8a; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-<span>💼 Kurumsal Para İştahı: {display_ticker}</span>
+<span>💼 KURUMSAL İLGİ: {display_ticker}</span>
 <span style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.1rem; color:{color}; background:{color}15; padding:2px 8px; border-radius:6px;">{score}/100</span>
 </div>
 <div style="background:{bg_tone}; border:1px solid {border_tone}; border-radius:6px; padding:8px; text-align:center; margin-bottom:12px;">
@@ -10759,7 +10852,7 @@ def _render_health_signals_panel():
         if "ticker" in st.session_state and st.session_state.ticker:
             master_score, score_pros, score_cons = calculate_master_score(st.session_state.ticker)
 
-            st.markdown("<div style='text-align:center; font-weight:800; font-size:1rem; color:#38bdf8; margin-bottom:5px; margin-top:5px;'>GENEL SAĞLIK DURUMU</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center; font-weight:800; font-size:1rem; color:#38bdf8; margin-bottom:5px; margin-top:5px;'>TEKNİK GÖRÜNÜM</div>", unsafe_allow_html=True)
 
             # 1. HIZ GÖSTERGESİ (GAUGE)
             render_gauge_chart(master_score)
