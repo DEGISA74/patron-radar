@@ -310,9 +310,9 @@ commodities_list = [
     "GC=F",   # Altın ONS (Vadeli - Gold Futures) - 7/24 Aktif
     "SI=F",   # Gümüş ONS (Vadeli - Silver Futures)
     "HG=F",   # Bakır (Copper Futures) - CPER yerine bu daha iyidir
-    "CL=F",   # Ham Petrol (Crude Oil WTI Futures) - Piyasanın kalbi burasıdır
+    "CL=F",   # WTI Petrol (Crude Oil WTI Futures) - ABD teslimatlı ham petrol
     "NG=F",   # Doğalgaz (Natural Gas Futures)
-    "BZ=F"    # Brent Petrol (Brent Crude Futures)
+    "BZ=F"    # Brent Petrol (Brent Crude Futures) - Kuzey Denizi, küresel referans fiyatı
 ]
 
 # --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
@@ -336,7 +336,7 @@ raw_bist_stocks = [
     "NATEN.IS", "NETAS.IS", "NIBAS.IS", "NTGAZ.IS", "NUGYO.IS", "NUHCM.IS",
     "OBASE.IS", "OBAMS.IS", "ODAS.IS", "ODINE.IS", "OFSYM.IS", "ONCSM.IS", "ORCA.IS", "ORGE.IS", "ORMA.IS", "OSMEN.IS", "OSTIM.IS", "OTKAR.IS", "OTTO.IS", "OYAKC.IS", "OYAYO.IS", "OYLUM.IS", "OYYAT.IS", "OZGYO.IS", "OZKGY.IS", "OZRDN.IS", "OZSUB.IS",
     "PAGYO.IS", "PAMEL.IS", "PAPIL.IS", "PARSN.IS", "PASEU.IS", "PCILT.IS", "PEGYO.IS", "PEKGY.IS", "PENGD.IS", "PENTA.IS", "PETKM.IS", "PETUN.IS", "PGSUS.IS", "PINSU.IS", "PKART.IS", "PKENT.IS", "PLAT.IS", "PNLSN.IS", "POLHO.IS", "POLTK.IS", "PRDGS.IS", "PRKAB.IS", "PRKME.IS", "PRZMA.IS", "PSDTC.IS", "PSGYO.IS", "PTEK.IS",
-    "QNBFB.IS", "QNBFL.IS", "QUAGR.IS", "PLTUR.IS",
+    "QNBFB.IS", "QNBFL.IS", "QUAGR.IS", "PLTUR.IS", "PATEK.IS",
     "RALYH.IS", "RAYSG.IS", "REEDR.IS", "RGYAS.IS", "RNPOL.IS", "RODRG.IS", "ROYAL.IS", "RTALB.IS", "RUBNS.IS", "RYGYO.IS", "RYSAS.IS",
     "SAFKR.IS", "SAHOL.IS", "SAMAT.IS", "SANEL.IS", "SANFM.IS", "SANKO.IS", "SARKY.IS", "SASA.IS", "SAYAS.IS", "SDTTR.IS", "SEGYO.IS", "SEKFK.IS", "SEKUR.IS", "SELEC.IS", "SELGD.IS", "SELVA.IS", "SEYKM.IS", "SILVR.IS", "SISE.IS", "SKBNK.IS", "SKTAS.IS", "SKYMD.IS", "SMART.IS", "SMRTG.IS", "SNGYO.IS", "SNICA.IS", "SNKRN.IS", "SNPAM.IS", "SODSN.IS", "SOKE.IS", "SOKM.IS", "SONME.IS", "SRVGY.IS", "SUMAS.IS", "SUNTK.IS", "SURGY.IS", "SUWEN.IS", "SYS.IS",
     "TABGD.IS", "TARAF.IS", "TATGD.IS", "TAVHL.IS", "TBORG.IS", "TCELL.IS", "TDGYO.IS", "TEKTU.IS", "TERA.IS", "TETMT.IS", "TEZOL.IS", "TGSAS.IS", "THYAO.IS", "TKFEN.IS", "TKNSA.IS", "TLMAN.IS", "TMPOL.IS", "TMSN.IS", "TNZTP.IS", "TOASO.IS", "TRCAS.IS", "TRGYO.IS", "TRILC.IS", "TSGYO.IS", "TSKB.IS", "TSPOR.IS", "TTKOM.IS", "TTRAK.IS", "TUCLK.IS", "TUKAS.IS", "TUPRS.IS", "TUREX.IS", "TURGG.IS", "TURSG.IS",
@@ -365,7 +365,8 @@ INITIAL_CATEGORY = "BIST 500 "
 TICKER_DISPLAY_NAMES = {
     "GC=F":    "ONS ALTIN",
     "SI=F":    "GÜMÜŞ",
-    "CL=F":    "HAM PETROL",
+    "CL=F":    "WTI PETROL",
+    "BZ=F":    "BRENT PETROL",
     "NG=F":    "DOĞAL GAZ",
     "HG=F":    "BAKIR",
     "ZW=F":    "BUĞDAY",
@@ -2527,8 +2528,79 @@ def calculate_volume_profile_poc(df, lookback=20, bins=20):
     
     # POC fiyatını dilimin TAM ORTASI olarak belirle (eski koddaki gibi alt sınır değil)
     poc_price = (price_bins[poc_index] + price_bins[poc_index + 1]) / 2.0
-    
+
     return poc_price
+
+def calculate_full_volume_profile(df, lookback=20, bins=20):
+    """POC + VAH (Value Area High) + VAL (Value Area Low) döndürür.
+    Value Area = toplam hacmin %70'ini kapsayan POC etrafındaki fiyat bölgesi.
+    Kurumsal Volume Profile analizinin temel yapı taşı."""
+    if len(df) < lookback:
+        lookback = len(df)
+    recent_df = df.tail(lookback).copy()
+    min_price = float(recent_df['Low'].min())
+    max_price = float(recent_df['High'].max())
+    if min_price == max_price:
+        return {'poc': min_price, 'vah': min_price, 'val': min_price}
+    price_bins = np.linspace(min_price, max_price, bins + 1)
+    volume_profile = np.zeros(bins)
+    for _, row in recent_df.iterrows():
+        high = float(row['High']); low = float(row['Low']); vol = float(row['Volume'])
+        candle_range = high - low
+        if candle_range <= 0:
+            idx = min(max(np.digitize((high + low) / 2, price_bins) - 1, 0), bins - 1)
+            volume_profile[idx] += vol; continue
+        for i in range(bins):
+            bb, bt = price_bins[i], price_bins[i + 1]
+            if high >= bb and low <= bt:
+                overlap = min(high, bt) - max(low, bb)
+                if overlap > 0:
+                    volume_profile[i] += vol * (overlap / candle_range)
+    poc_index = int(np.argmax(volume_profile))
+    poc_price = (price_bins[poc_index] + price_bins[poc_index + 1]) / 2.0
+    # Value Area: POC'tan başla, her adımda daha yüksek hacimli komşuyu ekle
+    total_vol = volume_profile.sum()
+    target_vol = total_vol * 0.70
+    included = [poc_index]
+    cumulative = volume_profile[poc_index]
+    lower, upper = poc_index - 1, poc_index + 1
+    while cumulative < target_vol:
+        lv = volume_profile[lower] if lower >= 0 else 0.0
+        uv = volume_profile[upper] if upper < bins else 0.0
+        if lv == 0 and uv == 0: break
+        if uv >= lv:
+            included.append(upper); cumulative += uv; upper += 1
+        else:
+            included.append(lower); cumulative += lv; lower -= 1
+    hi_idx = max(included); lo_idx = min(included)
+    vah = (price_bins[hi_idx] + price_bins[min(hi_idx + 1, bins)]) / 2.0
+    val = (price_bins[lo_idx] + price_bins[min(lo_idx + 1, bins)]) / 2.0
+    return {'poc': poc_price, 'vah': vah, 'val': val}
+
+def detect_naked_poc(df, lookback=20, bins=20, n_windows=4):
+    """Geçmiş periyotlarda oluşmuş ama fiyatın test etmediği POC seviyelerini bulur.
+    Naked POC = kurumsal limit emir bölgesi, güçlü mıknatıs."""
+    naked = []
+    n = len(df)
+    curr_price = float(df['Close'].iloc[-1])
+    for w in range(1, n_windows + 1):
+        end = n - (w - 1) * lookback
+        start = end - lookback
+        if start < 0: break
+        window_df = df.iloc[start:end]
+        if len(window_df) < 5: break
+        try:
+            poc = calculate_volume_profile_poc(window_df, lookback=len(window_df), bins=bins)
+        except Exception: continue
+        # Bu POC'tan sonra fiyat bu seviyeye uğramış mı?
+        if end < n:
+            sub = df.iloc[end:]
+            tested = bool(((sub['Low'] <= poc) & (sub['High'] >= poc)).any())
+        else:
+            tested = False
+        if not tested and abs(poc - curr_price) / (curr_price + 1e-9) > 0.003:
+            naked.append(poc)
+    return naked
 
 def calculate_volume_profile(df, lookback=50, bins=20):
     """
@@ -5325,7 +5397,11 @@ def calculate_price_action_dna(ticker):
         df = df[df['Close'] > 0].copy() # Sadece hacmi olan günleri değil, fiyatı olan her günü al (Canlı mumu yakalamak için) 
         if len(df) < 20: return None
         df = calculate_volume_delta(df)
-        poc_price = calculate_volume_profile_poc(df, lookback=20, bins=20)
+        _vp = calculate_full_volume_profile(df, lookback=20, bins=20)
+        poc_price = _vp['poc']
+        vah_price = _vp['vah']
+        val_price = _vp['val']
+        naked_pocs = detect_naked_poc(df, lookback=20, bins=20, n_windows=4)
         # --------------------------------------------------------
         o = df['Open']; h = df['High']; l = df['Low']; c = df['Close']; v = df['Volume']
         
@@ -5857,42 +5933,58 @@ def calculate_price_action_dna(ticker):
         fiyat = son_mum['Close']
         toplam_hacim = son_mum['Volume']
         
-        # Fiyat ile POC Yüzde farkı hesaplama
-        fark_yuzde = abs((fiyat - poc_price) / poc_price) * 100
-        
-        # DELTA GÜCÜ (Baskınlık Yüzdesi) Hesaplama
+        # DELTA GÜCÜ (tek mum, geriye uyumluluk için korundu)
         if toplam_hacim > 0:
             delta_gucu_yuzde = abs((delta_val / toplam_hacim) * 100)
         else:
             delta_gucu_yuzde = 0
-        
-        # Başlığı hazırlama
-        if fiyat > poc_price:
-            delta_title = "✅ Point of Control ÜZERİNDE"
-            yon_metni = "üzerinde"
+
+        # 5 SEANS KÜMÜLATİF DELTA
+        cum_delta_5 = float(df['Volume_Delta'].iloc[-5:].sum()) if 'Volume_Delta' in df.columns else 0.0
+        total_vol_5 = float(df['Volume'].iloc[-5:].sum())
+        cum_delta_pct = abs(cum_delta_5 / total_vol_5 * 100) if total_vol_5 > 0 else 0.0
+
+        # VALUE AREA POZİSYONU
+        if fiyat > vah_price:
+            va_pos = "ÜSTÜNDE"
+        elif fiyat < val_price:
+            va_pos = "ALTINDA"
         else:
-            delta_title = "⚠️ Point of Control ALTINDA"
-            yon_metni = "altında"
-            
-        # Uyumsuzluk (Divergence) Kontrolü - Hacim Şiddeti Filtreli
-        if fiyat > onceki_mum['Close'] and delta_val < 0:
-            if delta_gucu_yuzde >= 60.0:
-                delta_title += " (🚨 Gizli Satış)"
-            elif delta_gucu_yuzde >= 55.0:
-                delta_title += " (🟠 Zayıf Gizli Satış - Teyit Bekliyor)"
+            va_pos = "İÇİNDE"
+
+        # ANA BAŞLIK + BASIT AÇIKLAMA (senaryo matrisi)
+        if va_pos == "ÜSTÜNDE":
+            if cum_delta_5 > 0:
+                main_title = "🚀 DEĞER BÖLGESİ ÜSTÜNDE — Güçlü Kırılım"
+                simple_text = "Büyük oyuncuların yoğun işlem yaptığı bölgenin üstüne çıkıldı ve son 5 günde alım hacmi bunu destekliyor. Trend güçlü görünüyor."
             else:
-                delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
-                
-        elif fiyat < onceki_mum['Close'] and delta_val > 0:
-            if delta_gucu_yuzde >= 60.0:
-                delta_title += " (🟢 Gizli Alım)"
-            elif delta_gucu_yuzde >= 55.0:
-                delta_title += " (🟠 Zayıf Gizli Alım - Teyit Bekliyor)"
+                main_title = "⚠️ DEĞER BÖLGESİ ÜSTÜNDE — Ama Satış Var"
+                simple_text = "Fiyat yukarıda görünüyor ama son 5 günde büyük oyuncular sessizce mal veriyor olabilir. Boğa tuzağı riski taşıyor."
+        elif va_pos == "ALTINDA":
+            if cum_delta_5 > 0:
+                main_title = "🟢 DEĞER BÖLGESİ ALTINDA — Gizli Alım"
+                simple_text = "Fiyat ucuz bölgede ama son 5 günde alım hacmi artıyor. Akıllı para sessizce topluyor olabilir."
             else:
-                delta_title += " (⚪ Fiyat/Hacim Gürültüsü - Dikkate Alma)"
-            
-        # İstediğin formatta Edu-Note Açıklaması
-        delta_desc = f"Fiyat son 20 mumun hacim merkezi (yani alıcı ve satıcıların en çok işlem yaptığı yer) olan <b>{poc_price:.2f}</b>, %{fark_yuzde:.2f} {yon_metni}."
+                main_title = "🔴 DEĞER BÖLGESİ ALTINDA — Baskı Devam"
+                simple_text = "Fiyat adil değerin altında ve son 5 günde satış baskısı sürüyor. Kırılım onaylanmış gibi görünüyor."
+        else:  # İÇİNDE
+            if cum_delta_5 > 0:
+                main_title = "⚖️ DENGE BÖLGESİNDE — Alım Baskısı Var"
+                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı bölgede. Son 5 günde alım ağır basıyor, yukarı kırılım bekleniyor."
+            elif cum_delta_5 < 0:
+                main_title = "⚖️ DENGE BÖLGESİNDE — Satış Baskısı Var"
+                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı bölgede. Son 5 günde satış ağır basıyor, aşağı kırılım riski var."
+            else:
+                main_title = "⚖️ DENGE BÖLGESİNDE — Yön Bekleniyor"
+                simple_text = "Büyük oyuncuların en yoğun işlem yaptığı fiyat bölgesindeyiz. Alıcı ve satıcılar dengede, kırılım sinyali bekleniyor."
+
+        # NAKED POC — en yakın olanı seç
+        naked_txt = ""
+        if naked_pocs:
+            closest = min(naked_pocs, key=lambda x: abs(x - fiyat))
+            direction = "aşağıda" if closest < fiyat else "yukarıda"
+            n_pct = abs(closest - fiyat) / (fiyat + 1e-9) * 100
+            naked_txt = f"{closest:.2f} (fiyattan %{n_pct:.1f} {direction})"
 
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
@@ -5905,14 +5997,20 @@ def calculate_price_action_dna(ticker):
             "vwap": {"val": vwap_now, "diff": vwap_diff},
             "rs": {"alpha": alpha_val},
             "smart_volume": {
-                "title": delta_title, 
-                "desc": delta_desc, 
-                "poc": poc_price, 
-                "delta": delta_val, 
-                "delta_yuzde": delta_gucu_yuzde,
-                "rvol": round(rvol, 2),      
-                "stopping": stop_vol_msg,    
-                "climax": climax_msg         
+                "title":          main_title,
+                "desc":           simple_text,
+                "poc":            poc_price,
+                "vah":            vah_price,
+                "val":            val_price,
+                "va_pos":         va_pos,
+                "delta":          delta_val,
+                "delta_yuzde":    delta_gucu_yuzde,
+                "cum_delta_5":    cum_delta_5,
+                "cum_delta_pct":  round(cum_delta_pct, 1),
+                "naked_poc_txt":  naked_txt,
+                "rvol":           round(rvol, 2),
+                "stopping":       stop_vol_msg,
+                "climax":         climax_msg
             }
         }
     except Exception: return None
@@ -7504,12 +7602,18 @@ def _main_price_chart_plotly(symbol, dark_mode):
             dragmode='pan',
         )
         # Hafta sonu + tatil günü boşluklarını kapat
+        # Kriptolar 7/24 işlem görür — hafta sonu rangebreak uygulanmaz
         import pandas as _pd
-        _all_bdays = _pd.date_range(start=dates[0], end=dates[-1], freq='B')
-        _missing   = _all_bdays.difference(dates).tolist()
-        _rangebreaks = [dict(bounds=['sat', 'mon'])]
-        if _missing:
-            _rangebreaks.append(dict(values=_missing))
+        _is_crypto = (symbol.endswith('-USD') or symbol.endswith('USDT')
+                      or symbol.endswith('-TRY') or symbol in ('BTC-USD','ETH-USD','BNB-USD'))
+        if _is_crypto:
+            _rangebreaks = []
+        else:
+            _all_bdays = _pd.date_range(start=dates[0], end=dates[-1], freq='B')
+            _missing   = _all_bdays.difference(dates).tolist()
+            _rangebreaks = [dict(bounds=['sat', 'mon'])]
+            if _missing:
+                _rangebreaks.append(dict(values=_missing))
 
         for row in [1, 2]:
             fig.update_xaxes(
@@ -7916,6 +8020,249 @@ def render_synthetic_sentiment_panel(data):
             line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=_ys2))
             st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
+def render_smart_volume_panel(ticker):
+    """SMART MONEY HACİM ANALİZİ — 4 tile kompakt panel. ICT altında gösterilir."""
+    pa = calculate_price_action_dna(ticker)
+    if not pa or "smart_volume" not in pa:
+        return
+    sv          = pa["smart_volume"]
+    va_pos      = sv.get("va_pos", "İÇİNDE")
+    cum5        = sv.get("cum_delta_5", 0)
+    cum5_pct    = sv.get("cum_delta_pct", 0)
+    naked_txt   = sv.get("naked_poc_txt", "")
+    poc         = sv.get("poc", 0)
+    vah         = sv.get("vah", 0)
+    val         = sv.get("val", 0)
+    delta_val   = sv.get("delta", 0)
+    delta_yuzde = sv.get("delta_yuzde", 0)
+    is_index    = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
+
+    # Mevcut fiyat + display ticker — ICT paneli ile aynı kaynak (fetch_stock_info)
+    display_ticker = get_display_name(ticker)
+    try:
+        _info = fetch_stock_info(ticker)
+        _cp   = float(_info.get('price', 0)) if _info else 0
+        if _cp == 0:
+            raise ValueError("fiyat sıfır")
+    except Exception:
+        try:
+            _df2 = get_safe_historical_data(ticker)
+            _cp  = float(_df2['Close'].iloc[-1]) if _df2 is not None and len(_df2) > 0 else poc
+        except Exception:
+            _cp = poc
+
+    # Fiyat formatı: 1000+ tam sayı (binlik ayırıcı yok), 10-999 iki ondalık, <10 üç ondalık
+    _cp_str = f"{_cp:.0f}" if _cp >= 1000 else f"{_cp:.2f}" if _cp >= 10 else f"{_cp:.3f}"
+
+    # Bar fill: 0-100 ölçeği (her yarı bar kendi 100%'ü)
+    d1_fill  = min(abs(delta_yuzde), 100) if not is_index else (65 if delta_val != 0 else 0)
+    cum_fill = min(abs(cum5_pct), 100)
+
+    dark = st.session_state.dark_mode
+
+    # ── Renk paleti ──────────────────────────────────────────────
+    if dark:
+        if   "ÜSTÜNDE" in va_pos and cum5 > 0:  bc="#10b981"; bg="rgba(16,185,129,0.06)"
+        elif "ÜSTÜNDE" in va_pos:               bc="#f59e0b"; bg="rgba(245,158,11,0.06)"
+        elif "ALTINDA" in va_pos and cum5 <= 0: bc="#ef4444"; bg="rgba(239,68,68,0.06)"
+        else:                                   bc="#10b981"; bg="rgba(16,185,129,0.06)"
+        text_main  = "#f1f5f9"; text_sub = "#cbd5e1"; text_muted = "#94a3b8"
+        divider    = "rgba(255,255,255,0.10)"; track_bg = "rgba(255,255,255,0.12)"
+        naked_bg   = "rgba(251,191,36,0.12)"; naked_bc = "#fbbf24"; naked_tc = "#fde68a"; naked_sub = "#cbd5e1"
+    else:
+        if   "ÜSTÜNDE" in va_pos and cum5 > 0:  bc="#15803d"; bg="#f0fdf4"
+        elif "ÜSTÜNDE" in va_pos:               bc="#b45309"; bg="#fffbeb"
+        elif "ALTINDA" in va_pos and cum5 <= 0: bc="#dc2626"; bg="#fef2f2"
+        else:                                   bc="#15803d"; bg="#f0fdf4"
+        text_main  = "#111827"; text_sub = "#1e3a8a"; text_muted = "#3b4a6b"
+        divider    = "#d1d5db"; track_bg = "#d1d5db"
+        naked_bg   = "#fefce8"; naked_bc = "#ca8a04"; naked_tc = "#78350f"; naked_sub = "#1e3a8a"
+
+    # ── TILE 1: Fiyat Konumu ─────────────────────────────────────
+    if "ÜSTÜNDE" in va_pos:
+        t1_ic = "#10b981" if dark else "#15803d"
+        t1_bb = "rgba(16,185,129,0.13)" if dark else "#dcfce7"
+        t1_icon = "&#9650;"; t1_label = "DEĞER BÖLGESİ (VA) ÜSTÜNDE"
+        t1_sub  = "Kurumların yoğun işlem yaptığı bölgenin üstündeyiz. Güçlü pozitif sinyal."
+    elif "ALTINDA" in va_pos:
+        t1_ic = "#ef4444" if dark else "#dc2626"
+        t1_bb = "rgba(239,68,68,0.13)" if dark else "#fee2e2"
+        t1_icon = "&#9660;"; t1_label = "DEĞER BÖLGESİ (VA) ALTINDA"
+        t1_sub  = "Kurumların işlem bölgesinin altındayız. Satış baskısı sürüyor."
+    else:
+        t1_ic = "#f59e0b" if dark else "#92400e"
+        t1_bb = "rgba(245,158,11,0.13)" if dark else "#fef9c3"
+        t1_icon = "&#9679;"; t1_label = "DENGE NOKTASI (VA) İÇİNDE"
+        t1_sub  = "Kurumların en çok işlem yaptığı bölgenin tam içindeyiz. Karar noktası."
+
+    # ── TILE 2: POC ──────────────────────────────────────────────
+    t2_ic = "#fbbf24" if dark else "#92400e"
+    t2_bb = "rgba(251,191,36,0.10)" if dark else "#fef3c7"
+    poc_diff = (_cp - poc) / poc * 100 if poc > 0 else 0
+    if   poc_diff >  2: poc_vs = f"Fiyat POC'un %{abs(poc_diff):.1f} üstünde"
+    elif poc_diff < -2: poc_vs = f"Fiyat POC'un %{abs(poc_diff):.1f} altında"
+    else:               poc_vs = "Fiyat POC'u test ediyor"
+
+    # ── TILE 3: Bugünkü Delta ─────────────────────────────────────
+    if delta_val > 0:
+        t3_ic = "#10b981" if dark else "#15803d"
+        t3_pct = f"+%{delta_yuzde:.0f}" if not is_index else "+Alım"
+        t3_lbl = "Alıcılar Baskın"
+        t3_sub = "Kapanışa doğru alıcılar daha agresif davrandı." if delta_yuzde >= 60 else "Hafif alım ağırlığı var, güçlü değil."
+        t3_pos = True
+    elif delta_val < 0:
+        t3_ic = "#ef4444" if dark else "#dc2626"
+        t3_pct = f"-%{delta_yuzde:.0f}" if not is_index else "-Satış"
+        t3_lbl = "Satıcılar Baskın"
+        t3_sub = "Kapanışa doğru satıcılar daha agresif davrandı." if delta_yuzde >= 60 else "Hafif satış ağırlığı var, güçlü değil."
+        t3_pos = False
+    else:
+        t3_ic = "#94a3b8" if dark else "#6b7280"
+        t3_pct = "%0"; t3_lbl = "Alım = Satım (Denge)"; t3_sub = "Bugün alıcı ve satıcı dengede. Yön yok."
+        t3_pos = None
+
+    # ── TILE 4: 5 Seans Kümülatif Delta ──────────────────────────
+    if cum5 > 0:
+        t4_ic = "#10b981" if dark else "#15803d"
+        t4_pct = f"+%{cum5_pct:.1f}"; t4_lbl = "5 Günde Net Alım"
+        t4_sub = "Son 5 işlem günü boyunca alıcılar baskındı. Kurumsal birikim sinyali."
+        t4_pos = True
+    elif cum5 < 0:
+        t4_ic = "#ef4444" if dark else "#dc2626"
+        t4_pct = f"-%{cum5_pct:.1f}"; t4_lbl = "5 Günde Net Satış"
+        t4_sub = "Son 5 işlem günü boyunca satıcılar baskındı. Dağıtım baskısı."
+        t4_pos = False
+    else:
+        t4_ic = "#94a3b8" if dark else "#6b7280"
+        t4_pct = "%0"; t4_lbl = "5 Gün Dengede"; t4_sub = "Son 5 günde alım-satım dengede. Net sinyal yok."
+        t4_pos = None
+
+    def bidir_bar(fill_pct, color, is_pos, track):
+        """Çift yönlü bar — düz inline-block span'lar, nesting/overflow/height:100% yok.
+        fill_pct = 0-100 (her yarının kendi ölçeği).
+        Pozitif → sağ yarıda soldan fill_pct% renkli.
+        Negatif → sol yarıda sağdan fill_pct% renkli.
+        Merkez çizgisi position:absolute (screenshot'ta çalıştığı kanıtlandı)."""
+        center_col = "#0f172a"
+        fw = fill_pct / 2        # toplam bar genişliğinin yüzdesi olarak fill
+        rw = 50.0 - fw           # kalan kısım
+
+        if is_pos is True:
+            spans = (
+                f'<span style="display:inline-block;width:50%;height:8px;background:{track};border-radius:3px 0 0 3px;vertical-align:top;"></span>'
+                f'<span style="display:inline-block;width:{fw:.1f}%;height:8px;background:{color};vertical-align:top;"></span>'
+                f'<span style="display:inline-block;width:{rw:.1f}%;height:8px;background:{track};border-radius:0 3px 3px 0;vertical-align:top;"></span>'
+            )
+        elif is_pos is False:
+            spans = (
+                f'<span style="display:inline-block;width:{rw:.1f}%;height:8px;background:{track};border-radius:3px 0 0 3px;vertical-align:top;"></span>'
+                f'<span style="display:inline-block;width:{fw:.1f}%;height:8px;background:{color};vertical-align:top;"></span>'
+                f'<span style="display:inline-block;width:50%;height:8px;background:{track};border-radius:0 3px 3px 0;vertical-align:top;"></span>'
+            )
+        else:
+            spans = (
+                f'<span style="display:inline-block;width:50%;height:8px;background:{track};border-radius:3px 0 0 3px;vertical-align:top;"></span>'
+                f'<span style="display:inline-block;width:50%;height:8px;background:{track};border-radius:0 3px 3px 0;vertical-align:top;"></span>'
+            )
+        return (
+            f'<div style="position:relative;font-size:0;line-height:0;white-space:nowrap;height:8px;margin:3px 0 4px;">'
+            + spans +
+            f'<div style="position:absolute;left:50%;top:-2px;width:2px;height:12px;background:{center_col};transform:translateX(-50%);"></div>'
+            f'</div>'
+        )
+
+    # ── Naked POC — 5. tile içeriği ──────────────────────────────
+    if naked_txt:
+        t5_bg   = naked_bg
+        t5_icon = "&#129522;"
+        t5_val  = naked_txt
+        t5_sub  = "Geçmişte büyük kurumsal işlem yapıldı ama fiyat geri dönmedi. Mıknatıs etkisi: zamanla bu seviyeye çekilme eğilimi var."
+        t5_vc   = naked_tc
+        t5_sc   = naked_sub
+        t5_lbl  = "HABERSİZ POC"
+    else:
+        t5_bg   = "transparent"
+        t5_icon = "&#10003;"
+        t5_val  = "—"
+        t5_sub  = "Yakında ziyaret edilmemiş kurumsal fiyat seviyesi yok. Temiz alan."
+        t5_vc   = text_muted
+        t5_sc   = text_muted
+        t5_lbl  = "HABERSİZ POC"
+
+    # ── Ticker-fiyat badge — ICT paneli ile aynı stil ────────────
+    if dark:
+        _badge_css = ("font-family:'JetBrains Mono'; font-weight:800; color:#10b981; font-size:0.9rem;"
+                      " background:rgba(0,0,0,0.4); padding:2px 8px; border-radius:6px;"
+                      " border:1px solid rgba(255,255,255,0.1); white-space:nowrap;")
+    else:
+        _badge_css = ("background:rgba(30,58,138,0.12); color:#1e3a8a; padding:2px 10px; border-radius:4px;"
+                      " font-family:'JetBrains Mono',monospace; font-weight:800; font-size:0.9rem;"
+                      " border:1px solid rgba(30,58,138,0.2); white-space:nowrap;")
+
+    # ── HTML ──────────────────────────────────────────────────────
+    _html = (
+        f'<div style="border:1px solid {bc}; background:{bg}; border-radius:8px; margin-top:10px; box-shadow:0 1px 6px rgba(0,0,0,{"0.22" if dark else "0.07"});">'
+
+        # HEADER: sol=başlık, orta=senaryo, sağ=ticker+fiyat
+        f'<div style="padding:7px 12px; border-bottom:1px solid {divider}; display:flex; align-items:center; gap:8px;">'
+        f'<span style="font-weight:800; font-size:1.0rem; color:{bc}; white-space:nowrap;">&#128202; SMART MONEY HACİM ANALİZİ</span>'
+        f'<span style="flex:1; font-size:0.81rem; color:{text_main}; font-weight:700; text-align:center; padding:0 6px;">{sv["title"]}</span>'
+        f'<span style="{_badge_css}">{display_ticker} — {_cp_str}</span>'
+        f'</div>'
+
+        # AÇIKLAMA (tek satır)
+        f'<div style="padding:5px 12px; border-bottom:1px solid {divider}; font-size:0.9rem; color:{text_sub}; line-height:1.4;">{sv["desc"]}</div>'
+
+        # 5 TILE GRID
+        f'<div style="display:grid; grid-template-columns:0.85fr 0.75fr 1.0fr 1.0fr 1.1fr; gap:0;">'
+
+        # — TILE 1: Fiyat Konumu —
+        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t1_bb};">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">&#128205; Fiyat Konumu</div>'
+        f'<div style="font-size:0.78rem; font-weight:900; color:{t1_ic}; margin-bottom:4px; line-height:1.2;">{t1_icon} {t1_label}</div>'
+        f'<div style="font-size:0.80rem; color:{text_sub}; line-height:1.4;">{t1_sub}</div>'
+        f'</div>'
+
+        # — TILE 2: POC —
+        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t2_bb};">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">&#127919; POC (Merkez)</div>'
+        f'<div style="font-size:0.97rem; font-weight:900; color:{t2_ic}; margin-bottom:4px;">{poc:.2f}</div>'
+        f'<div style="font-size:0.80rem; color:{text_sub}; line-height:1.4;">En yoğun işlem fiyatı.<br>{poc_vs}.</div>'
+        f'</div>'
+
+        # — TILE 3: Bugünkü Delta —
+        f'<div style="padding:6px 8px; border-right:1px solid {divider};">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#9889; Bugünkü Baskı</div>'
+        f'<div style="display:flex; justify-content:{"flex-end" if t3_pos is True else "flex-start" if t3_pos is False else "center"}; margin-bottom:1px;">'
+        f'<span style="font-size:0.92rem; font-weight:900; color:{t3_ic};">{t3_pct}</span></div>'
+        f'{bidir_bar(d1_fill, t3_ic, t3_pos, track_bg)}'
+        f'<div style="font-size:0.8rem; color:{text_main}; font-weight:700; margin-bottom:2px;">{t3_lbl}</div>'
+        f'<div style="font-size:0.8rem; color:{text_sub}; line-height:1.35;">{t3_sub}</div>'
+        f'</div>'
+
+        # — TILE 4: 5 Seans Delta —
+        f'<div style="padding:6px 8px; border-right:1px solid {divider};">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128200; 5 Seans Baskı</div>'
+        f'<div style="display:flex; justify-content:{"flex-end" if t4_pos is True else "flex-start" if t4_pos is False else "center"}; margin-bottom:1px;">'
+        f'<span style="font-size:0.92rem; font-weight:900; color:{t4_ic};">{t4_pct}</span></div>'
+        f'{bidir_bar(cum_fill, t4_ic, t4_pos, track_bg)}'
+        f'<div style="font-size:0.8rem; color:{text_main}; font-weight:700; margin-bottom:2px;">{t4_lbl}</div>'
+        f'<div style="font-size:0.8rem; color:{text_sub}; line-height:1.35;">{t4_sub}</div>'
+        f'</div>'
+
+        # — TILE 5: Habersiz POC —
+        f'<div style="padding:6px 8px; background:{t5_bg};">'
+        f'<div style="font-size:0.62rem; color:{naked_bc if naked_txt else text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">{t5_icon} {t5_lbl}</div>'
+        f'<div style="font-size:0.78rem; font-weight:900; color:{t5_vc}; margin-bottom:4px; line-height:1.3;">{t5_val}</div>'
+        f'<div style="font-size:0.69rem; color:{t5_sc}; line-height:1.35;">{t5_sub}</div>'
+        f'</div>'
+
+        f'</div>'  # grid sonu
+        f'</div>'
+    )
+    st.markdown(_html, unsafe_allow_html=True)
+
+
 def render_price_action_panel(ticker):
     obv_title, obv_color, obv_desc = get_obv_divergence_status(ticker)
     pa = calculate_price_action_dna(ticker)
@@ -8075,40 +8422,6 @@ def render_price_action_panel(ticker):
         </div>
         """
         st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
-        
-        if pa and "smart_volume" in pa:
-            sv = pa["smart_volume"]
-            bc = "#ef4444" if "SATICI" in sv["title"] or "ALTINDA" in sv["title"] else "#10b981" if "ALIM" in sv["title"] or "ÜZERİNDE" in sv["title"] else "#f59e0b"
-            bg = "rgba(239, 68, 68, 0.1)" if bc == "#ef4444" else "rgba(16, 185, 129, 0.1)" if bc == "#10b981" else "rgba(245, 158, 11, 0.1)"
-            
-            # Yüzdeli Metin Kısmı
-            delta_val = sv.get("delta", 0)
-            delta_yuzde = sv.get("delta_yuzde", 0)
-            is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
-            if is_index:
-                if delta_val < 0:
-                    baskinlik = f"<span style='color: #ef4444; font-weight: 800;'>Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>Sığ Satış (Gürültü)</span>"
-                elif delta_val > 0:
-                    baskinlik = f"<span style='color: #10b981; font-weight: 800;'>Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>Pasif Alım (Gürültü)</span>"
-                else:
-                    baskinlik = f"<span style='color: #94a3b8; font-weight: 800;'>Kusursuz Denge</span>"
-            else:
-                if delta_val < 0:
-                    baskinlik = f"<span style='color: #ef4444; font-weight: 800;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
-                elif delta_val > 0:
-                    baskinlik = f"<span style='color: #10b981; font-weight: 800;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #94a3b8; font-weight: 800;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
-                else:
-                    baskinlik = f"<span style='color: #94a3b8; font-weight: 800;'>Kusursuz Denge (%0)</span>"
-                    
-            delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
-            
-            st.markdown(f"""
-            <div style="border: 1px solid {bc}; background-color: {bg}; padding: 12px; border-radius: 8px; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                <div style="font-weight: 800; font-size: 0.95rem; color: {bc}; margin-bottom: 6px; display:flex; align-items:center; gap:5px;">📊 SMART MONEY HACİM ANALİZİ</div>
-                <div style="font-weight: 700; font-size: 0.9rem; color: #e2e8f0; margin-bottom:4px;">{sv['title']}</div>
-                <div style="font-style: italic; font-size: 0.85rem; color: #94a3b8; line-height: 1.4;">{sv['desc']}</div>
-                <div style="border-top: 1px dashed rgba(255,255,255,0.15); margin-top: 10px; padding-top: 8px; font-size: 0.85rem; color: #e2e8f0;">{delta_text}</div>
-            </div>""", unsafe_allow_html=True)
 
     else:
         sd_col = "#16a34a" if sd_data and "Talep" in sd_data['Type'] else "#dc2626" if sd_data else "#64748B"
@@ -8181,39 +8494,6 @@ def render_price_action_panel(ticker):
         </div>
         """
         st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
-        
-        if pa and "smart_volume" in pa:
-            sv = pa["smart_volume"]
-            bc = "#dc2626" if "SATICI" in sv["title"] or "ALTINDA" in sv["title"] else "#16a34a" if "ALIM" in sv["title"] or "ÜZERİNDE" in sv["title"] else "#d97706"
-            bg = "#fef2f2" if bc == "#dc2626" else "#f0fdf4" if bc == "#16a34a" else "#fffbeb"
-            
-            delta_val = sv.get("delta", 0)
-            delta_yuzde = sv.get("delta_yuzde", 0)
-            is_index = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
-            if is_index:
-                if delta_val < 0:
-                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>Sığ Satış (Gürültü)</span>"
-                elif delta_val > 0:
-                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>Pasif Alım (Gürültü)</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge</span>"
-            else:
-                if delta_val < 0:
-                    baskinlik = f"<span style='color: #dc2626; font-weight: 900;'>-%{delta_yuzde:.1f} Agresif Satıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>-%{delta_yuzde:.1f} Sığ Satış (Gürültü)</span>"
-                elif delta_val > 0:
-                    baskinlik = f"<span style='color: #16a34a; font-weight: 900;'>+%{delta_yuzde:.1f} Agresif Alıcı Baskısı</span>" if delta_yuzde >= 60.0 else f"<span style='color: #64748b; font-weight: 900;'>+%{delta_yuzde:.1f} Pasif Alım (Gürültü)</span>"
-                else:
-                    baskinlik = f"<span style='color: #64748b; font-weight: 900;'>Kusursuz Denge (%0)</span>"
-                    
-            delta_text = f"Tahmini Delta (BUGÜN): {baskinlik}"
-            
-            st.markdown(f"""
-            <div style="border: 2px solid {bc}; background-color: {bg}; padding: 12px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px;">
-                <div style="font-weight: 800; font-size: 0.9rem; color: {bc}; margin-bottom: 4px;">📊 SMART MONEY HACİM ANALİZİ</div>
-                <div style="font-weight: 700; font-size: 0.85rem; color: #0f172a;">{sv['title']}</div>
-                <div style="font-style: italic; font-size: 0.95rem; color: #1e3a8a; margin-top: 4px; line-height: 1.4;">{sv['desc']}</div>
-                <div style="border-top: 1px dashed {bc}; margin-top: 10px; padding-top: 8px; font-size: 0.8rem; color: #1e3a8a;">{delta_text}</div>
-            </div>""", unsafe_allow_html=True)
 
 
 def calculate_smart_money_score(ticker):
@@ -12229,7 +12509,7 @@ if st.session_state.generate_prompt:
         poc_price = f"{sv['poc']:.2f}"
         delta_val = sv.get("delta", 0)
         delta_yuzde = sv.get("delta_yuzde", 0)
-        
+
         if delta_val < 0:
             if delta_yuzde >= 60.0:
                 baskinlik = f"-%{delta_yuzde:.1f} (Agresif Satıcılar Baskın)"
@@ -12242,11 +12522,30 @@ if st.session_state.generate_prompt:
                 baskinlik = f"+%{delta_yuzde:.1f} (Nötr/Gürültü - Pasif Limit Emirler)"
         else:
             baskinlik = "Kusursuz Denge (%0)"
-            
+
         delta_durumu = f"{sv['title']} | Net Baskınlık: {baskinlik}"
+
+        # Değer bölgesi konumu ve sınırları
+        va_pos_txt   = sv.get("va_pos", "Veri Yok")
+        vah_txt      = f"{sv.get('vah', 0):.2f}"
+        val_txt      = f"{sv.get('val', 0):.2f}"
+
+        # 5 seans kümülatif delta
+        cum5_val     = sv.get("cum_delta_5", 0)
+        cum5_pct_val = sv.get("cum_delta_pct", 0)
+        if cum5_val > 0:
+            cum5_txt = f"+%{cum5_pct_val:.1f} (5 günde net alım ağırlığı — Kurumsal Birikim sinyali)"
+        elif cum5_val < 0:
+            cum5_txt = f"-%{cum5_pct_val:.1f} (5 günde net satış ağırlığı — Dağıtım baskısı)"
+        else:
+            cum5_txt = "Dengede (%0) — Net yön yok"
     else:
         delta_durumu = "Veri Yok"
-        poc_price = "Veri Yok"
+        poc_price    = "Veri Yok"
+        va_pos_txt   = "Veri Yok"
+        vah_txt      = "Veri Yok"
+        val_txt      = "Veri Yok"
+        cum5_txt     = "Veri Yok"
         # -----------------------------------------------------
 
     # Güncel fiyatı DataFrame'den veya mevcut bir fiyattan çekiyoruz
@@ -12592,6 +12891,8 @@ Analiz yaparken algoritmamızın şu katı kuralları uyguladığını bil ve yo
 *** 5. EK TEKNİK VERİLER (SMART MONEY METRİKLERİ) ***
 - Bugüne ait Smart Money Hacim Durumu: {delta_durumu}
 - Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
+- Değer Bölgesi (Value Area) Konumu: {va_pos_txt} | VAH (Üst Sınır): {vah_txt} | VAL (Alt Sınır): {val_txt}
+- 5 Seans Kümülatif Delta: {cum5_txt}
 - Güncel Fiyat: {guncel_fiyat}
 - Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
 - Bugüne ait Smart Money Hacim Durumundaki "Bugüne ait Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
@@ -12661,17 +12962,32 @@ Analizinde HARSI (Heikin Ashi RSI) verilerini kullanacaksan bunun son 14 günlü
 Analizin sonuna daima büyük ve kalın harflerle "YATIRIM TAVSİYESİ DEĞİLDİR  " ve onun da altındaki satıra " #SmartMoneyRadar #{clean_ticker} #BIST100 #XU100" yaz.
 
 * İkinci Görevin;
-Birinci görevinde yapmış olduğun o analizin en vurucu yerlerinin Twitter için SEO'luk ve etkileşimlik açısından çekici, vurucu ve net bir şekilde özetini çıkarmak. Bu özet şu formatta alacak:
-1. Görsel ve Biçimsel Standartlar
-    - Toplam 3 Madde Kuralı: Paylaşımların Twitter arayüzünde tam görünmesi ve vurucu olması için içerik her zaman toplam 3 maddeden oluşmalıdır. Satırlar arasında boşluk bırakmadan yaz.
-    - Emoji Standartı: Her maddenin başında mutlaka "🔹" emojisi kullanılmalıdır.
-    - İçerik Tonu ve Uzunluk: Maddeler çok kısa (mümkünse bir cümle), öz ve "Societe Generale risk toplantısı" ciddiyetinde, laf kalabalığından arındırılmış olmalıdır.
-2. Dinamik Başlık ve "Kanca" (Hook) Kuralları
-    - İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) | {ai_scenario_title} 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. Yüzdeyi sen tahmin etme, doğrudan sana verdiğim bu {degisim_str} değerini kullan. Sonrasına da analizindeki en çarpıcı bulguyu max 6 kelimeyle gerilim cümlesi olarak ekle. Örneğin: "#HISSE 123.45 (+2.34%) | 🚀 TOPLAMA BÖLGESİ — kurumsal el göründü mü? 👇📸".
-    - En Çarpıcı Veri Odaklılık: Başlıkta sadece jenerik etiketler değil, paneldeki en çarpıcı teknik anomali (örneğin: "11266 Ana Uçurumu", "339.25 FOMO Tuzağı", "GAP Temizliği") ve kritik durumlar kullanılmalıdır.
-    - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir. Sakın "Kanca" ya da "Hook" yazma.
-    - En alta "Detaylı analiz ve detaylı görsel bir sonraki Twit’te👇" cümlesi yazılmalıdır.
-    - Hashtag Protokolü: Tweet sonuna mutlaka ilgili hisse kodu ile birlikte #BIST100 #SmartMoneyRadar #[HisseKodu] etiketleri eklenmelidir.
+Birinci görevinin "okuyunca her şeyi anlamış gibi hissettiren" sıkıştırılmış özetidir. Uzun analizi okumayan aboneler için birinci görevin HER ÖNEMLİ NOKTASINI kapsayan, gereksiz tekrar içermeyen, akıcı ve "to the point" bir özet çıkaracaksın. Jenerik ifadeler yasak — her maddede mutlaka somut fiyat seviyesi, yüzde değeri veya metrik adı geçmeli.
+
+Format AYNEN şu şekilde olacak (başlık ve bölüm adlarını değiştirme, boşluk bırakma):
+#{clean_ticker} {fiyat_str} ({degisim_str}) | {ai_scenario_title} 👇📸
+
+⚡ ÖZET YORUM:
+[Birinci görevindeki YÖNETİCİ ÖZETİ’nin en kritik 2 cümlelik özü. Büyük resmi, temel çelişkiyi ve genel tonu ver.]
+
+📊 TEKNİK TABLO:
+🔹[En güçlü bullish kanıt — somut seviye veya formasyon adıyla]
+🔹[En önemli risk/bearish sinyali — somut sayı veya metrikle]
+🔹[Yapı ve trend durumu — nerede duruyoruz, hangi seviye kritik]
+
+🏦 AKILLI PARA:
+🔹[Smart Money: delta durumu, VA konumu (ÜSTÜNDE/ALTINDA/İÇİNDE), kurumsal iz — 1 cümle, somut veriyle]
+🔹[Hacim anomalisi: RVOL, VSA, OBV veya kümülatif delta — 1 cümle]
+
+🎯 SENARYO VE STRATEJİ:
+🔹ELİNDE VARSA: [ne yapmalı — stop seviyesini mutlaka yaz]
+🔹ELİNDE YOKSA: [ideal giriş bölgesi veya bekleme nedeni — somut seviyeyle]
+🔹İPTAL NOKTASI: [tezin tamamen çökeceği fiyat seviyesi]
+
+⚠️ SONUÇ ve UYARI:
+[Birinci görevindeki sonucu ve en kritik uyarıyı 1 cümleyle, BÜYÜK HARFLE]
+YATIRIM TAVSİYESİ DEĞİLDİR
+#BIST100 #SmartMoneyRadar #{clean_ticker}
 
 * Üçüncü Görevin: 
 Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laboratuvar Verisi" bölümünü) kullanarak ve grafiği okuyarak aşağıdaki 8 maddelik şablonu EKSİKSİZ doldur. Her madde alt başlıklardan oluşmalı ve okuması keyifli, profesyonel bir tonda olmalıdır. Başlık "{hook_baslik}" olmalıdır.
@@ -12706,51 +13022,11 @@ Değerlendirmeye BAŞLAMADAN ÖNCE, aşağıdaki formatta bir SOSYAL MEDYA KANCA
 Bu kanca Twitter'da thread'in önüne yapıştırılacak ilk tweet olacak — dikkat çekmeli, merak uyandırmalı, ama analizi ele vermemeli.
 
 ─── [HOOK FORMATI] ───────────────────────────────────────────
-[AÇILIŞ EMOJİSİ] #{clean_ticker}: [GERİLİM CÜMLESİ]. [SONUÇ NOTU]👇
-📊 TEKNİK KANITLAR:
-[SİNYAL 1 — en baskın bulgu, uygun emoji ile]
-[SİNYAL 2 — destekleyici veya çelişkili ikinci bulgu]
-📊[KRİTİK FİYAT SEVİYESİ — destek veya direnç]
-
-Detaylı analiz ve çok detaylı risk haritası görseli için:
+Format: [EMOJİ] #{clean_ticker} {fiyat_str} ({degisim_str}) | [SENARYO]: [GERİLİM CÜMLESİ — max 8 kelime] 👇📸
+Kural: Her zaman bir gerilim veya zıtlık olsun. "ama", "ancak", "oysa", "peki", "?" — en az biri cümlede olmalı.
+Kapanış: Uyarı baskınsa "SONUÇ ve UYARI kısmına dikkat👇", değilse "UYARI kısmına dikkat👇"
+Örnek: ⚡ #SASA 2.60 (-%0.76) | TEPEDEN RET: Kurumsal sinyaller güçlü ancak dünün tepesinden sert ret var 👇📸
 ────────────────────────────────────────────────────────────
-
-HOOK YAZMA KURALLARI:
-
-1. AÇILIŞ EMOJİSİ — analizin dominant tonuna göre seç (birini seç, karıştırma):
-   🏆 = Golden Trio / Altın Fırsat tetiklendiyse
-   🔥 = Güçlü momentum, göstergeler hizalanmış, ivme yüksek
-   🧟 = Fiyat yükseliyor ama altyapı çürük / çelişkili tablo
-   🚜 = Bearish baskı, ağır hareket, düşüş işaretleri baskın
-   ⚡ = Harmonik Confluence veya 3'lü metodoloji çakışması
-   🎯 = Kırılım eşiğinde bekleme, net senaryo var
-   ⚠️ = Risk yüksek, uyarı baskın, belirsizlik hâkim
-
-2. GERİLİM CÜMLESİ — en önemli kural:
-   - ASLA sadece bullish veya sadece bearish yazma — her zaman bir gerilim / "ancak" olsun
-   - Analizin en şaşırtıcı, en çelişkili ya da en kritik bulgusunu tek cümleyle özetle
-   - Soru formatı veya zıtlık formatı kullan:
-     Örnek: "Radar kırmızıya döndü ancak ana skor hâlâ temkinli"
-     Örnek: "Golden Trio onayıyla yükseliş sürüyor ama fiyat aşırı fiyatlanmış olabilir mi?"
-     Örnek: "Skor yüksek ama RS (Endeks Gücü) yerlerde — yükseliş gerçek mi?"
-     Örnek: "Denge skoru düşük, hareket yok. Oluşan Bearish Marubozu tehlike sinyali mi?"
-   - "ANCAK", "ama", "oysa", "peki", "?" — bunlardan en az biri cümlede olmalı
-
-3. SONUÇ NOTU (sabit, ikisinden birini seç):
-   - Uyarı baskınsa: "SONUÇ ve UYARI kısmına dikkat👇"
-   - Genel durumsa: "UYARI kısmına dikkat👇"
-
-4. TEKNİK KANITLAR — max 3 satır, uygun emoji ile:
-   🏆 = Altın Fırsat (Golden Trio onayı)
-   🐳 = Smart Money / ICT analizi / Market yapısı
-   🧱 = Direnç seviyesi (Duvar)
-   🛡️ = Destek seviyesi (Kale)
-   ⚖️ = Denge / Algoritmik Skor (orta seviye)
-   🩸 = Algoritmik Skor düşükse / Yüksek risk
-   🔹 = Diğer sinyal veya bulgu
-   - Fiyat seviyesini (destek veya direnç) mutlaka ekle
-   - Skor varsa ve anlamlıysa ekle (örn: "Algoritmik Skor: 18.0/100 (Yüksek Risk)")
-   - En kritik 2-3 tanesi yeterli — hepsini sıralama
 
 ─── HOOK BİTTİ, DEVAM: ABONE ÖZETİ ───────────────────────
 Değerlendirme şu formatta olmalıdır:
@@ -12922,6 +13198,9 @@ with col_left:
     # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_ict_deep_panel(st.session_state.ticker)
+
+    # SMART MONEY HACİM ANALİZİ — ICT'nin hemen altında, ayrı panel
+    render_smart_volume_panel(st.session_state.ticker)
 
     # 3. 8 MADDELİK YOL HARİTASI PANELİ
     render_roadmap_8_panel(st.session_state.ticker)
