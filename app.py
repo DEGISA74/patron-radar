@@ -10646,7 +10646,7 @@ def render_unified_signals_panel(ticker):
         try:
             obv_title, obv_color, _ = get_obv_divergence_status(ticker)
             if "ZAYIF" not in obv_title and "Veri Yok" not in obv_title and "Hesaplanamadı" not in obv_title:
-                is_obv_pos = any(k in obv_title.upper() for k in ["GİRİŞ","GÜÇLÜ","POZİTİF","ALIŞ","DİRENÇ","EMİLİM","BİRİKİM"])
+                is_obv_pos = any(k in obv_title.upper() for k in ["GİRİŞ","GÜÇLÜ","POZİTİF","ALIŞ","DİRENÇ","EMİLİM","BİRİKİM","SAĞLIKLI","TOPLAMA"])
                 signals.append(("📊",f"OBV: {obv_title}",obv_color,"On-Balance Volume fiyatla uyumsuz hareket ediyor. Fiyat düşerken OBV yükseliyorsa kurumsal birikim (Akümülasyon) sinyali.",is_obv_pos))
         except: pass
 
@@ -12158,6 +12158,52 @@ if st.session_state.generate_prompt:
         ai_scenario_title = "⚖️ KONSOLİDASYON (YATAY BANT)"
         ai_mood_instruction = "Piyasa şu an net bir trende sahip değil ve yön arayışında (Range). Destek ve dirençler arasında sıkışma var. Her iki yönü de dengeli bir şekilde anlatarak kırılım şartlarını belirt."
 
+    # === HOOK BAŞLIĞI ve DİNAMİK BÖLÜM BAŞLIĞI ===
+    # En güçlü sinyal etiketi (Python tarafı)
+    if is_royal != "HAYIR":
+        _hook_sinyal = "💎 Platin Fırsat Tetiklendi"
+    elif "EVET" in str(is_golden):
+        _hook_sinyal = "🏆 Altın Fırsat Aktif"
+    elif "TOPLAMA" in ai_scenario_title.upper():
+        _hook_sinyal = "🐳 Kurumsal Toplama Sinyali"
+    elif "DAĞITIM" in ai_scenario_title.upper():
+        _hook_sinyal = "📉 Dağıtım Riski"
+    elif "KAPİTÜLASYON" in ai_scenario_title.upper():
+        _hook_sinyal = "🩸 Kapitülasyon Bölgesi"
+    elif "ISINMA" in ai_scenario_title.upper():
+        _hook_sinyal = "🔥 Parabolik Risk"
+    elif "DÖNÜŞ" in ai_scenario_title.upper() or "V-DÖNÜŞ" in ai_scenario_title.upper():
+        _hook_sinyal = "⚡ Dönüş Sinyali"
+    elif "TUZAK" in ai_scenario_title.upper():
+        _hook_sinyal = "🧟 Boğa Tuzağı"
+    else:
+        _hook_sinyal = ""
+    hook_baslik = (
+        f"#{clean_ticker} {fiyat_str} ({degisim_str}) | {ai_scenario_title}"
+        + (f" — {_hook_sinyal}" if _hook_sinyal else "")
+        + " 👇📸"
+    )
+
+    # Dinamik bölüm başlığı — senaryoya göre değişir
+    if "bullish" in bias.lower() and "DISCOUNT" in zone.upper():
+        genel_analiz_baslik = "1. GENEL ANALİZ — Neden Fırsat Var? (Önem derecesine göre)"
+    elif "bearish" in bias.lower() and "PREMIUM" in zone.upper():
+        genel_analiz_baslik = "1. GENEL ANALİZ — Neden Tehlikeli? (Önem derecesine göre)"
+    elif z_score_val >= 2.0:
+        genel_analiz_baslik = "1. GENEL ANALİZ — Aşırı Isınma: Risk Nerede? (Önem derecesine göre)"
+    elif z_score_val <= -2.0:
+        genel_analiz_baslik = "1. GENEL ANALİZ — Dip mi, Yoksa Devam mı? (Önem derecesine göre)"
+    elif pa_signal == "PA_BULLISH":
+        genel_analiz_baslik = "1. GENEL ANALİZ — Dönüş Sinyali Gerçek mi? (Önem derecesine göre)"
+    elif pa_signal == "PA_BEARISH":
+        genel_analiz_baslik = "1. GENEL ANALİZ — Tuzak mı, Gerçek Ret mi? (Önem derecesine göre)"
+    elif "bullish" in bias.lower():
+        genel_analiz_baslik = "1. GENEL ANALİZ — Yükseliş Devam Edebilir mi? (Önem derecesine göre)"
+    elif "bearish" in bias.lower():
+        genel_analiz_baslik = "1. GENEL ANALİZ — Düşüş Nereye Kadar? (Önem derecesine göre)"
+    else:
+        genel_analiz_baslik = "1. GENEL ANALİZ — İki Taraf da Konuşuyor (Önem derecesine göre)"
+
     # --- YENİ: AI İÇİN S&D VE LİKİDİTE VERİLERİ ÇEKİMİ ---
     try: 
         sd_data = detect_supply_demand_zones(df_hist)
@@ -12567,18 +12613,29 @@ Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' ve
 (Bu bölüm makine öğrenmesi tabanlı istatistiksel bir olasılık değerlendirmesidir — kesinlik içermez, bağlamsal bir referans noktası olarak kullan.)
 {lorentzian_bilgisi}
 
-*** DÖRT GÖREVİN VAR *** 
+*** SIFIRINCI GÖREV (ZORUNLU — EN BAŞA YAZ, SONRA DİĞERLERİNE GEÇ) ***
+Algoritmamızın senaryo tespitinden üretilen temel başlık: {hook_baslik}
+Bu başlığı esas al. Analizindeki EN KRİTİK veya EN ŞOK EDİCİ TEK BULGUYA dayanan özelleştirilmiş bir hook başlığı üret.
+Format: [EMOJİ] #{clean_ticker} {fiyat_str} ({degisim_str}) | [SENARYO]: [GERİLİM CÜMLESİ — max 8 kelime] 👇📸
+Kural: "ANCAK", "ama", "oysa", "peki" veya "?" kelimelerinden en az biri cümlede olmalı. "ANALİZİ", "RAPORU" gibi jenerik kelimeler yasak.
+Örnekler:
+  🐳 #THYAO 327.50 (-1.2%) | TOPLAMA BÖLGESİ: OBV yükseliyor, fiyat neden düşüyor? 👇📸
+  🔥 #SISE 48.20 (+3.1%) | AŞIRI ISINMA: Z-Score +2.7 — ama kurumsal alım devam ediyor? 👇📸
+  🎯 #EREGL 140.00 (+0.5%) | KONSOLİDASYON: 3 aydır aynı bant — kırılım bu sefer gerçek mi? 👇📸
+Bu başlığı "📌 " ile işaretle. Sonra diğer görevlere geç.
 
-* Birinci Görevin; 
+*** BEŞ GÖREVİN VAR ***
+
+* Birinci Görevin;
 Tüm bu teknik verileri Linda Raschke'nin profesyonel soğukkanlılığıyla sentezleyip, Lance Beggs'in 'Stratejik Price Action' ve 'Yatırımcı Psikolojisi' odaklı bakış açısıyla yorumlamaktır. Asla tavsiye verme (bekle, al, sat, tut vs deme), sadece olasılıkları belirt. "etmeli" "yapmalı" gibi emir kipleri ile konuşma. "edilebilir" "yapılabilir" gibi konuş. Asla keskin konuşma. "en yüksek", "en kötü", "en sert", "çok", "büyük", "küçük", "dev", "keskin", "sert" gibi aşırılık ifade eden kelimelerden uzak dur. Bizim işimiz basitçe olasılıkları sıralamak.
 Analizini yaparken karmaşık finans jargonundan kaçın; mümkün olduğunca Türkçe terimler kullanarak sade ve anlaşılır bir dille konuş. Verilerin neden önemli olduğunu, birbirleriyle nasıl etkileşime girebileceğini ve bu durumun yatırımcı psikolojisi üzerinde nasıl bir etkisi olabileceğini açıklamaya çalış. Unutma, geleceği kimse bilemez, bu sadece olasılıkların bir değerlendirmesidir.
 Teknik terimleri zorunda kalırsan sadece ilk geçtiği yerde kısaltmasıyla ver, sonraki anlatımlarda akıcılığı bozmamak için sadeleştir.
 Analizinde 'Retail Sentiment' (Küçük Yatırımcı Psikolojisi) ile 'Institutional Intent' (Kurumsal Niyet) arasındaki farka odaklan. Verilerdeki anormallikleri (örneğin: RSI düşerken fiyatın yatay kalması veya düşük hacimli kırılımlar) birer 'ipucu' olarak kabul et ve bu ipuçlarını birleştirerek piyasa yapıcının bir sonraki hamlesini tahmin etmeye çalış.
 Bir veri noktası 'Bilinmiyor' gelirse onu yok say, ancak eldeki verilerle bir 'Olasılık Matrisi' kur. Asla tek yönlü (sadece olumlu) bir tablo çizme; 'Madalyonun Öteki Yüzü'nü her zaman göster. Savunma mekanizman 'analizi haklı çıkarmak' değil, 'riski bulmak' olsun.
 Herhangi bir veri alanı boş veya süslü parantez içinde {...} şeklinde ham halde gelmişse, o verinin teknik bir arıza nedeniyle okunamadığını varsay ve mevcut diğer verilerle analizi tamamla. Asla "Veri Yok" veya "Bilinmiyor" yazan bir alanı yorumlamaya zorlama, sadece mevcut verilerle en iyi sentezi yapmaya çalış.
-En başa "SMART MONEY RADAR   #{clean_ticker}  ANALİZİ -  {fiyat_str} 👇📸" başlığı at ve şunları analiz et. 
+En başa "{hook_baslik}" başlığı at ve şunları analiz et.
 YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık altında 5 cümle ile özetle.. 
-1. GENEL ANALİZ: Yanına "(Önem derecesine göre)" diye de yaz 
+{genel_analiz_baslik}:
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz. 
    - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
    - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅" ve verdiğin puanı, olumsuz/nötr maddelerin başına " 📍 " ve verdiğin puanı koy. (Örnek Başlık: "📍 (8/10) Momentum Kaybı ve HARSI Zayıflığı:") Olumlu maddeleri alt alta, Olumsuz maddeleri de alt alta yaz. Sırayı asla karıştırma. (Yani bir olumlu bir olumsuz madde yazma)
@@ -12610,14 +12667,14 @@ Birinci görevinde yapmış olduğun o analizin en vurucu yerlerinin Twitter iç
     - Emoji Standartı: Her maddenin başında mutlaka "🔹" emojisi kullanılmalıdır.
     - İçerik Tonu ve Uzunluk: Maddeler çok kısa (mümkünse bir cümle), öz ve "Societe Generale risk toplantısı" ciddiyetinde, laf kalabalığından arındırılmış olmalıdır.
 2. Dinamik Başlık ve "Kanca" (Hook) Kuralları
-    - İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. Yüzdeyi sen tahmin etme, doğrudan sana verdiğim bu {degisim_str} değerini kullan. Örneğin: "#HISSE 123.45 (+2.34%) 👇📸".
+    - İlk Başlık daima #{clean_ticker} {fiyat_str} ({degisim_str}) | {ai_scenario_title} 👇📸 formatında olmalıdır. Asla tarih ve saat yazma. Yüzdeyi sen tahmin etme, doğrudan sana verdiğim bu {degisim_str} değerini kullan. Sonrasına da analizindeki en çarpıcı bulguyu max 6 kelimeyle gerilim cümlesi olarak ekle. Örneğin: "#HISSE 123.45 (+2.34%) | 🚀 TOPLAMA BÖLGESİ — kurumsal el göründü mü? 👇📸".
     - En Çarpıcı Veri Odaklılık: Başlıkta sadece jenerik etiketler değil, paneldeki en çarpıcı teknik anomali (örneğin: "11266 Ana Uçurumu", "339.25 FOMO Tuzağı", "GAP Temizliği") ve kritik durumlar kullanılmalıdır.
     - Kanca (Hook) Kullanımı: Başlıkta, okuyucunun dikkatini çekecek ve onları okumaya devam etmeye teşvik edecek bir "kanca" (hook) bulunmalıdır. Bu, genellikle analizdeki en kritik veya şaşırtıcı bulguya atıfta bulunan kısa bir ifade olabilir. Sakın "Kanca" ya da "Hook" yazma.
     - En alta "Detaylı analiz ve detaylı görsel bir sonraki Twit’te👇" cümlesi yazılmalıdır.
     - Hashtag Protokolü: Tweet sonuna mutlaka ilgili hisse kodu ile birlikte #BIST100 #SmartMoneyRadar #[HisseKodu] etiketleri eklenmelidir.
 
 * Üçüncü Görevin: 
-Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laboratuvar Verisi" bölümünü) kullanarak ve grafiği okuyarak aşağıdaki 8 maddelik şablonu EKSİKSİZ doldur. Her madde alt başlıklardan oluşmalı ve okuması keyifli, profesyonel bir tonda olmalıdır. Başlık "SMART MONEY RADAR #{clean_ticker} ANALİZİ - {fiyat_str} 👇📸" olmalıdır.
+Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laboratuvar Verisi" bölümünü) kullanarak ve grafiği okuyarak aşağıdaki 8 maddelik şablonu EKSİKSİZ doldur. Her madde alt başlıklardan oluşmalı ve okuması keyifli, profesyonel bir tonda olmalıdır. Başlık "{hook_baslik}" olmalıdır.
 Formatın TAM OLARAK şu şekilde olmalıdır (Alt başlıkları aynen kullan):
 TEKNİK KART:
 1🔹) Fiyat Davranışı ve Yapı
@@ -12697,7 +12754,7 @@ HOOK YAZMA KURALLARI:
 
 ─── HOOK BİTTİ, DEVAM: ABONE ÖZETİ ───────────────────────
 Değerlendirme şu formatta olmalıdır:
-İlk Başlık daima"SMART MONEY RADAR #{clean_ticker} {fiyat_str} ({degisim_str}) 👇📸" formatında olmalıdır. Asla tarih ve saat yazma.
+İlk Başlık daima "{hook_baslik}" formatında olmalıdır. Asla tarih ve saat yazma.
 GENEL YORUM: Buraya Birinci Görevindeki YÖNETİCİ ÖZETİ kısmını kopyalayarak yapıştır. (5 cümlelik özet)
 Teknik Görünüm: (Fiyat davranışı, formasyonlar ve genel trend durumunun 2-3 cümlelik net, anlaşılır ve eyleme dönüştürülebilir özeti.)
 Smart Money İzi: (Hacim, OBV, ICT analizleri ve para akışı verilerindeki kurumsal ayak izlerinin 2-3 cümlelik özeti.)
