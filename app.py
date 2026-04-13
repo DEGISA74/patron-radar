@@ -6479,43 +6479,27 @@ def render_harmonic_banner(ticker):
         else:
             prz_note = "PRZ'den yeni ayrıldı — dönüş izleniyor"
 
-        st.markdown(f'''
-        <div style="background:{bg}; border:1px solid {border}; border-radius:8px;
-                    padding:13px; margin-top:8px; margin-bottom:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <span style="font-size:1.4rem;">{emoji}</span>
-                    <span style="color:#e2e8f0; font-weight:900; font-size:1rem;
-                                 margin-left:8px;">HARMONİK: {pat.upper()}</span>
-                    <span style="color:#cbd5e1; font-size:0.78rem; margin-left:10px;">{dir_lbl}</span>
-                </div>
-                <span style="background:rgba(255,255,255,0.12); color:#e2e8f0; padding:3px 10px;
-                             border-radius:10px; font-weight:800; font-size:0.85rem;">
-                    PRZ: {prz:.2f}
-                </span>
-            </div>
-            <div style="margin-top:9px; display:flex; flex-wrap:wrap; gap:7px;">
-                <span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
-                    📐 AB/XA: {res['AB_XA']}
-                </span>
-                <span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
-                    📏 XD/XA: {res['XD_XA']}
-                </span>
-                <span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem;">
-                    🎯 PRZ'ye Uzaklık: %{fark:.1f} — {prz_note}
-                </span>
-                <span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
-                    🕒 {"D Tahmini — Henüz Oluşmadı" if state == "approaching" else f"D Noktası: {res['bars_ago']} Gün Önce"}
-                </span>
-                {('<span style="background:rgba(34,197,94,0.18); color:#86efac; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">🧲 D = S/R Confluence (Güçlü)</span>' if res.get('d_sr_confluence') else '')}
-            </div>
-            {pivot_dates_html}
-        </div>
-        ''', unsafe_allow_html=True)
+        _d_lbl = "D Tahmini — Henüz Oluşmadı" if state == "approaching" else f"D Noktası: {res['bars_ago']} Gün Önce"
+        _sr_span = '<span style="background:rgba(34,197,94,0.18); color:#86efac; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">🧲 D = S/R Confluence (Güçlü)</span>' if res.get('d_sr_confluence') else ''
+        _harm_html = (
+            f'<div style="background:{bg}; border:1px solid {border}; border-radius:8px; padding:13px; margin-top:8px; margin-bottom:10px;">'
+            f'<div style="display:flex; justify-content:space-between; align-items:center;">'
+            f'<div><span style="font-size:1.4rem;">{emoji}</span>'
+            f'<span style="color:#e2e8f0; font-weight:900; font-size:1rem; margin-left:8px;">HARMONİK: {pat.upper()}</span>'
+            f'<span style="color:#cbd5e1; font-size:0.78rem; margin-left:10px;">{dir_lbl}</span></div>'
+            f'<span style="background:rgba(255,255,255,0.12); color:#e2e8f0; padding:3px 10px; border-radius:10px; font-weight:800; font-size:0.85rem;">PRZ: {prz:.2f}</span>'
+            f'</div>'
+            f'<div style="margin-top:9px; display:flex; flex-wrap:wrap; gap:7px;">'
+            f'<span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">📐 AB/XA: {res["AB_XA"]}</span>'
+            f'<span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">📏 XD/XA: {res["XD_XA"]}</span>'
+            f'<span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px; border-radius:5px; font-size:0.78rem;">🎯 PRZ\'ye Uzaklık: %{fark:.1f} — {prz_note}</span>'
+            f'<span style="background:rgba(255,255,255,0.08); color:#cbd5e1; padding:3px 8px; border-radius:5px; font-size:0.78rem; font-weight:700;">🕒 {_d_lbl}</span>'
+            f'{_sr_span}'
+            f'</div>'
+            f'{pivot_dates_html}'
+            f'</div>'
+        )
+        st.markdown(_harm_html, unsafe_allow_html=True)
     except Exception:
         pass
 
@@ -7623,6 +7607,7 @@ def _main_price_chart_plotly(symbol, dark_mode):
                 showspikes=True, spikecolor=fg,
                 spikedash='dot', spikethickness=1,
                 rangebreaks=_rangebreaks,
+                tickformat="%d %b",
             )
         fig.update_yaxes(
             row=1, col=1,
