@@ -315,8 +315,15 @@ commodities_list = [
     "BZ=F"    # Brent Petrol (Brent Crude Futures) - Kuzey Denizi, küresel referans fiyatı
 ]
 
-# --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 200+ Adayları) ---
-priority_bist_indices = ["XU100.IS", "XU030.IS", "XBANK.IS", "XTUMY.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS"]
+# --- BIST LİSTESİ (GENİŞLETİLMİŞ - BIST 500) ---
+priority_bist_indices = [
+    "XU100.IS", "XU030.IS", "XBANK.IS", "XTUMY.IS", "XUSIN.IS", "EREGL.IS", "SISE.IS", "TUPRS.IS",
+    # BIST30 (alfabetik, yukarıdakiler hariç)
+    "AKBNK.IS", "ARCLK.IS", "ASELS.IS", "BIMAS.IS", "CCOLA.IS", "EKGYO.IS", "ENKAI.IS",
+    "FROTO.IS", "GARAN.IS", "GUBRF.IS", "HALKB.IS", "ISCTR.IS", "KCHOL.IS", "KOZAA.IS",
+    "KRDMD.IS", "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SASA.IS", "TCELL.IS", "THYAO.IS",
+    "TKFEN.IS", "TOASO.IS", "TTKOM.IS", "TTRAK.IS", "VAKBN.IS", "YKBNK.IS",
+]
 
 # Buraya BIST TUM'deki hisseleri ekliyoruz
 raw_bist_stocks = [
@@ -921,18 +928,14 @@ def calculate_synthetic_sentiment(ticker):
     try:
         df = get_safe_historical_data(ticker, period="6mo")
         if df is None: return None
-        
-        close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
-        
-        # --- EVRENSEL FORMÜL V2.0 BAŞLANGIÇ ---
-        # 1. Tipik Fiyat
-        typical_price = (high + low + close) / 3
 
-        # 2. DEMA 6 Hesaplama
+        close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
+
+        # --- DEMA6 (Orijinal Formül) ---
+        typical_price = (high + low + close) / 3
         ema1 = typical_price.ewm(span=6, adjust=False).mean()
         ema2 = ema1.ewm(span=6, adjust=False).mean()
         dema6 = (2 * ema1) - ema2
-
         mf_smooth = (typical_price - dema6) / dema6 * 1000
 
         stp = ema1
