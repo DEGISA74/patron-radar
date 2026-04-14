@@ -6,6 +6,8 @@ import urllib.parse
 from ta.volume import VolumeWeightedAveragePrice
 from textblob import TextBlob
 from datetime import datetime, timedelta
+import pytz
+_TZ_ISTANBUL = pytz.timezone("Europe/Istanbul")
 import streamlit.components.v1 as components
 import numpy as np
 import sqlite3
@@ -26,7 +28,7 @@ if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
 
 def is_yahoo_update_needed(ticker, local_last_date):
-    now = datetime.now()
+    now = datetime.now(_TZ_ISTANBUL)
     weekday = now.weekday()
     hour_min = now.hour * 100 + now.minute
     local_date = local_last_date.date()
