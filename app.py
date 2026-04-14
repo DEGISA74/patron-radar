@@ -13202,462 +13202,412 @@ with col_left:
     render_detail_card_advanced(st.session_state.ticker)
 
     # ---------------------------------------------------------
-    # 🦅 YENİ: ICT SNIPER AJANI (TARAMA PANELİ)
-    # Konum: ICT Sniper, Minervini Üstü
+    # 🏆 TARAMA MERKEZİ — TİERELİ DÜZEN (YENİ)
     # ---------------------------------------------------------
-    if 'ict_scan_data' not in st.session_state: st.session_state.ict_scan_data = None
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦅 ICT Sniper Ajanı (Kurumsal Kurulum: 65/100)</div>', unsafe_allow_html=True)
-    
-    # 1. TARAMA BUTONU
-    if st.button(f"🦅 KURUMSAL SETUP TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_ict"):
-        with st.spinner("Kurumsal ayak izleri (MSS + Displacement + FVG) taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            # Daha önce yazdığımız (veya yazacağımız) batch fonksiyonu buraya gelecek
-            # Şimdilik placeholder (yer tutucu) fonksiyonu çağırıyoruz, aşağıda tanımlayacağız
-            st.session_state.ict_scan_data = scan_ict_batch(current_assets) 
-            
-    # 2. SONUÇ EKRANI (ÇİFT SÜTUNLU)
+    # Session state başlatmaları
+    for _k in ['ict_scan_data','guclu_donus_data','golden_pattern_data','harmonic_data',
+                'harmonic_confluence_data','rs_leaders_data','accum_data','breakout_left',
+                'breakout_right','pattern_data','minervini_data','golden_results','royal_results']:
+        if _k not in st.session_state: st.session_state[_k] = None
+    for _k in ['stp_scanned']:
+        if _k not in st.session_state: st.session_state[_k] = False
+    for _k in ['stp_crosses','stp_trends','stp_filtered']:
+        if _k not in st.session_state: st.session_state[_k] = []
+
+    # Skor kartı başlığı — gradient progress bar + puan badge
+    def _scan_card_header(icon, title, score, subtitle, color="#3b82f6"):
+        pct = score
+        stars = "⭐" * (score // 20)
+        return (f"<div style='background:linear-gradient(135deg,{color}18,{color}06);"
+                f"border:1px solid {color}50;border-radius:10px;padding:9px 13px;margin-bottom:7px;'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;'>"
+                f"<span style='font-weight:900;font-size:0.92rem;'>{icon} {title}</span>"
+                f"<span style='background:{color};color:white;border-radius:11px;padding:2px 9px;font-size:0.73rem;font-weight:800;'>{score}/100</span>"
+                f"</div>"
+                f"<div style='background:rgba(0,0,0,0.12);border-radius:3px;height:4px;margin-bottom:5px;'>"
+                f"<div style='background:{color};height:4px;border-radius:3px;width:{pct}%;'></div></div>"
+                f"<div style='font-size:0.7rem;color:#64748b;'>{stars} {subtitle}</div></div>")
+
+    # ══════════════════════════════════════════════════════════
+    # ① CONFLUENCE & ELİTLER — Her Zaman Görünür
+    # ══════════════════════════════════════════════════════════
+    st.markdown("<div style='border-left:4px solid #7c3aed;padding-left:10px;margin-top:22px;margin-bottom:8px;"
+                "font-weight:900;font-size:1.05rem;'>🎯 CONFLUENCE & ELİTLER</div>", unsafe_allow_html=True)
+
+    _c_left, _c_right = st.columns(2)
+
+    with _c_left:
+        st.markdown(_scan_card_header("🔥", "CONFLUENCE", 95,
+            "2-3 bağımsız metodoloji aynı hisseyi işaret ettiğinde — en güvenilir sinyal",
+            "#7c3aed"), unsafe_allow_html=True)
+        _hits  = st.session_state.get('confluence_hits')
+        _dark  = st.session_state.get('dark_mode', False)
+        _cbg   = "#1e0f35" if _dark else "#faf5ff"
+        if _hits:
+            st.markdown(f"<div style='background:{_cbg};border:1px solid #7c3aed;border-radius:7px;"
+                        f"padding:7px 10px;margin-bottom:5px;'>"
+                        f"<span style='font-weight:800;color:#c084fc;font-size:0.83rem;'>"
+                        f"🔥 CONFLUENCE — {len(_hits)} Hisse</span></div>", unsafe_allow_html=True)
+            with st.container(height=160, border=False):
+                for _ci, _ch in enumerate(_hits[:8]):
+                    _cs = _ch['Sembol'].replace('.IS','')
+                    _gc = _ch['group_count']
+                    _ts = _ch['total_scanners']
+                    _cp = _ch.get('price', 0)
+                    _cp_s = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
+                    _badge = "🔥 3/3" if _gc == 3 else "⚡ 2/3"
+                    if st.button(f"{_badge} {_cs} ({_cp_s}) — {_ts} yöntem",
+                                 key=f"conf_top_{_cs}_{_ci}", use_container_width=True):
+                        st.session_state.ticker = _ch['Sembol']
+                        on_scan_result_click(_ch['Sembol']); st.rerun()
+        else:
+            st.markdown(f"<div style='background:{_cbg};border:1px dashed #7c3aed;border-radius:7px;"
+                        f"padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;'>"
+                        f"🔥 CONFLUENCE<br><span style='font-size:0.7rem;'>Master Scan çalıştırın</span></div>",
+                        unsafe_allow_html=True)
+        _hc_df = st.session_state.get('harmonic_confluence_data')
+        if _hc_df is not None and not (hasattr(_hc_df, 'empty') and _hc_df.empty):
+            st.markdown("<div style='background:linear-gradient(90deg,#2d1060,#1e0f3a);border:2px solid #7c3aed;"
+                        "border-radius:6px;padding:6px 10px;margin-top:5px;'>"
+                        "<span style='font-size:0.78rem;font-weight:900;color:#c084fc;'>"
+                        f"⚡ HARMONİK CONF ({len(_hc_df)} hisse)</span></div>", unsafe_allow_html=True)
+            for _hci, _hcr in _hc_df.head(4).iterrows():
+                _hcs = str(_hcr.get('Sembol','')).replace('.IS','')
+                _hcp = _hcr.get('Fiyat', 0)
+                _hcp_s = f"{int(_hcp)}" if _hcp >= 1000 else f"{_hcp:.2f}"
+                if st.button(f"⚡ {_hcs} ({_hcp_s})", key=f"hctop_{_hcs}_{_hci}", use_container_width=True):
+                    st.session_state.ticker = _hcr.get('Sembol', _hcs)
+                    on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
+
+    with _c_right:
+        st.markdown(_scan_card_header("💎", "ELİTLER", 88,
+            "Platin Fırsat (5 kriter) + Altın Fırsat (3 kriter) — piyasanın kremi",
+            "#1d4ed8"), unsafe_allow_html=True)
+        if st.button("💎 ELİT TARAMA (Platin + Altın)", use_container_width=True, key="btn_elit_tara_main",
+                     help="Piyasanın en kaliteli hisselerini iki kategoride listeler.\n\n💎 Platin Fırsat: Fiyat hem 200 hem 50 günlük ortalamanın üstünde, RS endeksten güçlü, Discount bölgede ve hacim artıyor — tüm kriterler aynı anda sağlanmalı.\n\n🦁 Altın Fırsat: Son 10 günde endeksi geçmiş, son 60 güne göre hâlâ ucuz, enerji/hacim yükseliyor. Büyük oyunculara yakın ama henüz fazla yükselmemiş hisseler."):
+            with st.spinner("Elit hisseler aranıyor..."):
+                _scan_list = ASSET_GROUPS.get(st.session_state.category, [])
+                if _scan_list:
+                    st.session_state.radar2_data = radar2_scan(_scan_list)
+                    _df_g, _df_r = get_golden_trio_batch_scan(_scan_list)
+                    st.session_state.golden_results = _df_g.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not _df_g.empty else pd.DataFrame()
+                    st.session_state.royal_results  = _df_r.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not _df_r.empty else pd.DataFrame()
+                    st.rerun()
+        _has_elite = (st.session_state.royal_results is not None and not st.session_state.royal_results.empty) or \
+                     (st.session_state.golden_results is not None and not st.session_state.golden_results.empty)
+        if _has_elite:
+            with st.container(height=190, border=False):
+                if st.session_state.royal_results is not None and not st.session_state.royal_results.empty:
+                    st.markdown("<div style='font-size:0.76rem;font-weight:800;color:#3b82f6;margin-bottom:4px;'>💎 PLATİN FIRSAT</div>", unsafe_allow_html=True)
+                    for _ri, _rr in st.session_state.royal_results.head(4).iterrows():
+                        _rs = _rr['Hisse']; _rd = get_display_name(_rs)
+                        _rfv = _rr['Fiyat']; _rfs = f"{int(_rfv)}" if _rfv >= 1000 else f"{_rfv:.2f}"
+                        if st.button(f"💎 {_rd} ({_rfs})", key=f"elit_royal_{_ri}", use_container_width=True):
+                            on_scan_result_click(_rs); st.rerun()
+                if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
+                    st.markdown("<div style='font-size:0.76rem;font-weight:800;color:#d97706;margin-bottom:4px;margin-top:5px;'>🦁 ALTIN FIRSAT</div>", unsafe_allow_html=True)
+                    for _gi, _gr in st.session_state.golden_results.head(4).iterrows():
+                        _gs = _gr['Hisse']; _gd = get_display_name(_gs)
+                        _gfv = _gr['Fiyat']; _gfs = f"{int(_gfv)}" if _gfv >= 1000 else f"{_gfv:.2f}"
+                        if st.button(f"🦁 {_gd} ({_gfs})", key=f"elit_gold_{_gi}", use_container_width=True):
+                            on_scan_result_click(_gs); st.rerun()
+        else:
+            st.markdown("<div style='background:#fffbeb;border:1px dashed #f59e0b;border-radius:7px;"
+                        "padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:5px;'>"
+                        "💎 ELİTLER<br><span style='font-size:0.7rem;'>Tara butonuna basın</span></div>",
+                        unsafe_allow_html=True)
+
+    st.markdown("<hr style='margin:12px 0;border-color:rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # ② TIER 1 — Kanıtlanmış Yöntemler
+    # ══════════════════════════════════════════════════════════
+    st.markdown("<div style='border-left:5px solid #16a34a;padding-left:10px;margin-bottom:8px;"
+                "font-weight:900;font-size:1rem;color:#16a34a;'>🥇 TIER 1 — Kanıtlanmış Yöntemler</div>",
+                unsafe_allow_html=True)
+
+    _t1c1, _t1c2 = st.columns(2)
+
+    with _t1c1:
+        st.markdown(_scan_card_header("🦅", "ICT Sniper", 85, "MSS + FVG + OTE · Kurumsal ayak izi", "#16a34a"), unsafe_allow_html=True)
+        if st.button(f"🦅 ICT SNIPER TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_ict",
+                     help="Kurumsal yatırımcıların (bankalar, fonlar) piyasaya giriş izlerini takip eder.\n\nSırasıyla 5 koşul aranır: 1) Likidite süpürmesi (stop avı), 2) Piyasa yapısı kırılımı (MSS), 3) Güçlü itme hareketi (1.3× normal hacim), 4) Boşluk bölgesi (FVG) oluşumu, 5) Risk/Ödül oranı en az 2.5×.\n\nTüm koşullar sırayla gerçekleşmişse bu bir kurumsal kurulum sayılır. Geçmiş veriye değil, son 50 bara bakar."):
+            with st.spinner("Kurumsal ayak izleri (MSS + Displacement + FVG) taranıyor..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                st.session_state.ict_scan_data = scan_ict_batch(current_assets)
+
+    # ICT Sniper — sonuçlar
     if st.session_state.ict_scan_data is not None:
         df_res = st.session_state.ict_scan_data
-        
         if not df_res.empty:
-            # Long ve Shortları ayır
-            longs = df_res[df_res['Yön'] == 'LONG']
+            longs  = df_res[df_res['Yön'] == 'LONG']
             shorts = df_res[df_res['Yön'] == 'SHORT']
-            
-            # İki Sütun Oluştur
-            c_long, c_short = st.columns(2)
-            
-            # --- SOL SÜTUN: LONG FIRSATLARI ---
-            with c_long:
-                st.markdown(f"<div style='text-align:center; color:#16a34a; font-weight:800; background:#f0fdf4; padding:5px; border-radius:5px; border:1px solid #86efac; margin-bottom:10px;'>🐂 LONG (Yükseliş) SETUPLARI ({len(longs)})</div>", unsafe_allow_html=True)
-                if not longs.empty:
-                    with st.container(height=100):
+            _ic1, _ic2 = st.columns(2)
+            with _ic1:
+                st.markdown(f"<div style='text-align:center;color:#16a34a;font-weight:800;font-size:0.75rem;padding:3px;border-radius:4px;border:1px solid #86efac;margin-bottom:5px;'>🐂 LONG ({len(longs)})</div>", unsafe_allow_html=True)
+                with st.container(height=120):
+                    if not longs.empty:
                         for i, row in longs.iterrows():
                             sym = row['Sembol']
-                            # Etiket: 🐂 THYAO (300.0) | Hedef: Yukarı
-                            label = f"🐂 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {row['Durum']}"
-                            if st.button(label, key=f"ict_long_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
-                                on_scan_result_click(sym)
-                                st.rerun()
-                else:
-                    st.info("Long yönlü kurumsal Setup yok.")
-
-            # --- SAĞ SÜTUN: SHORT FIRSATLARI ---
-            with c_short:
-                st.markdown(f"<div style='text-align:center; color:#dc2626; font-weight:800; background:#fef2f2; padding:5px; border-radius:5px; border:1px solid #fca5a5; margin-bottom:10px;'>🐻 SHORT (Düşüş) SETUPLARI ({len(shorts)})</div>", unsafe_allow_html=True)
-                if not shorts.empty:
-                    with st.container(height=100):
+                            if st.button(f"🐂 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}", key=f"ict_long_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                                on_scan_result_click(sym); st.rerun()
+                    else:
+                        st.caption("Long yok.")
+            with _ic2:
+                st.markdown(f"<div style='text-align:center;color:#dc2626;font-weight:800;font-size:0.75rem;padding:3px;border-radius:4px;border:1px solid #fca5a5;margin-bottom:5px;'>🐻 SHORT ({len(shorts)})</div>", unsafe_allow_html=True)
+                with st.container(height=120):
+                    if not shorts.empty:
                         for i, row in shorts.iterrows():
                             sym = row['Sembol']
-                            # Etiket: 🐻 GARAN (100.0) | Hedef: Aşağı
-                            label = f"🐻 {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {row['Durum']}"
-                            if st.button(label, key=f"ict_short_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
-                                on_scan_result_click(sym)
-                                st.rerun()
-                else:
-                    st.info("Short yönlü kurumsal Setup yok.")
-                    
+                            if st.button(f"🐻 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}", key=f"ict_short_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                                on_scan_result_click(sym); st.rerun()
+                    else:
+                        st.caption("Short yok.")
         else:
-            st.info("Şu an 'High Probability' (Yüksek Olasılıklı) ICT kurulumu (ne Long ne Short) tespit edilemedi.") 
-    # ==============================================================================
-    # 🔄 GÜÇLÜ DÖNÜŞ ADAYLARI PANELİ
-    # ==============================================================================
-    if 'guclu_donus_data' not in st.session_state: st.session_state.guclu_donus_data = None
+            st.info("High Probability ICT kurulumu tespit edilemedi.")
 
-    st.markdown('<div class="info-header" style="margin-top: 30px; margin-bottom: 5px; border-left: 5px solid #16a34a;">🔄 Güçlü Dönüş Adayları (RSI Diverjans + Birikim: 52/100)</div>', unsafe_allow_html=True)
-
-    if st.button(f"🔄 GÜÇLÜ DÖNÜŞ ADAYLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_guclu_donus"):
-        with st.spinner("RSI Diverjans, Gizli Birikim ve 20-Bar Dip taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.guclu_donus_data = scan_guclu_donus_batch(current_assets)
-
-    if st.session_state.guclu_donus_data is not None:
-        df_gd = st.session_state.guclu_donus_data
-
-        if not df_gd.empty:
-            st.success(f"🎉 {len(df_gd)} adet 'Güçlü Dönüş Adayı' bulundu.")
-
-            st.dataframe(
-                df_gd,
-                use_container_width=True,
-                column_config={
-                    "Z-Score"  : st.column_config.NumberColumn("Z-Score (Ucuzluk)", format="%.2f"),
-                    "Hacim_Kat": st.column_config.NumberColumn("Hacim (Oran)", format="%.2f"),
-                    "RSI_Div"  : st.column_config.TextColumn("RSI Diverjans"),
-                }
-            )
-
-            cols = st.columns(min(len(df_gd), 4))
-            for i, (index, row) in enumerate(df_gd.iterrows()):
-                sym = row["Sembol"]
-                with cols[i % 4]:
-                    if st.button(f"🔎 {sym} İncele", key=f"gd_res_btn_{sym}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.warning("🧐 Şu an 3 kriteri (RSI Diverjans + Gizli Birikim + 20-Bar Dip) birlikte karşılayan hisse bulunamadı. Sabırlı olun.")
-    # ==============================================================================
-    # ---------------------------------------------------------
-    # 💎 YENİ: ALTIN FIRSAT & FORMASYON AJANI (Eski RSI Yeri)
-    # ---------------------------------------------------------
-    if 'golden_pattern_data' not in st.session_state: st.session_state.golden_pattern_data = None
-
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">💎 Altın Fırsat & VIP Formasyon Ajanı (62/100)</div>', unsafe_allow_html=True)
-
-    if st.button(f"🚀 ALTIN FIRSATLARDA FORMASYON VARSA BUL ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden"):
-        with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            golden_result = scan_golden_pattern_agent(current_assets, st.session_state.get('category', 'S&P 500'))
-            st.session_state.golden_pattern_data = golden_result
-            st.rerun()
-
-    if st.session_state.golden_pattern_data is not None:
-        _gp_data = st.session_state.golden_pattern_data
-        # Eski format (DataFrame) ile yeni format (dict) uyumluluğu
-        if isinstance(_gp_data, dict):
-            _formations = _gp_data.get("formations", pd.DataFrame())
-            _hazirlik   = _gp_data.get("hazirlik",   pd.DataFrame())
-        else:
-            _formations = _gp_data
-            _hazirlik   = pd.DataFrame()
-
-        _dark = st.session_state.get('dark_mode', False)
-        _hdr_bg  = "#1e3a2f" if _dark else "#d1fae5"
-        _hdr_clr = "#6ee7b7" if _dark else "#065f46"
-        _hdr_bdr = "#065f46" if _dark else "#6ee7b7"
-        if not _formations.empty:
-            st.markdown(f"<div style='text-align:center; color:{_hdr_clr}; font-weight:700; font-size:0.8rem; margin-bottom:5px; background:{_hdr_bg}; padding:5px; border-radius:4px; border:1px solid {_hdr_bdr};'>🔥 HEM ALTIN FIRSAT HEM FORMASYON</div>", unsafe_allow_html=True)
-            with st.container(height=300):
-                for i, row in _formations.head(20).iterrows():
-                    sym      = row['Sembol']
-                    score    = row['Puan']
-                    detail   = row['Detay']
-                    rsi_v    = row.get('RSI', '-')
-                    mf_v     = row.get('Mansfield', '-')
-                    hk_v     = row.get('Hacim_Kat', '-')
-                    _royal   = row.get('is_royal', False)
-                    mf_icon  = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
-                    prefix   = "♠️ ROYAL+" if _royal else "🚀"
-                    btn_label = f"{prefix} {sym.replace('.IS', '')} | Skor: {score} | RS:{mf_icon}{mf_v} | Hacim:{hk_v}x\n{detail}"
-                    if st.button(btn_label, key=f"golden_btn_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.caption("Şu an için Fincan-Kulp, TOBO veya Direnç Kırılımı yapan Altın Fırsat bulunamadı.")
-
-        if not _hazirlik.empty:
-            _haz_bg  = "#1c2a3a" if _dark else "#eff6ff"
-            _haz_clr = "#93c5fd" if _dark else "#1e40af"
-            _haz_bdr = "#1e40af" if _dark else "#93c5fd"
-            with st.expander(f"⏳ Hazırlık Aşamasındakiler ({len(_hazirlik)} hisse — Formasyon Henüz Oluşmadı)"):
-                st.markdown(f"<div style='font-size:0.75rem; color:{_haz_clr}; background:{_haz_bg}; padding:4px 8px; border-radius:4px; border-left:3px solid {_haz_bdr}; margin-bottom:6px;'>Bu hisseler Altın Fırsat kriterlerini geçti ancak henüz formasyon oluşturmadı. 📦 Baz Kurulumu = BB sıkışması mevcut (patlama yakın olabilir).</div>", unsafe_allow_html=True)
-                for i, row in _hazirlik.head(30).iterrows():
-                    sym      = row['Sembol']
-                    durum    = row['Durum']
-                    rsi_v    = row.get('RSI', '-')
-                    mf_v     = row.get('Mansfield', '-')
-                    hk_v     = row.get('Hacim_Kat', '-')
-                    _royal   = row.get('is_royal', False)
-                    mf_icon  = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
-                    royal_tag = " ♠️" if _royal else ""
-                    btn_label = f"{durum}{royal_tag} {sym.replace('.IS', '')} | RS:{mf_icon}{mf_v} | Hacim:{hk_v}x"
-                    _hc1, _hc2 = st.columns([7, 3])
-                    with _hc1:
-                        if st.button(btn_label, key=f"hazirlik_btn_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
-                    with _hc2:
-                        _sp = _sparkline_b64(sym, st.session_state.dark_mode)
-                        _rb = _rsi_bar_html(rsi_v)
-                        if _sp:
-                            st.markdown(f"<img src='data:image/png;base64,{_sp}' style='width:100%;border-radius:3px;display:block;margin-bottom:2px;'/>", unsafe_allow_html=True)
-                        st.markdown(_rb, unsafe_allow_html=True)
-
-    # ---------------------------------------------------------
-    # 🔮 HARMONİK FORMASYON AJANI (Fibonacci PRZ: 58/100)
-    # ---------------------------------------------------------
-    if 'harmonic_data' not in st.session_state: st.session_state.harmonic_data = None
-    if 'harmonic_confluence_data' not in st.session_state: st.session_state.harmonic_confluence_data = None
-
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🔮 Harmonik Formasyon Ajanı (Fibonacci PRZ: 58/100)</div>', unsafe_allow_html=True)
-
-    if st.button(f"🔮 HARMONİK FORMASYON (XABCD) TARAMASI BAŞLAT ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic"):
-        with st.spinner("Gartley, Butterfly, Bat, Crab, Shark — Fibonacci PRZ bölgeleri aranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.harmonic_data = scan_harmonic_patterns_batch(current_assets)
-            st.rerun()
-
-    if st.session_state.harmonic_data is not None:
-        _hm = st.session_state.harmonic_data
-        _dark = st.session_state.get('dark_mode', False)
-        if not _hm.empty:
-            _hm_bg  = "#1c1a2e" if _dark else "#f5f3ff"
-            _hm_clr = "#c4b5fd" if _dark else "#5b21b6"
-            _hm_bdr = "#5b21b6" if _dark else "#c4b5fd"
-            st.markdown(f"<div style='text-align:center;color:{_hm_clr};font-weight:700;font-size:0.8rem;"
-                        f"margin-bottom:5px;background:{_hm_bg};padding:5px;border-radius:4px;"
-                        f"border:1px solid {_hm_bdr};'>🎯 PRZ YAKININDA {len(_hm)} HARMONİK FORMASYON</div>",
-                        unsafe_allow_html=True)
-            with st.container(height=300, border=True):
-                for i, row in _hm.iterrows():
-                    sym    = row['Sembol']
-                    pat    = row['Pattern']
-                    yon    = row['Yön']
-                    prz    = row['PRZ']
-                    fark   = row['PRZ_Fark%']
-                    ab_xa  = row['AB_XA']
-                    xd_xa  = row['XD_XA']
-                    fiyat  = row['Fiyat']
-                    bar_ago = row['Bar_Önce']
-                    durum  = row.get('Durum', '')
-                    d_txt  = "D:bekleniyor" if durum == '📍 Yaklaşıyor' else f"D:{bar_ago}g önce"
-                    label  = f"{durum} {pat} | {yon} | {sym.replace('.IS','')} — Fiyat:{fiyat} PRZ:{prz} %{fark} uzakta | {d_txt}"
-                    if st.button(label, key=f"harm_btn_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.caption("Şu an PRZ yakınında Gartley/Butterfly/Bat/Crab/Shark formasyonu bulunamadı.")
-
-    # ---------------------------------------------------------
-    # 🚀 YENİ: RS MOMENTUM LİDERLERİ (ALPHA TARAMASI) - EN TEPEYE
-    # ---------------------------------------------------------
-    if 'rs_leaders_data' not in st.session_state: st.session_state.rs_leaders_data = None
-
-    st.markdown('<div class="info-header" style="margin-top: 5px; margin-bottom: 5px;">🕵️ RS Momentum Liderleri (Piyasa Şampiyonları: 58/100)</div>', unsafe_allow_html=True)
-    
-    # 1. TARAMA BUTONU
-    if st.button(f"🕵️ SON 5 GÜNDE ENDEKSTEN HIZLI YÜKSELENLERİ GETİR ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_rs_leaders"):
-        with st.spinner("Piyasayı ezip geçen hisseler (Alpha > %2) sıralanıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            # Daha önce tanımladığımız fonksiyonu çağırıyoruz
-            st.session_state.rs_leaders_data = scan_rs_momentum_leaders(current_assets)
-            
-    # 2. SONUÇ EKRANI
-    if st.session_state.rs_leaders_data is not None:
-        count = len(st.session_state.rs_leaders_data)
-        if count > 0:
-            # st.success(f"🏆 Endeksi yenen {count} adet şampiyon bulundu!")
-            with st.container(height=250, border=True):
-                for i, row in st.session_state.rs_leaders_data.iterrows():
-                    sym       = row['Sembol']
-                    alpha_5   = row['Alpha_5D']
-                    alpha_1   = row.get('Alpha_1D', 0)
-                    degisim_1 = row.get('Degisim_1D', 0)
-                    vol       = row['Hacim_Kat']
-                    icon      = "🔥" if alpha_5 > 5.0 else "💪"
-                    today_status = "LİDER" if alpha_1 > 0.5 else "ZAYIF" if alpha_1 < -0.5 else "NÖTR"
-                    label = f"{icon} {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | Alpha: +%{alpha_5:.1f} | Vol: {vol:.1f}x | Bugün: %{degisim_1:.1f} ({today_status})"
-                    if st.button(label, key=f"rs_lead_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.info("Şu an endekse belirgin fark atan (%2+) hisse bulunamadı.")
-
-    # Araya bir çizgi çekelim ki Sentiment Ajanı ile karışmasın
-    st.markdown("<hr style='margin-top:15px; margin-bottom:15px;'>", unsafe_allow_html=True)
-    # ---------------------------------------------------------------    
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Sentiment Ajanı (Akıllı Para Topluyor: 52/100)</div>', unsafe_allow_html=True)
-    
-    if 'accum_data' not in st.session_state: st.session_state.accum_data = None
-    if 'stp_scanned' not in st.session_state: st.session_state.stp_scanned = False
-    if 'stp_crosses' not in st.session_state: st.session_state.stp_crosses = []
-    if 'stp_trends' not in st.session_state: st.session_state.stp_trends = []
-    if 'stp_filtered' not in st.session_state: st.session_state.stp_filtered = []
-
-    if st.button(f"🕵️ SENTIMENT & MOMENTUM TARAMASI BAŞLAT ({st.session_state.category})", type="secondary", use_container_width=True):
-        with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para Topluyor?)..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            crosses, trends, filtered = scan_stp_signals(current_assets)
-            st.session_state.stp_crosses = crosses
-            st.session_state.stp_trends = trends
-            st.session_state.stp_filtered = filtered
-            st.session_state.stp_scanned = True
-            st.session_state.accum_data = scan_hidden_accumulation(current_assets)
-
-    if st.session_state.stp_scanned or (st.session_state.accum_data is not None):
-
-        c1, c2, c3, c4 = st.columns(4)
-
-        with c1:
-            st.markdown("<div style='text-align:center; color:#1e40af; font-weight:700; font-size:0.9rem; margin-bottom:5px;'>⚡ STP'Yİ YUKARI KESTİ</div>", unsafe_allow_html=True)
-            with st.container(height=200, border=True):
-                if st.session_state.stp_crosses:
-                    for item in st.session_state.stp_crosses:
-                        if st.button(f"🚀 {item['Sembol']} | {item.get('Hacim_Kat', 0):.1f}x Hacim", key=f"stp_c_{item['Sembol']}", use_container_width=True):
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-                else:
-                    st.caption("Kesişim yok.")
-        
-        with c2:
-            st.markdown("<div style='text-align:center; color:#b91c1c; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🎯 MOMENTUM BAŞLANGICI?</div>", unsafe_allow_html=True)
-            with st.container(height=200, border=True):
-                if st.session_state.stp_filtered:
-                    for item in st.session_state.stp_filtered:
-                        if st.button(f"🔥 {item['Sembol']} | {item.get('Hacim_Kat', 0):.1f}x Hacim", key=f"stp_f_{item['Sembol']}", use_container_width=True):
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-                else:
-                    st.caption("Tam eşleşme yok.")
-
-        with c3:
-            st.markdown("<div style='text-align:center; color:#15803d; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>✅ STP ÜSTÜNDEKİ TREND</div>", unsafe_allow_html=True)
-            with st.container(height=200, border=True):
-                if st.session_state.stp_trends:
-                    for item in st.session_state.stp_trends:
-                        # HATA DÜZELTME: .get() kullanarak eğer 'Gun' verisi yoksa '?' koy, çökmesin.
-                        gun_sayisi = item.get('Gun', '?')
-                        
-                        if st.button(f"📈 {item['Sembol']} ({gun_sayisi} Gün)", key=f"stp_t_{item['Sembol']}", use_container_width=True): 
-                            st.session_state.ticker = item['Sembol']
-                            st.rerun()
-                else:
-                    st.caption("Trend yok.")
-
-        with c4:
-            st.markdown("<div style='text-align:center; color:#7c3aed; font-weight:700; font-size:0.8rem; margin-bottom:5px;'>🤫 AKILLI PARA TOPLUYOR?</div>", unsafe_allow_html=True)
-            
-            with st.container(height=200, border=True):
-                if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
-                    for index, row in st.session_state.accum_data.iterrows():
-                        
-                        # İkon Belirleme (Pocket Pivot varsa Yıldırım, yoksa Şapka)
-                        icon = "⚡" if row.get('Pocket_Pivot', False) else "🎩"
-                        
-                        # Buton Metni: "⚡ AAPL (150.20) | RS: Güçlü"
-                        # RS bilgisini kısa tutuyoruz
-                        rs_raw = str(row.get('RS_Durumu', 'Not Yet'))
-                        rs_short = "RS+" if "GÜÇLÜ" in rs_raw else "Not Yet"
-                        
-                        # Buton Etiketi
-                        # Kaliteye göre kısa etiket
-                        q_tag = "💎 A" if "A KALİTE" in row.get('Kalite', '') else "B"
-
-                        # Buton Etiketi (A ise Elmas koyar, B ise sadece harf)
-                        btn_label = f"{icon} {row['Sembol'].replace('.IS', '')} ({row['Fiyat']}) | {q_tag} | {rs_short}"
-                        
-                        # Basit ve Çalışan Buton Yapısı
-                        if st.button(btn_label, key=f"btn_acc_{row['Sembol']}_{index}", use_container_width=True):
-                            on_scan_result_click(row['Sembol'])
-                            st.rerun()
-                else:
-                    st.caption("Tespit edilemedi.")
-
-    # --- DÜZELTİLMİŞ BREAKOUT & KIRILIM İSTİHBARATI BÖLÜMÜ ---
-    st.markdown('<div class="info-header" style="margin-top: 15px; margin-bottom: 10px;">🕵️ Breakout Ajanı (Isınanlar: 57/100)</div>', unsafe_allow_html=True)
-    
-    # Session State Tanımları (Eğer yoksa)
-    if 'breakout_left' not in st.session_state: st.session_state.breakout_left = None
-    if 'breakout_right' not in st.session_state: st.session_state.breakout_right = None
-
-    
-    if st.button(f"⚡ {st.session_state.category} İÇİN BREAK-OUT TARAMASI BAŞLAT", type="secondary", key="dual_breakout_btn", use_container_width=True):
-        with st.spinner("Ajanlar sahaya indi: Hem ısınanlar hem kıranlar taranıyor..."):
-            curr_list = ASSET_GROUPS.get(st.session_state.category, [])
-            # Paralel tarama simülasyonu (Sırayla çalışır ama hızlıdır)
-            st.session_state.breakout_left = agent3_breakout_scan(curr_list) # Mevcut Isınanlar
-            st.session_state.breakout_right = scan_confirmed_breakouts(curr_list, st.session_state.get('category', 'S&P 500')) # Yeni Kıranlar
-            st.rerun()
-    if st.session_state.breakout_left is not None or st.session_state.breakout_right is not None:
-       # 2 Sütunlu Sade Yapı (YENİ TASARIM)
-        c_left, c_right = st.columns(2)
-        
-        # --- SOL SÜTUN: ISINANLAR (Hazırlık) ---
-        with c_left:
-            st.markdown("<div style='text-align:center; color:#d97706; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#fffbeb; padding:5px; border-radius:4px; border:1px solid #fcd34d;'>🔥 ISINANLAR (Hazırlık)</div>", unsafe_allow_html=True)
-            
-            with st.container(height=150): # Scroll Alanı
-                if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
-                    df_left = st.session_state.breakout_left.head(20)
-                    for i, (index, row) in enumerate(df_left.iterrows()):
-                        sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
-                        prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
-                        btn_label = f"🔥 {sym_raw.replace('.IS','')} ({row['Fiyat']}) | {prox_clean}"
-                        if st.button(btn_label, key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
-                            on_scan_result_click(sym_raw)
-                            st.rerun()
-                else:
-                    st.info("Isınan hisse bulunamadı.")
-    
-        # --- SAĞ SÜTUN: KIRANLAR (Onaylı) ---
-        with c_right:
-            st.markdown("<div style='text-align:center; color:#16a34a; font-weight:700; font-size:0.9rem; margin-bottom:5px; background:#f0fdf4; padding:5px; border-radius:4px; border:1px solid #86efac;'>🔨 KIRANLAR (Onaylı)</div>", unsafe_allow_html=True)
-            
-            with st.container(height=150): # Scroll Alanı
-                if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
-                    df_right = st.session_state.breakout_right.head(20)
-                    for i, (index, row) in enumerate(df_right.iterrows()):
+    with _t1c2:
+        st.markdown(_scan_card_header("🦁", "Minervini SEPA", 83, "VCP + SMA hizalama + RS güç", "#16a34a"), unsafe_allow_html=True)
+        if st.button(f"🦁 SEPA TARAMASI ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa",
+                     help="Mark Minervini'nin onlarca yıllık şampiyon hisse araştırmasına dayanan tarama yöntemi.\n\nKriterler: Fiyat 50, 150 ve 200 günlük ortalamalarının hepsinin üstünde ve bu ortalamalar doğru sırada hizalanmış olmalı. Hisse piyasadan güçlü (RS > 70) ve son 52 haftanın dibinden en az %25 yukarıda olmalı.\n\nEk bonus: VCP (Volatility Contraction Pattern) — hisse giderek daralan bir sıkışma içindeyse ve hacimli kırılım yaşandıysa 'Süper' etiketiyle çıkar."):
+            with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                st.session_state.minervini_data = scan_minervini_batch(current_assets)
+        if st.session_state.minervini_data is not None:
+            if len(st.session_state.minervini_data) > 0:
+                with st.container(height=150, border=True):
+                    for i, row in st.session_state.minervini_data.iterrows():
                         sym = row['Sembol']
-                        btn_label = f"🚀 {sym.replace('.IS','')} ({row['Fiyat']}) | Hacim: {row['Hacim_Kati']}"
-                        if st.button(btn_label, key=f"R_btn_new_{sym}_{i}", use_container_width=True):
-                            on_scan_result_click(sym)
-                            st.rerun()
+                        icon = "💎💎" if "SÜPER" in row['Durum'] else "🔥"
+                        if st.button(f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']}", key=f"sepa_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym); st.rerun()
+            else:
+                st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
+
+    st.markdown("<hr style='margin:10px 0;border-color:rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # ③ TIER 2 — Yüksek Güven (2×2 Grid)
+    # ══════════════════════════════════════════════════════════
+    st.markdown("<div style='border-left:5px solid #3b82f6;padding-left:10px;margin-bottom:8px;"
+                "font-weight:900;font-size:1rem;color:#3b82f6;'>🥈 TIER 2 — Yüksek Güven</div>",
+                unsafe_allow_html=True)
+
+    _t2c1, _t2c2 = st.columns(2)
+
+    with _t2c1:
+        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 75, "RSI Diverjans + Birikim + Dip", "#3b82f6"), unsafe_allow_html=True)
+        if st.button(f"🔄 GÜÇLÜ DÖNÜŞ TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_guclu_donus",
+                     help="Düşüşün bitmek üzere olduğunu gösteren 3 ayrı sinyal aynı anda arıyor.\n\n1) RSI Diverjansı: Fiyat yeni dip yaparken RSI yapmıyor — satış gücü tükeniyor demek. 2) Z-Score aşırı ucuzluk: Hisse tarihsel ortalamasının çok altında, istatistiksel olarak dibe yakın. 3) OBV gizli birikim: Fiyat düşerken hacimli alımlar var, büyük oyuncu topluyor olabilir.\n\nÜçü aynı anda gerçekleşmişse dönüş ihtimali güçlü. Düşen trende erken girmek risklidir ama bu tarama o riski minimize etmeye çalışır."):
+            with st.spinner("RSI Diverjans, Gizli Birikim ve 20-Bar Dip taranıyor..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                st.session_state.guclu_donus_data = scan_guclu_donus_batch(current_assets)
+        if st.session_state.guclu_donus_data is not None:
+            df_gd = st.session_state.guclu_donus_data
+            if not df_gd.empty:
+                with st.container(height=150, border=True):
+                    for i, (_, row) in enumerate(df_gd.iterrows()):
+                        sym = row["Sembol"]
+                        _zs = row.get('Z-Score', 0)
+                        _zs_str = f"{_zs:.1f}" if isinstance(_zs, float) else str(_zs)
+                        if st.button(f"🔄 {sym.replace('.IS','')} | Z:{_zs_str} | {row.get('RSI_Div','')}", key=f"gd_res_btn_{sym}", use_container_width=True):
+                            on_scan_result_click(sym); st.rerun()
+            else:
+                st.warning("3 kriteri birlikte karşılayan hisse bulunamadı.")
+
+    with _t2c2:
+        st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 72, "Force Index + STP + Pocket Pivot", "#3b82f6"), unsafe_allow_html=True)
+        if st.button(f"🕵️ SENTIMENT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sentiment",
+                     help="Piyasada 'sessiz sedasız' birikim yapan büyük oyuncuları tespit eder.\n\nSTP (Sentiment Point) çizgisi bir momentum göstergesidir — fiyat bu çizgiyi yukarı keserse ivme başlıyor demektir. Force Index ise her günkü alım baskısını ölçer; 7-10 günün çoğunda pozitifse ve RSI 60'ın altındaysa henüz aşırı alınmamış ama ilgi artıyor demektir.\n\nBonus: Pocket Pivot — anormal hacimle ani yükseliş. A Kalite etiketi en sıkı kriterleri geçen hisselere verilir."):
+            with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para?)..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                crosses, trends, filtered = scan_stp_signals(current_assets)
+                st.session_state.stp_crosses  = crosses
+                st.session_state.stp_trends   = trends
+                st.session_state.stp_filtered = filtered
+                st.session_state.stp_scanned  = True
+                st.session_state.accum_data   = scan_hidden_accumulation(current_assets)
+        if st.session_state.stp_scanned or (st.session_state.accum_data is not None):
+            _s1, _s2 = st.columns(2)
+            with _s1:
+                st.markdown("<div style='text-align:center;color:#1e40af;font-weight:700;font-size:0.7rem;margin-bottom:3px;'>⚡ STP KESİŞİM</div>", unsafe_allow_html=True)
+                with st.container(height=120, border=True):
+                    if st.session_state.stp_crosses:
+                        for item in st.session_state.stp_crosses:
+                            if st.button(f"🚀 {item['Sembol']}", key=f"stp_c_{item['Sembol']}", use_container_width=True):
+                                st.session_state.ticker = item['Sembol']; st.rerun()
+                    else:
+                        st.caption("Kesişim yok.")
+            with _s2:
+                st.markdown("<div style='text-align:center;color:#7c3aed;font-weight:700;font-size:0.7rem;margin-bottom:3px;'>🤫 AKILLI PARA</div>", unsafe_allow_html=True)
+                with st.container(height=120, border=True):
+                    if st.session_state.accum_data is not None and not st.session_state.accum_data.empty:
+                        for _idx, _arow in st.session_state.accum_data.iterrows():
+                            _aicon = "⚡" if _arow.get('Pocket_Pivot', False) else "🎩"
+                            _aq = "💎" if "A KALİTE" in _arow.get('Kalite','') else ""
+                            if st.button(f"{_aicon}{_aq} {_arow['Sembol'].replace('.IS','')}", key=f"btn_acc_{_arow['Sembol']}_{_idx}", use_container_width=True):
+                                on_scan_result_click(_arow['Sembol']); st.rerun()
+                    else:
+                        st.caption("Tespit edilemedi.")
+
+    _t2c3, _t2c4 = st.columns(2)
+
+    with _t2c3:
+        st.markdown(_scan_card_header("💎", "Altın Fırsat & VIP FORMASYON", 65, "RS güçlü + Discount + Hacim + Formasyon", "#f59e0b"), unsafe_allow_html=True)
+        if st.button(f"💎 ALTIN FIRSAT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden",
+                     help="İki aşamalı eleme yapar: önce 'Altın Fırsat' kriterleri, sonra formasyon.\n\nAltın Fırsat: RS güçlü (endeksten iyi performans) + fiyat ICT Discount bölgesinde (henüz ucuz) + hacim en az 1.1× normale çıkmış. Bu 3 kriteri geçenlerin içinde grafik formasyonu arayanlar asıl listeye girer.\n\nFormasyon: Fincan-Kulp (☕), Ters Omuz-Baş-Omuz (🧛), Üçgen veya Direnç Kırılımı. Hazırlık listesi ise formasyon henüz tamamlanmamış ama yakında patlayabilecek hisseleri gösterir."):
+            with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                st.session_state.golden_pattern_data = scan_golden_pattern_agent(current_assets, st.session_state.get('category', 'S&P 500'))
+                st.rerun()
+        if st.session_state.golden_pattern_data is not None:
+            _gp = st.session_state.golden_pattern_data
+            _formations = _gp.get("formations", pd.DataFrame()) if isinstance(_gp, dict) else _gp
+            _hazirlik   = _gp.get("hazirlik",   pd.DataFrame()) if isinstance(_gp, dict) else pd.DataFrame()
+            if not _formations.empty:
+                with st.container(height=150, border=True):
+                    for i, row in _formations.head(12).iterrows():
+                        sym = row['Sembol']
+                        prefix = "♠️" if row.get('is_royal', False) else "🚀"
+                        mf_v = row.get('Mansfield', '-')
+                        mf_icon = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
+                        if st.button(f"{prefix} {sym.replace('.IS','')} | Skor:{row['Puan']} | RS:{mf_icon}{mf_v}", key=f"golden_btn_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym); st.rerun()
+            elif not _hazirlik.empty:
+                with st.container(height=120, border=True):
+                    for i, row in _hazirlik.head(10).iterrows():
+                        sym = row['Sembol']
+                        if st.button(f"⏳ {sym.replace('.IS','')} — {row['Durum']}", key=f"hazirlik_btn_{sym}_{i}", use_container_width=True):
+                            on_scan_result_click(sym); st.rerun()
+            else:
+                st.caption("Altın Fırsat bulunamadı.")
+
+    with _t2c4:
+        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 90, "Fibonacci PRZ + ICT Zone + RSI Div", "#7c3aed"), unsafe_allow_html=True)
+        if st.button(f"⚡ HARMONİK CONFLUENCE TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic_conf",
+                     help="En seçici tarama — 3 tamamen farklı metodoloji aynı fiyat noktasında çakışmalı.\n\n1) Fibonacci Harmonik PRZ: Gartley, Butterfly, Bat gibi XABCD formasyonlarının dönüş bölgesi. 2) ICT Discount Zone: Kurumsal alım bölgesi (fiyat ortalamanın altında). 3) RSI Diverjansı: Fiyat düşerken momentum artıyor.\n\nÜçü aynı fiyat seviyesinde buluşursa tesadüf değil yapısal dönüş noktası olabilir. Bu yüzden CONFLUENCE panelinde tüm gruplara otomatik eklenir — en yüksek kalite setup sayılır."):
+            with st.spinner("3 metodoloji kesişiyor: Fibonacci + ICT + RSI Diverjansı..."):
+                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                st.session_state.harmonic_confluence_data = scan_harmonic_confluence_batch(current_assets)
+                st.rerun()
+        _hc_scan = st.session_state.harmonic_confluence_data
+        if _hc_scan is not None and hasattr(_hc_scan, 'empty') and not _hc_scan.empty:
+            with st.container(height=150, border=True):
+                for _hci, _hcr in _hc_scan.iterrows():
+                    _hcs = str(_hcr.get('Sembol','')).replace('.IS','')
+                    _hcp = _hcr.get('Fiyat', 0)
+                    _hcp_s = f"{int(_hcp)}" if _hcp >= 1000 else f"{_hcp:.2f}"
+                    _cyon = str(_hcr.get('Yön',''))
+                    _cyon_lbl = "🟢" if ('Bullish' in _cyon or 'LONG' in _cyon) else "🔴"
+                    if st.button(f"⚡{_cyon_lbl} {_hcs} ({_hcp_s}) | {_hcr.get('Pattern','')}", key=f"hconf_scan_{_hcs}_{_hci}", use_container_width=True):
+                        st.session_state.ticker = _hcr.get('Sembol', _hcs)
+                        on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
+        elif _hc_scan is not None:
+            st.caption("Harmonik Confluence bulunamadı.")
+
+    st.markdown("<hr style='margin:10px 0;border-color:rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # ④ TIER 3 — Destekleyici Taramalar (Expander)
+    # ══════════════════════════════════════════════════════════
+    with st.expander("🥉 TIER 3 — Destekleyici Taramalar (Breakout · Formasyon · Harmonik · RS Liderleri)"):
+
+        _t3c1, _t3c2 = st.columns(2)
+
+        with _t3c1:
+            st.markdown(_scan_card_header("⚡", "Breakout Ajanı", 57, "Isınanlar + Kırılım onayı", "#d97706"), unsafe_allow_html=True)
+            if st.button(f"⚡ BREAKOUT TARA ({st.session_state.category})", type="secondary", key="dual_breakout_btn", use_container_width=True,
+                         help="İki farklı breakout aşamasını aynı anda tarar.\n\n🔥 Isınanlar: 52 hafta zirvesine yakın (%5-15), hacim artıyor ama henüz kırmamış. 'Patlama öncesi sıkışma' olarak düşün.\n\n🔨 Kıranlar: Direnç seviyesini en az 1.5× normal hacimle geçmiş, kırılım teyitlenmiş hisseler. Geç kalınmış olabilir ama trend başlamış demektir.\n\nIsınanları erken, Kıranları momentum girişi için kullanabilirsin."):
+                with st.spinner("Hem ısınanlar hem kıranlar taranıyor..."):
+                    curr_list = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.breakout_left  = agent3_breakout_scan(curr_list)
+                    st.session_state.breakout_right = scan_confirmed_breakouts(curr_list, st.session_state.get('category', 'S&P 500'))
+                    st.rerun()
+            if st.session_state.breakout_left is not None or st.session_state.breakout_right is not None:
+                _bc1, _bc2 = st.columns(2)
+                with _bc1:
+                    st.markdown("<div style='text-align:center;color:#d97706;font-weight:700;font-size:0.7rem;margin-bottom:3px;'>🔥 ISINANLAR</div>", unsafe_allow_html=True)
+                    with st.container(height=120):
+                        if st.session_state.breakout_left is not None and not st.session_state.breakout_left.empty:
+                            for i, (_, row) in enumerate(st.session_state.breakout_left.head(12).iterrows()):
+                                sym_raw = row.get("Sembol_Raw", row.get("Sembol", "UNK"))
+                                prox_clean = str(row['Zirveye Yakınlık']).split('<')[0].strip()
+                                if st.button(f"🔥 {sym_raw.replace('.IS','')} | {prox_clean}", key=f"L_btn_new_{sym_raw}_{i}", use_container_width=True):
+                                    on_scan_result_click(sym_raw); st.rerun()
+                        else:
+                            st.caption("Yok.")
+                with _bc2:
+                    st.markdown("<div style='text-align:center;color:#16a34a;font-weight:700;font-size:0.7rem;margin-bottom:3px;'>🔨 KIRANLAR</div>", unsafe_allow_html=True)
+                    with st.container(height=120):
+                        if st.session_state.breakout_right is not None and not st.session_state.breakout_right.empty:
+                            for i, (_, row) in enumerate(st.session_state.breakout_right.head(12).iterrows()):
+                                sym = row['Sembol']
+                                if st.button(f"🚀 {sym.replace('.IS','')} ({row['Fiyat']}) | {row['Hacim_Kati']}", key=f"R_btn_new_{sym}_{i}", use_container_width=True):
+                                    on_scan_result_click(sym); st.rerun()
+                        else:
+                            st.caption("Yok.")
+
+        with _t3c2:
+            st.markdown(_scan_card_header("📐", "Formasyon Ajanı", 55, "TOBO · Bayrak · Range · Fincan-Kulp", "#64748b"), unsafe_allow_html=True)
+            if st.button(f"📐 FORMASYON TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_pattern",
+                         help="Grafik üzerinde gözle görülen klasik teknik formasyonları otomatik tespit eder.\n\nAranan yapılar: Ters Omuz-Baş-Omuz (TOBO 🧛), Bayrak/Flama 🚩, Yatay Range 📦, Fincan-Kulp ☕, Yükselen Üçgen. Her formasyon için minimum 40 bar (yaklaşık 2 ay) genişlik şartı var — kısa vadeli gürültüyü eliyor.\n\nFormasyonlar Zigzag algoritmasıyla tespit edilir: fiyat %4'ten fazla ters döndüğünde pivot sayılır, insan gözünün grafikte gördüğü ana iskelet budur."):
+                with st.spinner("Cetveller çekiliyor... Bayraklar ve TOBO'lar aranıyor..."):
+                    current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.pattern_data = scan_chart_patterns(current_assets)
+            if st.session_state.pattern_data is not None:
+                if len(st.session_state.pattern_data) > 0:
+                    with st.container(height=150, border=True):
+                        for i, row in st.session_state.pattern_data.iterrows():
+                            sym = row['Sembol']
+                            pat = row['Formasyon']
+                            icon = "🚩" if "BAYRAK" in pat else "📦" if "RANGE" in pat else "🧛"
+                            if st.button(f"{icon} {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {pat}", key=f"pat_{sym}_{i}", use_container_width=True, help=row['Detay']):
+                                on_scan_result_click(sym); st.rerun()
                 else:
-                    st.info("Kırılım yapan hisse bulunamadı.")
-    # ---------------------------------------------------------
-    # 📐 YENİ: FORMASYON AJANI (TOBO, BAYRAK, RANGE)
-    # ---------------------------------------------------------
-    if 'pattern_data' not in st.session_state: st.session_state.pattern_data = None
+                    st.info("Kitabi formasyon bulunamadı.")
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">📐 Formasyon Ajanı (TOBO, Bayrak, Range, Fincan-Kulp, Yükselen Üçgen)(53/100)</div>', unsafe_allow_html=True)
-    
-    # TARAMA BUTONU
-    if st.button(f"📐 FORMASYONLARI TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_pattern"):
-        with st.spinner("Cetveller çekiliyor... Bayraklar ve TOBO'lar aranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.pattern_data = scan_chart_patterns(current_assets)
-            
-    # SONUÇ EKRANI
-    if st.session_state.pattern_data is not None:
-        count = len(st.session_state.pattern_data)
-        if count > 0:
-            # st.success(f"🧩 {count} adet formasyon yapısı tespit edildi!")
-            with st.container(height=300, border=True):
-                for i, row in st.session_state.pattern_data.iterrows():
-                    sym = row['Sembol']
-                    pat = row['Formasyon']
-                    
-                    # Renkler
-                    icon = "🚩" if "BAYRAK" in pat else "📦" if "RANGE" in pat else "🧛"
-                    
-                    label = f"{icon} {sym.replace('.IS', '')} ({row['Fiyat']:.2f}) | {pat} (Puan: {int(row['Skor'])})"
-                    
-                    if st.button(label, key=f"pat_{sym}_{i}", use_container_width=True, help=row['Detay']):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.info("Şu an belirgin bir 'Kitabi Formasyon' (TOBO, Bayrak vb.) oluşumu bulunamadı.")
-    # ---------------------------------------------------------
-    # 🦁 YENİ: MINERVINI SEPA AJANI (SOL TARAF - TARAYICI)
-    # ---------------------------------------------------------
-    if 'minervini_data' not in st.session_state: st.session_state.minervini_data = None
+        _t3c3, _t3c4 = st.columns(2)
 
-    st.markdown('<div class="info-header" style="margin-top: 20px; margin-bottom: 5px;">🦁 Minervini SEPA Ajanı (68/100)</div>', unsafe_allow_html=True)
-    
-    # 1. TARAMA BUTONU
-    if st.button(f"🦁 SEPA TARAMASI BAŞLAT ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa"):
-        with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
-            current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-            st.session_state.minervini_data = scan_minervini_batch(current_assets)
-            
-    # 2. SONUÇ EKRANI (Scroll Bar - 300px)
-    if st.session_state.minervini_data is not None:
-        count = len(st.session_state.minervini_data)
-        if count > 0:
-            # st.success(f"🎯 Kriterlere uyan {count} hisse bulundu!")
-            with st.container(height=300, border=True):
-                for i, row in st.session_state.minervini_data.iterrows():
-                    sym = row['Sembol']
-                    icon = "💎💎" if "SÜPER" in row['Durum'] else "🔥(İkinci)"
-                    label = f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']} | {row['Detay']}"
-                    
-                    if st.button(label, key=f"sepa_{sym}_{i}", use_container_width=True):
-                        on_scan_result_click(sym)
-                        st.rerun()
-        else:
-            st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
+        with _t3c3:
+            st.markdown(_scan_card_header("🔮", "Harmonik Formasyon", 55, "Fibonacci PRZ — Gartley/Bat/Crab", "#64748b"), unsafe_allow_html=True)
+            if st.button(f"🔮 HARMONİK TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic",
+                         help="Fibonacci oranlarına dayanan 5 noktalı fiyat formasyonlarını tarar.\n\nAranan desenler: Gartley, Butterfly, Bat, Crab, Shark — hepsi X-A-B-C-D nokta yapısıyla tanımlanır. D noktası 'PRZ' (Potansiyel Dönüş Bölgesi) olarak adlandırılır ve alım/satım için hedef seviyedir.\n\nFiyat PRZ'ye ne kadar yakınsa o kadar anlamlı. 'Yaklaşıyor' etiketi D henüz oluşmadı, 'Tamamlandı' ise formasyon bitmiş demektir. Fibonacci seviyeleri doğaya ve insan psikolojisine dayandığından teknik analizin en eski araçlarından biridir."):
+                with st.spinner("Gartley, Butterfly, Bat, Crab, Shark — PRZ bölgeleri aranıyor..."):
+                    current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.harmonic_data = scan_harmonic_patterns_batch(current_assets)
+                    st.rerun()
+            if st.session_state.harmonic_data is not None:
+                _hm = st.session_state.harmonic_data
+                if not _hm.empty:
+                    with st.container(height=150, border=True):
+                        for i, row in _hm.iterrows():
+                            sym = row['Sembol']
+                            durum = row.get('Durum','')
+                            d_txt = "D:bekleniyor" if durum == '📍 Yaklaşıyor' else f"D:{row['Bar_Önce']}g"
+                            if st.button(f"{durum} {row['Pattern']} | {row['Yön']} | {sym.replace('.IS','')} PRZ:{row['PRZ']} %{row['PRZ_Fark%']} | {d_txt}", key=f"harm_btn_{sym}_{i}", use_container_width=True):
+                                on_scan_result_click(sym); st.rerun()
+                else:
+                    st.caption("PRZ yakınında formasyon bulunamadı.")
+
+        with _t3c4:
+            st.markdown(_scan_card_header("🕵️", "RS Momentum Liderleri", 45, "Son 5 günde endeksten hızlı yükselenler", "#64748b"), unsafe_allow_html=True)
+            if st.button(f"🕵️ RS LİDER TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_rs_leaders",
+                         help="Son 5 günde endeksin çok üzerinde getiri sağlayan 'şampiyon' hisseleri listeler.\n\nAlpha = hissenin getirisi eksi endeksin getirisi. Alpha > %2 ise hisse piyasayı gerçekten yeniyor demektir. Hacim de normale göre yüksekse büyük oyuncu ilgisi var demektir.\n\nBu tarama geçmişe değil anlık güce bakıyor. Momentum stratejilerinde 'güçlü olan daha güçlenir' prensibi işler. Bugün lider olan hisse yarın da lider olmaya devam etme eğilimindedir."):
+                with st.spinner("Piyasayı ezip geçen hisseler (Alpha > %2) sıralanıyor..."):
+                    current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.rs_leaders_data = scan_rs_momentum_leaders(current_assets)
+            if st.session_state.rs_leaders_data is not None:
+                if len(st.session_state.rs_leaders_data) > 0:
+                    with st.container(height=150, border=True):
+                        for i, row in st.session_state.rs_leaders_data.iterrows():
+                            sym = row['Sembol']
+                            alpha_5 = row['Alpha_5D']
+                            icon = "🔥" if alpha_5 > 5.0 else "💪"
+                            if st.button(f"{icon} {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | Alpha:+%{alpha_5:.1f} | Vol:{row['Hacim_Kat']:.1f}x", key=f"rs_lead_{sym}_{i}", use_container_width=True):
+                                on_scan_result_click(sym); st.rerun()
+                else:
+                    st.info("Endekse belirgin fark atan hisse bulunamadı.")
 
 
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
@@ -13819,264 +13769,6 @@ with col_right:
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
 
 
-    # ==============================================================================
-    # 🎯 PİYASA TARAMALARI VE FIRSATLAR (SEKMELİ MODERN ARAYÜZ)
-    # ==============================================================================
-    # 1. Karanlık/Aydınlık moda otomatik uyum sağlayan CSS değişkenli şık başlık
-    header_html = """
-    <div style="
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-top: 15px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    ">
-        <div style="
-            margin: 0; 
-            padding: 0; 
-            color: var(--text-color); 
-            font-weight: 800; 
-            font-size: 1.3rem; 
-            letter-spacing: 0.5px;
-            text-align: center;
-        ">
-            <span style="color: #1e3a8a;">🎯 PİYASA TARAMALARI</span> VE FIRSATLAR
-        </div>
-    </div>
-    """
-    st.markdown(header_html, unsafe_allow_html=True)
-
-    # 2. Tüm sekmeleri içine alacak şık bir dış çerçeve açıyoruz
-    with st.container(border=True):
-        
-        # State Tanımlamaları (Sekmelerin hata vermemesi için)
-        if 'golden_results' not in st.session_state: st.session_state.golden_results = None
-        if 'royal_results' not in st.session_state: st.session_state.royal_results = None
-
-        # ÜST Ana Sekme (Tab) — 2 sekme
-        tab_confluence, tab_elit = st.tabs([
-            "🔥 CONFLUENCE",
-            "💎 ELİTLER",
-        ])
-
-    # ---------------------------------------------------------
-    # SEKME 0: 🔥 CONFLUENCE (Cross-Scanner Metodoloji Kesişimi)
-    # ---------------------------------------------------------
-    with tab_confluence:
-        _dark = st.session_state.get('dark_mode', False)
-        hits  = st.session_state.get('confluence_hits')
-
-        # --- Piyasa Rejimi Uyarısı ---
-        try:
-            _bench = get_benchmark_data(st.session_state.get('category', 'S&P 500'))
-            if _bench is not None and len(_bench) >= 200:
-                _b200 = float(_bench.rolling(200).mean().iloc[-1])
-                _bcur = float(_bench.iloc[-1])
-                if _bcur < _b200:
-                    _warn_bg  = "#3b0f0f" if _dark else "#fef2f2"
-                    _warn_clr = "#fca5a5" if _dark else "#991b1b"
-                    st.markdown(f"<div style='background:{_warn_bg}; border:1px solid {_warn_clr}; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:0.82rem; color:{_warn_clr}; font-weight:700;'>🐻 BEAR MODE — Benchmark 200 SMA altında. Long sinyaller daha riskli, pozisyon büyüklüğünü küçült.</div>", unsafe_allow_html=True)
-        except: pass
-
-        # --- HARMONİK CONFLUENCE ÖZEL PANEL (en tepede) ---
-        _hc_df = st.session_state.get('harmonic_confluence_data')
-        if _hc_df is not None and not (hasattr(_hc_df, 'empty') and _hc_df.empty):
-            st.markdown("""<div style='background:linear-gradient(90deg,#2d1060,#1e0f3a); border:2px solid #7c3aed; border-radius:8px; padding:8px 14px; margin-bottom:10px;'>
-  <span style='font-size:0.85rem; font-weight:900; color:#c084fc;'>⚡ HARMONİK CONFLUENCE — 3 BAĞIMSIZ METODOLOJİ ÇAKIŞIYOR</span><br>
-  <span style='font-size:0.72rem; color:#a78bfa;'>Fibonacci yapısı + ICT zone + RSI diverjansı → En yüksek kalite setup</span>
-</div>""", unsafe_allow_html=True)
-            for _ci, _cr in _hc_df.iterrows():
-                _cs = str(_cr.get('Sembol', '')).replace('.IS', '')
-                _cp = _cr.get('Fiyat', 0)
-                _cp_str = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
-                _cyon = str(_cr.get('Yön', ''))
-                _cyon_lbl = "🟢 LONG" if 'Bullish' in _cyon or 'LONG' in _cyon else "🔴 SHORT"
-                _cpat = _cr.get('Pattern', '')
-                _cprz = _cr.get('PRZ', 0)
-                _cprz_str = f"{int(_cprz)}" if _cprz and _cprz >= 1000 else f"{_cprz:.2f}" if _cprz else "—"
-                _cict = _cr.get('ICT_Zone', '—')
-                _cdiv = _cr.get('RSI_Div', '—')
-                _cstate = _cr.get('Durum', '')
-                st.markdown(f"""<div style='background:#1e0f3a; border:1px solid #7c3aed; border-radius:7px; padding:9px 12px; margin-bottom:5px; box-shadow:0 0 10px rgba(124,58,237,0.25);'>
-  <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;'>
-    <span style='font-weight:900; font-size:1.05rem; color:#f1f5f9;'>{_cs}</span>
-    <span style='background:linear-gradient(90deg,#7c3aed,#4f46e5); color:white; border-radius:10px; padding:2px 10px; font-size:0.72rem; font-weight:800;'>⚡ 3'lü Teyit</span>
-  </div>
-  <div style='margin-bottom:4px;'>
-    <span style='background:#1e3a2f; color:#4ade80; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>{_cyon_lbl} — {_cpat}</span>
-    <span style='background:#2d1b4e; color:#c084fc; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>PRZ: {_cprz_str}</span>
-    <span style='background:#1e2d3a; color:#7dd3fc; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;'>ICT: {_cict}</span>
-    <span style='background:#2d1b4e; color:#a78bfa; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700;'>RSI Div: {_cdiv}</span>
-  </div>
-  <div style='font-size:0.65rem; color:#94a3b8; font-style:italic;'>Fiyat: {_cp_str} · {_cstate}</div>
-</div>""", unsafe_allow_html=True)
-                if st.button(f"⚡ {_cs} İncele ({_cp_str})", key=f"hconf_btn_{_cs}_{_ci}", use_container_width=True):
-                    _full_sym = _cr.get('Sembol', _cs)
-                    st.session_state.ticker = _full_sym
-                    on_scan_result_click(_full_sym)
-                    st.rerun()
-            st.markdown("<hr style='border-color:#2d1b4e; margin:12px 0;'>", unsafe_allow_html=True)
-
-        if not hits:
-            _info_clr = "#94a3b8" if _dark else "#64748b"
-            st.markdown(f"<div style='text-align:center; color:{_info_clr}; padding:40px 0; font-size:0.9rem;'>Henüz confluence hesaplanmadı.<br><b>Master Scan</b> çalıştırın veya birden fazla scanner'ı ayrı ayrı çalıştırın.</div>", unsafe_allow_html=True)
-        else:
-            _full    = [h for h in hits if h['group_count'] == 3]
-            _partial = [h for h in hits if h['group_count'] == 2]
-
-            _info_clr2 = '#94a3b8' if _dark else '#64748b'
-            st.markdown(f"<div style='font-size:0.78rem; color:{_info_clr2}; margin-bottom:8px; text-align:center;'>Birden fazla bağımsız yöntemin aynı hisseyi işaret ettiği durumlar — ne kadar fazla yöntem onaylarsa o kadar güvenilir sinyal</div>", unsafe_allow_html=True)
-
-            if _full:
-                _hdr_bg  = "#2d1b4e" if _dark else "#f3e8ff"
-                _hdr_clr = "#c084fc" if _dark else "#6d28d9"
-                st.markdown(f"<div style='background:{_hdr_bg}; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:800; color:{_hdr_clr}; margin-bottom:6px;'>🔥 TAM CONFLUENCE — 3/3 Grup ({len(_full)} hisse)</div>", unsafe_allow_html=True)
-
-            with st.container(height=520, border=False):
-                for i, item in enumerate(hits):
-                    sym     = item['Sembol'].replace('.IS', '')
-                    gc      = item['group_count']
-                    ts      = item['total_scanners']
-                    price   = item['price']
-                    p_str   = f"{int(price)}" if price >= 1000 else f"{price:.2f}"
-                    missing = item.get('missing_groups', [])
-                    scanned = item.get('scanned_groups', 3)
-
-                    # Kart renk
-                    if gc == 3:
-                        card_bg  = "#1e0f35" if _dark else "#faf5ff"
-                        card_bdr = "#7c3aed"
-                        badge_bg = "linear-gradient(90deg,#7c3aed,#4f46e5)"
-                        lbl      = f"✅ {ts} farklı yöntemle onaylandı"
-                    else:
-                        card_bg  = "#0f1e2d" if _dark else "#f0f9ff"
-                        card_bdr = "#0ea5e9"
-                        badge_bg = "#0ea5e9"
-                        lbl      = f"✅ {ts} yöntemle onaylandı"
-
-                    sym_clr  = "#f1f5f9" if _dark else "#0f172a"
-                    txt_clr  = "#94a3b8" if _dark else "#64748b"
-
-                    # Grup etiket haritası — abone diline çevrildi
-                    _grp_labels = {
-                        'yapi':      '✅ Fiyat yapısı sağlam',
-                        'momentum':  '✅ Yükseliş ivmesi var',
-                        'formasyon': '✅ Grafik yapısı hazır',
-                    }
-                    _grp_miss = {
-                        'yapi':      'Yapısal onay yok',
-                        'momentum':  'İvme onayı yok',
-                        'formasyon': 'Grafik onayı yok',
-                    }
-
-                    # Grup rozetleri
-                    group_badges = ""
-                    for g in item['hit_groups']:
-                        sc_list = ", ".join(g['scanners'])
-                        grp_lbl = _grp_labels.get(g['key'], f"✅ {g['label']}")
-                        group_badges += f'<span style="background:{"#1e3a2f" if _dark else "#dcfce7"}; color:{"#4ade80" if _dark else "#166534"}; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;" title="{sc_list}">{grp_lbl}</span>'
-                    for mg in missing:
-                        mg_key = next((k for k,v in {'yapi':'🏗️ Yapısal','momentum':'📈 Momentum','formasyon':'💎 Formasyon'}.items() if v == mg), None)
-                        mg_lbl = _grp_miss.get(mg_key, mg) if mg_key else mg
-                        group_badges += f'<span style="background:{"#1f2937" if _dark else "#f1f5f9"}; color:{"#6b7280" if _dark else "#94a3b8"}; border-radius:4px; padding:2px 7px; font-size:0.72rem; font-weight:700; margin-right:4px;">{mg_lbl}</span>'
-
-                    # Scanner isimleri — küçük gri, teknik kullanıcı için
-                    all_scanners = [s for g in item['hit_groups'] for s in g['scanners']]
-                    sc_txt = " · ".join(all_scanners)
-
-                    # Eksik grup uyarısı
-                    partial_warn = ""
-                    if scanned < 3:
-                        partial_warn = f'<div style="font-size:0.62rem; color:{"#f87171" if _dark else "#dc2626"}; margin-top:4px;">⚠️ {3-scanned} grup henüz taranmadı — tam sonuç için Master Scan önerilir</div>'
-
-                    html_card = f"""
-<div style="background:{card_bg}; border:2px solid {card_bdr}; border-radius:8px; padding:10px 12px; margin-bottom:6px;">
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-    <span style="font-weight:900; font-size:1.1rem; color:{sym_clr};">{sym}</span>
-    <span style="background:{badge_bg}; color:white; border-radius:10px; padding:2px 10px; font-size:0.72rem; font-weight:800;">{lbl}</span>
-  </div>
-  <div style="margin-bottom:6px;">{group_badges}</div>
-  <div style="font-size:0.65rem; color:{txt_clr}; font-style:italic;">{sc_txt}</div>
-  {partial_warn}
-</div>"""
-                    st.markdown(html_card, unsafe_allow_html=True)
-                    if st.button(f"📊 {sym} İncele ({p_str})", key=f"conf_btn_{sym}_{i}", use_container_width=True):
-                        st.session_state.ticker = item['Sembol']
-                        on_scan_result_click(item['Sembol'])
-                        st.rerun()
-                    st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
-
-    # ---------------------------------------------------------
-    # SEKME 1: 💎 ELİTLER (Royal, Golden)
-    # ---------------------------------------------------------
-    with tab_elit:
-        if st.button("🔄 Altın Fırsat + Platin Fırsat Taraması Yap", use_container_width=True, key="btn_elit_tara"):
-            with st.spinner("Elit hisseler aranıyor..."):
-                scan_list = ASSET_GROUPS.get(st.session_state.category, [])
-                if not scan_list:
-                    st.error("⚠️ Lütfen önce sol menüden bir hisse grubu seçin.")
-                else:
-                    df_radar2 = radar2_scan(scan_list)
-                    st.session_state.radar2_data = df_radar2
-                    df_golden, df_royal = get_golden_trio_batch_scan(scan_list)
-                    st.session_state.golden_results = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not df_golden.empty else pd.DataFrame()
-                    st.session_state.royal_results = df_royal.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not df_royal.empty else pd.DataFrame()
-                    st.rerun()
-
-        with st.container(height=350, border=False):
-            # ROYAL FLUSH
-            if st.session_state.get('royal_results') is not None and not st.session_state.royal_results.empty:
-                st.markdown(f"<div style='background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border-radius:6px; padding:6px; margin-bottom:8px; font-size:0.9rem; font-weight:bold; color:white; text-align:center;'>💎 PLATİN FIRSAT (ELİTLER) ({len(st.session_state.royal_results)})</div>", unsafe_allow_html=True)
-                _dark_e = st.session_state.get('dark_mode', False)
-                for index, row in st.session_state.royal_results.head(6).iterrows():
-                    raw_symbol = row['Hisse']
-                    display_symbol = get_display_name(raw_symbol)
-                    fiyat_val = row['Fiyat']
-                    fiyat_str = f"{int(fiyat_val)}" if fiyat_val >= 1000 else f"{fiyat_val:.2f}"
-                    warn_icon = "🟠 " if row.get('Warning', False) else ""
-                    onay_txt = row.get('Onay', '')
-                    # Onay metnini abone diline çevir
-                    kriterler = []
-                    if 'Trend(200)' in onay_txt or 'SMA200' in onay_txt: kriterler.append("✅ Uzun vade trendi yukarı")
-                    if 'Yapı(50)' in onay_txt or 'SMA50' in onay_txt: kriterler.append("✅ Kısa vade yapısı sağlam")
-                    if 'RS' in onay_txt: kriterler.append("✅ Endeksten güçlü")
-                    if 'Enerji' in onay_txt: kriterler.append("✅ Hacim/enerji artıyor")
-                    krit_html = " &nbsp;".join(kriterler) if kriterler else onay_txt
-                    _card_bg = "#0f1e35" if _dark_e else "#eff6ff"
-                    _txt_clr = "#93c5fd" if _dark_e else "#1e40af"
-                    _sym_clr = "#f1f5f9" if _dark_e else "#0f172a"
-                    st.markdown(f"""<div style='background:{_card_bg}; border:2px solid #3b82f6; border-radius:8px; padding:8px 12px; margin-bottom:4px;'>
-  <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
-    <span style='font-weight:900; font-size:1rem; color:{_sym_clr};'>♠️ {display_symbol}</span>
-    <span style='font-family:monospace; font-weight:800; font-size:1rem; color:#3b82f6;'>{warn_icon}{fiyat_str}</span>
-  </div>
-  <div style='font-size:0.72rem; color:{_txt_clr}; line-height:1.6;'>{krit_html}</div>
-</div>""", unsafe_allow_html=True)
-                    if st.button(f"📊 {display_symbol} İncele ({fiyat_str})", key=f"btn_royal_{index}", use_container_width=True):
-                        on_scan_result_click(raw_symbol)
-                        st.rerun()
-            
-            # ALTIN FIRSATLAR
-            if st.session_state.get('golden_results') is not None and not st.session_state.golden_results.empty:
-                st.markdown(f"<div style='background:rgba(245, 158, 11, 0.1); border:1px solid #f59e0b; border-radius:6px; padding:6px; margin-top:10px; margin-bottom:8px; font-size:0.9rem; color:#d97706; font-weight:bold; text-align:center;'>🦁 ALTIN FIRSATLAR ({len(st.session_state.golden_results)})</div>", unsafe_allow_html=True)
-                st.caption("Kriterler: Son 10 gün Endeksten Güçlü + Son 60 güne göre Ucuz + Hacim/Enerji artıyor")
-                cols_gold = st.columns(3)
-                for index, row in st.session_state.golden_results.head(12).iterrows():
-                    raw_symbol = row['Hisse']
-                    display_symbol = get_display_name(raw_symbol)
-                    fiyat_str = f"🟠 {row['Fiyat']:.2f}" if row.get('Warning', False) else f"{row['Fiyat']:.2f}"
-                    if cols_gold[index % 3].button(f"🦁 {display_symbol}\n{fiyat_str}", key=f"btn_gold_{index}", use_container_width=True):
-                        on_scan_result_click(raw_symbol)
-                        st.rerun()
-
-
-    # TOP 20 içeriği aşağıda tab_top20 ile render edilir (tanım sırası gereği)
-    
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px; border-color: rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
 
     # ESKİ DÜZ ÇİZGİYİ SİLDİK, YERİNE MODERN BAŞLIK EKLİYORUZ
