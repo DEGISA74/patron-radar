@@ -3696,10 +3696,14 @@ def scan_ict_batch(asset_list):
 def scan_nadir_firsat_batch(asset_list):
     """
     Royal Flush Nadir Fırsat Toplu Tarama
-    3/3 Kriter (AND mantığı — hepsi sağlanmalı):
+    4/4 Kriter (AND mantığı — hepsi sağlanmalı):
       1. BOS / MSS (Bullish yapı kırılımı) — ICT
       2. RS Alpha > 0  (piyasayı geçiyor)
       3. VWAP sapması < %12  (aşırı şişmemiş)
+      4. Hacim canlanması:
+           A) Son 3 gün ort. > 20 gün ort. × 1.2  (zaten yüksek)
+           VEYA
+           B) Son 2 gün ort. > önceki 5 gün ort. × 1.3  (yeni canlanıyor)
     """
     results = []
     for symbol in asset_list:
@@ -3724,16 +3728,24 @@ def scan_nadir_firsat_batch(asset_list):
             if not (cond_rs and cond_vwap):
                 continue
 
-            # ── 3/3 Geçti — Fiyat Al ──
+            # ── 3. Hacim Canlanması ──
             df_p = get_safe_historical_data(symbol)
-            if df_p is None or df_p.empty:
+            if df_p is None or df_p.empty or len(df_p) < 22:
                 continue
-            price = round(float(df_p['Close'].iloc[-1]), 2)
+            vol = df_p['Volume']
+            ort20    = vol.iloc[-22:-2].mean()          # 20 günlük baz
+            son3_ort = vol.iloc[-3:].mean()             # son 3 gün
+            son2_ort = vol.iloc[-2:].mean()             # son 2 gün
+            onc5_ort = vol.iloc[-7:-2].mean()           # önceki 5 gün
+            cond_vol = (son3_ort > ort20 * 1.2) or (son2_ort > onc5_ort * 1.3)
+            if not cond_vol:
+                continue
 
+            price = round(float(df_p['Close'].iloc[-1]), 2)
             results.append({
                 'Sembol': symbol,
                 'Fiyat':  price,
-                'Durum':  '3/3 | BOS+RS+VWAP',
+                'Durum':  '4/4 | BOS+RS+VWAP+VOL',
             })
         except:
             continue
@@ -6603,8 +6615,23 @@ def render_nadir_firsat_banner(ict_data, sent_data, ticker):
     v_diff = pa_data.get('vwap', {}).get('diff', 0) if pa_data else 0
     cond_vwap = v_diff < 12
 
-    # --- FİLTRE (YA HEP YA HİÇ - 3/3) ---
-    if not (cond_struct and cond_rs and cond_vwap):
+    # --- KRİTER 3: HACİM CANLANMASI ---
+    try:
+        df_vol = get_safe_historical_data(ticker)
+        if df_vol is not None and len(df_vol) >= 22:
+            vol      = df_vol['Volume']
+            ort20    = vol.iloc[-22:-2].mean()
+            son3_ort = vol.iloc[-3:].mean()
+            son2_ort = vol.iloc[-2:].mean()
+            onc5_ort = vol.iloc[-7:-2].mean()
+            cond_vol = (son3_ort > ort20 * 1.2) or (son2_ort > onc5_ort * 1.3)
+        else:
+            cond_vol = False
+    except:
+        cond_vol = False
+
+    # --- FİLTRE (YA HEP YA HİÇ - 4/4) ---
+    if not (cond_struct and cond_rs and cond_vwap and cond_vol):
         return
 
     # --- HTML ÇIKTISI ---
@@ -6618,10 +6645,10 @@ def render_nadir_firsat_banner(ict_data, sent_data, ticker):
 <span style="font-size:1.6rem;">♠️</span>
 <div style="line-height:1.2;">
 <div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH NADİR FIRSAT</div>
-<div style="font-size:0.75rem; color:{txt}; opacity:0.95;">ICT Yapı + RS Liderliği + VWAP Uyumu: En Yüksek Olasılık.</div>
+<div style="font-size:0.75rem; color:{txt}; opacity:0.95;">ICT Yapı + RS Liderliği + VWAP Uyumu + Hacim Canlanması: En Yüksek Olasılık.</div>
 </div>
 </div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:{txt}; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">3/3</div>
+<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:{txt}; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">4/4</div>
 </div>
 </div>""", unsafe_allow_html=True)
 
@@ -10845,7 +10872,7 @@ def render_unified_signals_panel(ticker):
                     cv = _vd < 12
                 except: cv = True
                 if cs and ca and cr and cv:
-                    signals.append(("♠️","Royal Flush Nadir Fırsat (3/3)","#a78bfa" if is_dark else "#6d28d9","3 metodoloji aynı anda: ICT yapı kırılımı + RS gücü + VWAP yakınlığı. En seçici kurulum.",True))
+                    signals.append(("♠️","Royal Flush Nadir Fırsat (4/4)","#a78bfa" if is_dark else "#6d28d9","4 metodoloji aynı anda: ICT yapı kırılımı + RS gücü + VWAP yakınlığı + Hacim canlanması. En seçici kurulum.",True))
         except: pass
 
         # ── 8. Platin Fırsat (Elit) ────────────────────────────────────
@@ -11806,15 +11833,25 @@ if st.session_state.generate_prompt:
     # Final Onay Durumu
     is_golden = "🚀 EVET (3/3 Onaylı - KRİTİK FIRSAT)" if (c_pwr and c_loc and c_nrg) else "HAYIR"
 
-    # --- ROYAL FLUSH NADİR FIRSAT DURUMU HESAPLAMA (3/3 Kesişim) ---
+    # --- ROYAL FLUSH NADİR FIRSAT DURUMU HESAPLAMA (4/4 Kesişim) ---
     # 1. Yapı: BOS veya MSS Bullish olmalı
     c_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS" in ict_data.get('structure', '')
     # 2. Güç: Alpha Pozitif olmalı (RS Liderliği)
     c_rs = pa_data.get('rs', {}).get('alpha', 0) > 0
     # 3. Maliyet: VWAP sapması %12'den az olmalı (Güvenli Zemin)
     c_vwap = pa_data.get('vwap', {}).get('diff', 0) < 12
+    # 4. Hacim canlanması
+    try:
+        _vol = df_hist['Volume']
+        _o20 = _vol.iloc[-22:-2].mean()
+        _s3  = _vol.iloc[-3:].mean()
+        _s2  = _vol.iloc[-2:].mean()
+        _o5  = _vol.iloc[-7:-2].mean()
+        c_vol = (_s3 > _o20 * 1.2) or (_s2 > _o5 * 1.3)
+    except:
+        c_vol = False
     # Final Royal Flush Nadir Fırsat Onayı
-    is_nadir = "♠️ EVET (3/3 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_rs and c_vwap) else "HAYIR"
+    is_nadir = "♠️ EVET (4/4 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_rs and c_vwap and c_vol) else "HAYIR"
 
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
@@ -13303,10 +13340,11 @@ with col_left:
                         "♠️ ROYAL FLUSH NADİR FIRSAT</div>", unsafe_allow_html=True)
             if st.button(f"♠️ ROYAL FLUSH TARA ({st.session_state.category})", type="secondary",
                          use_container_width=True, key="btn_scan_nadir_firsat",
-                         help="3 metodoloji aynı anda sağlanmalı:\n\n"
+                         help="4 kriter aynı anda sağlanmalı:\n\n"
                               "♠️ BOS / MSS (Bullish yapı kırılımı)\n"
                               "📈 RS Alpha > 0 (piyasayı geçiyor)\n"
-                              "⚖️ VWAP sapması < %12 (aşırı şişmemiş)\n\n"
+                              "⚖️ VWAP sapması < %12 (aşırı şişmemiş)\n"
+                              "📊 Hacim canlanması (son 3 gün > 20 gün ort×1.2 VEYA son 2 gün > önceki 5 gün×1.3)\n\n"
                               "Yılda nadiren görülen en seçici kurulum. Tüm kriterlerin aynı anda kesişmesi gerekir."):
                 with st.spinner("♠️ 4/4 Kraliyet kurulumu taranıyor (BOS/MSS + AI + RS + VWAP)..."):
                     current_assets = ASSET_GROUPS.get(st.session_state.category, [])
