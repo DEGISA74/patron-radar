@@ -1710,7 +1710,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
             # (get_golden_trio_batch_scan ile birebir aynı mantık)
             # =========================================================
 
-            # RSI hesabı (Royal Flush + enerji için gerekli)
+            # RSI hesabı (Royal Flush Nadir Fırsat + enerji için gerekli)
             delta   = close.diff()
             gain    = delta.clip(lower=0).rolling(window=14).mean()
             loss    = -delta.clip(upper=0).rolling(window=14).mean()
@@ -1729,11 +1729,11 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
             else:
                 is_powerful = last_rsi > 45
 
-            # KRİTER 2 — Son 60 güne göre ucuz (bandın alt %50'si)
+            # KRİTER 2 — Son 60 güne göre ucuz (bandın alt %65'i — ICT Discount zone ile uyumlu)
             high_60 = high.iloc[-60:].max()
             low_60  = low.iloc[-60:].min()
             rng_60  = high_60 - low_60
-            is_discount = (rng_60 > 0) and ((curr_price - low_60) / rng_60 < 0.50)
+            is_discount = (rng_60 > 0) and ((curr_price - low_60) / rng_60 < 0.65)
 
             # KRİTER 3 — Hacim/Enerji artıyor
             is_energy = (last_vol > avg_vol * 1.05) or (last_rsi > 45)
@@ -1787,8 +1787,8 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
 
             warning_text = f" (⚠️ {', '.join(warnings)})" if warnings else " (✅ Kusursuz)"
 
-            # ── Royal Flush tespiti (Altın Fırsat üstü elit kurulum)
-            is_royal = (
+            # ── Royal Flush Nadir Fırsat tespiti (Altın Fırsat üstü elit kurulum)
+            is_nadir = (
                 curr_price > sma200 and   # Uzun vade trend yukarı
                 curr_price > sma50  and   # Kısa vade yapı sağlam
                 last_rsi < 70             # Aşırı ısınmamış
@@ -1996,7 +1996,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                     "Mansfield": round(mansfield_gp, 1),
                     "Hacim_Kat": round(vol_ratio, 1),
                     "Detay":     p_name + warning_text,
-                    "is_royal":  is_royal,
+                    "is_nadir":  is_nadir,
                 })
             else:
                 # Formasyon yok → Hazırlık Listesi
@@ -2012,7 +2012,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                     "Mansfield": round(mansfield_gp, 1),
                     "Hacim_Kat": round(vol_ratio, 1),
                     "Durum":     etiket,
-                    "is_royal":  is_royal,
+                    "is_nadir":  is_nadir,
                 })
 
         except Exception as e:
@@ -2020,10 +2020,10 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
             continue
 
     formations_df = (pd.DataFrame(results)
-                       .sort_values(by=["is_royal", "Puan"], ascending=[False, False])
+                       .sort_values(by=["is_nadir", "Puan"], ascending=[False, False])
                        .reset_index(drop=True)) if results else pd.DataFrame()
     hazirlik_df   = (pd.DataFrame(hazirlik_list)
-                       .sort_values(by=["is_royal", "Mansfield"], ascending=[False, False])
+                       .sort_values(by=["is_nadir", "Mansfield"], ascending=[False, False])
                        .reset_index(drop=True)) if hazirlik_list else pd.DataFrame()
     return {"formations": formations_df, "hazirlik": hazirlik_df}
 
@@ -2176,7 +2176,7 @@ def process_single_accumulation(symbol, df, benchmark_series):
         if avg_mf > 1_000_000: mf_str = f"{avg_mf/1_000_000:.1f}M"
         elif avg_mf > 1_000: mf_str = f"{avg_mf/1_000:.0f}K"
         else: mf_str = f"{int(avg_mf)}"
-        squeeze_score = final_score / (abs(change_pct) + 0.02)
+        squeeze_score = final_score  # Bölme kaldırıldı: sıfır değişim ödüllendirme hatası düzeltildi
 
         return {
             "Sembol": symbol,
@@ -3492,72 +3492,104 @@ def process_single_ict_setup(symbol, df):
         last_sh_val = sw_highs[-1][1]
         last_sl_val = sw_lows[-1][1]
 
-        # --- 3. HTF TREND FİLTRESİ ---
-        sma_50 = close.rolling(50).mean().iloc[-1]
-        htf_bullish = current_price > sma_50
-        htf_bearish = current_price < sma_50
+        # --- 3. HTF TREND FİLTRESİ (SMA200 — büyük trend yönü) ---
+        sma_200 = close.rolling(200).mean().iloc[-1]
+        htf_bullish = current_price > sma_200
+        htf_bearish = current_price < sma_200
 
         # numpy arrays (FVG tarama için hızlı erişim)
         high_arr = high.values
         low_arr  = low.values
 
         # =========================================================
-        # SENARYO A: LONG (BOĞA) SETUP ARANIYOR
+        # SENARYO A: LONG (BOĞA) SETUP — YENİ MİMARİ
+        # Zorunlu : Sweep + MSS + Displacement + RRR ≥ 2.0
+        # Bonus   : FVG CE'de fiyat → rozet + açıklama
+        #           OTE Fibonacci (0.618–0.786) → ek rozet
         # =========================================================
         if htf_bullish:
-            # Likidite Avı
-            recent_low = low.iloc[-10:].min()
+            # --- Likidite Avı (son 20 bar) ---
+            recent_low = low.iloc[-20:].min()
             sweep_lows = [sl for sl in sw_lows[:-1] if recent_low < sl[1]]
 
             if sweep_lows:
-                # MSS (Market Structure Shift)
+                # --- MSS: Yapı kırılımı ---
                 if close.iloc[-1] > last_sh_val or close.iloc[-2] > last_sh_val:
 
-                    # Hacimli Yeşil Mum (Displacement)
+                    # --- Displacement: Hacimli yeşil mum (son 8 bar, eşik gevşetildi) ---
                     green_bodies = body_sizes.where(close > open_, 0)
-                    max_green_recent = green_bodies.iloc[-5:].max()
-                    idx_max_green = green_bodies.iloc[-5:].idxmax()
+                    max_green_recent = green_bodies.iloc[-8:].max()
+                    idx_max_green = green_bodies.iloc[-8:].idxmax()
+                    vol_check = volume[idx_max_green] > (avg_vol[idx_max_green] * 1.1) if has_vol else True
 
-                    vol_check = volume[idx_max_green] > (avg_vol[idx_max_green] * 1.3) if has_vol else True
+                    if max_green_recent > (avg_body.iloc[-1] * 1.3) and vol_check:
 
-                    if max_green_recent > (avg_body.iloc[-1] * 1.5) and vol_check:
+                        # --- Stop / Target / RRR (zorunlu) ---
+                        stop_loss   = recent_low * 0.99
+                        entry_price = current_price
+                        risk        = entry_price - stop_loss
+                        if risk <= 0: return None
+                        targets = [sh[1] for sh in sw_highs if sh[1] > entry_price * 1.01]
+                        if not targets: return None
+                        target_price = min(targets)
+                        rrr = (target_price - entry_price) / risk
+                        if rrr < 2.0: return None
 
-                        # FVG Tespiti + Mitigation Filtresi
-                        for i in range(n - 1, max(n - 6, 2), -1):
+                        # Ana sinyal tamam — bonus kontrolleri başlıyor
+                        bonus_badges   = []
+                        bonus_aciklama = []
+                        skor = 80
+
+                        # BONUS 1: FVG CE'de fiyat var mı? (son 20 bar)
+                        for i in range(n - 1, max(n - 20, 2), -1):
                             if low_arr[i] > high_arr[i - 2]:           # Bullish FVG
                                 fvg_top = float(low_arr[i])
                                 fvg_bot = float(high_arr[i - 2])
-                                # Mitigated: sonraki herhangi bir low gap'e girdi mi?
                                 if any(low_arr[j] < fvg_top for j in range(i + 1, n)):
                                     continue                             # Dolmuş FVG — atla
-                                # Consequent Encroachment (CE): FVG'nin %50 orta noktası
                                 fvg_ce = fvg_bot + (fvg_top - fvg_bot) * 0.5
-                                if current_price <= (fvg_ce * 1.01) and current_price >= (fvg_bot * 0.99):
-                                    stop_loss    = recent_low * 0.99
-                                    entry_price  = current_price
-                                    risk         = entry_price - stop_loss
-                                    if risk <= 0: continue
-                                    targets = [sh[1] for sh in sw_highs if sh[1] > entry_price * 1.02]
-                                    if not targets: continue
-                                    target_price = min(targets)
-                                    rrr = (target_price - entry_price) / risk
-                                    if rrr >= 2.5:
-                                        # --- BONUS: Fibonacci OTE Confluence (0.618–0.786) ---
-                                        ote_bonus = ""
-                                        ote_skor = 99
-                                        if recent_low < last_sh_val:
-                                            fib_618 = last_sh_val - (last_sh_val - recent_low) * 0.618
-                                            fib_786 = last_sh_val - (last_sh_val - recent_low) * 0.786
-                                            if (fib_786 * 0.99) <= fvg_ce <= (fib_618 * 1.01):
-                                                ote_bonus = " | ⭐ OTE Confluence (Bonus)"
-                                                ote_skor  = 100
-                                        return {
-                                            "Sembol": symbol, "Fiyat": current_price,
-                                            "Yön": "LONG", "İkon": "🎯", "Renk": "#16a34a",
-                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}{ote_bonus}",
-                                            "Stop_Loss": f"{stop_loss:.2f}",
-                                            "Skor": ote_skor
-                                        }
+                                # ±%3 tolerans (eskiden ±%1)
+                                if current_price <= (fvg_ce * 1.03) and current_price >= (fvg_bot * 0.97):
+                                    bonus_badges.append("🎯 FVG CE")
+                                    bonus_aciklama.append(
+                                        "Fiyat kurumsal boşluk bölgesinin (FVG) tam ortasında — "
+                                        "kurumlar bu bölgeyi geri doldururken alım yapıyor olabilir"
+                                    )
+                                    skor += 12
+
+                                    # BONUS 2: OTE Fibonacci (sadece FVG CE varsa kontrol edilir)
+                                    if recent_low < last_sh_val:
+                                        fib_618 = last_sh_val - (last_sh_val - recent_low) * 0.618
+                                        fib_786 = last_sh_val - (last_sh_val - recent_low) * 0.786
+                                        if (fib_786 * 0.99) <= fvg_ce <= (fib_618 * 1.01):
+                                            bonus_badges.append("⭐ OTE")
+                                            bonus_aciklama.append(
+                                                "Fibonacci %61.8–%78.6 bölgesiyle örtüşüyor — "
+                                                "Optimal Trade Entry: kurumların en çok tercih ettiği giriş aralığı"
+                                            )
+                                            skor += 8
+                                break  # İlk geçerli FVG yeterli
+
+                        skor = min(100, skor)
+                        badge_str    = " | ".join(bonus_badges) if bonus_badges else ""
+                        aciklama_str = " · ".join(bonus_aciklama) if bonus_aciklama else \
+                                       "Stop avı tamamlandı, yapı kırıldı, kurumsal itme var — temel kurulum hazır"
+
+                        durum = f"RRR: {rrr:.1f} | Stop: {stop_loss:.2f} | Hedef: {target_price:.2f}"
+                        if badge_str:
+                            durum = f"{badge_str} | {durum}"
+
+                        return {
+                            "Sembol":    symbol,
+                            "Fiyat":     current_price,
+                            "Yön":       "LONG",
+                            "İkon":      "🎯",
+                            "Renk":      "#16a34a",
+                            "Durum":     durum,
+                            "Aciklama":  aciklama_str,
+                            "Stop_Loss": f"{stop_loss:.2f}",
+                            "Skor":      skor
+                        }
 
         # =========================================================
         # SENARYO B: SHORT (AYI) SETUP ARANIYOR
@@ -3656,7 +3688,73 @@ def scan_ict_batch(asset_list):
     if results:
         return pd.DataFrame(results)
     
-    return pd.DataFrame()    
+    return pd.DataFrame()
+
+# ==============================================================================
+# ROYAL FLUSH NADİR FIRSAT TARAMA AJANI
+# ==============================================================================
+def scan_nadir_firsat_batch(asset_list):
+    """
+    Royal Flush Nadir Fırsat Toplu Tarama
+    4/4 Kriter (AND mantığı — hepsi sağlanmalı):
+      1. BOS / MSS (Bullish yapı kırılımı) — ICT
+      2. Lorentzian AI ≥ 6/8 YÜKSELİŞ sinyali  (7/8+ üste sıralanır)
+      3. RS Alpha > 0  (piyasayı geçiyor)
+      4. VWAP sapması < %12  (aşırı şişmemiş)
+    Erken çıkış optimizasyonu: ICT yapı kontrolü en başta yapılır,
+    geçemeyenler için pahalı Lorentzian hesabı atlanır.
+    """
+    results = []
+    for symbol in asset_list:
+        try:
+            # ── 1. ICT Yapı Kırılımı (En Hızlı Check — Erken Çıkış) ──
+            ict = calculate_ict_deep_analysis(symbol)
+            if not ict:
+                continue
+            cond_struct = (
+                "BOS (Yükseliş" in ict.get('structure', '') or
+                "MSS (Market Structure Shift) 🐂" in ict.get('structure', '')
+            )
+            if not cond_struct:
+                continue   # %80+ hisse burada elenir
+
+            # ── 2. Lorentzian AI (≥ 6/8 YÜKSELİŞ) ──
+            lor = calculate_lorentzian_classification(symbol)
+            if not lor or lor.get('signal') != "YÜKSELİŞ" or lor.get('votes', 0) < 6:
+                continue
+            votes     = lor['votes']
+            votes_txt = f"{votes}/8"
+
+            # ── 3. RS Alpha + VWAP ──
+            pa = calculate_price_action_dna(symbol)
+            if not pa:
+                continue
+            cond_rs   = pa.get('rs',   {}).get('alpha', 0) > 0
+            cond_vwap = pa.get('vwap', {}).get('diff',  0) < 12
+            if not (cond_rs and cond_vwap):
+                continue
+
+            # ── 4/4 Geçti — Fiyat Al ──
+            df_p = get_safe_historical_data(symbol)
+            if df_p is None or df_p.empty:
+                continue
+            price = round(float(df_p['Close'].iloc[-1]), 2)
+
+            results.append({
+                'Sembol': symbol,
+                'Fiyat':  price,
+                'Votes':  votes,
+                'AI':     votes_txt,
+                'Durum':  f"4/4 | AI {votes_txt}",
+            })
+        except:
+            continue
+
+    if not results:
+        return pd.DataFrame()
+    # 7/8 ve 8/8 önce, 6/8 sonra
+    return pd.DataFrame(results).sort_values('Votes', ascending=False).reset_index(drop=True)
+
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
 # ==============================================================================
@@ -4145,7 +4243,7 @@ def compile_top_20_summary():
     # 1. HAVUZU OLUŞTUR
     # Yüksek hassasiyetli scanner'lar — limit 5 (az ama kaliteli sinyal)
     add_candidates(st.session_state.get('guclu_donus_data'), '🔄 Güçlü Dönüş Adayları', limit=5)
-    add_candidates(st.session_state.get('royal_results'), '💎 Platin Fırsat (Klasik)', limit=5)
+    add_candidates(st.session_state.get('platin_results'), '💎 Platin Fırsat (Klasik)', limit=5)
     add_candidates(st.session_state.get('ict_scan_data'), '🦅 ICT Sniper', limit=5)
     add_candidates(st.session_state.get('minervini_data'), '🦁 Minervini', limit=5)
     add_candidates(st.session_state.get('breakout_right'), '🔨 Breakout Yapan', limit=5)
@@ -4185,7 +4283,7 @@ def compile_confluence_hits():
     """
     Cross-Scanner Confluence Motoru.
     3 bağımsız metodoloji grubunda her birinde kaç grupta çıktığını sayar.
-      Grup 1 — Yapısal : ICT, Royal Flush
+      Grup 1 — Yapısal : ICT, Royal Flush Nadir Fırsat
       Grup 2 — Momentum: Minervini, RS Leaders, Radar1/2
       Grup 3 — Formasyon/Değer: Altın Fırsat, VIP Formasyon, Gizli Birikim, Confirmed Breakout
     Sadece 2/3 veya 3/3 gruba giren hisseler döner.
@@ -4210,7 +4308,7 @@ def compile_confluence_hits():
 
     # --- GRUP 1: YAPISAL ---
     add_to_group('yapi', st.session_state.get('ict_scan_data'),    'ICT Sniper')
-    add_to_group('yapi', st.session_state.get('royal_results'),    'Platin Fırsat')
+    add_to_group('yapi', st.session_state.get('platin_results'),    'Platin Fırsat')
     add_to_group('yapi', st.session_state.get('guclu_donus_data'),    'Güçlü Dönüş')
 
     # --- GRUP 2: MOMENTUM ---
@@ -6020,41 +6118,43 @@ def calculate_price_action_dna(ticker):
         }
     except Exception: return None
 
-def render_golden_trio_banner(ict_data, sent_data):
+def render_golden_trio_banner(ict_data, sent_data, ticker=None):
     if not ict_data or not sent_data: return
 
     # --- 1. MANTIK KONTROLÜ ---
-    # GÜÇ: Sentiment puanı 55 üstü veya 'Lider/Artıda' ibaresi var mı?
     rs_text = sent_data.get('rs', '').lower()
-    cond_power = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or 
-              sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
-    
-    # KONUM: ICT analizinde 'Discount' bölgesinde mi?
-    # Discount bölgesinde değilse bile, eğer dönüş sinyali (BOS/MSS) varsa konumu onayla
-    cond_loc = "DISCOUNT" in ict_data.get('zone', '') or "MSS" in ict_data.get('structure', '') or "BOS" in ict_data.get('structure', '')
-    
-    # ENERJİ: ICT analizinde 'Güçlü' enerji var mı?
-    # Displacement yoksa bile Hacim puanı iyiyse veya RSI ivmeliyse (55+) enerjiyi onayla
-    cond_energy = ("Güçlü" in ict_data.get('displacement', '') or 
-                "Hacim" in sent_data.get('vol', '') or 
-                sent_data.get('raw_rsi', 0) > 55)
+    cond_power  = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or
+                   sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
+    cond_loc    = "DISCOUNT" in ict_data.get('zone', '') or "MSS" in ict_data.get('structure', '') or "BOS" in ict_data.get('structure', '')
+    cond_energy = ("Güçlü" in ict_data.get('displacement', '') or
+                   "Hacim" in sent_data.get('vol', '') or
+                   sent_data.get('raw_rsi', 0) > 55)
 
-    # --- 2. FİLTRE (YA HEP YA HİÇ) ---
-    # Eğer 3 şartın hepsi sağlanmıyorsa, fonksiyonu burada bitir (Ekrana hiçbir şey basma).
     if not (cond_power and cond_loc and cond_energy):
         return
 
-    # --- 3. HTML ÇIKTISI (SADECE 3/3 İSE BURASI ÇALIŞIR) ---
-    bg = "linear-gradient(90deg, #ca8a04 0%, #eab308 100%)" # Altın Sarısı
+    # --- 2. Kırmızı mum kontrolü ---
+    red_note = ""
+    try:
+        if ticker:
+            _df_rc = get_safe_historical_data(ticker)
+            if _df_rc is not None and len(_df_rc) >= 1:
+                if float(_df_rc['Close'].iloc[-1]) < float(_df_rc['Open'].iloc[-1]):
+                    red_note = '<span style="color:#ef4444;font-size:0.72rem;font-weight:700;margin-left:8px;">🟠 son gün kırmızı</span>'
+    except Exception:
+        pass
+
+    # --- 3. HTML ÇIKTISI ---
+    bg = "linear-gradient(90deg, #ca8a04 0%, #eab308 100%)"
     border = "#a16207"
     txt = "#ffffff"
-    
+
     st.markdown(f"""<div style="background:{bg}; border:1px solid {border}; border-radius:8px; padding:12px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
 <div style="display:flex; justify-content:space-between; align-items:center;">
 <div style="display:flex; align-items:center; gap:10px;">
 <span style="font-size:1.6rem;">🏆</span>
 <div style="line-height:1.2;">
-<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ALTIN FIRSAT (GOLDEN TRIO)</div>
+<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ALTIN FIRSAT (GOLDEN TRIO){red_note}</div>
 <div style="font-size:0.75rem; color:{txt}; opacity:0.95;">RS Gücü + Ucuz Konum + Güçlü Enerji (ICT): Mükemmel Uyum.</div>
 </div>
 </div>
@@ -6062,45 +6162,59 @@ def render_golden_trio_banner(ict_data, sent_data):
 </div>
 </div>""", unsafe_allow_html=True)
 
-def render_royal_flush_live_banner(ticker, ict_data, sent_data):
-    """Platin Fırsat (Elit): Tarama gerektirmeden canlı hesaplar. AF + SMA200 + SMA50 + RSI < 70."""
+def render_platin_live_banner(ticker, ict_data, sent_data):
+    """
+    PLATİN FIRSAT (A seçeneği — tutarlı hiyerarşi):
+      Adım 1 — ALTIN kontrolü (zorunlu): RS güçlü + Discount/Yapı + Enerji
+      Adım 2 — PLATİN ek kontrolü: SMA200 + SMA50 + RSI < 70
+    İkisi de sağlanırsa banner göster.
+    """
     try:
         df = get_safe_historical_data(ticker)
         if df is None or len(df) < 200: return
-        c = df['Close']
-        cp = float(c.iloc[-1])
+
+        # --- ADIM 1: ALTIN FIRSAT (zorunlu temel) ---
+        if not ict_data or not sent_data:
+            return  # Altın kontrolü için ICT/Sentiment verisi şart
+        rs_text     = sent_data.get('rs', '').lower()
+        cond_power  = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or
+                       sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
+        cond_loc    = ("DISCOUNT" in ict_data.get('zone', '') or
+                       "MSS" in ict_data.get('structure', '') or
+                       "BOS" in ict_data.get('structure', ''))
+        cond_energy = ("Güçlü" in ict_data.get('displacement', '') or
+                       "Hacim" in sent_data.get('vol', '') or
+                       sent_data.get('raw_rsi', 0) > 55)
+        if not (cond_power and cond_loc and cond_energy):
+            return  # Altın kriterini geçemedi → Platin gösterilmez
+
+        # --- ADIM 2: PLATİN EK KRİTERLER ---
+        c      = df['Close']
+        cp     = float(c.iloc[-1])
         sma200 = float(c.rolling(200).mean().iloc[-1])
         sma50  = float(c.rolling(50).mean().iloc[-1])
         delta  = c.diff()
         gain   = delta.where(delta > 0, 0).rolling(14).mean()
         loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi    = float(100 - (100 / (1 + gain / loss)).iloc[-1])
-        # Kriter 1-3: SMA200 üstü + SMA50 üstü + RSI güvenli
         if not (cp > sma200 and cp > sma50 and rsi < 70):
-            return
-        # Kriter 4: Altın Fırsat da sağlanıyor mu?
-        if ict_data and sent_data:
-            rs_text = sent_data.get('rs', '').lower()
-            cond_power  = ("artıda" in rs_text or "lider" in rs_text or "pozitif" in rs_text or
-                           sent_data.get('total', 0) >= 50 or sent_data.get('raw_rsi', 0) > 50)
-            cond_loc    = ("DISCOUNT" in ict_data.get('zone', '') or
-                           "MSS" in ict_data.get('structure', '') or
-                           "BOS" in ict_data.get('structure', ''))
-            cond_energy = ("Güçlü" in ict_data.get('displacement', '') or
-                           "Hacim" in sent_data.get('vol', '') or
-                           sent_data.get('raw_rsi', 0) > 55)
-            if not (cond_power and cond_loc and cond_energy):
-                return
-        st.markdown("""<div style="background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:8px; padding:12px; margin-top:5px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
+            return  # Platin ek kriterini geçemedi
+
+        # Kırmızı mum notu
+        _red_note_p = ""
+        if float(df['Close'].iloc[-1]) < float(df['Open'].iloc[-1]):
+            _red_note_p = ' <span style="color:#fca5a5;font-size:0.72rem;font-weight:700;">🟠 son gün kırmızı</span>'
+
+        st.markdown(f"""<div style="background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); border:1px solid #1e40af; border-radius:8px; padding:12px; margin-top:5px; margin-bottom:15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);">
 <div style="display:flex; justify-content:space-between; align-items:center;">
 <div style="display:flex; align-items:center; gap:10px;">
 <span style="font-size:1.6rem;">💎</span>
 <div style="line-height:1.2;">
-<div style="font-weight:800; color:#ffffff; font-size:1rem; letter-spacing:0.5px;">PLATİN FIRSAT (ELİT)</div>
-<div style="font-size:0.75rem; color:#ffffff; opacity:0.95;">Uzun Vade Trend + Yapı Sağlam + Endeksten Güçlü + Aşırı Pahalı Değil.</div>
+<div style="font-weight:800; color:#ffffff; font-size:1rem; letter-spacing:0.5px;">💎 PLATİN FIRSAT{_red_note_p}</div>
+<div style="font-size:0.75rem; color:#ffffff; opacity:0.95;">Altın Fırsat (3/3) + SMA200 üstü + SMA50 üstü + RSI &lt; 70</div>
 </div>
 </div>
-<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:#ffffff; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">4/4</div>
+<div style="font-family:'JetBrains Mono'; font-weight:800; font-size:1.2rem; color:#ffffff; background:rgba(255,255,255,0.25); padding:4px 10px; border-radius:6px;">6/6</div>
 </div>
 </div>""", unsafe_allow_html=True)
     except: pass
@@ -6515,11 +6629,11 @@ def render_harmonic_banner(ticker):
 
 def calculate_harmonic_confluence(ticker, df=None):
     """
-    Üç metodolojinin aynı anda çakışmasını kontrol eder:
-      1. Harmonik formasyon (fresh veya approaching)
-      2. ICT Discount (Bullish) veya Premium (Bearish) bölgesi
-      3. RSI Uyumsuzluğu (Bullish → bullish div, Bearish → bearish div)
-    Tümü sağlanıyorsa dict döner, aksi halde None.
+    PRZ mandatory. ICT Discount + RSI Div opsiyonel bonus rozet olarak eklenir.
+      Zorunlu: Harmonik formasyon (fresh veya approaching)
+      Bonus 1: ICT Discount (Bullish) / Premium (Bearish) bölgesi → '🧭 ICT Discount' rozeti
+      Bonus 2: RSI Uyumsuzluğu eşleşiyor → '💎 RSI Div' rozeti
+    PRZ sağlanıyorsa dict döner (bonus olmasa bile), aksi halde None.
     """
     try:
         if df is None:
@@ -6531,33 +6645,51 @@ def calculate_harmonic_confluence(ticker, df=None):
         if not harm:
             return None
 
+        direction = harm['direction']
+        badges = []
+        bonus_notes = []
+
+        # --- BONUS 1: ICT Zone ---
         ict = calculate_ict_deep_analysis(ticker) or {}
         zone = ict.get('zone', '')
-        direction = harm['direction']
+        ict_match = False
+        if direction == 'Bullish' and 'DISCOUNT' in zone.upper():
+            ict_match = True
+        elif direction == 'Bearish' and any(k in zone.upper() for k in ('PREMIUM', 'SUPPLY', 'OB')):
+            ict_match = True
+        if ict_match:
+            badges.append('🧭 ICT Discount')
+            bonus_notes.append(f'ICT {zone}')
 
-        if direction == 'Bullish' and 'DISCOUNT' not in zone.upper():
-            return None
-        if direction == 'Bearish' and not any(k in zone.upper() for k in ('PREMIUM', 'SUPPLY', 'OB')):
-            return None
-
+        # --- BONUS 2: RSI Divergence ---
         pa = calculate_price_action_dna(ticker) or {}
         div_type = pa.get('div', {}).get('type', 'neutral')
+        rsi_match = False
+        if direction == 'Bullish' and div_type == 'bullish':
+            rsi_match = True
+        elif direction == 'Bearish' and div_type == 'bearish':
+            rsi_match = True
+        if rsi_match:
+            badges.append('💎 RSI Div')
+            bonus_notes.append('RSI Diverjans')
 
-        if direction == 'Bullish' and div_type != 'bullish':
-            return None
-        if direction == 'Bearish' and div_type != 'bearish':
-            return None
+        badge_str = ' '.join(badges)
+        aciklama = 'PRZ teyitli' + (f' + {", ".join(bonus_notes)}' if bonus_notes else '')
 
         return {
-            'pattern':   harm['pattern'],
-            'direction': direction,
-            'prz':       harm['prz'],
-            'state':     harm.get('state', 'fresh'),
-            'zone':      zone,
-            'div_type':  div_type,
-            'AB_XA':     harm['AB_XA'],
-            'XD_XA':     harm['XD_XA'],
-            'bars_ago':  harm['bars_ago'],
+            'pattern':      harm['pattern'],
+            'direction':    direction,
+            'prz':          harm['prz'],
+            'state':        harm.get('state', 'fresh'),
+            'zone':         zone,
+            'div_type':     div_type,
+            'AB_XA':        harm['AB_XA'],
+            'XD_XA':        harm['XD_XA'],
+            'bars_ago':     harm['bars_ago'],
+            'ict_match':    ict_match,
+            'rsi_match':    rsi_match,
+            'badge_str':    badge_str,
+            'Aciklama':     aciklama,
         }
     except Exception:
         return None
@@ -6579,38 +6711,32 @@ def render_harmonic_confluence_banner(ticker):
         state_lbl = "PRZ'de" if res['state'] == 'fresh' else "PRZ'ye Yaklaşıyor"
 
         st.markdown(f'''
-        <div style="background:#1e0f3a; border:2px solid #7c3aed; border-radius:8px;
-                    padding:13px; margin-top:8px; margin-bottom:10px;
-                    box-shadow:0 0 12px rgba(124,58,237,0.3);">
+        <div style="background:linear-gradient(135deg,#7c3aed18,#7c3aed06);
+                    border:1px solid #7c3aed50; border-radius:10px;
+                    padding:10px 13px; margin-top:8px; margin-bottom:10px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <span style="font-size:1.3rem;">⚡</span>
-                    <span style="color:#e9d5ff; font-weight:900; font-size:1rem; margin-left:8px;">
+                    <span style="font-size:1rem;">⚡</span>
+                    <span style="color:#7c3aed; font-weight:900; font-size:0.92rem; margin-left:6px;">
                         HARMONİK CONFLUENCE — {res["pattern"].upper()}
                     </span>
-                    <span style="color:#c4b5fd; font-size:0.78rem; margin-left:8px;">{dir_lbl}</span>
+                    <span style="color:#64748b; font-size:0.75rem; margin-left:8px;">{dir_lbl}</span>
                 </div>
-                <span style="background:rgba(124,58,237,0.35); color:#e9d5ff; padding:3px 10px;
-                             border-radius:10px; font-weight:800; font-size:0.85rem;">
+                <span style="background:#7c3aed50; color:#7c3aed; padding:2px 9px;
+                             border-radius:10px; font-weight:800; font-size:0.78rem;">
                     PRZ: {res["prz"]:.2f}
                 </span>
             </div>
-            <div style="margin-top:9px; display:flex; flex-wrap:wrap; gap:7px;">
-                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
+            <div style="margin-top:7px; display:flex; flex-wrap:wrap; gap:5px;">
+                <span style="background:#7c3aed18; color:#7c3aed; padding:2px 7px;
+                             border-radius:5px; font-size:0.75rem; font-weight:700;">
                     {emoji} Harmonik: {res["pattern"]} ({state_lbl})
                 </span>
-                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
-                    🧭 ICT: {res["zone"]}
-                </span>
-                <span style="background:rgba(124,58,237,0.2); color:#ddd6fe; padding:3px 8px;
-                             border-radius:5px; font-size:0.78rem; font-weight:700;">
-                    💎 RSI Diverjans: {"Pozitif (Boğa)" if res["div_type"] == "bullish" else "Negatif (Ayı)"}
-                </span>
+                {'<span style="background:#7c3aed18; color:#7c3aed; padding:2px 7px; border-radius:5px; font-size:0.75rem; font-weight:700;">🧭 ICT: ' + res["zone"] + '</span>' if res.get("ict_match") else '<span style="background:rgba(100,100,100,0.08); color:#94a3b8; padding:2px 7px; border-radius:5px; font-size:0.75rem;">🧭 ICT Zone yok</span>'}
+                {'<span style="background:#7c3aed18; color:#7c3aed; padding:2px 7px; border-radius:5px; font-size:0.75rem; font-weight:700;">💎 RSI Div: ' + ("Pozitif" if res["div_type"] == "bullish" else "Negatif") + '</span>' if res.get("rsi_match") else '<span style="background:rgba(100,100,100,0.08); color:#94a3b8; padding:2px 7px; border-radius:5px; font-size:0.75rem;">💎 RSI Div yok</span>'}
             </div>
-            <div style="margin-top:8px; font-size:0.73rem; color:#a78bfa; font-style:italic;">
-                3 bağımsız metodoloji aynı PRZ'yi işaret ediyor. En yüksek kaliteli harmonik setup.
+            <div style="margin-top:6px; font-size:0.71rem; color:#64748b; font-style:italic;">
+                {res.get("Aciklama", "Harmonik PRZ teyitli")} — bonus: {int(res.get("ict_match", False)) + int(res.get("rsi_match", False))}/2
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -6655,6 +6781,8 @@ def scan_harmonic_confluence_batch(asset_list):
                     'ICT_Zone':  res['zone'],
                     'RSI_Div':   res['div_type'],
                     'Durum':     '✅ Taze' if res['state'] == 'fresh' else '📍 Yaklaşıyor',
+                    'Badges':    res.get('badge_str', ''),
+                    'Aciklama':  res.get('Aciklama', ''),
                 })
         except Exception:
             continue
@@ -6670,8 +6798,8 @@ def scan_harmonic_confluence_batch(asset_list):
     return df_out
 
 
-# --- ROYAL FLUSH HESAPLAYICI ---
-def render_royal_flush_banner(ict_data, sent_data, ticker):
+# --- ROYAL FLUSH NADİR FIRSAT HESAPLAYICI ---
+def render_nadir_firsat_banner(ict_data, sent_data, ticker):
     if not ict_data or not sent_data: return
 
     # --- KRİTER 1: YAPI (ICT) ---
@@ -6679,11 +6807,11 @@ def render_royal_flush_banner(ict_data, sent_data, ticker):
     cond_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS (Market Structure Shift) 🐂" in ict_data.get('structure', '')
     
     # --- KRİTER 2: ZEKA (LORENTZIAN AI) ---
-    # 7/8 veya 8/8 Yükseliş olmalı
+    # 6/8, 7/8 veya 8/8 Yükseliş olmalı
     lor_data = calculate_lorentzian_classification(ticker)
     cond_ai = False
     votes_txt = "0/8"
-    if lor_data and lor_data['signal'] == "YÜKSELİŞ" and lor_data['votes'] >= 7:
+    if lor_data and lor_data['signal'] == "YÜKSELİŞ" and lor_data['votes'] >= 6:
         cond_ai = True
         votes_txt = f"{lor_data['votes']}/8"
 
@@ -6714,7 +6842,7 @@ def render_royal_flush_banner(ict_data, sent_data, ticker):
 <div style="display:flex; align-items:center; gap:10px;">
 <span style="font-size:1.6rem;">♠️</span>
 <div style="line-height:1.2;">
-<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH (KRALİYET SET-UP)</div>
+<div style="font-weight:800; color:{txt}; font-size:1rem; letter-spacing:0.5px;">ROYAL FLUSH NADİR FIRSAT</div>
 <div style="font-size:0.75rem; color:{txt}; opacity:0.95;">AI ({votes_txt}) + ICT Yapı + RS Liderliği + VWAP Uyumu: En Yüksek Olasılık.</div>
 </div>
 </div>
@@ -10939,7 +11067,7 @@ def render_unified_signals_panel(ticker):
                     signals.append(("🏆","Altın Fırsat (Güç+Konum+Enerji)","#ca8a04" if is_dark else "#a16207","3 bağımsız koşul aynı anda: RS güçlü, fiyat DISCOUNT bölgesinde, hacim momentum destekliyor.",True))
         except: pass
 
-        # ── 7. Royal Flush (4/4 Kraliyet) ───────────────────────────
+        # ── 7. Royal Flush Nadir Fırsat (4/4) ───────────────────────────
         try:
             if ict_data and sent_data and lor and lor['votes'] >= 7:
                 cs = "BOS (Yükseliş" in ict_data.get('structure','') or "MSS" in ict_data.get('structure','')
@@ -10952,7 +11080,7 @@ def render_unified_signals_panel(ticker):
                     cv = _vd < 12
                 except: cv = True
                 if cs and ca and cr and cv:
-                    signals.append(("♠️","Royal Flush (Kraliyet 4/4)","#a78bfa" if is_dark else "#6d28d9","4 metodoloji aynı anda: ICT yapı kırılımı + Lorentzian ML + RS gücü + VWAP yakınlığı. En seçici kurulum.",True))
+                    signals.append(("♠️","Royal Flush Nadir Fırsat (4/4)","#a78bfa" if is_dark else "#6d28d9","4 metodoloji aynı anda: ICT yapı kırılımı + Lorentzian ML + RS gücü + VWAP yakınlığı. En seçici kurulum.",True))
         except: pass
 
         # ── 8. Platin Fırsat (Elit) ────────────────────────────────────
@@ -11518,7 +11646,7 @@ def get_golden_trio_batch_scan(ticker_list):
         return 100 - (100 / (1 + rs))
 
     golden_candidates = []
-    royal_candidates = [] # YENİ: Royal Flush adayları
+    platin_candidates = [] # YENİ: Platin Fırsat adayları
 
     # 1. BİLGİLENDİRME & HAZIRLIK
     st.toast("Veri Ambari İndiriliyor (1 Yıllık Derinlik)...", icon="⏳")
@@ -11565,9 +11693,8 @@ def get_golden_trio_batch_scan(ticker_list):
             yest_o = df['Open'].iloc[-2]
             day2_c = df['Close'].iloc[-3]
 
-            # 1. Kırmızı Mum İptali (Bugün Kapanış < Açılış ise direkt ele)
-            if today_c < today_o:
-                continue
+            # 1. Kırmızı Mum — filtre değil, uyarı bayrağı
+            has_red_candle = today_c < today_o
 
             # 2. Son 2 Günlük Mikro RS Kalkanı (Dün kırmızı, bugün yeşilse)
             if yest_c < yest_o and today_c >= today_o:
@@ -11622,9 +11749,9 @@ def get_golden_trio_batch_scan(ticker_list):
             if range_diff > 0:
                 # Fiyat 3 aylık bandın neresinde?
                 loc_ratio = (current_price - low_60) / range_diff
-                
-                # 3 aylık bandın alt %50'sindeyse kabul et
-                if loc_ratio < 0.5: 
+
+                # 3 aylık bandın alt %65'indeyse kabul et (ICT Discount zone ile uyumlu)
+                if loc_ratio < 0.65:
                     is_discount = True
 
             # --- KRİTER 3: ENERJİ (HACİM / MOMENTUM) - GÜNCELLENDİ ---
@@ -11635,9 +11762,8 @@ def get_golden_trio_batch_scan(ticker_list):
             # Hacim barajını %10'dan %5'e çektik (1.1 -> 1.05)
             is_energy = (current_vol > vol_sma20 * 1.05) or (rsi_now > 45)
 
-            # === ANA FİLTRE: ALTIN FIRSAT ===
+            # === ALTIN FIRSAT ===
             if is_powerful and is_discount and is_energy:
-                
                 # Piyasa Değeri
                 try:
                     info = yf.Ticker(ticker).info
@@ -11645,37 +11771,26 @@ def get_golden_trio_batch_scan(ticker_list):
                 except:
                     mcap = 0
 
-                # 1. ALTIN LİSTEYE EKLE
                 golden_candidates.append({
                     "Hisse": ticker,
                     "Fiyat": current_price,
                     "M.Cap": mcap,
                     "Onay": "🏆 RS Gücü + Ucuz Konum + Güçlü Enerji",
-                    "Warning": has_warning
+                    "Warning": has_warning,
+                    "RedCandle": has_red_candle,
                 })
 
-                # === İKİNCİ FİLTRE: PLATİN FIRSAT (ELİT) KONTROLÜ ===
-                # Sadece Altın olanlara bakıyoruz
-
-                # Royal Şart 1: Uzun Vade Trend (SMA200 Üzerinde mi?)
+                # === PLATİN FIRSAT — Altın listesi içinden ===
                 sma200 = df['Close'].rolling(200).mean().iloc[-1]
-                is_bull_trend = current_price > sma200
-
-                # Royal Şart 2: Maliyet/Trend (SMA50 Üzerinde mi?)
-                sma50 = df['Close'].rolling(50).mean().iloc[-1]
-                is_structure_solid = current_price > sma50
-
-                # Royal Şart 3: RSI Güvenli Bölge (Aşırı şişmemiş)
-                is_safe_entry = rsi_now < 70
-
-                if is_bull_trend and is_structure_solid and is_safe_entry:
-                    # 2. ROYAL LİSTEYE DE EKLE
-                    royal_candidates.append({
+                sma50  = df['Close'].rolling(50).mean().iloc[-1]
+                if current_price > sma200 and current_price > sma50 and rsi_now < 70:
+                    platin_candidates.append({
                         "Hisse": ticker,
                         "Fiyat": current_price,
                         "M.Cap": mcap,
-                        "Onay": "💎 PLATİN: Trend(200) + Yapı(50) + RS + Enerji",
-                        "Warning": has_warning
+                        "Onay": "💎 PLATİN: Altın + SMA200 + SMA50 + RSI<70",
+                        "Warning": has_warning,
+                        "RedCandle": has_red_candle,
                     })
 
         except:
@@ -11689,7 +11804,7 @@ def get_golden_trio_batch_scan(ticker_list):
     time.sleep(0.3)
     my_bar.empty()
 
-    return pd.DataFrame(golden_candidates), pd.DataFrame(royal_candidates)
+    return pd.DataFrame(golden_candidates), pd.DataFrame(platin_candidates)
 
 # ==============================================================================
 # 6. ANA SAYFA (MAIN UI) - GÜNCELLENMİŞ MASTER SCAN VERSİYONU
@@ -11754,18 +11869,22 @@ with col_btn:
             # 3. ICT SNIPER AJANI --- %20
             my_bar.progress(20, text="🦅 ICT Sniper Kurulumları (Liquidity+MSS+FVG) Taranıyor...%20")
             st.session_state.ict_scan_data = scan_ict_batch(scan_list)
-            
-            # 4. ALTIN FIRSATLAR VE KLASİK ROYAL FLUSH - %30
+
+            # 3.5 ROYAL FLUSH NADİR FIRSAT AJANI --- %25
+            my_bar.progress(25, text="♠️ Royal Flush Nadir Fırsat (BOS/MSS + AI + RS + VWAP) Taranıyor...%25")
+            st.session_state.nadir_firsat_scan_data = scan_nadir_firsat_batch(scan_list)
+
+            # 4. ALTIN FIRSATLAR VE PLATİN FIRSAT - %30
             my_bar.progress(30, text="💎 Altın Fırsatlar ve Platin Fırsat Taranıyor...%30")
-            df_golden, df_royal = get_golden_trio_batch_scan(scan_list)
+            df_golden, df_nadir = get_golden_trio_batch_scan(scan_list)
             if not df_golden.empty:
                 st.session_state.golden_results = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
             else:
                 st.session_state.golden_results = pd.DataFrame()
-            if not df_royal.empty:
-                st.session_state.royal_results = df_royal.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
+            if not df_nadir.empty:
+                st.session_state.platin_results = df_nadir.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
             else:
-                st.session_state.royal_results = pd.DataFrame()
+                st.session_state.platin_results = pd.DataFrame()
 
             # 6. SENTIMENT (AKILLI PARA) AJANI - %40
             my_bar.progress(40, text="🤫 Gizli Toplama (Smart Money) Aranıyor...%40")
@@ -11806,7 +11925,7 @@ with col_btn:
             my_bar.progress(90, text="🦁 Minervini Sepa Taranıyor...%90")
             st.session_state.minervini_data = scan_minervini_batch(scan_list)
 
-            # 13. ROYAL FLUSH 3.0 AJANI - %95
+            # 13. ROYAL FLUSH NADİR FIRSAT 3.0 AJANI - %95
             my_bar.progress(95, text="🔄 Güçlü Dönüş Adayları (RSI Diverjans + Birikim) Taranıyor...%95")
             st.session_state.guclu_donus_data = scan_guclu_donus_batch(scan_list)
             
@@ -11926,7 +12045,7 @@ if st.session_state.generate_prompt:
     # Final Onay Durumu
     is_golden = "🚀 EVET (3/3 Onaylı - KRİTİK FIRSAT)" if (c_pwr and c_loc and c_nrg) else "HAYIR"
 
-    # --- ROYAL FLUSH DURUMU HESAPLAMA (4/4 Kesişim) ---
+    # --- ROYAL FLUSH NADİR FIRSAT DURUMU HESAPLAMA (4/4 Kesişim) ---
     # 1. Yapı: BOS veya MSS Bullish olmalı
     c_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS" in ict_data.get('structure', '')
     # 2. Zeka: Lorentzian 7/8 veya 8/8 olmalı
@@ -11938,8 +12057,8 @@ if st.session_state.generate_prompt:
     c_rs = pa_data.get('rs', {}).get('alpha', 0) > 0
     # 4. Maliyet: VWAP sapması %12'den az olmalı (Güvenli Zemin)
     c_vwap = pa_data.get('vwap', {}).get('diff', 0) < 12
-    # Final Royal Flush Onayı
-    is_royal = "♠️ EVET (4/4 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_ai and c_rs and c_vwap) else "HAYIR"
+    # Final Royal Flush Nadir Fırsat Onayı
+    is_nadir = "♠️ EVET (4/4 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_ai and c_rs and c_vwap) else "HAYIR"
 
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
@@ -11971,8 +12090,8 @@ if st.session_state.generate_prompt:
     scan_box_txt = []
 
     # A. ELİT KURULUMLAR (Sistemin En Tepesi)
-    if is_royal != "HAYIR": 
-        scan_box_txt.append("👑 ELİT KURULUM: ROYAL FLUSH (4/4 Onay. Algoritmik kusursuzluk! Kurumsal fonların en sevdiği, başarı ihtimali en yüksek asimetrik risk/ödül noktası olabilir.)")
+    if is_nadir != "HAYIR": 
+        scan_box_txt.append("👑 ELİT KURULUM: ROYAL FLUSH NADİR FIRSAT (4/4 Onay. Algoritmik kusursuzluk! Kurumsal fonların en sevdiği, başarı ihtimali en yüksek asimetrik risk/ödül noktası olabilir.)")
     elif is_golden != "HAYIR": 
         scan_box_txt.append("🏆 ALTIN FIRSAT: Golden Trio Onaylandı (Fiyat ucuz, trend güçlü, hacim destekliyor. Büyük bir hareketin arifesinde olabilir.)")
 
@@ -12079,12 +12198,13 @@ if st.session_state.generate_prompt:
         _hconf = calculate_harmonic_confluence(t, df_hist)
         if _hconf:
             _hc_dir_tr = "YUKARI" if _hconf['direction'] == 'Bullish' else "AŞAĞI"
+            _hc_badges = _hconf.get('badge_str', '')
+            _hc_aciklama = _hconf.get('Aciklama', 'PRZ teyitli')
             scan_box_txt.insert(0,
-                f"⚡ HARMONİK CONFLUENCE (3'LÜ TEYİT — EN YÜKSEK KALİTE): "
-                f"{_hconf['pattern']} {_hc_dir_tr} | ICT Bölge: {_hconf['zone']} | RSI Diverjans: Teyitli | "
-                f"PRZ: {_hconf['prz']:.2f} "
-                f"(Fibonacci yapısı, kurumsal fiyat bölgesi ve momentum uyumsuzluğunun aynı noktada çakışması. "
-                f"Üç bağımsız metodoloji aynı dönüş seviyesini işaret ediyor — bu türden kurulumların başarı ihtimali tekil sinyallerden belirgin şekilde yüksektir.)"
+                f"⚡ HARMONİK CONFLUENCE: "
+                f"{_hconf['pattern']} {_hc_dir_tr} | PRZ: {_hconf['prz']:.2f} | {_hc_aciklama}"
+                + (f" | Bonus: {_hc_badges}" if _hc_badges else "")
+                + f" (Fibonacci PRZ teyitli harmonik kurulum. ICT bölge ve RSI diverjans bonus metodoloji olarak eklenirse kalite daha da yükselir.)"
             )
     except Exception:
         pass
@@ -12430,7 +12550,7 @@ if st.session_state.generate_prompt:
 
     # === HOOK BAŞLIĞI ve DİNAMİK BÖLÜM BAŞLIĞI ===
     # En güçlü sinyal etiketi (Python tarafı)
-    if is_royal != "HAYIR":
+    if is_nadir != "HAYIR":
         _hook_sinyal = "💎 Platin Fırsat Tetiklendi"
     elif "EVET" in str(is_golden):
         _hook_sinyal = "🏆 Altın Fırsat Aktif"
@@ -12574,13 +12694,13 @@ if st.session_state.generate_prompt:
 
     # --- 5. FİNAL PROMPT ---
 # --- PERSONA SEÇİMİ (Senaryo bazlı dinamik kimlik) ---
-    # Öncelik sırası: Royal Flush > Z-Score aşırılık > Formasyon > Nötr
+    # Öncelik sırası: Royal Flush Nadir Fırsat > Z-Score aşırılık > Formasyon > Nötr
     try:
         _z = z_score_val
     except:
         _z = 0.0
 
-    _has_royal   = is_royal != "HAYIR"
+    _has_nadir   = is_nadir != "HAYIR"
     _has_pat     = not pat_df.empty
     _pat_name    = pat_df.iloc[0]['Formasyon'] if _has_pat else ""
     _is_tobo_flag = "TOBO" in _pat_name or "FİNCAN" in _pat_name or "YÜKSELEN" in _pat_name
@@ -12588,7 +12708,7 @@ if st.session_state.generate_prompt:
     _bearish_ict = "bearish" in str(ict_data.get('bias', '')).lower() if ict_data else False
     _bullish_ict = "bullish" in str(ict_data.get('bias', '')).lower() if ict_data else False
 
-    if _has_royal:
+    if _has_nadir:
         persona_kimlik = (
             "Sen yılda belki 3-4 kez gördüğün nadir kurumsal setup'ları sabırla bekleyen, "
             "pozisyon büyüten ve asimetrik risk/ödül fırsatlarında devreye giren agresif bir "
@@ -12694,7 +12814,7 @@ Aşağıdaki çelişki türlerinden birine odaklan — bunlar örnek, sen farkl�
 - Akıllı para toplama sinyali var ama fiyat düşüşte → "Sabırlı toplama mı, yoksa düşen bıçak mı?"
 - Hacim patlıyor ama fiyat hareket etmiyor (Churning) → "Enerji biriyor mu, yoksa boşa mı gidiyor?"
 - Lorentzian 8/8 yukarı diyor ama RSI uyumsuzluk gösteriyor → "Algoritma mı yanılıyor, RSI mi?"
-- Formasyon güven skoru düşük ama Royal Flush tetiklendi → "Yapı zayıf ama setup güçlü, nasıl olur?"
+- Formasyon güven skoru düşük ama Royal Flush Nadir Fırsat tetiklendi → "Yapı zayıf ama setup güçlü, nasıl olur?"
 - Fiyat SMA200 üstünde ama SMA200 eğimi aşağı → "Ortalamanın üstünde olmak yeterli mi?"
 
 Eğer verilen veride hiçbir çelişki bulamıyorsan (nadir ama mümkün), bunu açıkça belirt: 
@@ -12785,7 +12905,7 @@ ALTIN FIRSAT (Golden Trio) + Yüksek Z-Score bir arada: Bu durum "tehlike" deği
 - GENEL SAĞLIK: {master_txt} (Algoritmik Puan)
 - Temel Artılar: {pros_txt}
 - ALTIN FIRSAT (GOLDEN TRIO) DURUMU: {is_golden}
-- ROYAL FLUSH (KRALİYET SET-UP): {is_royal}
+- ROYAL FLUSH NADİR FIRSAT: {is_nadir}
 
 *** 🚨 ALGORİTMİK DURUM RAPORU VE GÖRSEL ÇAPRAZ SORGU (CROSS-EXAMINATION) TALEBİ: {ai_scenario_title} ***
 Mevcut Özet: {ai_mood_instruction}
@@ -12933,7 +13053,7 @@ YÖNETİCİ ÖZETİ: Önce aşağıdaki tüm değerlendirmelerini bu başlık al
    Ayrıca, yorumları bir robot gibi değil, bir "brifing veren komutan" gibi yap. 
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu 'EVET' ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir 'alım penceresi' sunduğunu belirt.
-        - Eğer ROYAL FLUSH durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
+        - Eğer ROYAL FLUSH NADİR FIRSAT durumu 'EVET' ise, bu nadir görülen 4/4'lük onayı analizin en başında vurgula ve bu kurulumun neden en yüksek kazanma oranına sahip olduğunu finansal gerekçeleriyle açıkla.
      b) Listenin devamına; trendi destekleyen ama daha zayıf olan yan sinyalleri (örneğin: "Hareketli ortalama üzerinde", "RSI 50 üstü" vb.) ekle. Ancak bunlara DÜRÜSTÇE (1/10) ile (7/10) arasında puan ver.
    - UYARI: Listeyi 6 maddeye tamamlamak için zayıf sinyallere asla yapay olarak yüksek puan (8+) verme! Sinyal gücü neyse onu yaz.
 2. SENARYO A: ELİNDE OLANLAR İÇİN 
@@ -13031,7 +13151,7 @@ Analizin sonuna geldin. Alt satıra geç, daima büyük ve kalın harflerle "YAT
 *****GÖREVLERİN SUNUŞ SIRALAMASI (DİNAMİK)*****
 Görevlerin sunuş sırası bugünkü en baskın sinyale göre değişiyor:
 
-EĞER Royal Flush sinyali tetiklendiyse:
+EĞER Royal Flush Nadir Fırsat sinyali tetiklendiyse:
 → Sıralama: Dördüncü (Abone özeti) → İkinci (Twitter) → Birinci (Detaylı analiz) → Üçüncü (Teknik kart)
 → Tüm analizi o nadir sinyal üzerine kurgula. Diğer veriler destekleyici.
 
@@ -13206,9 +13326,10 @@ with col_left:
     # ---------------------------------------------------------
 
     # Session state başlatmaları
-    for _k in ['ict_scan_data','guclu_donus_data','golden_pattern_data','harmonic_data',
-                'harmonic_confluence_data','rs_leaders_data','accum_data','breakout_left',
-                'breakout_right','pattern_data','minervini_data','golden_results','royal_results']:
+    for _k in ['ict_scan_data','nadir_firsat_scan_data','guclu_donus_data','golden_pattern_data',
+                'harmonic_data','harmonic_confluence_data','rs_leaders_data','accum_data',
+                'breakout_left','breakout_right','pattern_data','minervini_data',
+                'golden_results','platin_results']:
         if _k not in st.session_state: st.session_state[_k] = None
     for _k in ['stp_scanned']:
         if _k not in st.session_state: st.session_state[_k] = False
@@ -13242,47 +13363,60 @@ with col_left:
             "2-3 bağımsız metodoloji aynı hisseyi işaret ettiğinde — en güvenilir sinyal",
             "#7c3aed"), unsafe_allow_html=True)
         _hits  = st.session_state.get('confluence_hits')
+        _hc_df = st.session_state.get('harmonic_confluence_data')
         _dark  = st.session_state.get('dark_mode', False)
         _cbg   = "#1e0f35" if _dark else "#faf5ff"
-        if _hits:
-            st.markdown(f"<div style='background:{_cbg};border:1px solid #7c3aed;border-radius:7px;"
-                        f"padding:7px 10px;margin-bottom:5px;'>"
-                        f"<span style='font-weight:800;color:#c084fc;font-size:0.83rem;'>"
-                        f"🔥 CONFLUENCE — {len(_hits)} Hisse</span></div>", unsafe_allow_html=True)
-            with st.container(height=160, border=False):
-                for _ci, _ch in enumerate(_hits[:8]):
-                    _cs = _ch['Sembol'].replace('.IS','')
-                    _gc = _ch['group_count']
-                    _ts = _ch['total_scanners']
-                    _cp = _ch.get('price', 0)
-                    _cp_s = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
-                    _badge = "🔥 3/3" if _gc == 3 else "⚡ 2/3"
-                    if st.button(f"{_badge} {_cs} ({_cp_s}) — {_ts} yöntem",
-                                 key=f"conf_top_{_cs}_{_ci}", use_container_width=True):
-                        st.session_state.ticker = _ch['Sembol']
-                        on_scan_result_click(_ch['Sembol']); st.rerun()
-        else:
-            st.markdown(f"<div style='background:{_cbg};border:1px dashed #7c3aed;border-radius:7px;"
-                        f"padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;'>"
-                        f"🔥 CONFLUENCE<br><span style='font-size:0.7rem;'>Master Scan çalıştırın</span></div>",
-                        unsafe_allow_html=True)
-        _hc_df = st.session_state.get('harmonic_confluence_data')
-        if _hc_df is not None and not (hasattr(_hc_df, 'empty') and _hc_df.empty):
-            st.markdown("<div style='background:linear-gradient(90deg,#2d1060,#1e0f3a);border:2px solid #7c3aed;"
-                        "border-radius:6px;padding:6px 10px;margin-top:5px;'>"
-                        "<span style='font-size:0.78rem;font-weight:900;color:#c084fc;'>"
-                        f"⚡ HARMONİK CONF ({len(_hc_df)} hisse)</span></div>", unsafe_allow_html=True)
-            for _hci, _hcr in _hc_df.head(4).iterrows():
-                _hcs = str(_hcr.get('Sembol','')).replace('.IS','')
-                _hcp = _hcr.get('Fiyat', 0)
-                _hcp_s = f"{int(_hcp)}" if _hcp >= 1000 else f"{_hcp:.2f}"
-                if st.button(f"⚡ {_hcs} ({_hcp_s})", key=f"hctop_{_hcs}_{_hci}", use_container_width=True):
-                    st.session_state.ticker = _hcr.get('Sembol', _hcs)
-                    on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
+
+        # ── İki sub-kolon: sol=CONFLUENCE, sağ=HARMONİK CONF ──
+        _sub_cf, _sub_hc = st.columns(2)
+
+        with _sub_cf:
+            _conf_count = len(_hits) if _hits else 0
+            st.markdown(f"<div style='background:linear-gradient(135deg,#7c3aed18,#7c3aed06);"
+                        f"border:1px solid #7c3aed50;border-radius:8px;padding:6px 10px;margin-bottom:5px;'>"
+                        f"<span style='font-size:0.78rem;font-weight:900;color:#7c3aed;'>"
+                        f"🔥 CONFLUENCE — {_conf_count} Hisse</span></div>", unsafe_allow_html=True)
+            if _hits:
+                _hits_33 = [h for h in _hits if h['group_count'] == 3]
+                _hits_23 = [h for h in _hits if h['group_count'] == 2]
+                _conf_all = _hits_33 + _hits_23   # limit yok
+                with st.container(height=320, border=False):
+                    for _ci, _ch in enumerate(_conf_all):
+                        _cs = _ch['Sembol'].replace('.IS','')
+                        _cp = _ch.get('price', 0)
+                        _cp_s = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
+                        _icon = "🔥" if _ch.get('group_count',0) == 3 else "⚡"
+                        if st.button(f"{_icon} {_cs} ({_cp_s})", key=f"conf_top_{_cs}_{_ci}", use_container_width=True):
+                            st.session_state.ticker = _ch['Sembol']
+                            on_scan_result_click(_ch['Sembol']); st.rerun()
+            else:
+                st.markdown(f"<div style='border:1px dashed #7c3aed50;border-radius:7px;"
+                            f"padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;'>"
+                            f"Master Scan çalıştırın</div>", unsafe_allow_html=True)
+
+        with _sub_hc:
+            _hc_count = len(_hc_df) if (_hc_df is not None and not (hasattr(_hc_df,'empty') and _hc_df.empty)) else 0
+            st.markdown(f"<div style='background:linear-gradient(135deg,#7c3aed18,#7c3aed06);"
+                        f"border:1px solid #7c3aed50;border-radius:8px;padding:6px 10px;margin-bottom:5px;'>"
+                        f"<span style='font-size:0.78rem;font-weight:900;color:#7c3aed;'>"
+                        f"⚡ HARMONİK CONF — {_hc_count} Hisse</span></div>", unsafe_allow_html=True)
+            if _hc_count > 0:
+                with st.container(height=320, border=False):
+                    for _hci, _hcr in _hc_df.iterrows():   # limit yok
+                        _hcs = str(_hcr.get('Sembol','')).replace('.IS','')
+                        _hcp = _hcr.get('Fiyat', 0)
+                        _hcp_s = f"{int(_hcp)}" if _hcp >= 1000 else f"{_hcp:.2f}"
+                        if st.button(f"⚡ {_hcs} ({_hcp_s})", key=f"hctop_{_hcs}_{_hci}", use_container_width=True):
+                            st.session_state.ticker = _hcr.get('Sembol', _hcs)
+                            on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
+            else:
+                st.markdown(f"<div style='border:1px dashed #7c3aed50;border-radius:7px;"
+                            f"padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;'>"
+                            f"Master Scan çalıştırın</div>", unsafe_allow_html=True)
 
     with _c_right:
         st.markdown(_scan_card_header("💎", "ELİTLER", 88,
-            "Platin Fırsat (5 kriter) + Altın Fırsat (3 kriter) — piyasanın kremi",
+            "Altın (RS+Discount+Enerji) · Platin = Altın + SMA200+SMA50+RSI<70",
             "#1d4ed8"), unsafe_allow_html=True)
         if st.button("💎 ELİT TARAMA (Platin + Altın)", use_container_width=True, key="btn_elit_tara_main",
                      help="Piyasanın en kaliteli hisselerini iki kategoride listeler.\n\n💎 Platin Fırsat: Fiyat hem 200 hem 50 günlük ortalamanın üstünde, RS endeksten güçlü, Discount bölgede ve hacim artıyor — tüm kriterler aynı anda sağlanmalı.\n\n🦁 Altın Fırsat: Son 10 günde endeksi geçmiş, son 60 güne göre hâlâ ucuz, enerji/hacim yükseliyor. Büyük oyunculara yakın ama henüz fazla yükselmemiş hisseler."):
@@ -13292,26 +13426,59 @@ with col_left:
                     st.session_state.radar2_data = radar2_scan(_scan_list)
                     _df_g, _df_r = get_golden_trio_batch_scan(_scan_list)
                     st.session_state.golden_results = _df_g.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not _df_g.empty else pd.DataFrame()
-                    st.session_state.royal_results  = _df_r.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not _df_r.empty else pd.DataFrame()
+                    st.session_state.platin_results  = _df_r.sort_values(by="M.Cap", ascending=False).reset_index(drop=True) if not _df_r.empty else pd.DataFrame()
                     st.rerun()
-        _has_elite = (st.session_state.royal_results is not None and not st.session_state.royal_results.empty) or \
+        _has_elite = (st.session_state.platin_results is not None and not st.session_state.platin_results.empty) or \
                      (st.session_state.golden_results is not None and not st.session_state.golden_results.empty)
         if _has_elite:
-            with st.container(height=190, border=False):
-                if st.session_state.royal_results is not None and not st.session_state.royal_results.empty:
-                    st.markdown("<div style='font-size:0.76rem;font-weight:800;color:#3b82f6;margin-bottom:4px;'>💎 PLATİN FIRSAT</div>", unsafe_allow_html=True)
-                    for _ri, _rr in st.session_state.royal_results.head(4).iterrows():
-                        _rs = _rr['Hisse']; _rd = get_display_name(_rs)
-                        _rfv = _rr['Fiyat']; _rfs = f"{int(_rfv)}" if _rfv >= 1000 else f"{_rfv:.2f}"
-                        if st.button(f"💎 {_rd} ({_rfs})", key=f"elit_royal_{_ri}", use_container_width=True):
-                            on_scan_result_click(_rs); st.rerun()
-                if st.session_state.golden_results is not None and not st.session_state.golden_results.empty:
-                    st.markdown("<div style='font-size:0.76rem;font-weight:800;color:#d97706;margin-bottom:4px;margin-top:5px;'>🦁 ALTIN FIRSAT</div>", unsafe_allow_html=True)
-                    for _gi, _gr in st.session_state.golden_results.head(4).iterrows():
-                        _gs = _gr['Hisse']; _gd = get_display_name(_gs)
-                        _gfv = _gr['Fiyat']; _gfs = f"{int(_gfv)}" if _gfv >= 1000 else f"{_gfv:.2f}"
-                        if st.button(f"🦁 {_gd} ({_gfs})", key=f"elit_gold_{_gi}", use_container_width=True):
-                            on_scan_result_click(_gs); st.rerun()
+            with st.container(height=320, border=False):
+                _platin = st.session_state.platin_results
+                _gold  = st.session_state.golden_results
+
+                # --- PLATİN (üstte) ---
+                _platin_syms = set()
+                if _platin is not None and not _platin.empty:
+                    st.markdown("<div style='font-size:0.7rem;font-weight:800;color:#1d4ed8;margin-bottom:3px;'>💎 PLATİN FIRSAT</div>", unsafe_allow_html=True)
+                    for _ri, _rr in _platin.head(8).iterrows():
+                        _rsym = _rr['Hisse']; _platin_syms.add(_rsym)
+                        _rd   = get_display_name(_rsym)
+                        _rfv  = _rr['Fiyat']; _rfs = f"{int(_rfv)}" if _rfv >= 1000 else f"{_rfv:.2f}"
+                        _rred = _rr.get('RedCandle', False)
+                        _rlbl = f"💎 {_rd} ({_rfs})" + (" 🟠" if _rred else "")
+                        _rtip = "⚠️ Son gün kırmızı kapandı — dikkatli ol" if _rred else "Platin Fırsat: SMA200+SMA50+RSI<70 + Altın kriterleri"
+                        if st.button(_rlbl, key=f"elit_platin_{_ri}", use_container_width=True, help=_rtip):
+                            on_scan_result_click(_rsym); st.rerun()
+
+                # --- ALTIN (altta) — Platin olanlar dahil, top 15 + küçük piyasa değerli Platin garantisi ---
+                if _gold is not None and not _gold.empty:
+                    st.markdown("<div style='font-size:0.7rem;font-weight:800;color:#d97706;margin-top:6px;margin-bottom:3px;'>🦁 ALTIN FIRSAT</div>", unsafe_allow_html=True)
+                    _gold_top15_syms = set(_gold.head(15)['Hisse'].tolist())
+                    # Platin olup top-15'e giremeyen küçük M.Cap'liler — başa ekle
+                    _forced = [r for _, r in _gold.iterrows() if r['Hisse'] in _platin_syms and r['Hisse'] not in _gold_top15_syms]
+                    _gold_display = list(_gold.head(15).iterrows())
+                    _shown_syms = set()
+                    # Forced (small mcap platin) önce
+                    for _gr in _forced:
+                        _gsym = _gr['Hisse']; _shown_syms.add(_gsym)
+                        _gd   = get_display_name(_gsym)
+                        _gfv  = _gr['Fiyat']; _gfs = f"{int(_gfv)}" if _gfv >= 1000 else f"{_gfv:.2f}"
+                        _gred = _gr.get('RedCandle', False)
+                        _glbl = f"🦁 {_gd} ({_gfs}) 🔹SmallMCap" + (" 🟠" if _gred else "")
+                        _gtip = ("⚠️ Son gün kırmızı + " if _gred else "") + "Küçük piyasa değeri — Platin listesinde"
+                        if st.button(_glbl, key=f"elit_gold_forced_{_gsym}", use_container_width=True, help=_gtip):
+                            on_scan_result_click(_gsym); st.rerun()
+                    # Top-15
+                    for _gi, _gr in _gold_display:
+                        _gsym = _gr['Hisse']
+                        if _gsym in _shown_syms: continue
+                        _shown_syms.add(_gsym)
+                        _gd   = get_display_name(_gsym)
+                        _gfv  = _gr['Fiyat']; _gfs = f"{int(_gfv)}" if _gfv >= 1000 else f"{_gfv:.2f}"
+                        _gred = _gr.get('RedCandle', False)
+                        _glbl = f"🦁 {_gd} ({_gfs})" + (" 🟠" if _gred else "")
+                        _gtip = "⚠️ Son gün kırmızı kapandı — dikkatli ol" if _gred else "Altın Fırsat: RS güçlü + discount + enerji"
+                        if st.button(_glbl, key=f"elit_gold_{_gi}", use_container_width=True, help=_gtip):
+                            on_scan_result_click(_gsym); st.rerun()
         else:
             st.markdown("<div style='background:#fffbeb;border:1px dashed #f59e0b;border-radius:7px;"
                         "padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:5px;'>"
@@ -13329,44 +13496,90 @@ with col_left:
 
     _t1c1, _t1c2 = st.columns(2)
 
+    # ── Sol Ana Sütun: ICT Sniper & Royal Flush Nadir Fırsat ──
     with _t1c1:
-        st.markdown(_scan_card_header("🦅", "ICT Sniper", 85, "MSS + FVG + OTE · Kurumsal ayak izi", "#16a34a"), unsafe_allow_html=True)
-        if st.button(f"🦅 ICT SNIPER TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_ict",
-                     help="Kurumsal yatırımcıların (bankalar, fonlar) piyasaya giriş izlerini takip eder.\n\nSırasıyla 5 koşul aranır: 1) Likidite süpürmesi (stop avı), 2) Piyasa yapısı kırılımı (MSS), 3) Güçlü itme hareketi (1.3× normal hacim), 4) Boşluk bölgesi (FVG) oluşumu, 5) Risk/Ödül oranı en az 2.5×.\n\nTüm koşullar sırayla gerçekleşmişse bu bir kurumsal kurulum sayılır. Geçmiş veriye değil, son 50 bara bakar."):
-            with st.spinner("Kurumsal ayak izleri (MSS + Displacement + FVG) taranıyor..."):
-                current_assets = ASSET_GROUPS.get(st.session_state.category, [])
-                st.session_state.ict_scan_data = scan_ict_batch(current_assets)
+        st.markdown(_scan_card_header(
+            "🦅", "ICT Sniper  &  ♠️ Royal Flush", 90,
+            "MSS + FVG + OTE  |  BOS/MSS + AI(7/8) + RS Alpha + VWAP · 4/4", "#16a34a"
+        ), unsafe_allow_html=True)
 
-    # ICT Sniper — sonuçlar
-    if st.session_state.ict_scan_data is not None:
-        df_res = st.session_state.ict_scan_data
-        if not df_res.empty:
-            longs  = df_res[df_res['Yön'] == 'LONG']
-            shorts = df_res[df_res['Yön'] == 'SHORT']
-            _ic1, _ic2 = st.columns(2)
-            with _ic1:
-                st.markdown(f"<div style='text-align:center;color:#16a34a;font-weight:800;font-size:0.75rem;padding:3px;border-radius:4px;border:1px solid #86efac;margin-bottom:5px;'>🐂 LONG ({len(longs)})</div>", unsafe_allow_html=True)
-                with st.container(height=120):
-                    if not longs.empty:
+        # İki iç sütun: ICT | Royal Flush
+        _ict_sub, _rf_sub = st.columns(2)
+
+        with _ict_sub:
+            st.markdown("<div style='text-align:center;color:#16a34a;font-weight:800;font-size:0.7rem;"
+                        "padding:2px;border-radius:4px;border:1px solid #86efac;margin-bottom:4px;'>"
+                        "🦅 ICT SNIPER</div>", unsafe_allow_html=True)
+            if st.button(f"🦅 ICT SNIPER TARA ({st.session_state.category})", type="secondary",
+                         use_container_width=True, key="btn_scan_ict",
+                         help="Kurumsal yatırımcıların (bankalar, fonlar) piyasaya giriş izlerini takip eder.\n\n"
+                              "✅ Zorunlu: Stop avı (sweep) + Yapı kırılımı (MSS) + Hacimli itme (displacement) + RRR ≥ 2.0\n\n"
+                              "🎯 FVG CE rozeti: Fiyat aynı zamanda kurumsal boşluk bölgesinin ortasındaysa — daha güçlü giriş.\n\n"
+                              "⭐ OTE rozeti: Fibonacci %61.8–78.6 ile örtüşüyorsa — kurumların en çok tercih ettiği aralık.\n\n"
+                              "Rozetsiz sinyal de geçerlidir, rozetler ek teyit sağlar."):
+                with st.spinner("Kurumsal ayak izleri (MSS + Displacement + FVG) taranıyor..."):
+                    current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.ict_scan_data = scan_ict_batch(current_assets)
+            if st.session_state.ict_scan_data is not None:
+                if st.session_state.ict_scan_data.empty:
+                    st.warning("ICT kurulumu bulunamadı.")
+                else:
+                    df_res = st.session_state.ict_scan_data
+                    longs  = df_res[df_res['Yön'] == 'LONG']
+                    shorts = df_res[df_res['Yön'] == 'SHORT']
+                    st.markdown(f"<div style='text-align:center;color:#16a34a;font-size:0.65rem;"
+                                f"font-weight:700;margin-bottom:2px;'>🐂 LONG ({len(longs)}) · 🐻 SHORT ({len(shorts)})</div>",
+                                unsafe_allow_html=True)
+                    with st.container(height=150, border=False):
                         for i, row in longs.iterrows():
                             sym = row['Sembol']
-                            if st.button(f"🐂 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}", key=f"ict_long_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                            _aciklama = row.get('Aciklama', '')
+                            _tip = f"Stop: {row['Stop_Loss']}\n\n{_aciklama}" if _aciklama else f"Stop: {row['Stop_Loss']}"
+                            if st.button(f"🐂 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}",
+                                         key=f"ict_long_{sym}_{i}", use_container_width=True, help=_tip):
                                 on_scan_result_click(sym); st.rerun()
-                    else:
-                        st.caption("Long yok.")
-            with _ic2:
-                st.markdown(f"<div style='text-align:center;color:#dc2626;font-weight:800;font-size:0.75rem;padding:3px;border-radius:4px;border:1px solid #fca5a5;margin-bottom:5px;'>🐻 SHORT ({len(shorts)})</div>", unsafe_allow_html=True)
-                with st.container(height=120):
-                    if not shorts.empty:
                         for i, row in shorts.iterrows():
                             sym = row['Sembol']
-                            if st.button(f"🐻 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}", key=f"ict_short_{sym}_{i}", use_container_width=True, help=f"Stop Loss: {row['Stop_Loss']}"):
+                            if st.button(f"🐻 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}",
+                                         key=f"ict_short_{sym}_{i}", use_container_width=True,
+                                         help=f"Stop Loss: {row['Stop_Loss']}"):
                                 on_scan_result_click(sym); st.rerun()
-                    else:
-                        st.caption("Short yok.")
-        else:
-            st.info("High Probability ICT kurulumu tespit edilemedi.")
 
+        with _rf_sub:
+            st.markdown("<div style='text-align:center;color:#7c3aed;font-weight:800;font-size:0.7rem;"
+                        "padding:2px;border-radius:4px;border:1px solid #c4b5fd;margin-bottom:4px;'>"
+                        "♠️ ROYAL FLUSH NADİR FIRSAT</div>", unsafe_allow_html=True)
+            if st.button(f"♠️ ROYAL FLUSH TARA ({st.session_state.category})", type="secondary",
+                         use_container_width=True, key="btn_scan_nadir_firsat",
+                         help="4 metodoloji aynı anda sağlanmalı:\n\n"
+                              "♠️ BOS / MSS (Bullish yapı kırılımı)\n"
+                              "🤖 Lorentzian AI ≥ 6/8 YÜKSELİŞ  (7/8+ üste sıralanır)\n"
+                              "📈 RS Alpha > 0 (piyasayı geçiyor)\n"
+                              "⚖️ VWAP sapması < %12 (aşırı şişmemiş)\n\n"
+                              "Yılda nadiren görülen en seçici kurulum. Tüm kriterlerin aynı anda kesişmesi gerekir."):
+                with st.spinner("♠️ 4/4 Kraliyet kurulumu taranıyor (BOS/MSS + AI + RS + VWAP)..."):
+                    current_assets = ASSET_GROUPS.get(st.session_state.category, [])
+                    st.session_state.nadir_firsat_scan_data = scan_nadir_firsat_batch(current_assets)
+            if st.session_state.nadir_firsat_scan_data is not None:
+                _nf = st.session_state.nadir_firsat_scan_data
+                if _nf.empty:
+                    st.warning("4/4 Royal Flush bulunamadı.")
+                else:
+                    st.markdown(f"<div style='text-align:center;color:#7c3aed;font-size:0.65rem;"
+                                f"font-weight:700;margin-bottom:2px;'>♠️ {len(_nf)} Hisse</div>",
+                                unsafe_allow_html=True)
+                    with st.container(height=150, border=False):
+                        for i, row in _nf.iterrows():
+                            sym   = row['Sembol']
+                            fv    = row['Fiyat']
+                            fs    = f"{int(fv)}" if fv >= 1000 else f"{fv:.2f}"
+                            icon  = "♠️♠️" if row.get('Votes', 0) >= 7 else "♠️"
+                            if st.button(f"{icon} {sym.replace('.IS','')} ({fs}) | {row['Durum']}",
+                                         key=f"nadir_firsat_{sym}_{i}", use_container_width=True,
+                                         help="4/4: BOS/MSS + AI + RS Alpha + VWAP"):
+                                on_scan_result_click(sym); st.rerun()
+
+    # ── Sağ Ana Sütun: Minervini SEPA ──
     with _t1c2:
         st.markdown(_scan_card_header("🦁", "Minervini SEPA", 83, "VCP + SMA hizalama + RS güç", "#16a34a"), unsafe_allow_html=True)
         if st.button(f"🦁 SEPA TARAMASI ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa",
@@ -13469,7 +13682,7 @@ with col_left:
                 with st.container(height=150, border=True):
                     for i, row in _formations.head(12).iterrows():
                         sym = row['Sembol']
-                        prefix = "♠️" if row.get('is_royal', False) else "🚀"
+                        prefix = "♠️" if row.get('is_nadir', False) else "🚀"
                         mf_v = row.get('Mansfield', '-')
                         mf_icon = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
                         if st.button(f"{prefix} {sym.replace('.IS','')} | Skor:{row['Puan']} | RS:{mf_icon}{mf_v}", key=f"golden_btn_{sym}_{i}", use_container_width=True):
@@ -13484,7 +13697,7 @@ with col_left:
                 st.caption("Altın Fırsat bulunamadı.")
 
     with _t2c4:
-        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 90, "Fibonacci PRZ + ICT Zone + RSI Div", "#7c3aed"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 70, "Fibonacci PRZ zorunlu · ICT Zone + RSI Div bonus", "#7c3aed"), unsafe_allow_html=True)
         if st.button(f"⚡ HARMONİK CONFLUENCE TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic_conf",
                      help="En seçici tarama — 3 tamamen farklı metodoloji aynı fiyat noktasında çakışmalı.\n\n1) Fibonacci Harmonik PRZ: Gartley, Butterfly, Bat gibi XABCD formasyonlarının dönüş bölgesi. 2) ICT Discount Zone: Kurumsal alım bölgesi (fiyat ortalamanın altında). 3) RSI Diverjansı: Fiyat düşerken momentum artıyor.\n\nÜçü aynı fiyat seviyesinde buluşursa tesadüf değil yapısal dönüş noktası olabilir. Bu yüzden CONFLUENCE panelinde tüm gruplara otomatik eklenir — en yüksek kalite setup sayılır."):
             with st.spinner("3 metodoloji kesişiyor: Fibonacci + ICT + RSI Diverjansı..."):
@@ -13500,7 +13713,12 @@ with col_left:
                     _hcp_s = f"{int(_hcp)}" if _hcp >= 1000 else f"{_hcp:.2f}"
                     _cyon = str(_hcr.get('Yön',''))
                     _cyon_lbl = "🟢" if ('Bullish' in _cyon or 'LONG' in _cyon) else "🔴"
-                    if st.button(f"⚡{_cyon_lbl} {_hcs} ({_hcp_s}) | {_hcr.get('Pattern','')}", key=f"hconf_scan_{_hcs}_{_hci}", use_container_width=True):
+                    _hc_badges = _hcr.get('Badges', '')
+                    _hc_badge_suffix = f" | {_hc_badges}" if _hc_badges else ""
+                    _hc_tooltip = _hcr.get('Aciklama', 'Harmonik PRZ teyitli')
+                    _hc_durum = str(_hcr.get('Durum', ''))
+                    _hc_tooltip_full = f"⚡ Harmonik Confluence\n📐 {_hcr.get('Pattern','')}\n{_hc_tooltip}\n{_hc_durum}"
+                    if st.button(f"⚡{_cyon_lbl} {_hcs} ({_hcp_s}) | {_hcr.get('Pattern','')}{_hc_badge_suffix}", key=f"hconf_scan_{_hcs}_{_hci}", use_container_width=True, help=_hc_tooltip_full):
                         st.session_state.ticker = _hcr.get('Sembol', _hcs)
                         on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
         elif _hc_scan is not None:
@@ -13750,12 +13968,12 @@ with col_right:
         # DÜZELTME: Resimdeki doğru fonksiyon ismini kullandık:
         sent_data_check = calculate_sentiment_score(st.session_state.ticker) 
         # 2. Fonksiyonu çağır (Sadece 3/3 ise ekrana basacak, yoksa boş geçecek)
-        render_golden_trio_banner(ict_data_check, sent_data_check)
+        render_golden_trio_banner(ict_data_check, sent_data_check, ticker=st.session_state.ticker)
     except Exception as e:
         pass # Bir hata olursa sessizce geç, ekranı bozma.
 
     # Platin Fırsat (Elit) — tarama yapmadan canlı hesaplar (AF + SMA200 + SMA50 + RSI < 70)
-    render_royal_flush_live_banner(st.session_state.ticker, ict_data_check, sent_data_check)
+    render_platin_live_banner(st.session_state.ticker, ict_data_check, sent_data_check)
 
     # Güçlü Dönüş Adayları — bireysel hisse banner'ı
     render_guclu_donus_banner(st.session_state.ticker)
@@ -13763,7 +13981,7 @@ with col_right:
     # Harmonik Formasyon — bireysel hisse banner'ı
     render_harmonic_banner(st.session_state.ticker)
 
-    # Harmonik Confluence (3'lü teyit) — varsa Royal Flush/Altın Fırsat seviyesinde rozet
+    # Harmonik Confluence (3'lü teyit) — varsa Royal Flush Nadir Fırsat/Altın Fırsat seviyesinde rozet
     render_harmonic_confluence_banner(st.session_state.ticker)
 
     st.markdown("<hr style='margin-top:15px; margin-bottom:10px;'>", unsafe_allow_html=True)
