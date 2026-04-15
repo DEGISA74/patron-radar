@@ -1787,8 +1787,8 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
 
             warning_text = f" (⚠️ {', '.join(warnings)})" if warnings else " (✅ Kusursuz)"
 
-            # ── Royal Flush Nadir Fırsat tespiti (Altın Fırsat üstü elit kurulum)
-            is_nadir = (
+            # ── Platin tespiti — VIP Formasyon listesinde ♠️ ikonu için (SMA200+SMA50+RSI<70)
+            is_platin = (
                 curr_price > sma200 and   # Uzun vade trend yukarı
                 curr_price > sma50  and   # Kısa vade yapı sağlam
                 last_rsi < 70             # Aşırı ısınmamış
@@ -1996,7 +1996,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                     "Mansfield": round(mansfield_gp, 1),
                     "Hacim_Kat": round(vol_ratio, 1),
                     "Detay":     p_name + warning_text,
-                    "is_nadir":  is_nadir,
+                    "is_nadir":  is_platin,
                 })
             else:
                 # Formasyon yok → Hazırlık Listesi
@@ -2012,7 +2012,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                     "Mansfield": round(mansfield_gp, 1),
                     "Hacim_Kat": round(vol_ratio, 1),
                     "Durum":     etiket,
-                    "is_nadir":  is_nadir,
+                    "is_nadir":  is_platin,
                 })
 
         except Exception as e:
@@ -2021,7 +2021,7 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
 
     formations_df = (pd.DataFrame(results)
                        .sort_values(by=["is_nadir", "Puan"], ascending=[False, False])
-                       .reset_index(drop=True)) if results else pd.DataFrame()
+                       .reset_index(drop=True)) if results else pd.DataFrame()  # is_nadir sütunu is_platin değerini taşır
     hazirlik_df   = (pd.DataFrame(hazirlik_list)
                        .sort_values(by=["is_nadir", "Mansfield"], ascending=[False, False])
                        .reset_index(drop=True)) if hazirlik_list else pd.DataFrame()
@@ -4244,6 +4244,7 @@ def compile_top_20_summary():
     # Yüksek hassasiyetli scanner'lar — limit 5 (az ama kaliteli sinyal)
     add_candidates(st.session_state.get('guclu_donus_data'), '🔄 Güçlü Dönüş Adayları', limit=5)
     add_candidates(st.session_state.get('platin_results'), '💎 Platin Fırsat (Klasik)', limit=5)
+    add_candidates(st.session_state.get('nadir_firsat_scan_data'), '♠️ Royal Flush Nadir Fırsat', limit=5)
     add_candidates(st.session_state.get('ict_scan_data'), '🦅 ICT Sniper', limit=5)
     add_candidates(st.session_state.get('minervini_data'), '🦁 Minervini', limit=5)
     add_candidates(st.session_state.get('breakout_right'), '🔨 Breakout Yapan', limit=5)
@@ -4307,9 +4308,10 @@ def compile_confluence_hits():
                 groups[g_key]['sources'][sym]['scanners'].append(source_name)
 
     # --- GRUP 1: YAPISAL ---
-    add_to_group('yapi', st.session_state.get('ict_scan_data'),    'ICT Sniper')
-    add_to_group('yapi', st.session_state.get('platin_results'),    'Platin Fırsat')
-    add_to_group('yapi', st.session_state.get('guclu_donus_data'),    'Güçlü Dönüş')
+    add_to_group('yapi', st.session_state.get('ict_scan_data'),          'ICT Sniper')
+    add_to_group('yapi', st.session_state.get('nadir_firsat_scan_data'), 'Royal Flush Nadir Fırsat')
+    add_to_group('yapi', st.session_state.get('platin_results'),         'Platin Fırsat')
+    add_to_group('yapi', st.session_state.get('guclu_donus_data'),       'Güçlü Dönüş')
 
     # --- GRUP 2: MOMENTUM ---
     add_to_group('momentum', st.session_state.get('minervini_data'),  'Minervini')
@@ -6548,14 +6550,14 @@ def render_harmonic_banner(ticker):
         prz   = res['prz']
         fark  = abs(res['curr_price'] - prz) / (prz + 1e-9) * 100
 
-        # Soluk renkler
+        # Soluk renkler — buton tonu ile uyumlu (dark navy bazlı)
         if direc == 'Bullish':
-            bg     = "#1e5537"  
-            border = "#2d5a3d"
+            bg     = "#1e2d26"
+            border = "#2a4035"
             dir_lbl = "🟢 LONG BEKLENTİSİ"
         else:
-            bg     = "#631a1a"  
-            border = "#5a2d2d"
+            bg     = "#2d1e1e"
+            border = "#402a2a"
             dir_lbl = "🔴 SHORT BEKLENTİSİ"
 
         _EMOJI = {'Gartley': '🦋', 'Butterfly': '🦋', 'Bat': '🦇', 'Crab': '🦀', 'Shark': '🦈'}
@@ -13581,7 +13583,7 @@ with col_left:
 
     # ── Sağ Ana Sütun: Minervini SEPA ──
     with _t1c2:
-        st.markdown(_scan_card_header("🦁", "Minervini SEPA", 83, "VCP + SMA hizalama + RS güç", "#16a34a"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🦁", "Minervini SEPA", 76, "VCP + SMA hizalama + RS güç", "#d97706"), unsafe_allow_html=True)
         if st.button(f"🦁 SEPA TARAMASI ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa",
                      help="Mark Minervini'nin onlarca yıllık şampiyon hisse araştırmasına dayanan tarama yöntemi.\n\nKriterler: Fiyat 50, 150 ve 200 günlük ortalamalarının hepsinin üstünde ve bu ortalamalar doğru sırada hizalanmış olmalı. Hisse piyasadan güçlü (RS > 70) ve son 52 haftanın dibinden en az %25 yukarıda olmalı.\n\nEk bonus: VCP (Volatility Contraction Pattern) — hisse giderek daralan bir sıkışma içindeyse ve hacimli kırılım yaşandıysa 'Süper' etiketiyle çıkar."):
             with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
@@ -13610,7 +13612,7 @@ with col_left:
     _t2c1, _t2c2 = st.columns(2)
 
     with _t2c1:
-        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 75, "RSI Diverjans + Birikim + Dip", "#3b82f6"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 68, "RSI Diverjans + Birikim + Dip", "#3b82f6"), unsafe_allow_html=True)
         if st.button(f"🔄 GÜÇLÜ DÖNÜŞ TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_guclu_donus",
                      help="Düşüşün bitmek üzere olduğunu gösteren 3 ayrı sinyal aynı anda arıyor.\n\n1) RSI Diverjansı: Fiyat yeni dip yaparken RSI yapmıyor — satış gücü tükeniyor demek. 2) Z-Score aşırı ucuzluk: Hisse tarihsel ortalamasının çok altında, istatistiksel olarak dibe yakın. 3) OBV gizli birikim: Fiyat düşerken hacimli alımlar var, büyük oyuncu topluyor olabilir.\n\nÜçü aynı anda gerçekleşmişse dönüş ihtimali güçlü. Düşen trende erken girmek risklidir ama bu tarama o riski minimize etmeye çalışır."):
             with st.spinner("RSI Diverjans, Gizli Birikim ve 20-Bar Dip taranıyor..."):
@@ -13630,7 +13632,7 @@ with col_left:
                 st.warning("3 kriteri birlikte karşılayan hisse bulunamadı.")
 
     with _t2c2:
-        st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 72, "Force Index + STP + Pocket Pivot", "#3b82f6"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 62, "Force Index + STP + Pocket Pivot", "#3b82f6"), unsafe_allow_html=True)
         if st.button(f"🕵️ SENTIMENT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sentiment",
                      help="Piyasada 'sessiz sedasız' birikim yapan büyük oyuncuları tespit eder.\n\nSTP (Sentiment Point) çizgisi bir momentum göstergesidir — fiyat bu çizgiyi yukarı keserse ivme başlıyor demektir. Force Index ise her günkü alım baskısını ölçer; 7-10 günün çoğunda pozitifse ve RSI 60'ın altındaysa henüz aşırı alınmamış ama ilgi artıyor demektir.\n\nBonus: Pocket Pivot — anormal hacimle ani yükseliş. A Kalite etiketi en sıkı kriterleri geçen hisselere verilir."):
             with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para?)..."):
@@ -13667,7 +13669,7 @@ with col_left:
     _t2c3, _t2c4 = st.columns(2)
 
     with _t2c3:
-        st.markdown(_scan_card_header("💎", "Altın Fırsat & VIP FORMASYON", 65, "RS güçlü + Discount + Hacim + Formasyon", "#f59e0b"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("💎", "Altın Fırsat & VIP FORMASYON", 78, "RS güçlü + Discount + Hacim + Formasyon", "#16a34a"), unsafe_allow_html=True)
         if st.button(f"💎 ALTIN FIRSAT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden",
                      help="İki aşamalı eleme yapar: önce 'Altın Fırsat' kriterleri, sonra formasyon.\n\nAltın Fırsat: RS güçlü (endeksten iyi performans) + fiyat ICT Discount bölgesinde (henüz ucuz) + hacim en az 1.1× normale çıkmış. Bu 3 kriteri geçenlerin içinde grafik formasyonu arayanlar asıl listeye girer.\n\nFormasyon: Fincan-Kulp (☕), Ters Omuz-Baş-Omuz (🧛), Üçgen veya Direnç Kırılımı. Hazırlık listesi ise formasyon henüz tamamlanmamış ama yakında patlayabilecek hisseleri gösterir."):
             with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
@@ -13974,6 +13976,12 @@ with col_right:
 
     # Platin Fırsat (Elit) — tarama yapmadan canlı hesaplar (AF + SMA200 + SMA50 + RSI < 70)
     render_platin_live_banner(st.session_state.ticker, ict_data_check, sent_data_check)
+
+    # Royal Flush Nadir Fırsat — 4/4 canlı kontrol (BOS/MSS + AI≥6 + RS Alpha + VWAP)
+    try:
+        render_nadir_firsat_banner(ict_data_check, sent_data_check, st.session_state.ticker)
+    except Exception:
+        pass
 
     # Güçlü Dönüş Adayları — bireysel hisse banner'ı
     render_guclu_donus_banner(st.session_state.ticker)
