@@ -6552,11 +6552,11 @@ def render_harmonic_banner(ticker):
 
         # Soluk renkler — buton tonu ile uyumlu (dark navy bazlı)
         if direc == 'Bullish':
-            bg     = "#1e2d26"
+            bg     = "#67af8e"
             border = "#2a4035"
             dir_lbl = "🟢 LONG BEKLENTİSİ"
         else:
-            bg     = "#2d1e1e"
+            bg     = "#854d4d"
             border = "#402a2a"
             dir_lbl = "🔴 SHORT BEKLENTİSİ"
 
@@ -13976,12 +13976,6 @@ with col_right:
 
     # Platin Fırsat (Elit) — tarama yapmadan canlı hesaplar (AF + SMA200 + SMA50 + RSI < 70)
     render_platin_live_banner(st.session_state.ticker, ict_data_check, sent_data_check)
-
-    # Royal Flush Nadir Fırsat — 4/4 canlı kontrol (BOS/MSS + AI≥6 + RS Alpha + VWAP)
-    try:
-        render_nadir_firsat_banner(ict_data_check, sent_data_check, st.session_state.ticker)
-    except Exception:
-        pass
 
     # Güçlü Dönüş Adayları — bireysel hisse banner'ı
     render_guclu_donus_banner(st.session_state.ticker)
