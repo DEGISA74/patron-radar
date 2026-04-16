@@ -6352,7 +6352,7 @@ def render_harmonic_banner(ticker):
             border = "#2a4035"
             dir_lbl = "🟢 LONG BEKLENTİSİ"
         else:
-            bg     = "#854d4d"
+            bg     = "#610909C3"
             border = "#402a2a"
             dir_lbl = "🔴 SHORT BEKLENTİSİ"
 
@@ -6534,7 +6534,7 @@ def render_harmonic_confluence_banner(ticker):
                 {'<span style="background:#7c3aed18; color:#7c3aed; padding:2px 7px; border-radius:5px; font-size:0.75rem; font-weight:700;">💎 RSI Div: ' + ("Pozitif" if res["div_type"] == "bullish" else "Negatif") + '</span>' if res.get("rsi_match") else '<span style="background:rgba(100,100,100,0.08); color:#94a3b8; padding:2px 7px; border-radius:5px; font-size:0.75rem;">💎 RSI Div yok</span>'}
             </div>
             <div style="margin-top:6px; font-size:0.71rem; color:#64748b; font-style:italic;">
-                {res.get("Aciklama", "Harmonik PRZ teyitli")} — bonus: {int(res.get("ict_match", False)) + int(res.get("rsi_match", False))}/2
+                {res.get("Aciklama", "Harmonik PRZ teyitli")} — kriterler: {int(res.get("ict_match", False)) + int(res.get("rsi_match", False))}/2
             </div>
         </div>
         ''', unsafe_allow_html=True)
@@ -11996,7 +11996,7 @@ if st.session_state.generate_prompt:
             scan_box_txt.insert(0,
                 f"⚡ HARMONİK CONFLUENCE: "
                 f"{_hconf['pattern']} {_hc_dir_tr} | PRZ: {_hconf['prz']:.2f} | {_hc_aciklama}"
-                + (f" | Bonus: {_hc_badges}" if _hc_badges else "")
+                + (f" | Kriterler: {_hc_badges}" if _hc_badges else "")
                 + f" (Fibonacci PRZ teyitli harmonik kurulum. ICT bölge ve RSI diverjans bonus metodoloji olarak eklenirse kalite daha da yükselir.)"
             )
     except Exception:
@@ -13220,15 +13220,14 @@ with col_left:
         _has_elite = (st.session_state.platin_results is not None and not st.session_state.platin_results.empty) or \
                      (st.session_state.golden_results is not None and not st.session_state.golden_results.empty)
         if _has_elite:
-            with st.container(height=320, border=False):
-                _platin = st.session_state.platin_results
-                _gold  = st.session_state.golden_results
-
-                # --- PLATİN (üstte) ---
-                _platin_syms = set()
+            _platin = st.session_state.platin_results
+            _gold   = st.session_state.golden_results
+            # Tek kompakt kutu — Platin (💎) ve Altın (🦁) sonuçları birlikte
+            _platin_syms = set()
+            with st.container(height=160, border=True):
+                # Platin sonuçları
                 if _platin is not None and not _platin.empty:
-                    st.markdown("<div style='font-size:0.7rem;font-weight:800;color:#1d4ed8;margin-bottom:3px;'>💎 PLATİN FIRSAT</div>", unsafe_allow_html=True)
-                    for _ri, _rr in _platin.head(8).iterrows():
+                    for _ri, _rr in _platin.head(5).iterrows():
                         _rsym = _rr['Hisse']; _platin_syms.add(_rsym)
                         _rd   = get_display_name(_rsym)
                         _rfv  = _rr['Fiyat']; _rfs = f"{int(_rfv)}" if _rfv >= 1000 else f"{_rfv:.2f}"
@@ -13237,26 +13236,21 @@ with col_left:
                         _rtip = "⚠️ Son gün kırmızı kapandı — dikkatli ol" if _rred else "Platin Fırsat: SMA200+SMA50+RSI<70 + Altın kriterleri"
                         if st.button(_rlbl, key=f"elit_platin_{_ri}", use_container_width=True, help=_rtip):
                             on_scan_result_click(_rsym); st.rerun()
-
-                # --- ALTIN (altta) — Platin olanlar dahil, top 15 + küçük piyasa değerli Platin garantisi ---
+                # Altın sonuçları
                 if _gold is not None and not _gold.empty:
-                    st.markdown("<div style='font-size:0.7rem;font-weight:800;color:#d97706;margin-top:6px;margin-bottom:3px;'>🦁 ALTIN FIRSAT</div>", unsafe_allow_html=True)
                     _gold_top15_syms = set(_gold.head(15)['Hisse'].tolist())
-                    # Platin olup top-15'e giremeyen küçük M.Cap'liler — başa ekle
                     _forced = [r for _, r in _gold.iterrows() if r['Hisse'] in _platin_syms and r['Hisse'] not in _gold_top15_syms]
-                    _gold_display = list(_gold.head(15).iterrows())
+                    _gold_display = list(_gold.head(10).iterrows())
                     _shown_syms = set()
-                    # Forced (small mcap platin) önce
                     for _gr in _forced:
                         _gsym = _gr['Hisse']; _shown_syms.add(_gsym)
                         _gd   = get_display_name(_gsym)
                         _gfv  = _gr['Fiyat']; _gfs = f"{int(_gfv)}" if _gfv >= 1000 else f"{_gfv:.2f}"
                         _gred = _gr.get('RedCandle', False)
-                        _glbl = f"🦁 {_gd} ({_gfs}) 🔹SmallMCap" + (" 🟠" if _gred else "")
+                        _glbl = f"🦁 {_gd} ({_gfs}) 🔹" + (" 🟠" if _gred else "")
                         _gtip = ("⚠️ Son gün kırmızı + " if _gred else "") + "Küçük piyasa değeri — Platin listesinde"
                         if st.button(_glbl, key=f"elit_gold_forced_{_gsym}", use_container_width=True, help=_gtip):
                             on_scan_result_click(_gsym); st.rerun()
-                    # Top-15
                     for _gi, _gr in _gold_display:
                         _gsym = _gr['Hisse']
                         if _gsym in _shown_syms: continue
@@ -13269,10 +13263,7 @@ with col_left:
                         if st.button(_glbl, key=f"elit_gold_{_gi}", use_container_width=True, help=_gtip):
                             on_scan_result_click(_gsym); st.rerun()
         else:
-            st.markdown("<div style='background:#fffbeb;border:1px dashed #f59e0b;border-radius:7px;"
-                        "padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;margin-top:5px;'>"
-                        "💎 ELİTLER<br><span style='font-size:0.7rem;'>Tara butonuna basın</span></div>",
-                        unsafe_allow_html=True)
+            pass
 
     st.markdown("<hr style='margin:12px 0;border-color:rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
 
@@ -13486,7 +13477,7 @@ with col_left:
                 st.caption("Altın Fırsat bulunamadı.")
 
     with _t2c4:
-        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 70, "Fibonacci PRZ zorunlu · ICT Zone + RSI Div bonus", "#7c3aed"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 70, "Fibonacci PRZ zorunlu · ICT Zone + RSI Div kriterleri", "#7c3aed"), unsafe_allow_html=True)
         if st.button(f"⚡ HARMONİK CONFLUENCE TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic_conf",
                      help="En seçici tarama — 3 tamamen farklı metodoloji aynı fiyat noktasında çakışmalı.\n\n1) Fibonacci Harmonik PRZ: Gartley, Butterfly, Bat gibi XABCD formasyonlarının dönüş bölgesi. 2) ICT Discount Zone: Kurumsal alım bölgesi (fiyat ortalamanın altında). 3) RSI Diverjansı: Fiyat düşerken momentum artıyor.\n\nÜçü aynı fiyat seviyesinde buluşursa tesadüf değil yapısal dönüş noktası olabilir. Bu yüzden CONFLUENCE panelinde tüm gruplara otomatik eklenir — en yüksek kalite setup sayılır."):
             with st.spinner("3 metodoloji kesişiyor: Fibonacci + ICT + RSI Diverjansı..."):
