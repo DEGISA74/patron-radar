@@ -8508,25 +8508,44 @@ def calculate_smart_money_score(ticker):
                        else "Net birikim sinyali yok")
         accum_edu   = "OBV (On-Balance Volume), fiyat hareketinden bağımsız olarak para akışını izler. Fiyat yatay veya aşağıdayken OBV yükseliyorsa, akıllı para sessizce alım yapıyor demektir. Bu diverjans genellikle büyük kırılımların habercisidir."
 
-        # ── KRİTER 4: SIKIŞTMA (BB SQUEEZE) ────────────────────
+        # ── KRİTER 4: SIKIŞTMA (BB SQUEEZE) — bugün yoksa son 10 güne bak ──────
         sq_now, sq_prev = check_lazybear_squeeze_breakout(df)
         squeeze_pass    = sq_now or sq_prev
+        squeeze_days_ago = 0  # 0 = aktif, >0 = kaç gün önce sona erdi
+
+        if not squeeze_pass:
+            for _back in range(2, 6):
+                if len(df) > _back + 22:
+                    try:
+                        sq_b, _ = check_lazybear_squeeze_breakout(df.iloc[:-_back])
+                        if sq_b:
+                            squeeze_pass    = True
+                            squeeze_days_ago = _back
+                            break
+                    except:
+                        break
 
         squeeze_days = 0
-        if squeeze_pass:
+        if squeeze_pass and squeeze_days_ago == 0:
             for i in range(1, min(30, len(df) - 22)):
                 try:
-                    sq_i, _ = check_lazybear_squeeze_breakout(df.iloc[:-(i)])
+                    sq_i, _ = check_lazybear_squeeze_breakout(df.iloc[:-i])
                     if sq_i:
                         squeeze_days += 1
                     else:
                         break
                 except:
                     break
-        squeeze_days = max(1, squeeze_days) if squeeze_pass else 0
-        squeeze_desc = (f"{squeeze_days} gündür BB sıkışması aktif — enerji birikimi"
-                        if squeeze_pass else "Aktif volatilite sıkışması yok")
-        squeeze_edu  = "Bollinger Bantları Keltner Kanalı'nın içine girdiğinde 'squeeze' oluşur. Bu, fiyatın bir yay gibi gerildiği anlamına gelir. Tarihsel olarak squeeze sonrası güçlü yönlü hareketler gelir. Hacim ve OBV ile birlikte değerlendirildiğinde yönü anlamak kolaylaşır."
+        squeeze_days = max(1, squeeze_days) if (squeeze_pass and squeeze_days_ago == 0) else 0
+
+        if squeeze_days_ago > 0:
+            squeeze_desc = f"{squeeze_days_ago} gün önce sıkışma sona erdi — kırılım enerjisi hâlâ taze"
+        elif squeeze_pass:
+            squeeze_desc = (f"{squeeze_days} gündür BB sıkışması aktif — enerji birikimi"
+                            if squeeze_days > 0 else "BB sıkışması aktif")
+        else:
+            squeeze_desc = "Aktif volatilite sıkışması yok"
+        squeeze_edu  = "Bollinger Bantları Keltner Kanalı'nın içine girdiğinde 'squeeze' oluşur. Bu, fiyatın bir yay gibi gerildiği anlamına gelir. Tarihsel olarak squeeze sonrası güçlü yönlü hareketler gelir. Son 5 gün içinde squeeze varsa, kırılım enerjisi hâlâ taze sayılır."
 
         # ── KRİTER 5: TETİKLEYİCİ ───────────────────────────────
         vol_sma20   = volume.rolling(20).mean()
@@ -8542,8 +8561,8 @@ def calculate_smart_money_score(ticker):
                 day_vol  = float(volume.iloc[idx])
                 avg_vol  = float(vol_sma20.iloc[idx])
                 is_green = day_cl > prev_cl
-                vol_high = day_vol > avg_vol * 1.2
-                breakout = day_cl > float(high20)
+                vol_high = day_vol > avg_vol * 1.5
+                breakout = day_cl > float(high20) and vol_high
                 if (is_green and vol_high) or breakout:
                     trigger_pass     = True
                     trigger_days_ago = i
@@ -8559,7 +8578,7 @@ def calculate_smart_money_score(ticker):
             trigger_desc = "Henüz kırılım yok — ama hazır"
         else:
             trigger_desc = "Tetikleyici henüz oluşmadı"
-        trigger_edu  = "Kırılım; fiyatın son 20 günün en yüksek kapanışını aşmasıyla ve hacimin 20 günlük ortalamasının %20 üstünde olmasıyla teyit edilir. Hacimsiz kırılımlar sıklıkla başarısız olur — bu yüzden hacim onayı kritiktir."
+        trigger_edu  = "Kırılım; fiyatın son 20 günün en yüksek kapanışını aşmasıyla ve hacimin 20 günlük ortalamasının %50 üstünde olmasıyla teyit edilir. Hacimsiz kırılımlar sıklıkla başarısız olur — bu yüzden güçlü hacim onayı kritiktir."
 
         # ── SKOR ─────────────────────────────────────────────────
         w = {"trend": 1.0, "rs": 1.5, "accum": 1.7, "squeeze": 1.1, "trigger": 1.0}
@@ -8585,32 +8604,102 @@ def calculate_smart_money_score(ticker):
             (rs_pass is True or rs_pass is None)
         )
         pre_launch = non_trigger_ok and (not trigger_pass)
+        pre_launch_days = accum_days  # OBV birikim süresi → pre-launch proxy
+
+        trigger_age = ""
+        if trigger_pass:
+            trigger_age = " · bugün" if trigger_days_ago == 1 else f" · {trigger_days_ago}g önce"
 
         if pre_launch:
-            status, status_color, status_bg = "🎯 FİTİL ÇEKİLİYOR",         "#06b6d4", "#ecfeff"
-        elif score >= 85: status, status_color, status_bg = "🔥 Harekete geç",        "#10b981", "#ecfdf5"
-        elif score >= 65: status, status_color, status_bg = "⚡ LONG İÇİN HAZIR",     "#3b82f6", "#eff6ff"
-        elif score >= 45: status, status_color, status_bg = "🏕 Henüz değil, takipte","#f59e0b", "#fffbeb"
-        elif score >= 25: status, status_color, status_bg = "🌱 Çok erken, sıra gelecek","#94a3b8","#f8fafc"
-        else:             status, status_color, status_bg = "😴 Boşver şimdilik",     "#64748b", "#f1f5f9"
+            if pre_launch_days >= 15:
+                status, status_color, status_bg = f"⚠️ Bayatladı ({pre_launch_days}g)", "#f59e0b", "#fffbeb"
+            else:
+                status, status_color, status_bg = f"🎯 FİTİL ÇEKİLİYOR ({pre_launch_days}g)", "#06b6d4", "#ecfeff"
+        elif score >= 85: status, status_color, status_bg = f"🔥 Harekete geç{trigger_age}",    "#10b981", "#ecfdf5"
+        elif score >= 65: status, status_color, status_bg = f"⚡ LONG İÇİN HAZIR{trigger_age}", "#3b82f6", "#eff6ff"
+        elif score >= 45: status, status_color, status_bg = "🏕 Henüz değil, takipte",          "#f59e0b", "#fffbeb"
+        elif score >= 25: status, status_color, status_bg = "🌱 Çok erken, sıra gelecek",       "#94a3b8", "#f8fafc"
+        else:             status, status_color, status_bg = "😴 Boşver şimdilik",               "#64748b", "#f1f5f9"
 
-        # AI prompt için özet metin
-        pre_launch_note = " ⚠️ PRE-LAUNCH: 4 kriter hazır, tetikleyici bekleniyor — ideal giriş penceresi." if pre_launch else ""
+        # ── SKOR TRENDİ (5 gün önce) ─────────────────────────────
+        score_trend = ""
+        score5 = None
+        if len(df) >= 65:
+            try:
+                df5     = df.iloc[:-5].copy()
+                close5  = df5['Close'].squeeze()
+                vol5    = df5['Volume'].squeeze()
+                dir5    = close5.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+                obv5    = (vol5 * dir5).cumsum()
+                obv_s5  = obv5.rolling(20).mean()
+                sma50_5 = close5.rolling(50).mean()
+                trend5  = bool(close5.iloc[-1] > sma50_5.iloc[-1]) and bool(sma50_5.iloc[-1] > sma50_5.iloc[-6])
+                accum5  = bool(obv5.iloc[-1] > obv_s5.iloc[-1]) and bool(obv5.iloc[-1] > obv5.iloc[-6])
+                sq5_n, sq5_p = check_lazybear_squeeze_breakout(df5)
+                squeeze5 = sq5_n or sq5_p
+                vsma5   = vol5.rolling(20).mean()
+                h20_5   = float(close5.iloc[-21:-1].max()) if len(close5) >= 21 else float(close5.max())
+                trig5   = False
+                for j in range(1, 4):
+                    try:
+                        if ((float(close5.iloc[-j]) > float(close5.iloc[-j-1]) and float(vol5.iloc[-j]) > float(vsma5.iloc[-j]) * 1.5)
+                                or (float(close5.iloc[-j]) > h20_5 and float(vol5.iloc[-j]) > float(vsma5.iloc[-j]) * 1.5)):
+                            trig5 = True; break
+                    except: continue
+                if is_index:
+                    raw5  = _bool(trend5)*w["trend"] + _bool(accum5)*w["accum"] + _bool(squeeze5)*w["squeeze"] + _bool(trig5)*w["trigger"]
+                    score5 = round((raw5 / max_w) * 100)
+                else:
+                    raw5  = _bool(trend5)*w["trend"] + _bool(rs_pass)*w["rs"] + _bool(accum5)*w["accum"] + _bool(squeeze5)*w["squeeze"] + _bool(trig5)*w["trigger"]
+                    score5 = round((raw5 / max_w) * 100)
+                diff5 = score - score5
+                score_trend = f"↑{diff5}" if diff5 > 3 else (f"↓{abs(diff5)}" if diff5 < -3 else "→")
+            except:
+                score_trend = ""
+
+        # ── PİYASA FİLTRESİ ──────────────────────────────────────
+        market_note  = ""
+        market_score = None
+        if not is_index:
+            try:
+                bench_t = "XU100.IS" if is_bist else "^GSPC"
+                _mkt    = calculate_smart_money_score(bench_t)
+                if _mkt:
+                    market_score = _mkt["score"]
+                    if market_score < 40:
+                        market_note = f"BIST puanı: {market_score}/100 — temkinli olmak lazım"
+                    elif market_score >= 65:
+                        market_note = f"BIST puanı: {market_score}/100 — Endeks de destekliyor"
+                    else:
+                        market_note = f"BIST puanı: {market_score}/100 — Endeks nötr"
+            except:
+                pass
+
+        # ── AI PROMPT ÖZET ───────────────────────────────────────
+        pre_launch_note = (f" ⚠️ PRE-LAUNCH: {pre_launch_days} gündür 4 kriter hazır, tetikleyici bekleniyor — "
+                           + ("sinyal bayatlamış olabilir, dikkatli ol." if pre_launch_days >= 15
+                              else "ideal giriş penceresi.")) if pre_launch else ""
+        trend_note = f" | Skor trendi (5g): {score_trend} ({score5}/100 → {score}/100)" if score5 is not None else ""
         criteria_summary = (
             f"Trend: {'✅ ' + trend_desc if trend_pass else '❌ ' + trend_desc} | "
             f"RS: {'✅ ' + rs_desc if rs_pass else ('N/A' if rs_pass is None else '❌ ' + rs_desc)} | "
             f"Birikim OBV: {'✅ ' + accum_desc if accum_pass else '❌ ' + accum_desc} | "
             f"BB Squeeze: {'✅ ' + squeeze_desc if squeeze_pass else '❌ ' + squeeze_desc} | "
             f"Tetikleyici: {'✅ ' + trigger_desc if trigger_pass else '❌ ' + trigger_desc}"
-            f"{pre_launch_note}"
+            f"{pre_launch_note}{trend_note}{market_note}"
         )
 
         return {
             "score":          score,
+            "score5":         score5,
+            "score_trend":    score_trend,
             "status":         status,
             "status_color":   status_color,
             "status_bg":      status_bg,
             "pre_launch":     pre_launch,
+            "pre_launch_days": pre_launch_days,
+            "market_score":   market_score,
+            "market_note":    market_note,
             "criteria": {
                 "trend":   {"pass": trend_pass,   "desc": trend_desc,   "edu": trend_edu,   "label": "Trend Zemini"},
                 "rs":      {"pass": rs_pass,      "desc": rs_desc,      "edu": rs_edu,      "label": "Relatif Güç"},
@@ -8634,13 +8723,17 @@ def render_smart_money_panel(ticker):
     if data is None:
         return
 
-    is_dark      = st.session_state.get('dark_mode', False)
-    score        = data["score"]
-    status       = data["status"]
-    s_color      = data["status_color"]
-    criteria     = data["criteria"]
-    pre_launch   = data.get("pre_launch", False)
-    display_name = get_display_name(ticker)
+    is_dark       = st.session_state.get('dark_mode', False)
+    score         = data["score"]
+    score5        = data.get("score5")
+    score_trend   = data.get("score_trend", "")
+    status        = data["status"]
+    s_color       = data["status_color"]
+    criteria      = data["criteria"]
+    pre_launch    = data.get("pre_launch", False)
+    market_score  = data.get("market_score")
+    market_note   = data.get("market_note", "")
+    display_name  = get_display_name(ticker)
 
     # Pre-launch: kart kenarlığı ve başlık rengi cyan'a döner
     card_bg     = "#0f172a"  if is_dark else "#ffffff"
@@ -8727,17 +8820,22 @@ def render_smart_money_panel(ticker):
         f'<div style="font-size:0.85rem;font-weight:800;color:{text_main};margin-top:2px;">{display_name}</div>'
         f'</div>'
         f'<div style="text-align:right;flex-shrink:0;margin-left:8px;">'
-        f'<div style="font-family:JetBrains Mono,monospace;font-size:2.0rem;font-weight:900;color:{s_color};line-height:1;">{score}</div>'
-        f'<div style="font-size:0.73rem;color:{text_muted};font-weight:600;margin-top:-1px;">/100</div>'
-        f'</div>'
+        f'<div style="font-family:JetBrains Mono,monospace;font-size:2.0rem;font-weight:900;color:{s_color};line-height:1;">{score}<span style="font-size:1rem;font-weight:600;color:{text_muted}">/100</span></div>'
+        + (f'<div style="font-size:0.70rem;color:{"#10b981" if score_trend.startswith("↑") else "#ef4444" if score_trend.startswith("↓") else text_muted};font-weight:600;margin-top:1px;white-space:nowrap;">5g önce: {score5}</div>' if score5 is not None else "")
+        + f'</div>'
         f'</div>'
         # ── Status şeridi: tam genişlik, sarkmaz
         f'<div style="background:{s_bg};border-top:1px solid {s_color}30;border-bottom:1px solid {s_color}30;'
         f'padding:5px 14px;text-align:center;">'
         f'<span style="font-size:0.85rem;font-weight:800;color:{s_color};letter-spacing:0.3px;white-space:nowrap;">{status}</span>'
         f'</div>'
+        # ── Piyasa notu (varsa)
+        + (f'<div style="padding:4px 14px;font-size:0.72rem;font-weight:600;'
+           f'color:{"#b45309" if market_score is not None and market_score < 40 else "#047857" if market_score is not None and market_score >= 65 else text_muted};'
+           f'text-align:center;border-bottom:1px solid {s_color}18;">{market_note}</div>'
+           if market_note else "")
         # ── Beden
-        f'<div style="padding:10px 12px 8px 12px;">'
+        + f'<div style="padding:10px 12px 8px 12px;">'
         # Progress bar
         f'<div style="position:relative;background:{bar_track};border-radius:99px;height:6px;margin:0 0 2px 0;overflow:hidden;">'
         f'<div style="background:linear-gradient(90deg,{s_color}88,{s_color});width:{score}%;height:100%;border-radius:99px;"></div>'
@@ -12647,7 +12745,7 @@ HALKÇI ANALİST KİMLİĞİ: Analizlerini 'okumuşun halinden anlamayan' bir pr
 YASAKLI CÜMLE KALIPLARI — Aşağıdaki kalıpları ASLA kullanma, bunları kullandığında fark edilebilir bir yapay zeka gibi görünürsün:
    YASAKLI: "dır, dir, tir, tır" ile biten kelimeleri kullanma. Orneğin: "görünmektedir", "değerlendirilebilir", "tespit edilmiştir", "anlaşılmaktadır" gibi. → YERİNE: "...gibi görünüyor", "...gibi duruyor", "...olabilir", "...gibi olabilir" "olumludur" yerine "olumlu"..yani daha çok konuşma dili gibi konuş.
    YASAKLI: asla kelimeleri "mektedir" maktadır" gibi robotik bir şekilde yazma
-   YASAKLI: "...olarak değerlendirilebilir" → YERİNE: "Bu tablo şunu gösteriyor")
+   YASAKLI: "...olarak değerlendirilebilir" → YERİNE: "Bu tablo bana şunu gösteriyor")
    YASAKLI: "...göze çarpmaktadır" → YERİNE: Ne gördüğünü söyle ("Dikkat çeken şu:")
    YASAKLI: "...dikkat çekmektedir" → YERİNE: Neden önemli olduğunu açıkla
    YASAKLI: "...söylemek mümkündür" → YERİNE: Söyle, izin istemene gerek yok
@@ -12667,7 +12765,7 @@ YASAKLI CÜMLE KALIPLARI — Aşağıdaki kalıpları ASLA kullanma, bunları ku
    YASAKLI: Sonuç paragrafını her zaman "Genel itibarıyla değerlendirildiğinde..." ile başlatmak
 3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
 4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
-5. ALGORİTMA DİLİ KULLAN: Analizleri kendi kişisel fikrin gibi değil, "Sistemin ürettiği veriler", "İstatistiksel durum", "Matematiksel sapma" gibi nesnel bir dille aktar. ASLA Parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
+5. ALGORİTMA REFERANSI: Algoritmadan gelen bulguları aktarırken "Sistemin ürettiği veriler" ifadesini kullanabilirsin — bu ifade algoritmamızın gücünü yansıtır ve abonelerde güven oluşturur. Ama her cümleyi bu kalıpla başlatma; analizin geri kalanı insan diliyle akmalı. YASAK: Her cümleyi "Sistemin ürettiği veriler gösteriyor ki..." ile açmak. OLMASI GEREKEN: Algoritmaya atıfta bulunduğun yerlerde kullan, diğer yorumlarında doğal konuş. "İstatistiksel durum", "Matematiksel sapma" gibi steril kalıpları kullanma — bunların yerine direkt veriyi söyle. ASLA parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
 6. GELECEĞİ TAHMİN ETME: Gelecekte ne olacağını söyleme. Sadece "Mevcut verinin tarihsel olarak ne anlama geldiğini" ve "Risk/Ödül dengesinin nerede olduğunu" belirt.
 Örnek Doğru Cümle: "Z-Score +2 seviyesinin aşıldığını gösteriyor. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanları, yani düzeltme riski taşıyabilir."
 Örnek Yanlış Cümle: "Z-Score +2 seviyesinin aşıldığını göstermektedir. Algoritmik olarak bu bölgeler aşırı fiyatlanma alanlarıdır ve düzeltme riski taşıyabilmektedir."
@@ -12856,6 +12954,7 @@ Analizinde küçük yatırımcı psikolojisi ile kurumsal niyet arasındaki fark
 Bir veri noktası ‘Bilinmiyor’ gelirse onu yok say, ancak eldeki verilerle bir olasılık tablosu kur. Asla tek yönlü (sadece olumlu) bir tablo çizme; madalyonun öte yüzünü her zaman göster. Savunma mekanizman ‘analizi haklı çıkarmak’ değil, ‘riski bulmak’ olsun.
 Herhangi bir veri alanı boş veya süslü parantez içinde {...} şeklinde ham halde gelmişse, o verinin teknik bir arıza nedeniyle okunamadığını varsay ve mevcut diğer verilerle analizi tamamla. Asla "Veri Yok" veya "Bilinmiyor" yazan bir alanı yorumlamaya zorlama, sadece mevcut verilerle en iyi sentezi yapmaya çalış.
 En başa "{hook_baslik}" başlığı at. Sonra analizine o günün en baskın bulgusuyla başla — başlık değil, direkt cümle. Okuyucu ilk satırda ne olduğunu anlasın. Bu giriş 4-5 cümlelik akıcı bir paragraf olsun; "YÖNETİCİ ÖZETİ" gibi bir etiket koyma.
+Referans ton — YASAK: "Söz konusu teknik tablo incelendiğinde, momentumun zayıfladığı görülmektedir." OLMASI GEREKEN: "OBV yükselirken fiyat aynı yerde sayıyor — bu tablo genelde kurumsal toplama öncesi görülür, ama dikkatli olmak gerek."
 {genel_analiz_baslik}:
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz.
    - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
@@ -12972,6 +13071,7 @@ Değerlendirme şu formatta olmalıdır. Başlıkları aynen kullan ama her böl
 İlk Başlık daima "{hook_baslik}" formatında olmalıdır. Asla tarih ve saat yazma.
 
 GENEL YORUM: Bugünkü en baskın bulgudan başla. Hisse yükseliyorsa rallinin hikayesini anlat, düşüyorsa neden düştüğünü. 4-5 cümle — ama her cümle o hisseye özel olsun. "fısıldıyor", "kanıtlar nitelikte", "işaret ediyor olsa da" gibi kalıpları kullanma. Bir arkadaşına piyasayı anlatır gibi yaz — ama rakamları ve seviyeleri doğal akışta ver.
+Referans ton — YASAK: "Algoritmik veriler incelendiğinde, hissenin güçlü momentum sergilediği görülmektedir." OLMASI GEREKEN: "BTC 97K'da dirençle karşılaştı ama çekilme henüz başlamadı — kurumlar hâlâ tutunuyor gibi görünüyor."
 
 Teknik Görünüm: Fiyat nerede, hangi seviyeyle boğuşuyor, momentum ne diyor — 2-3 cümle. Somut seviye ver, jenerik kalıp kullanma. Eğer rallide iyi görünüyorsa öyle yaz, zorla "ama" ekleme.
 
@@ -13015,6 +13115,7 @@ Sadece sunum sırası değişiyor. Beşinci Görev her zaman en sona yazılır.
 
 * Beşinci Görevin:
 Dördüncü görevinde yazdığın abone özetini al ve TAMAMEN YENİDEN YAZ. Aynı bilgiler, ama farklı bir insan gibi. Bu sefer hiçbir sabit başlık yok, hiçbir bölüm adı yok — sadece akıcı paragraflar.
+Referans ton — YASAK: "GENEL YORUM: Teknik tablo güçlü görünmektedir. UYARI: Z-Score yüksek seyrediyor." OLMASI GEREKEN: "97K direnç gibi duruyordu, ama bugün satıcılar isteksiz. OBV bunu zaten söylüyordu."
 
 YASAK: "GENEL YORUM:", "Teknik Görünüm:", "Smart Money İzi:", "SONUÇ:", "UYARI:" başlıklarını KULLANMA.
 YASAK: "fısıldıyor", "fısıldıyor olabilir", "kanıtlar nitelikte", "işaret ediyor olsa da" gibi kalıplaşmış köprü cümlelerini KULLANMA.
