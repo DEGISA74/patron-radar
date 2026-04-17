@@ -8243,7 +8243,17 @@ def render_price_action_panel(ticker):
     # --- ORİJİNAL MANTIK VE METİNLER (DOKUNULMADI) ---
     sd_txt = "Taze bölge (RBR/DBD vb.) görünmüyor."
     if sd_data:
-        sd_txt = f"{sd_data['Type']} | {sd_data['Bottom']:.2f} - {sd_data['Top']:.2f} ({sd_data['Status']} olabilir)"
+        _sd_status_map = {
+            "Aktif":                  "bölge aktif",
+            "Test Ediliyor":          "fiyat bu bölgeyi test ediyor",
+            "İhlal Edildi":           "bu bölge kırılmış görünüyor",
+            "İhlal Edildi (Kırıldı)": "bu bölge kırılmış görünüyor",
+            "Kırıldı":                "bu bölge kırılmış görünüyor",
+        }
+        _sd_status_raw = sd_data.get('Status', '')
+        _sd_status_txt = _sd_status_map.get(_sd_status_raw, _sd_status_raw)
+        sd_txt = (f"{sd_data['Type']} | {sd_data['Bottom']:.2f} - {sd_data['Top']:.2f}"
+                  + (f" — {_sd_status_txt}" if _sd_status_txt else ""))
 
     if v_diff < -2.0:
         vwap_txt = "🟢 DİP FIRSATI (Aşırı İskonto)"
@@ -8261,159 +8271,259 @@ def render_price_action_panel(ticker):
         vwap_txt = "🔴 PARABOLİK (Aşırı Kopuş)"
         vwap_desc = f"Fiyat %{v_diff:.1f} saptı. Bu sürdürülemez, kâr almak düşünülebilir."
 
+    # ── RS STREAK & MOMENTUM ─────────────────────────────────────
+    rs_streak   = 0
+    rs_momentum = ""
+    try:
+        _is_bist_t = ".IS" in ticker or ticker.startswith("XU")
+        _bench_t   = "XU100.IS" if _is_bist_t else "^GSPC"
+        _df_s      = get_safe_historical_data(ticker)
+        _df_b      = get_safe_historical_data(_bench_t)
+        if _df_s is not None and _df_b is not None:
+            _sc = _df_s['Close'].squeeze()
+            _bc = _df_b['Close'].squeeze()
+            _common = _sc.index.intersection(_bc.index)
+            if len(_common) >= 26:
+                _sc = _sc.loc[_common]
+                _bc = _bc.loc[_common]
+                _rs_daily = _sc.pct_change() - _bc.pct_change()
+                # Streak: kaç gündür aynı yönde
+                _streak_dir = 1 if _rs_daily.iloc[-1] >= 0 else -1
+                for _i in range(1, min(40, len(_rs_daily))):
+                    if (_rs_daily.iloc[-_i] >= 0) == (_streak_dir > 0):
+                        rs_streak += 1
+                    else:
+                        break
+                # Momentum: bugünkü 20g alpha vs 5g önceki 20g alpha
+                _a_now  = float(_sc.iloc[-1]  / _sc.iloc[-21]  - 1) - float(_bc.iloc[-1]  / _bc.iloc[-21]  - 1)
+                _a_5ago = float(_sc.iloc[-6]  / _sc.iloc[-26]  - 1) - float(_bc.iloc[-6]  / _bc.iloc[-26]  - 1)
+                _diff   = _a_now - _a_5ago
+                if _diff > 0.005:
+                    rs_momentum = "güç artıyor"
+                elif _diff < -0.005:
+                    rs_momentum = "güç zayıflıyor"
+                else:
+                    rs_momentum = "yatay seyrediyor"
+    except:
+        pass
+
     if alpha > 1.0:
-        rs_txt = "🦁 LİDER (Endeksi Yeniyor)"
-        rs_desc = f"Endekse göre %{alpha:.1f} daha güçlü (Alpha Pozitif)."
+        _streak_txt   = f" — {rs_streak} gündür endeksten güçlü" if rs_streak > 1 else ""
+        _momentum_txt = f", {rs_momentum}" if rs_momentum else ""
+        rs_txt  = "GÜÇLÜ MOMENTUM"
+        rs_desc = f"Endekse göre %{alpha:.1f} daha güçlü{_streak_txt}{_momentum_txt}."
     elif alpha < -1.0:
-        rs_txt = "🐢 ZAYIF (Endeksin Gerisinde)"
-        rs_desc = f"Piyasa giderken gitmiyor (Fark %{alpha:.1f})."
+        _streak_txt   = f" — {rs_streak} gündür endeksten zayıf" if rs_streak > 1 else ""
+        _momentum_txt = f", {rs_momentum}" if rs_momentum else ""
+        rs_txt  = "ZAYIF (Endeksin Gerisinde)"
+        rs_desc = f"Piyasa giderken gitmiyor (Fark %{alpha:.1f}){_streak_txt}{_momentum_txt}."
     else:
-        rs_txt = "🔗 NÖTR (Endeks ile Aynı)"
-        rs_desc = "Piyasa rüzgarıyla paralel hareket ediyor."
+        _momentum_txt = f" — {rs_momentum}" if rs_momentum else ""
+        rs_txt  = "NÖTR (Endeks ile Aynı)"
+        rs_desc = f"Piyasa rüzgarıyla paralel hareket ediyor{_momentum_txt}."
 
-    if st.session_state.dark_mode:
-        sd_col = "#10b981" if sd_data and "Talep" in sd_data['Type'] else "#ef4444" if sd_data else "#94a3b8"
-        sfp_color = "#10b981" if "Bullish" in pa['sfp']['title'] else "#ef4444" if "Bearish" in pa['sfp']['title'] else "#94a3b8"
-        sq_color = "#f59e0b" if "BOBİN" in pa['sq']['title'] else "#94a3b8"
-        
-        if div_data['type'] == 'bearish': div_style = "background:rgba(239, 68, 68, 0.1); border-left:3px solid #ef4444; color:#fca5a5;"
-        elif div_data['type'] == 'bullish': div_style = "background:rgba(16, 185, 129, 0.1); border-left:3px solid #10b981; color:#6ee7b7;"
-        else: div_style = "color:#94a3b8;"
-
-        vwap_col = "#10b981" if v_diff < -2.0 else "#34d399" if v_diff < 0.0 else "#38bdf8" if v_diff < 8.0 else "#f59e0b" if v_diff < 15.0 else "#ef4444"
-        rs_col = "#10b981" if alpha > 1.0 else "#ef4444" if alpha < -1.0 else "#94a3b8"
-
-        html_content = f"""
-        <div class="info-card" style="border-top: 3px solid #6366f1; background: rgba(17, 24, 39, 0.6); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); padding: 12px;">
-            <div class="info-header" style="color:#818cf8; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; margin-bottom: 12px; font-weight: 800;">🕯️ Price Action Analizi: {display_ticker}</div>
-
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">1. MUM & FORMASYONLAR: <span style="color:#38bdf8;">{pa_candle_title}</span></div>
-                <div class="edu-note" style="color:#94a3b8;">{pa_candle_desc}</div>
-            </div>
-
-            <div style="margin-bottom:8px; border-left: 3px solid {sfp_color}; padding-left:8px; background: rgba(255,255,255,0.02); padding-top: 4px; padding-bottom: 4px; border-radius: 0 4px 4px 0;">
-                <div style="font-weight:700; font-size:0.85rem; color:{sfp_color}; margin-bottom: 2px;">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
-                <div class="edu-note" style="color:#94a3b8; margin-bottom: 0;">{pa['sfp']['desc']}</div>
-            </div>
-
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">3. HACİM & VSA ANALİZİ: <span style="color:#38bdf8;">{pa['vol']['title']}</span></div>
-                <div class="edu-note" style="color:#94a3b8;">{pa['vol']['desc']}</div>
-            </div>
-
-            <div style="margin-top:4px; padding:8px; background:rgba(255,255,255,0.05); border-radius:6px; border-left:3px solid {obv_color}; margin-bottom:8px;">
-                <div style="font-size:0.8rem; font-weight:700; color:{obv_color}; margin-bottom: 2px;">💰 {obv_title}</div>
-                <div style="font-size:0.75rem; color:#94a3b8; font-style:italic;">{obv_desc}</div>
-            </div>
-
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.85rem; color:#e2e8f0; margin-bottom: 2px;">4. BAĞLAM & KONUM: <span style="color:#38bdf8;">{pa['loc']['title']}</span></div>
-                <div class="edu-note" style="color:#94a3b8;">{pa['loc']['desc']}</div>
-            </div>
-
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.85rem; color:{sq_color}; margin-bottom: 2px;">5. VOLATİLİTE: {pa['sq']['title']}</div>
-                <div class="edu-note" style="color:#94a3b8;">{pa['sq']['desc']}</div>
-            </div>
-
-            <div style="margin-bottom:6px; padding:8px; border-radius:6px; {div_style}">
-                <div style="font-weight:800; font-size:0.85rem; margin-bottom: 2px;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
-                <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
-            </div>
-
-            <div style="margin-bottom:6px; padding:8px; border-left:3px solid {sd_col}; background:rgba(255,255,255,0.03); border-radius:4px; border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);">
-                <div style="font-weight:800; font-size:0.85rem; color:{sd_col};">🧱 ARZ-TALEP (S&D) BÖLGELERİ:</div>
-                <div style="font-size:0.85rem; font-weight:600; color:#e2e8f0; margin-top:4px;">{sd_txt}</div>
-                <div class="edu-note" style="margin-top:6px; margin-bottom:0; color:#94a3b8;">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde potansiyel bir sıçrama (tepki) ihtimali doğabilir.</div>
-            </div>
-
-            <div style="border-top: 1px dashed rgba(255,255,255,0.1); margin-top:8px; padding-top:8px;"></div> 
-
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.85rem; color:{vwap_col}; margin-bottom: 2px;">7. KURUMSAL REFERANS MALİYET (VWAP): {vwap_txt}</div>
-                <div class="edu-note" style="color:#94a3b8;">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: <span style="color:#e2e8f0; font-weight:600;">{vwap_data['val']:.2f}</span>)</div>
-            </div>
-
-            <div style="margin-bottom:4px;">
-                <div style="font-weight:700; font-size:0.85rem; color:{rs_col}; margin-bottom: 2px;">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
-                <div class="edu-note" style="color:#94a3b8; margin-bottom:0;">{rs_desc}</div>
-            </div>        
-        </div>
-        """
-        st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
-
+    # ── RENK DEĞİŞKENLERİ (tek blok — dark/light) ───────────────
+    is_dark   = st.session_state.get('dark_mode', False)
+    # S&D rengi: kırılım yönüne göre
+    # Arz kırıldı (yukarı) = bullish = yeşil | Arz aktif = direnç = kırmızı
+    # Talep kırıldı (aşağı) = bearish = kırmızı | Talep aktif = destek = yeşil
+    if sd_data:
+        _sd_is_talep  = "Talep" in sd_data.get('Type', '')
+        _sd_is_broken = "kırılmış" in _sd_status_txt
+        _sd_bullish   = (_sd_is_talep and not _sd_is_broken) or (not _sd_is_talep and _sd_is_broken)
+        sd_col = ("#10b981" if is_dark else "#16a34a") if _sd_bullish else ("#ef4444" if is_dark else "#dc2626")
     else:
-        sd_col = "#16a34a" if sd_data and "Talep" in sd_data['Type'] else "#dc2626" if sd_data else "#64748B"
-        sfp_color = "#16a34a" if "Bullish" in pa['sfp']['title'] else "#dc2626" if "Bearish" in pa['sfp']['title'] else "#475569"
-        sq_color = "#d97706" if "BOBİN" in pa['sq']['title'] else "#475569"
-        
-        if div_data['type'] == 'bearish': div_style = "background:#fef2f2; border-left:3px solid #dc2626; color:#991b1b;"
-        elif div_data['type'] == 'bullish': div_style = "background:#f0fdf4; border-left:3px solid #16a34a; color:#166534;"
-        else: div_style = "color:#475569;"
+        sd_col = "#94a3b8" if is_dark else "#64748b"
+    sfp_color = ("#10b981" if is_dark else "#16a34a") if "Bullish" in pa['sfp']['title'] else \
+                ("#ef4444" if is_dark else "#dc2626") if "Bearish" in pa['sfp']['title'] else \
+                ("#94a3b8" if is_dark else "#475569")
+    sq_color  = ("#f59e0b" if is_dark else "#d97706") if "BOBİN" in pa['sq']['title'] else \
+                ("#94a3b8" if is_dark else "#475569")
+    vwap_col  = ("#10b981" if is_dark else "#035f25") if v_diff < -2.0 else \
+                ("#34d399" if is_dark else "#056d2b") if v_diff < 0.0 else \
+                ("#38bdf8" if is_dark else "#034969") if v_diff < 8.0 else \
+                ("#f59e0b" if is_dark else "#a36903") if v_diff < 15.0 else \
+                ("#ef4444" if is_dark else "#570214")
+    rs_col    = ("#10b981" if is_dark else "#059669") if alpha > 1.0 else \
+                ("#ef4444" if is_dark else "#470312") if alpha < -1.0 else \
+                ("#94a3b8" if is_dark else "#475569")
+    if div_data['type'] == 'bearish':
+        div_col = "#ef4444" if is_dark else "#dc2626"
+        div_bg  = "rgba(239,68,68,0.1)" if is_dark else "#fef2f2"
+        div_brd = "#ef4444" if is_dark else "#dc2626"
+    elif div_data['type'] == 'bullish':
+        div_col = "#10b981" if is_dark else "#16a34a"
+        div_bg  = "rgba(16,185,129,0.1)" if is_dark else "#f0fdf4"
+        div_brd = "#10b981" if is_dark else "#16a34a"
+    else:
+        div_col = "#94a3b8" if is_dark else "#475569"
+        div_bg  = "transparent"
+        div_brd = "transparent"
+    text_main  = "#e2e8f0" if is_dark else "#0f172a"
+    text_muted = "#94a3b8" if is_dark else "#475569"
+    row_bg     = "rgba(255,255,255,0.02)" if is_dark else "#f8fafc"
+    sep_color  = "rgba(255,255,255,0.1)" if is_dark else "#cbd5e1"
+    header_col = "#818cf8" if is_dark else "#1e3a8a"
+    card_extra = ("background:rgba(17,24,39,0.6);border-radius:8px;"
+                  "border:1px solid rgba(255,255,255,0.05);padding:12px;") if is_dark else ""
 
-        vwap_col = "#035f25" if v_diff < -2.0 else "#056d2b" if v_diff < 0.0 else "#034969" if v_diff < 8.0 else "#a36903" if v_diff < 15.0 else "#570214"
-        rs_col = "#059669" if alpha > 1.0 else "#470312" if alpha < -1.0 else "#475569"
+    # ── ÖNCELİK: en güçlü sinyali bul (özet satır için) ─────────
+    sfp_active  = "Bullish" in pa['sfp']['title'] or "Bearish" in pa['sfp']['title']
+    div_active  = div_data['type'] != 'neutral'
+    vwap_ext    = v_diff < -2.0 or v_diff > 15.0
+    rs_active   = abs(alpha) > 1.0
+    sq_active   = "BOBİN" in pa['sq']['title']
 
-        html_content = f"""
-        <div class="info-card" style="border-top: 3px solid #6366f1;">
-            <div class="info-header" style="color:#1e3a8a;">🕯️ Price Action Analizi: {display_ticker}</div>
+    top_signals = []
+    if div_active:         top_signals.append((10, div_data['title'],                    div_col))
+    if sfp_active:         top_signals.append((9,  pa['sfp']['title'],                   sfp_color))
+    if pattern_name:       top_signals.append((8,  pattern_name,                         "#38bdf8"))
+    if v_diff > 15.0:      top_signals.append((7,  vwap_txt.split("(")[0].strip(),       vwap_col))
+    if v_diff < -2.0:      top_signals.append((7,  "Dip Fırsatı — Aşırı İskonto",       vwap_col))
+    if rs_active:          top_signals.append((4,  rs_txt.split("(")[0].strip(),         rs_col))
+    if sd_data:            top_signals.append((5,  f"Arz-Talep Bölgesi — {_sd_status_txt or 'aktif'}", sd_col))
+    if 8.0 <= v_diff < 15.0: top_signals.append((3, "VWAP: Piyasa Isınıyor",            vwap_col))
 
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.8rem; color:#1e3a8a;">1. MUM & FORMASYONLAR: {pa['candle']['title']}</div>
-                <div class="edu-note">{pa['candle']['desc']}</div>
-            </div>
+    if top_signals:
+        top_signals.sort(key=lambda x: x[0], reverse=True)
+        _, top_name, top_col = top_signals[0]
+        top_weight = "800"
+    else:
+        top_name   = "Belirgin bir sinyal yok — veri izleniyor"
+        top_col    = text_muted
+        top_weight = "400"
 
-            <div style="margin-bottom:8px; border-left: 2px solid {sfp_color}; padding-left:6px;">
-                <div style="font-weight:700; font-size:0.8rem; color:{sfp_color};">2. TUZAK DURUMU: {pa['sfp']['title']}</div>
-                <div class="edu-note">{pa['sfp']['desc']}</div>
-            </div>
+    summary_html = (
+        f'<div style="padding:6px 10px;background:{top_col}18;border-left:3px solid {top_col};'
+        f'border-radius:0 4px 4px 0;margin-bottom:10px;">'
+        f'<div style="font-size:0.72rem;color:{text_muted};font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">En Güçlü Sinyal</div>'
+        f'<div style="font-size:0.85rem;font-weight:{top_weight};color:{top_col};">{top_name}</div>'
+        f'</div>'
+    )
 
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">3. HACİM & VSA ANALİZİ: {pa['vol']['title']}</div>
-                <div class="edu-note">{pa['vol']['desc']}</div>
-            </div>
+    # ── SEKSİYONLAR (önceliğe göre sıralanır, Mum en tepede sabit) ─
+    secs = []
 
-            <div style="margin-top:4px; padding:4px; background:{obv_color}15; border-radius:4px; border-left:2px solid {obv_color};">
-                <div style="font-size:0.75rem; font-weight:700; color:{obv_color};">💰 {obv_title}</div>
-                <div style="font-size:0.7rem; color:#475569; font-style:italic;">{obv_desc}</div>
-            </div>
+    # Bölümler arası ince kesik çizgi
+    _sep = f'<div style="border-top:1px dashed {sep_color};margin:4px 0 6px 0;"></div>'
 
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.8rem; color:#0f172a;">4. BAĞLAM & KONUM: {pa['loc']['title']}</div>
-                <div class="edu-note">{pa['loc']['desc']}</div>
-            </div>
+    # Düşük öncelikli bölümler için kompakt tek satır yardımcısı
+    def _compact(label, value_txt, col=None):
+        c = col or text_muted
+        return (
+            f'<div style="padding:2px 6px;opacity:0.55;">'
+            f'<span style="font-size:0.74rem;font-weight:600;color:{c};">{label}</span>'
+            f'<span style="font-size:0.73rem;color:{text_muted};"> — {value_txt}</span>'
+            f'</div>'
+        )
 
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.8rem; color:{sq_color};">5. VOLATİLİTE: {pa['sq']['title']}</div>
-                <div class="edu-note">{pa['sq']['desc']}</div>
-            </div>
+    # RSI Uyumsuzluk
+    _div_prio = 10 if div_active else 1
+    if _div_prio >= 3:
+        secs.append((_div_prio,
+            f'<div style="padding:8px;border-radius:6px;background:{div_bg};border-left:3px solid {div_brd};">'
+            f'<div style="font-weight:800;font-size:0.85rem;color:{div_col};">RSI UYUMSUZLUK: {div_data["title"]}</div>'
+            f'<div class="edu-note" style="margin-bottom:0;color:{div_col};opacity:0.9;">{div_data["desc"]}</div>'
+            f'</div>'))
+    else:
+        secs.append((_div_prio, _compact("RSI UYUMSUZLUK", div_data["title"])))
 
-            <div style="margin-bottom:6px; padding:4px; border-radius:4px; {div_style}">
-                <div style="font-weight:700; font-size:0.8rem;">6. RSI UYUMSUZLUK: {div_data['title']}</div>
-                <div class="edu-note" style="margin-bottom:0; color:inherit; opacity:0.9;">{div_data['desc']}</div>
-            </div>
+    # Tuzak (SFP)
+    _sfp_prio = 9 if sfp_active else 1
+    if _sfp_prio >= 3:
+        secs.append((_sfp_prio,
+            f'<div style="border-left:3px solid {sfp_color};padding:4px 4px 4px 8px;'
+            f'background:{row_bg};border-radius:0 4px 4px 0;">'
+            f'<div style="font-weight:700;font-size:0.85rem;color:{sfp_color};">TUZAK DURUMU: {pa["sfp"]["title"]}</div>'
+            f'<div class="edu-note" style="color:{text_muted};margin-bottom:0;">{pa["sfp"]["desc"]}</div>'
+            f'</div>'))
+    else:
+        secs.append((_sfp_prio, _compact("TUZAK DURUMU", pa["sfp"]["title"])))
 
-            <div style="margin-bottom:6px; padding:6px; border-left:3px solid {sd_col}; background:#f8fafc; border-radius:4px;">
-                <div style="font-weight:700; font-size:0.8rem; color:{sd_col};">🧱 ARZ-TALEP (S&D) BÖLGELERİ:</div>
-                <div style="font-size:0.85rem; font-weight:600; color:#0f172a; margin-top:2px;">{sd_txt}</div>
-                <div class="edu-note" style="margin-top:4px; margin-bottom:0; color:inherit; opacity:0.9;">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde potansiyel bir sıçrama (tepki) ihtimali doğabilir.</div>
-            </div>
+    # Arz-Talep (S&D)
+    _sd_prio = 5 if sd_data else 1
+    if _sd_prio >= 3:
+        secs.append((_sd_prio,
+            f'<div style="padding:8px;border-left:3px solid {sd_col};background:{row_bg};border-radius:4px;">'
+            f'<div style="font-weight:800;font-size:0.85rem;color:{sd_col};">ARZ-TALEP (S&D) BÖLGELERİ:</div>'
+            f'<div style="font-size:0.85rem;font-weight:600;color:{text_main};margin-top:4px;">{sd_txt}</div>'
+            + (f'<div class="edu-note" style="margin-top:6px;margin-bottom:0;color:{text_muted};">🐳 <b>Balina Ayak İzi:</b> Kurumsal fonların geçmişte yüklü emir bırakmış olabileceği gizli maliyet bölgesi. Fiyat bu alana girdiğinde tepki ihtimali doğabilir.</div>' if sd_data else '')
+            + f'</div>'))
+    else:
+        secs.append((_sd_prio, _compact("ARZ-TALEP (S&D)", "taze bölge yok")))
 
-            <div style="border-top: 1px dashed #cbd5e1; margin-top:8px; padding-top:6px;"></div> 
+    # OBV — yeşilse koyu yeşil metin (her zaman prio 4)
+    _obv_text_col = obv_color
+    if not is_dark and obv_color in ("#10b981", "#059669", "#16a34a", "#34d399"):
+        _obv_text_col = "#065f46"
+    elif not is_dark and obv_color in ("#ef4444", "#dc2626"):
+        _obv_text_col = "#7f1d1d"
+    secs.append((4,
+        f'<div style="padding:8px;background:{"rgba(255,255,255,0.05)" if is_dark else obv_color+"22"};'
+        f'border-radius:6px;border-left:3px solid {obv_color};">'
+        f'<div style="font-size:0.8rem;font-weight:700;color:{_obv_text_col};">💰 {obv_title}</div>'
+        f'<div style="font-size:0.75rem;color:{_obv_text_col};opacity:0.85;font-style:italic;">{obv_desc}</div>'
+        f'</div>'))
 
-            <div style="margin-bottom:8px;">
-                <div style="font-weight:700; font-size:0.8rem; color:{vwap_col};">7. KURUMSAL REFERANS MALİYET (VWAP): {vwap_txt}</div>
-                <div class="edu-note">{vwap_desc} (Son 20 gün Hacim Ağırlıklı Ortalama Fiyat-VWAP: {vwap_data['val']:.2f})</div>
-            </div>
+    # VWAP (her zaman tam gösterim — min prio 3)
+    secs.append((7 if vwap_ext else 3,
+        f'<div style="padding:6px 8px;border-left:3px solid {vwap_col};background:{row_bg};border-radius:0 4px 4px 0;">'
+        f'<div style="font-weight:700;font-size:0.85rem;color:{vwap_col};">KURUMSAL MALİYET (VWAP): {vwap_txt}</div>'
+        f'<div class="edu-note" style="color:{text_muted};">{vwap_desc} '
+        f'(Son 20g VWAP: <span style="color:{text_main};font-weight:600;">{vwap_data["val"]:.2f}</span>)</div>'
+        f'</div>'))
 
-            <div style="margin-bottom:2px;">
-                <div style="font-weight:700; font-size:0.8rem; color:{rs_col};">8. RS: PİYASA GÜCÜ (Bugün): {rs_txt}</div>
-                <div class="edu-note" style="margin-bottom:0;">{rs_desc}</div>
-            </div>        
-        </div>
-        """
-        st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
+    # RS
+    _rs_prio = 4 if rs_active else 1
+    if _rs_prio >= 3:
+        secs.append((_rs_prio,
+            f'<div style="padding:6px 8px;border-left:3px solid {rs_col};background:{row_bg};border-radius:0 4px 4px 0;">'
+            f'<div style="font-weight:700;font-size:0.85rem;color:{rs_col};">RS — PİYASA GÜCÜ: {rs_txt}</div>'
+            f'<div class="edu-note" style="color:{text_muted};margin-bottom:0;">{rs_desc}</div>'
+            f'</div>'))
+    else:
+        secs.append((_rs_prio, _compact("RS — PİYASA GÜCÜ", rs_txt)))
+
+    # Hacim & VSA (her zaman prio 3 — tam gösterim)
+    secs.append((3,
+        f'<div style="padding:6px 8px;border-left:3px solid #38bdf8;background:{row_bg};border-radius:0 4px 4px 0;">'
+        f'<div style="font-weight:700;font-size:0.85rem;color:{text_main};">HACİM & VSA: <span style="color:#38bdf8;">{pa["vol"]["title"]}</span></div>'
+        f'<div class="edu-note" style="color:{text_muted};">{pa["vol"]["desc"]}</div>'
+        f'</div>'))
+
+    # Bağlam & Konum (her zaman prio 2 → kompakt)
+    secs.append((2, _compact("BAĞLAM & KONUM", pa["loc"]["title"])))
+
+    # Volatilite (max prio 2 → her zaman kompakt)
+    _sq_prio = 2 if sq_active else 1
+    secs.append((_sq_prio, _compact("VOLATİLİTE", pa["sq"]["title"], sq_color if sq_active else None)))
+
+    # Önceliğe göre sırala, bölümler arasına ayırıcı ekle
+    secs.sort(key=lambda x: x[0], reverse=True)
+    sections_html = _sep.join(s for _, s in secs)
+
+    # Mum & Formasyonlar — her zaman en tepede sabit
+    candle_html = (
+        f'<div style="margin-bottom:8px;">'
+        f'<div style="font-weight:700;font-size:0.85rem;color:{text_main};">MUM & FORMASYONLAR: '
+        f'<span style="color:#38bdf8;">{pa_candle_title}</span></div>'
+        f'<div class="edu-note" style="color:{text_muted};">{pa_candle_desc}</div>'
+        f'</div>'
+        f'<div style="border-top:1px dashed {sep_color};margin-bottom:8px;"></div>'
+    )
+
+    # ── ANA HTML ─────────────────────────────────────────────────
+    html_content = (
+        f'<div class="info-card" style="border-top:3px solid #6366f1;{card_extra}">'
+        f'<div class="info-header" style="color:{header_col};'
+        f'{"border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:8px;margin-bottom:12px;font-weight:800;" if is_dark else ""}">'
+        f'🕯️ Price Action Analizi: {display_ticker}</div>'
+        f'{summary_html}'
+        f'{candle_html}'
+        f'{sections_html}'
+        f'</div>'
+    )
+    st.markdown(html_content.replace("\n", ""), unsafe_allow_html=True)
 
 
 def calculate_smart_money_score(ticker):
