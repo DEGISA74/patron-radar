@@ -604,10 +604,71 @@ def get_batch_data_cached(asset_list, period="1y"):
         return pd.concat(combined_dict.values(), axis=1, keys=combined_dict.keys())
     return pd.DataFrame()
 
+# ── BİNANCE VERİ ÇEKİCİ (KRİPTO PARALAR İÇİN) ──────────────────────
+def _fetch_from_binance(ticker, limit=730):
+    """
+    Kripto tickerları (-USD) için Binance API'den günlük mum verisi çeker.
+    Dönen DataFrame yfinance formatıyla birebir uyumludur (Open/High/Low/Close/Volume + Date index).
+    Binance'de coin yoksa veya hata olursa None döner → yfinance'e fallback yapılır.
+    """
+    import requests as _req
+    symbol = ticker.replace("-USD", "USDT").upper()   # BTC-USD → BTCUSDT
+    url = (
+        f"https://api.binance.com/api/v3/klines"
+        f"?symbol={symbol}&interval=1d&limit={limit}"
+    )
+    try:
+        resp = _req.get(url, timeout=8)
+        data = resp.json()
+        # Binance coin bulamazsa {'code': -1121, 'msg': ...} döndürür
+        if isinstance(data, dict) and "code" in data:
+            return None
+        if not data:
+            return None
+
+        cols = [
+            "timestamp", "Open", "High", "Low", "Close", "Volume",
+            "close_time", "quote_vol", "trades",
+            "taker_base", "taker_quote", "ignore"
+        ]
+        df = pd.DataFrame(data, columns=cols)
+        for c in ["Open", "High", "Low", "Close", "Volume"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df["Date"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("Date", inplace=True)
+        df.index = df.index.tz_localize(None)
+        df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+        return df
+
+    except Exception:
+        return None
+# ─────────────────────────────────────────────────────────────────────
+
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     try:
+        # ── KRİPTO YÖNLENDİRMESİ: -USD tickerları Binance'den çek ──
+        if "-USD" in ticker and interval == "1d":
+            clean_ticker = ticker.upper()
+            file_path = os.path.join(CACHE_DIR, f"{clean_ticker}_1d.parquet")
+
+            # Cache varsa ve güncel ise doğrudan kullan
+            if os.path.exists(file_path):
+                df_cached = pd.read_parquet(file_path)
+                if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
+                    return apply_volume_projection(df_cached.tail(500).copy(), ticker)
+
+            # Binance'den taze veri çek
+            df_bnc = _fetch_from_binance(ticker, limit=730)
+            if df_bnc is not None and not df_bnc.empty:
+                df_bnc.to_parquet(file_path)
+                return apply_volume_projection(df_bnc.tail(500).copy(), ticker)
+
+            # Binance başarısız → yfinance'e fallback (coin bazı API'lerde farklı formatta olabilir)
+            # (aşağıdaki genel yfinance akışına düşer)
+        # ─────────────────────────────────────────────────────────────
+
         clean_ticker = ticker.replace(".IS", "")
         if "BIST" in ticker or ".IS" in ticker or ticker.startswith("XU"):
             clean_ticker = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
@@ -12816,6 +12877,38 @@ Eğer veride belirgin bir çelişki yoksa — bunu zorla arama. Bunun yerine en 
 KURAL: Belirgin bir çelişki varsa analizini o çelişkinin etrafında kur. Çelişki yoksa en baskın sinyali merkeze al. Her iki durumda da tek bir hikaye anlat — her veriyi eşit ağırlıkta sıralama.
 """
 
+    # ── PROMPT İÇİN AKTİF PA SİNYALİ ÖNCELİK LİSTESİ ─────────────
+    _pa_prio = []
+    _div_active_ai   = pa_div not in ("-", "Yok", "Bilinmiyor") and "Nötr" not in pa_div
+    _sfp_active_ai   = "Bullish SFP" in sfp_desc or "Bearish SFP" in sfp_desc
+    _sd_active_ai    = sd_txt_ai not in ("Taze bölge görünmüyor.", "Veri Yok")
+    _vwap_ext_ai     = v_diff < -2.0 or v_diff > 15.0
+    _vwap_warm_ai    = 8.0 <= v_diff < 15.0
+    _rs_active_ai    = abs(alpha_val) > 1.0
+    _harm_active_ai  = harm_txt not in ("Yok", "")
+    _pa_sig_active   = pa_signal in ("PA_BULLISH", "PA_BEARISH")
+
+    if _div_active_ai:   _pa_prio.append((10, f"RSI UYUMSUZLUK → {pa_div.split(' -> ')[0]}"))
+    if _sfp_active_ai:   _pa_prio.append((9,  f"TUZAK (SFP) → {sfp_desc.split('(')[0].strip()}"))
+    if _pa_sig_active:   _pa_prio.append((8,  f"ANLİK DÖNÜŞ → {pa_signal} ({pa_context})"))
+    if _harm_active_ai:  _pa_prio.append((7,  f"HARMONİK FORMASYON → {harm_txt.split('|')[0].strip()}"))
+    if _sd_active_ai:    _pa_prio.append((5,  f"ARZ-TALEP BÖLGESİ → {sd_txt_ai.split('.')[0]}"))
+    if _vwap_ext_ai:     _pa_prio.append((7,  f"VWAP EKSTREMİ → {vwap_ai_txt} (%{v_diff:.1f} sapma)"))
+    if _vwap_warm_ai:    _pa_prio.append((3,  f"VWAP ISINMA → {vwap_ai_txt} (%{v_diff:.1f} sapma)"))
+    if _rs_active_ai:    _pa_prio.append((4,  f"RS GÜCÜ → {rs_ai_txt} (Alpha: {alpha_val:.1f})"))
+
+    _pa_prio.sort(key=lambda x: x[0], reverse=True)
+    if _pa_prio:
+        _pa_priority_str = "\n".join(f"  [{p}/10] {lbl}" for p, lbl in _pa_prio)
+        _pa_priority_str = (
+            "⚡ BU HİSSE İÇİN AKTİF PA SİNYALLERİ (öncelik sırasına göre — sadece ateşlenenler):\n"
+            + _pa_priority_str
+            + "\n  — Yukarıdaki sinyalleri analiz merkezine al; diğer verileri bu çerçeve içinde yorumla.\n"
+        )
+    else:
+        _pa_priority_str = "⚡ AKTİF PA SİNYALİ: Belirgin tetikleyici yok — nötr izleme modu. Veriyi dengeli değerlendir.\n"
+    # ────────────────────────────────────────────────────────────────
+
     prompt = f"""*** SİSTEM ROLLERİ VE BUGÜNKÜ KİMLİĞİN ***
 Sen 25 yılını finansın risk masasında geçirmiş, "Smart Money Radar" projesinin yaşayan ruhusun. Price Action, ICT (Akıllı Para), VWAP ve momentum yatırımcılığı konularında derin deneyim sahibisin — ama bu deneyimi o günün verisine göre farklı bir mercekten kullanırsın.
 
@@ -12985,6 +13078,7 @@ Son birkaç gündür bu hareketli ortalamalardan en az birinden tepki alıp alma
 - RADAR 2 (Trend/Setup): {r2_txt}
 Kısa vadeli momentumun (HARSI/EMA8), ana trend (SMA200/SuperTrend) ile uyumunu kontrol et. Eğer kısa vadeli sinyal ana trendin tersineyse, bunu bir 'Trend Dönüş Başlangıcı' mı yoksa 'Yüksek Riskli Bir Tepki Yükselişi' mi olduğunu netleştir.
 *** 2. PRICE ACTION / ARZ-TALEP BÖLGELERİ / SMART MONEY LİKİDİTE & ICT YAPISI ***
+{_pa_priority_str}
 - ⚡ ANLIK DÖNÜŞ SİNYALİ (Price Action V-Dönüşü): {pa_signal} -> (Eğer Bullish ise dipten, Bearish ise tepeden anlık dönüş var demektir. Nötr ise hareket yoktur.)
 - 🎯 DÖNÜŞÜN GELDİĞİ YER (Confluence): {pa_context} -> (Yukarıdaki dönüş sinyali Nötr değilse, fiyatın tam olarak hangi kurumsal destek/dirençten döndüğünü gösterir. Analizinde bu seviyenin gücünü mutlaka vurgula!)
 - 🔄 ICT YAPI KIRILIMI (Trend Dönüşü - MSS): {reversal_signal} -> (Eğer Bullish_MSS veya Bearish_MSS yazıyorsa, piyasanın ana yönü az önce kırıldı demektir. Bu en güçlü trend dönüş sinyallerinden biridir, analizinin en başına koy!)
