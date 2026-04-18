@@ -5915,30 +5915,34 @@ def calculate_price_action_dna(ticker):
             va_pos = "İÇİNDE"
 
         # ANA BAŞLIK + BASIT AÇIKLAMA (senaryo matrisi)
+        # Fiyat formatı: büyükse tam sayı, küçükse ondalıklı
+        def _fmt(v): return f"{v:.0f}" if v >= 100 else f"{v:.2f}" if v >= 1 else f"{v:.4f}"
+        _poc_range = f"({_fmt(val_price)}–{_fmt(vah_price)})"
+
         if va_pos == "ÜSTÜNDE":
             if cum_delta_5 > 0:
-                main_title = "🚀 DEĞER BÖLGESİ ÜSTÜNDE — Güçlü Kırılım"
-                simple_text = "Büyük oyuncuların yoğun işlem yaptığı bölgenin üstüne çıkıldı ve son 5 günde alım hacmi bunu destekliyor. Trend güçlü görünüyor."
+                main_title = f"🚀 POC ALANI {_poc_range} ÜSTÜNDE — Güçlü Kırılım"
+                simple_text = "Büyük oyuncuların yoğun işlem yaptığı POC alanının üstüne çıkıldı ve son 5 günde alım hacmi bunu destekliyor. Trend güçlü görünüyor."
             else:
-                main_title = "⚠️ DEĞER BÖLGESİ ÜSTÜNDE — Ama Satış Var"
+                main_title = f"⚠️ POC ALANI {_poc_range} ÜSTÜNDE — Ama Satış Var"
                 simple_text = "Fiyat yukarıda görünüyor ama son 5 günde büyük oyuncular sessizce mal veriyor olabilir. Boğa tuzağı riski taşıyor."
         elif va_pos == "ALTINDA":
             if cum_delta_5 > 0:
-                main_title = "🟢 DEĞER BÖLGESİ ALTINDA — Gizli Alım"
+                main_title = f"🟢 POC ALANI {_poc_range} ALTINDA — Gizli Alım"
                 simple_text = "Fiyat ucuz bölgede ama son 5 günde alım hacmi artıyor. Akıllı para sessizce topluyor olabilir."
             else:
-                main_title = "🔴 DEĞER BÖLGESİ ALTINDA — Baskı Devam"
+                main_title = f"🔴 POC ALANI {_poc_range} ALTINDA — Baskı Devam"
                 simple_text = "Fiyat adil değerin altında ve son 5 günde satış baskısı sürüyor. Kırılım onaylanmış gibi görünüyor."
         else:  # İÇİNDE
             if cum_delta_5 > 0:
-                main_title = "⚖️ DENGE BÖLGESİNDE — Alım Baskısı Var"
-                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı bölgede. Son 5 günde alım ağır basıyor, yukarı kırılım bekleniyor."
+                main_title = f"⚖️ POC ALANINDA {_poc_range} — Alım Baskısı Var"
+                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı POC alanında. Son 5 günde alım ağır basıyor, yukarı kırılım bekleniyor."
             elif cum_delta_5 < 0:
-                main_title = "⚖️ DENGE BÖLGESİNDE — Satış Baskısı Var"
-                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı bölgede. Son 5 günde satış ağır basıyor, aşağı kırılım riski var."
+                main_title = f"⚖️ POC ALANINDA {_poc_range} — Satış Baskısı Var"
+                simple_text = "Piyasa büyük oyuncuların en çok işlem yaptığı POC alanında. Son 5 günde satış ağır basıyor, aşağı kırılım riski var."
             else:
-                main_title = "⚖️ DENGE BÖLGESİNDE — Yön Bekleniyor"
-                simple_text = "Büyük oyuncuların en yoğun işlem yaptığı fiyat bölgesindeyiz. Alıcı ve satıcılar dengede, kırılım sinyali bekleniyor."
+                main_title = f"⚖️ POC ALANINDA {_poc_range} — Yön Bekleniyor"
+                simple_text = "Büyük oyuncuların en yoğun işlem yaptığı POC fiyat alanındayız. Alıcı ve satıcılar dengede, kırılım sinyali bekleniyor."
 
         # NAKED POC — en yakın olanı seç
         naked_txt = ""
@@ -8016,6 +8020,7 @@ def render_smart_volume_panel(ticker):
     val         = sv.get("val", 0)
     delta_val   = sv.get("delta", 0)
     delta_yuzde = sv.get("delta_yuzde", 0)
+    rvol        = sv.get("rvol", 1.0)
     is_index    = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
 
     # Mevcut fiyat + display ticker — ICT paneli ile aynı kaynak (fetch_stock_info)
@@ -8102,21 +8107,43 @@ def render_smart_volume_panel(ticker):
         t3_pct = "%0"; t3_lbl = "Alım = Satım (Denge)"; t3_sub = "Bugün alıcı ve satıcı dengede. Yön yok."
         t3_pos = None
 
-    # ── TILE 4: 5 Seans Kümülatif Delta ──────────────────────────
-    if cum5 > 0:
-        t4_ic = "#10b981" if dark else "#15803d"
-        t4_pct = f"+%{cum5_pct:.1f}"; t4_lbl = "5 Günde Net Alım"
-        t4_sub = "Son 5 işlem günü boyunca alıcılar baskındı. Kurumsal birikim sinyali."
-        t4_pos = True
-    elif cum5 < 0:
-        t4_ic = "#ef4444" if dark else "#dc2626"
-        t4_pct = f"-%{cum5_pct:.1f}"; t4_lbl = "5 Günde Net Satış"
-        t4_sub = "Son 5 işlem günü boyunca satıcılar baskındı. Dağıtım baskısı."
-        t4_pos = False
+    # ── TILE 4: 20G Ortalamaya Göre Hacim (RVOL) ─────────────────
+    if rvol < 0.05:  # veri yok / sıfır hacim
+        t4_ic  = "#94a3b8" if dark else "#6b7280"
+        t4_pct = "—"; t4_lbl = "Veri Yok"
+        t4_sub = "Hacim verisi alınamadı."
+        t4_pos = None; rvol_fill = 0
+    elif rvol >= 2.0:
+        t4_ic  = "#10b981" if dark else "#15803d"
+        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Yüksek Hacim"
+        t4_sub = f"Normalin {rvol:.1f} katı hacim — kurumsal aktivite var."
+        t4_pos = True; rvol_fill = min((rvol - 1.0) / 2.0 * 100, 100)
+    elif rvol >= 0.8:
+        t4_ic  = "#f59e0b" if dark else "#92400e"
+        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Normale Yakın Hacim"
+        t4_sub = "Normale yakın hacim — bekleme modu."
+        t4_pos = None; rvol_fill = 0
     else:
-        t4_ic = "#94a3b8" if dark else "#6b7280"
-        t4_pct = "%0"; t4_lbl = "5 Gün Dengede"; t4_sub = "Son 5 günde alım-satım dengede. Net sinyal yok."
-        t4_pos = None
+        t4_ic  = "#ef4444" if dark else "#dc2626"
+        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Düşük Hacim"
+        t4_sub = "Düşük hacim — piyasa ilgisiz, sinyal zayıf."
+        t4_pos = False; rvol_fill = min((1.0 - rvol) * 100, 100)
+
+    # ── TILE 5: 5 Seans Kümülatif Delta ──────────────────────────
+    if cum5 > 0:
+        t5_ic = "#10b981" if dark else "#15803d"
+        t5_pct = f"+%{cum5_pct:.1f}"; t5_lbl = "5 Günde Net Alım"
+        t5_sub = "Son 5 işlem günü boyunca alıcılar baskındı. Kurumsal birikim sinyali."
+        t5_pos = True
+    elif cum5 < 0:
+        t5_ic = "#ef4444" if dark else "#dc2626"
+        t5_pct = f"-%{cum5_pct:.1f}"; t5_lbl = "5 Günde Net Satış"
+        t5_sub = "Son 5 işlem günü boyunca satıcılar baskındı. Dağıtım baskısı."
+        t5_pos = False
+    else:
+        t5_ic = "#94a3b8" if dark else "#6b7280"
+        t5_pct = "%0"; t5_lbl = "5 Gün Dengede"; t5_sub = "Son 5 günde alım-satım dengede. Net sinyal yok."
+        t5_pos = None
 
     def bidir_bar(fill_pct, color, is_pos, track):
         """Çift yönlü bar — düz inline-block span'lar, nesting/overflow/height:100% yok.
@@ -8152,23 +8179,7 @@ def render_smart_volume_panel(ticker):
             f'</div>'
         )
 
-    # ── Naked POC — 5. tile içeriği ──────────────────────────────
-    if naked_txt:
-        t5_bg   = naked_bg
-        t5_icon = "&#129522;"
-        t5_val  = naked_txt
-        t5_sub  = "Geçmişte büyük kurumsal işlem yapıldı ama fiyat geri dönmedi. Mıknatıs etkisi: zamanla bu seviyeye çekilme eğilimi var."
-        t5_vc   = naked_tc
-        t5_sc   = naked_sub
-        t5_lbl  = "HABERSİZ POC"
-    else:
-        t5_bg   = "transparent"
-        t5_icon = "&#10003;"
-        t5_val  = "—"
-        t5_sub  = "Yakında ziyaret edilmemiş kurumsal fiyat seviyesi yok. Temiz alan."
-        t5_vc   = text_muted
-        t5_sc   = text_muted
-        t5_lbl  = "HABERSİZ POC"
+    # Habersiz POC kaldırıldı — TILE 5 artık 5 Seans Baskı
 
     # ── Ticker-fiyat badge — ICT paneli ile aynı stil ────────────
     if dark:
@@ -8197,18 +8208,18 @@ def render_smart_volume_panel(ticker):
         # 5 TILE GRID
         f'<div style="display:grid; grid-template-columns:0.85fr 0.75fr 1.0fr 1.0fr 1.1fr; gap:0;">'
 
-        # — TILE 1: Fiyat Konumu —
-        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t1_bb};">'
-        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">&#128205; Fiyat Konumu</div>'
-        f'<div style="font-size:0.78rem; font-weight:900; color:{t1_ic}; margin-bottom:4px; line-height:1.2;">{t1_icon} {t1_label}</div>'
-        f'<div style="font-size:0.80rem; color:{text_sub}; line-height:1.4;">{t1_sub}</div>'
-        f'</div>'
-
-        # — TILE 2: POC —
+        # — TILE 1: POC (Merkez) —
         f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t2_bb};">'
         f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">&#127919; POC (Merkez)</div>'
         f'<div style="font-size:0.97rem; font-weight:900; color:{t2_ic}; margin-bottom:4px;">{poc:.2f}</div>'
         f'<div style="font-size:0.80rem; color:{text_sub}; line-height:1.4;">En yoğun işlem fiyatı.<br>{poc_vs}.</div>'
+        f'</div>'
+
+        # — TILE 2: Fiyat Konumu —
+        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t1_bb};">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">&#128205; Fiyat Konumu</div>'
+        f'<div style="font-size:0.78rem; font-weight:900; color:{t1_ic}; margin-bottom:4px; line-height:1.2;">{t1_icon} {t1_label}</div>'
+        f'<div style="font-size:0.80rem; color:{text_sub}; line-height:1.4;">{t1_sub}</div>'
         f'</div>'
 
         # — TILE 3: Bugünkü Delta —
@@ -8221,21 +8232,24 @@ def render_smart_volume_panel(ticker):
         f'<div style="font-size:0.8rem; color:{text_sub}; line-height:1.35;">{t3_sub}</div>'
         f'</div>'
 
-        # — TILE 4: 5 Seans Delta —
+        # — TILE 4: Ortalamaya Göre Hacim —
         f'<div style="padding:6px 8px; border-right:1px solid {divider};">'
-        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128200; 5 Seans Baskı</div>'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128202; 20G Ort. Göre Bugünkü Hacim</div>'
         f'<div style="display:flex; justify-content:{"flex-end" if t4_pos is True else "flex-start" if t4_pos is False else "center"}; margin-bottom:1px;">'
         f'<span style="font-size:0.92rem; font-weight:900; color:{t4_ic};">{t4_pct}</span></div>'
-        f'{bidir_bar(cum_fill, t4_ic, t4_pos, track_bg)}'
+        f'{bidir_bar(rvol_fill, t4_ic, t4_pos, track_bg)}'
         f'<div style="font-size:0.8rem; color:{text_main}; font-weight:700; margin-bottom:2px;">{t4_lbl}</div>'
         f'<div style="font-size:0.8rem; color:{text_sub}; line-height:1.35;">{t4_sub}</div>'
         f'</div>'
 
-        # — TILE 5: Habersiz POC —
-        f'<div style="padding:6px 8px; background:{t5_bg};">'
-        f'<div style="font-size:0.62rem; color:{naked_bc if naked_txt else text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;">{t5_icon} {t5_lbl}</div>'
-        f'<div style="font-size:0.78rem; font-weight:900; color:{t5_vc}; margin-bottom:4px; line-height:1.3;">{t5_val}</div>'
-        f'<div style="font-size:0.69rem; color:{t5_sc}; line-height:1.35;">{t5_sub}</div>'
+        # — TILE 5: 5 Seans Delta —
+        f'<div style="padding:6px 8px;">'
+        f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128200; Son 5 Günlük Alım-Satım</div>'
+        f'<div style="display:flex; justify-content:{"flex-end" if t5_pos is True else "flex-start" if t5_pos is False else "center"}; margin-bottom:1px;">'
+        f'<span style="font-size:0.92rem; font-weight:900; color:{t5_ic};">{t5_pct}</span></div>'
+        f'{bidir_bar(cum_fill, t5_ic, t5_pos, track_bg)}'
+        f'<div style="font-size:0.8rem; color:{text_main}; font-weight:700; margin-bottom:2px;">{t5_lbl}</div>'
+        f'<div style="font-size:0.8rem; color:{text_sub}; line-height:1.35;">{t5_sub}</div>'
         f'</div>'
 
         f'</div>'  # grid sonu
@@ -13116,20 +13130,20 @@ Analiz yaparken algoritmamızın şu katı kuralları uyguladığını bil ve yo
 - İptal Seviyesi (Invalidation Point): Bu teknik tezin (Boğa/Ayı) tamamen çökeceği, piyasanın 'yanıldık' diyeceği o kritik likidite seviyesi veya yapı kırılımı (BOS) noktası neresidir? Tüm verilere bakarak net bir fiyat seviyesi olarak belirle.
 *** 5. EK TEKNİK VERİLER (SMART MONEY METRİKLERİ) ***
 - Bugüne ait Smart Money Hacim Durumu: {delta_durumu}
-- Hacim Profili son 20 günlük hacim ortalaması "POC (Kontrol Noktası)": {poc_price}
-- Değer Bölgesi (Value Area) Konumu: {va_pos_txt} | VAH (Üst Sınır): {vah_txt} | VAL (Alt Sınır): {val_txt}
+- POC Alanı — Son 20 Günlük Hacim Ağırlıklı Kontrol Noktası: {poc_price}
+- POC Alanı Konumu (VAH Üst Sınır / VAL Alt Sınır): {va_pos_txt} | VAH: {vah_txt} | VAL: {val_txt}
 - 5 Seans Kümülatif Delta: {cum5_txt}
 - Güncel Fiyat: {guncel_fiyat}
-- Fiyat son 20 günlük mumum hacim ortalaması olan "POC (Kontrol Noktası)" seviyesinin altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
+- Fiyat POC Alanının altındaysa bunun bir "Ucuzluk" (Discount) bölgesi mi yoksa "Düşüş Trendi" onayı mı olduğunu yorumla. Fiyat POC üzerindeyse bir "Pahalı" (Premium) bölge riski var mı, değerlendir.
 - Bugüne ait Smart Money Hacim Durumundaki "Bugüne ait Net Baskınlık" yüzdesine dikkat et! Eğer bu oran %40'ın üzerindeyse, tahtada bugün için ciddi bir "Smart Money (Balina/Kurumsal)" müdahalesi olabileceğini belirt.
 -"Net Baskınlık" sadece bugüne ait veridir, bunu unutma. Fiyat hareketi arasında bir uyumsuzluk var mı kontrol et. Fiyat artarken bugüne ait Net Baskınlık EKSİ (-) yönde yüksekse, "Tepeden mal dağıtımı (Distribution) yapılıyor olabilir, Boğa Tuzağı riski yüksek!" şeklinde kullanıcıyı uyar. Ama bu durumum bugün için geçerli olabileceğini, yarın her şeyin değişebileceğini unutmadan yorumla. Verininsadece bugünün durumunu yansıttığını hatırlat.
 Veriler arasındaki uyumu (Confluence) ve çelişkiyi (Divergence) sorgula. Eğer Momentum (RSI/MACD) yükselirken Akıllı Para Hacmi (Delta) düşüyorsa, bunu 'Zayıf El Alımı' olarak işaretleyebilirsin. Fiyat VWAP'tan çok uzaksa (Parabolik), Golden Trio olsa bile kurumsalın perakende yatırımcıyı 'Çıkış Likiditesi' (Exit Liquidity) olarak kullanıp kullanmadığını dürüstçe değerlendir.
 *** AKILLI PARA HACİM ANOMALİLERİ ***
-- Göreceli Hacim (RVOL): {rvol_val}
+- 20 Günlük Ortalamaya Göre Hacim (RVOL): {rvol_val}x (1.0 = normal, 2.0+ = kurumsal aktivite, 0.5 altı = ilgisiz piyasa)
 - Stopping Volume (Frenleme): {stop_vol_val}
 - Climax Volume (Tahliye): {climax_vol_val}
-RVOL yüksekken fiyatın hareket etmemesi (Churning) bir dağıtım (Distribution) sinyali olması ihtimalini gösterir; RVOL yüksekken bir kırılım gelmesi ise gerçek bir kurumsal katılımdır. Bu ikisi arasındaki farkı mutlaka analiz et.
-Hacim artarken (RVOL > 1.2) fiyatın dar bir bantta kalması 'Sessiz Birikim' veya 'Dağıtım' olabilir. Hacim düşerken fiyatın yükselmesi 'Zayıf El Yükselişi'dir. Bu uyumsuzlukları mutlaka vurgula.
+RVOL 2.0x üzerindeyken fiyatın hareket etmemesi (Churning) bir dağıtım (Distribution) sinyali olması ihtimalini gösterir; RVOL yüksekken bir kırılım gelmesi ise gerçek bir kurumsal katılımdır. Bu ikisi arasındaki farkı mutlaka analiz et.
+Hacim artarken (RVOL > 1.5x) fiyatın dar bir bantta kalması 'Sessiz Birikim' veya 'Dağıtım' olabilir. Hacim düşerken (RVOL < 0.8x) fiyatın yükselmesi 'Zayıf El Yükselişi'dir. Bu uyumsuzlukları mutlaka vurgula.
 *** 6. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
 - VWAP (Adil Değer): {v_val:.2f} (Günün hacim ağırlıklı ortalama fiyatıdır; piyasa yapıcıların ve akıllı paranın 'denge' kabul ettiği ana maliyet merkezini ölçer.)
 - Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında. (Fiyatın kurumsal maliyetten ne kadar uzaklaştığını ölçer)
@@ -13466,13 +13480,13 @@ with col_left:
     except Exception as e:
         st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
     # --------------------------------------------------
+    # --- SMART MONEY HACİM ANALİZİ ---
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    render_smart_volume_panel(st.session_state.ticker)
+
     # --- ICT SMART MONEY ANALİZİ ---
     # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     render_ict_deep_panel(st.session_state.ticker)
-
-    # SMART MONEY HACİM ANALİZİ — ICT'nin hemen altında, ayrı panel
-    render_smart_volume_panel(st.session_state.ticker)
 
     # 3. 8 MADDELİK YOL HARİTASI PANELİ
     render_roadmap_8_panel(st.session_state.ticker)
