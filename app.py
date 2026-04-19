@@ -1348,201 +1348,217 @@ def scan_chart_patterns(asset_list):
                     desc = f"Direk: %{pole*100:.1f} | Sıkışma: %{tight*100:.1f} | Geri Alım: %{retrace*100:.0f}"
 
             # ---------------------------------------------------------------
-            # 2. FİNCAN-KULP — Zigzag şablonu: H → L → H(≈ilk) → L(kulp)
-            # %4 (kısa) ve %8 (büyük) threshold ile çift tarama.
+            # YARDIMCI: Swing High / Low tespiti (lookback bar sol-sağ)
             # ---------------------------------------------------------------
-            if not pattern_found and len(zz_chron) >= 4:
-                # Büyük formasyonlar için %8 threshold ile ek zigzag
-                zz8       = zigzag_pivots(close, threshold=0.08)
-                zz8_chron = sorted(zz8, key=lambda x: x[0])
-                # İki zigzag listesini birleştir: önce %4, sonra %8 taranır
-                _zz_sets = [(zz_chron, "%4"), (zz8_chron, "%8")]
-                for _zz_src, _zz_lbl in _zz_sets:
+            def find_swings(series, lookback=8):
+                highs, lows = [], []
+                arr = series.values.astype(float)
+                n   = len(arr)
+                for i in range(lookback, n - lookback):
+                    w = arr[i - lookback: i + lookback + 1]
+                    if arr[i] >= w.max() - 1e-9:
+                        highs.append((i, arr[i]))
+                    if arr[i] <= w.min() + 1e-9:
+                        lows.append((i, arr[i]))
+                return highs, lows
+
+            sw_h, sw_l = find_swings(close, lookback=8)
+            sw_h_y = [(i, v) for i, v in sw_h if i >= bar_total - 252]  # son 12 ay
+            sw_l_y = [(i, v) for i, v in sw_l if i >= bar_total - 252]
+
+            # ---------------------------------------------------------------
+            # 2. FİNCAN-KULP — Swing tabanlı + polinom U-şekil doğrulaması
+            # Min: 40 bar (~2 ay), Max: 252 bar (12 ay), R/R >= 1.0
+            # Son pivot 60 günden eski ise gösterilmez.
+            # ---------------------------------------------------------------
+            if not pattern_found and len(sw_h_y) >= 2 and len(sw_l_y) >= 1:
+                for ri in range(len(sw_h_y) - 1, 0, -1):
                     if pattern_found: break
-                    if len(_zz_src) < 4: continue
-                    # Son 20 pivot penceresini tara; 1 yıldan eski paterni dikkate alma
-                    for start_offset in range(min(20, len(_zz_src) - 3)):
-                        p1_i, p1_v, p1_t = _zz_src[-(4 + start_offset)]
-                        p2_i, p2_v, p2_t = _zz_src[-(3 + start_offset)]
-                        p3_i, p3_v, p3_t = _zz_src[-(2 + start_offset)]
-                        p4_i, p4_v, p4_t = _zz_src[-(1 + start_offset)]
-
-                        # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
-                        if p1_i < bar_total - 252: break
-
-                        # Şablon kontrolü: H, L, H, L
-                        if not (p1_t == 'H' and p2_t == 'L' and p3_t == 'H' and p4_t == 'L'):
-                            continue
-
-                        rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
-
-                        rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12       # Rimler ±%12
-                        cup_deep       = cup_b < rim_l * 0.88                     # Fincan min %12 derin
-                        handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4 # Kulp üst %60'ta
-                        handle_shallow = handle_l > rim_r * 0.85                  # Kulp çok derin değil
-                        cup_wide       = (p3_i - p1_i) >= 40                      # Min 40 bar (~2 ay) — noise elenir
-
-                        # Kırılım / oluşma durumu — tüm offset'ler için hesapla
-                        breaking  = curr_price >= rim_r * 0.97 and curr_price <= rim_r * 1.08
-                        forming   = curr_price >= handle_l * 0.99 and not breaking
-                        active    = breaking or forming
-
-                        if start_offset == 0:
-                            pass  # active zaten doğru
+                    sh2_i, sh2_v = sw_h_y[ri]           # Sağ rim
+                    if bar_total - sh2_i > 60: continue  # Son pivot 60 günden eski
+                    for li in range(ri - 1, max(ri - 12, -1), -1):
+                        sh1_i, sh1_v = sw_h_y[li]       # Sol rim
+                        cup_dur = sh2_i - sh1_i
+                        if not (40 <= cup_dur <= 252): continue
+                        # Cup içi en derin swing low
+                        cup_lows = [(i, v) for i, v in sw_l_y if sh1_i < i < sh2_i]
+                        if not cup_lows: continue
+                        sl_i, sl_v = min(cup_lows, key=lambda x: x[1])
+                        # Derinlik ve rim hizası
+                        depth = (sh1_v - sl_v) / sh1_v
+                        if not (0.12 <= depth <= 0.55): continue
+                        if abs(sh1_v - sh2_v) / sh1_v > 0.12: continue
+                        # U-şekil: polinom fit (R² > 0.55, konkav yukarı)
+                        try:
+                            cup_arr = close.iloc[sh1_i:sh2_i + 1].values.astype(float)
+                            if len(cup_arr) < 10: continue
+                            xf  = np.linspace(0, 1, len(cup_arr))
+                            cf  = np.polyfit(xf, cup_arr, 2)
+                            yp  = np.polyval(cf, xf)
+                            ss_res = np.sum((cup_arr - yp) ** 2)
+                            ss_tot = np.sum((cup_arr - cup_arr.mean()) ** 2)
+                            r2  = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+                            if r2 < 0.55 or cf[0] <= 0: continue  # Konkav yukarı zorunlu
+                        except: continue
+                        # Handle: sh2'den sonraki ilk swing low
+                        h_lows = [(i, v) for i, v in sw_l_y if i > sh2_i]
+                        if h_lows:
+                            hl_i, hl_v = h_lows[0]
                         else:
-                            # Eski pivotlar: oluşmakta mı? kırıldı mı?
-                            if not active:
-                                # Fiyat kırılım bölgesini çoktan geçtiyse — son 3 günde mi?
-                                if curr_price >= rim_r * 0.98:
-                                    days_since_check = bar_total - p3_i
-                                    active = days_since_check <= 3
-                                # active False kalırsa aşağıda zaten geçilecek
+                            after = close.iloc[sh2_i:]
+                            if len(after) < 3: continue
+                            rel  = int(after.values.argmin())
+                            hl_i = sh2_i + rel
+                            hl_v = float(after.iloc[rel])
+                        if not (hl_v > sl_v + (sh2_v - sl_v) * 0.35): continue  # Kulp üst %65'te
+                        if not (hl_v > sh2_v * 0.82): continue                  # Fazla derin değil
+                        # R/R filtresi
+                        target = sh2_v + (sh2_v - sl_v)
+                        risk   = max(curr_price - hl_v * 0.98, 0.01)
+                        rr     = (target - curr_price) / risk
+                        if rr < 1.0: continue
+                        # Durum tespiti
+                        breaking = curr_price >= sh2_v * 0.97 and curr_price <= sh2_v * 1.10
+                        forming  = curr_price >= hl_v * 0.98 and not breaking
+                        if not (breaking or forming): continue
+                        dur_months = max(1, round(cup_dur / 21))
+                        dist = ((sh2_v - curr_price) / sh2_v * 100) if curr_price < sh2_v else 0
+                        if breaking:
+                            p_name     = f"☕ FİNCAN KULP ({dur_months} Ay) — Kırılım Bölgesinde"
+                            base_score = 92
+                        else:
+                            p_name     = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — %{dist:.1f} kaldı"
+                            base_score = 75
+                        p_desc  = (f"Sol Rim: {sh1_v:.2f} | Dip: {sl_v:.2f} | Sağ Rim: {sh2_v:.2f} | "
+                                   f"Kulp: {hl_v:.2f} | Hedef: {target:.2f} | R²: {r2:.2f}")
+                        chart_d = {
+                            "pivot_dates":  [str(close.index[sh1_i].date()),
+                                             str(close.index[sl_i].date()),
+                                             str(close.index[sh2_i].date()),
+                                             str(close.index[min(hl_i, bar_total - 1)].date())],
+                            "pivot_prices": [sh1_v, sl_v, sh2_v, hl_v],
+                            "pivot_types":  ["H", "L", "H", "L"],
+                            "neck": float(sh2_v),
+                            "type": "cup",
+                        }
+                        pattern_found = True
+                        pattern_name  = p_name; desc = p_desc
+                        break
 
-                        if rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide and active:
-                            dur_months = max(1, round((p3_i - p1_i) / 21))
-                            dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
+            # ---------------------------------------------------------------
+            # 3. TOBO — Swing tabanlı: 5 pivot L, H, L(derin), H, L
+            # Min: 40 bar, Max: 252 bar, R/R >= 1.0
+            # ---------------------------------------------------------------
+            if not pattern_found and len(sw_h_y) >= 2 and len(sw_l_y) >= 3:
+                for i_rs in range(len(sw_l_y) - 1, 1, -1):
+                    if pattern_found: break
+                    sl3_i, sl3_v = sw_l_y[i_rs]             # Sağ omuz
+                    if bar_total - sl3_i > 60: continue      # Son pivot 60 günden eski
+                    for i_hd in range(i_rs - 1, 0, -1):
+                        if pattern_found: break
+                        sl2_i, sl2_v = sw_l_y[i_hd]         # Baş (en derin)
+                        for i_ls in range(i_hd - 1, max(i_hd - 8, -1), -1):
+                            sl1_i, sl1_v = sw_l_y[i_ls]     # Sol omuz
+                            dur = sl3_i - sl1_i
+                            if not (40 <= dur <= 252): continue
+                            # Baş en derin olmalı
+                            if not (sl2_v < sl1_v * 0.95 and sl2_v < sl3_v * 0.95): continue
+                            # Boyun noktaları: her omuz ile baş arasındaki en yüksek swing high
+                            sh1_cands = [(i, v) for i, v in sw_h_y if sl1_i < i < sl2_i]
+                            sh2_cands = [(i, v) for i, v in sw_h_y if sl2_i < i < sl3_i]
+                            if not sh1_cands or not sh2_cands: continue
+                            sh1_i, sh1_v = max(sh1_cands, key=lambda x: x[1])
+                            sh2_i, sh2_v = max(sh2_cands, key=lambda x: x[1])
+                            neck = (sh1_v + sh2_v) / 2
+                            if abs(sh1_v - sh2_v) / sh1_v > 0.06: continue  # Boyun yatay
+                            if abs(sl1_v - sl3_v) / sl1_v > 0.15: continue  # Omuz simetrisi
+                            recovery = (sl3_v - sl2_v) / (neck - sl2_v) if (neck - sl2_v) > 0 else 0
+                            if recovery < 0.45: continue
+                            # R/R filtresi
+                            target = neck + (neck - sl2_v)
+                            risk   = max(curr_price - sl3_v * 0.98, 0.01)
+                            rr     = (target - curr_price) / risk
+                            if rr < 1.0: continue
+                            # Durum tespiti
+                            breaking = curr_price >= neck * 0.97 and curr_price <= neck * 1.08
+                            forming  = curr_price > sl3_v * 1.01 and curr_price < neck * 0.96
+                            if not (breaking or forming): continue
+                            dur_months = max(1, round(dur / 21))
+                            dist = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
                             if breaking:
-                                status_txt = "Kırılım Bölgesinde"
-                                p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                                base_score = 95
-                            elif forming:
-                                status_txt = f"Tamamlanmasına %{dist_to_rim:.1f} kaldı"
-                                p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                                base_score = 78
+                                p_name     = f"🧛 TOBO ({dur_months} Ay) — Kırılım Bölgesinde"
+                                base_score = 90
                             else:
-                                days_since = bar_total - p3_i
-                                if days_since > 3: continue
-                                status_txt = f"Tamamlandı ({days_since} gün önce)"
-                                p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                                base_score = 80
-                            p_desc = f"Sol Rim: {rim_l:.2f} | Dip: {cup_b:.2f} | Sağ Rim: {rim_r:.2f} | Kulp: {handle_l:.2f}"
+                                p_name     = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — %{dist:.1f} kaldı"
+                                base_score = 72
+                            p_desc  = (f"Boyun: {neck:.2f} | Baş: {sl2_v:.2f} | "
+                                       f"Sol/Sağ Omuz: {sl1_v:.2f}/{sl3_v:.2f} | "
+                                       f"Hedef: {target:.2f} | Geri Alım: %{recovery*100:.0f}")
                             chart_d = {
-                                "pivot_dates":  [str(close.index[p1_i].date()), str(close.index[p2_i].date()),
-                                                 str(close.index[p3_i].date()), str(close.index[p4_i].date())],
-                                "pivot_prices": [p1_v, p2_v, p3_v, p4_v],
-                                "pivot_types":  ["H", "L", "H", "L"],
-                                "neck":  float(rim_r),
-                                "type":  "cup",
+                                "pivot_dates":  [str(close.index[sl1_i].date()),
+                                                 str(close.index[sh1_i].date()),
+                                                 str(close.index[sl2_i].date()),
+                                                 str(close.index[sh2_i].date()),
+                                                 str(close.index[sl3_i].date())],
+                                "pivot_prices": [sl1_v, sh1_v, sl2_v, sh2_v, sl3_v],
+                                "pivot_types":  ["L", "H", "L", "H", "L"],
+                                "neck": float(neck),
+                                "type": "tobo",
                             }
                             pattern_found = True
-                            pattern_name = p_name; desc = p_desc
+                            pattern_name  = p_name; desc = p_desc
                             break
 
             # ---------------------------------------------------------------
-            # 3. TOBO — Zigzag şablonu: L → H → L*(baş) → H(≈ilk H) → L(≈ilk L)
-            # Kritik kural: sağ omuz baş→boyun mesafesinin %50'sini geri almış olmalı.
-            # Bu kural insan gözünün "sağ omuz boyuna yakın" algısını sayısallaştırır.
+            # 4. YÜKSELEN ÜÇGEN — Düz direnç + yükselen destek (linregress)
+            # En az 2 tepe (≤%4 fark), en az 2 dip (yükselen eğim), Max 252 bar
+            # R/R >= 1.0, son pivot 60 günden yeni
             # ---------------------------------------------------------------
-            if not pattern_found and len(zz_chron) >= 5:
-                for start_offset in range(min(15, len(zz_chron) - 4)):
-                    p1_i, p1_v, p1_t = zz_chron[-(5 + start_offset)]  # Sol omuz (L)
-                    p2_i, p2_v, p2_t = zz_chron[-(4 + start_offset)]  # Boyun sol (H)
-                    p3_i, p3_v, p3_t = zz_chron[-(3 + start_offset)]  # Baş (L, en derin)
-                    p4_i, p4_v, p4_t = zz_chron[-(2 + start_offset)]  # Boyun sağ (H)
-                    p5_i, p5_v, p5_t = zz_chron[-(1 + start_offset)]  # Sağ omuz (L)
-
-                    # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
-                    if p1_i < bar_total - 252: break
-
-                    if not (p1_t=='L' and p2_t=='H' and p3_t=='L' and p4_t=='H' and p5_t=='L'):
-                        continue
-
-                    ls_p   = p1_v
-                    neck_l = p2_v
-                    head_p = p3_v
-                    neck_r = p4_v
-                    rs_p   = p5_v
-                    neck   = (neck_l + neck_r) / 2
-
-                    head_deep   = head_p < ls_p * 0.95 and head_p < rs_p * 0.95
-                    sym         = abs(ls_p - rs_p) / ls_p < 0.10
-                    neck_flat   = abs(neck_l - neck_r) / neck_l < 0.06
-                    pat_wide    = (p5_i - p1_i) >= 40  # Min 40 bar (~2 ay) — downtrend içi noise elenir
-                    # Sağ omuz, baş→boyun mesafesinin en az %50'sini geri almış olmalı
-                    # (insan gözü: "sağ omuz boyuna yakın görünüyor")
-                    recovery    = (rs_p - head_p) / (neck - head_p) if (neck - head_p) > 0 else 0
-                    recovery_ok = recovery >= 0.50
-
-                    if not (head_deep and sym and neck_flat and pat_wide and recovery_ok):
-                        continue
-
-                    if start_offset == 0:
-                        is_breakout = curr_price >= neck * 0.97 and curr_price <= neck * 1.06
-                        is_forming  = curr_price > rs_p * 1.01 and curr_price < neck * 0.96
-                        active = is_breakout or is_forming
-                        is_breakout_flag = is_breakout
-                    else:
-                        active = curr_price >= neck * 0.97
-                        is_breakout_flag = active
-
-                    if not active:
-                        continue
-
-                    dur_months   = max(1, round((p5_i - p1_i) / 21))
-                    dist_to_neck = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
-
-                    if is_breakout_flag and start_offset == 0:
-                        status_txt = "Kırılım Bölgesinde"
-                        p_name = f"🧛 TOBO ({dur_months} Ay) — {status_txt}"
-                        base_score = 92
-                    elif start_offset == 0:
-                        status_txt = f"Tamamlanmasına %{dist_to_neck:.1f} kaldı"
-                        p_name = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — {status_txt}"
-                        base_score = 72
-                    else:
-                        days_since = bar_total - p5_i
-                        if days_since > 3: continue  # Sadece son 3 günde kırılan formasyon
-                        status_txt = f"Tamamlandı ({days_since} gün önce)"
-                        p_name = f"🧛 TOBO ({dur_months} Ay) — {status_txt}"
-                        base_score = 80
-
-                    p_desc = f"Boyun: {neck:.2f} | Baş: {head_p:.2f} | Sol/Sağ Omuz: {ls_p:.2f}/{rs_p:.2f} | Geri Alım: %{recovery*100:.0f}"
-                    chart_d = {
-                        "pivot_dates":  [str(close.index[p1_i].date()), str(close.index[p2_i].date()),
-                                         str(close.index[p3_i].date()), str(close.index[p4_i].date()),
-                                         str(close.index[p5_i].date())],
-                        "pivot_prices": [p1_v, p2_v, p3_v, p4_v, p5_v],
-                        "pivot_types":  ["L", "H", "L", "H", "L"],
-                        "neck":  float(neck),
-                        "type":  "tobo",
-                    }
-                    pattern_found = True
-                    pattern_name = p_name; desc = p_desc
-                    base_score_final = base_score
-                    break
-
-            # ---------------------------------------------------------------
-            # 4. YÜKSELEN ÜÇGEN — Son 8 zigzag pivotu: tepeler yatay, dipler yükseliyor
-            # ---------------------------------------------------------------
-            if not pattern_found and len(zz_chron) >= 4:
-                recent  = zz_chron[-8:]
-                r_highs = [(i, p) for (i, p, t) in recent if t == 'H']
-                r_lows  = [(i, p) for (i, p, t) in recent if t == 'L']
-                if len(r_highs) >= 2 and len(r_lows) >= 2:
-                    top_val   = max(p for _, p in r_highs)
-                    flat_tops = [p for _, p in r_highs if abs(p - top_val) / top_val < 0.03]
-                    flat      = len(flat_tops) >= 2
-                    lows_s    = sorted(r_lows, key=lambda x: x[0])
-                    rising    = all(lows_s[k][1] < lows_s[k+1][1] for k in range(len(lows_s)-1))
-                    if flat and rising:
-                        avg_res    = sum(flat_tops) / len(flat_tops)
-                        dur_bars   = recent[-1][0] - recent[0][0]
-                        breaking   = curr_price >= avg_res * 0.99 and curr_price <= avg_res * 1.04
-                        approaching = curr_price >= avg_res * 0.94 and not breaking
-                        if breaking or approaching:
-                            chart_d = {
-                                "type": "triangle",
-                                "date_start": str(close.index[max(0, recent[0][0] - 3)].date()),
-                                "resistance": float(avg_res),
-                                "pivot_dates":  [str(close.index[i].date()) for i, p, t in recent],
-                                "pivot_prices": [float(p) for i, p, t in recent],
-                                "pivot_types":  [t for i, p, t in recent],
-                            }
-                            pattern_found = True
-                            p_name = f"📐 YÜKS. ÜÇGEN ({dur_bars} Gün)" if breaking else f"⏳ OLUŞAN ÜÇGEN ({dur_bars} Gün)"
-                            p_desc = f"Direnç: {avg_res:.2f} | Yükselen Dip: {len(r_lows)} pivot"
-                            pattern_name = p_name; desc = p_desc
-                            base_score   = 88 if breaking else 68
+            if not pattern_found and len(sw_h_y) >= 2 and len(sw_l_y) >= 2:
+                top_v   = max(v for _, v in sw_h_y)
+                flat_sh = [(i, v) for i, v in sw_h_y if abs(v - top_v) / top_v < 0.04]
+                if len(flat_sh) >= 2:
+                    first_sh_i = min(i for i, _ in flat_sh)
+                    tri_lows   = [(i, v) for i, v in sw_l_y if i >= first_sh_i]
+                    if len(tri_lows) >= 2:
+                        tri_lows_s = sorted(tri_lows, key=lambda x: x[0])
+                        x_l = np.array([i for i, _ in tri_lows_s], dtype=float)
+                        y_l = np.array([v for _, v in tri_lows_s], dtype=float)
+                        sl_coef = np.polyfit(x_l, y_l, 1)
+                        if sl_coef[0] > 0:   # Yükselen destek
+                            avg_res = sum(v for _, v in flat_sh) / len(flat_sh)
+                            first_i = min(first_sh_i, tri_lows_s[0][0])
+                            last_i  = max(max(i for i, _ in flat_sh), tri_lows_s[-1][0])
+                            dur_bars = last_i - first_i
+                            if 20 <= dur_bars <= 252 and (bar_total - last_i) <= 60:
+                                support_now = float(np.polyval(sl_coef, bar_total - 1))
+                                breaking    = curr_price >= avg_res * 0.98 and curr_price <= avg_res * 1.06
+                                approaching = support_now * 0.99 <= curr_price <= avg_res * 0.98
+                                if breaking or approaching:
+                                    target = avg_res + (avg_res - support_now)
+                                    risk   = max(curr_price - support_now * 0.98, 0.01)
+                                    rr     = (target - curr_price) / risk
+                                    if rr >= 1.0:
+                                        dur_months = max(1, round(dur_bars / 21))
+                                        p_name  = (f"📐 YÜKS. ÜÇGEN ({dur_months} Ay) — Kırılım"
+                                                   if breaking else
+                                                   f"⏳ OLUŞAN ÜÇGEN ({dur_months} Ay) — Dirence Yaklaşıyor")
+                                        p_desc  = (f"Direnç: {avg_res:.2f} | Destek: {support_now:.2f} | "
+                                                   f"Hedef: {target:.2f} | {len(flat_sh)} tepe temas")
+                                        chart_d = {
+                                            "type":       "triangle",
+                                            "date_start": str(close.index[max(0, first_i)].date()),
+                                            "resistance": float(avg_res),
+                                            "pivot_dates":  ([str(close.index[i].date()) for i, _ in flat_sh] +
+                                                             [str(close.index[i].date()) for i, _ in tri_lows_s]),
+                                            "pivot_prices": ([v for _, v in flat_sh] +
+                                                             [v for _, v in tri_lows_s]),
+                                            "pivot_types":  (["H"] * len(flat_sh) +
+                                                             ["L"] * len(tri_lows_s)),
+                                        }
+                                        pattern_found = True
+                                        pattern_name  = p_name; desc = p_desc
+                                        base_score    = 88 if breaking else 68
 
             # ---------------------------------------------------------------
             # 4.5 RANGE (YATAY BANT) — Ham fiyat bazlı
@@ -1902,118 +1918,148 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
             zz_gp      = _zigzag_gp(close, threshold=0.04)
             zz_chron   = sorted(zz_gp, key=lambda x: x[0])
 
-            # A) FİNCAN KULP — Zigzag şablonu: H → L → H(≈ilk) → L(kulp)
-            if not pattern_found and len(zz_chron) >= 4:
-                for start_offset in range(min(20, len(zz_chron) - 3)):
-                    p1_i, p1_v, p1_t = zz_chron[-(4 + start_offset)]
-                    p2_i, p2_v, p2_t = zz_chron[-(3 + start_offset)]
-                    p3_i, p3_v, p3_t = zz_chron[-(2 + start_offset)]
-                    p4_i, p4_v, p4_t = zz_chron[-(1 + start_offset)]
-                    # 1 yıldan önce başlayan paterni atla
-                    if p1_i < len(close) - 252: break
-                    if not (p1_t=='H' and p2_t=='L' and p3_t=='H' and p4_t=='L'): continue
-                    rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
-                    rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12
-                    cup_deep       = cup_b < rim_l * 0.88
-                    handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4
-                    handle_shallow = handle_l > rim_r * 0.85
-                    cup_wide       = (p3_i - p1_i) >= 40  # Min 40 bar (~2 ay)
-                    if not (rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide): continue
-                    if start_offset == 0:
-                        breaking   = curr_price >= rim_r * 0.97 and curr_price <= rim_r * 1.08
-                        forming    = curr_price >= rim_r * 0.88 and not breaking  # Rim'e %12 yakın
-                        active     = breaking or forming
-                    else:
-                        active = curr_price >= rim_r * 0.98
-                        breaking = active
-                    if not active: continue
-                    dur_months = max(1, round((p3_i - p1_i) / 21))
-                    if breaking and start_offset == 0:
-                        p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — Kırılım Bölgesinde"
-                        base_score = 90
-                    elif breaking:  # start_offset > 0 → tarihsel formasyon
-                        days_since = len(close) - p3_i
-                        if days_since > 3: continue  # Sadece son 3 günde kırılan formasyon
-                        p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — Tamamlandı ({days_since} gün önce)"
-                        base_score = 80
-                    else:  # forming
-                        dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
-                        p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — Tamamlanmasına %{dist_to_rim:.1f} kaldı"
-                        base_score = max(50, 85 - int(dist_to_rim * 1.5))
-                    pattern_found = True
-                    break
+            # A) FİNCAN KULP — Swing tabanlı + polinom U-şekil doğrulaması
+            def _find_swings_gp(series, lookback=8):
+                highs, lows = [], []
+                arr = series.values.astype(float)
+                n   = len(arr)
+                for i in range(lookback, n - lookback):
+                    w = arr[i - lookback: i + lookback + 1]
+                    if arr[i] >= w.max() - 1e-9: highs.append((i, arr[i]))
+                    if arr[i] <= w.min() + 1e-9: lows.append((i, arr[i]))
+                return highs, lows
 
-            # B) TOBO — Zigzag şablonu: L → H → L*(baş) → H → L(sağ omuz)
-            # Kritik kural: fiyat neckline'ın %25'inden uzakta olamaz → %-54 yanlış pozitif yok
-            if not pattern_found and len(zz_chron) >= 5:
-                for start_offset in range(min(15, len(zz_chron) - 4)):
-                    p1_i, p1_v, p1_t = zz_chron[-(5 + start_offset)]
-                    p2_i, p2_v, p2_t = zz_chron[-(4 + start_offset)]
-                    p3_i, p3_v, p3_t = zz_chron[-(3 + start_offset)]
-                    p4_i, p4_v, p4_t = zz_chron[-(2 + start_offset)]
-                    p5_i, p5_v, p5_t = zz_chron[-(1 + start_offset)]
-                    # 1 yıldan önce başlayan paterni atla
-                    if p1_i < len(close) - 252: break
-                    if not (p1_t=='L' and p2_t=='H' and p3_t=='L' and p4_t=='H' and p5_t=='L'): continue
-                    ls_p, neck_l, head_p, neck_r, rs_p = p1_v, p2_v, p3_v, p4_v, p5_v
-                    neck = (neck_l + neck_r) / 2
-                    head_deep   = head_p < ls_p * 0.95 and head_p < rs_p * 0.95
-                    sym         = abs(ls_p - rs_p) / ls_p < 0.10
-                    neck_flat   = abs(neck_l - neck_r) / neck_l < 0.06
-                    pat_wide    = (p5_i - p1_i) >= 40  # Min 40 bar (~2 ay) — downtrend içi noise elenir
-                    recovery    = (rs_p - head_p) / (neck - head_p) if (neck - head_p) > 0 else 0
-                    recovery_ok = recovery >= 0.50  # Sağ omuz boyuna en az %50 yaklaşmış olmalı
-                    if not (head_deep and sym and neck_flat and pat_wide and recovery_ok): continue
-                    if start_offset == 0:
-                        breaking  = curr_price >= neck * 0.97 and curr_price <= neck * 1.06
-                        # Neckline'a %25'ten fazla uzak olamaz → BURCE gibi %-54 yok
-                        forming   = (curr_price > rs_p * 1.01
-                                     and curr_price >= neck * 0.75    # Max %25 uzakta
-                                     and curr_price < neck * 0.96)
-                        active    = breaking or forming
-                        is_breakout = breaking
-                    else:
-                        active = curr_price >= neck * 0.97
-                        is_breakout = active
-                    if not active: continue
-                    dur_months = max(1, round((p5_i - p1_i) / 21))
-                    if is_breakout and start_offset == 0:
-                        p_name = f"🧛 TOBO ({dur_months} Ay) — Kırılım Bölgesinde"
-                        base_score = 92
-                    elif is_breakout:  # start_offset > 0 → tarihsel formasyon
-                        days_since = len(close) - p5_i
-                        if days_since > 3: continue  # Sadece son 3 günde kırılan formasyon
-                        p_name = f"🧛 TOBO ({dur_months} Ay) — Tamamlandı ({days_since} gün önce)"
-                        base_score = 80
-                    else:  # forming
-                        dist_to_neck = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
-                        p_name = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — Tamamlanmasına %{dist_to_neck:.1f} kaldı"
-                        base_score = 72
-                    pattern_found = True
-                    break
+            _bt    = len(close)
+            _swh, _swl = _find_swings_gp(close, lookback=8)
+            _swh_y = [(i, v) for i, v in _swh if i >= _bt - 252]
+            _swl_y = [(i, v) for i, v in _swl if i >= _bt - 252]
 
-            # C) YÜKSELEN ÜÇGEN — tepeler yatay, dipler yükseliyor
-            if not pattern_found and len(zz_chron) >= 4:
-                recent   = zz_chron[-8:]
-                r_highs  = [(i, p) for (i, p, t) in recent if t == 'H']
-                r_lows   = [(i, p) for (i, p, t) in recent if t == 'L']
-                if len(r_highs) >= 2 and len(r_lows) >= 2:
-                    top_val   = max(p for _, p in r_highs)
-                    flat_tops = [p for _, p in r_highs if abs(p - top_val) / top_val < 0.03]
-                    flat      = len(flat_tops) >= 2
-                    lows_s    = sorted(r_lows, key=lambda x: x[0])
-                    rising    = all(lows_s[k][1] < lows_s[k+1][1] for k in range(len(lows_s)-1))
-                    if flat and rising:
-                        avg_res     = sum(flat_tops) / len(flat_tops)
-                        dur_bars    = recent[-1][0] - recent[0][0]
-                        breaking    = curr_price >= avg_res * 0.99 and curr_price <= avg_res * 1.04
-                        approaching = curr_price >= avg_res * 0.94 and not breaking
-                        if breaking or approaching:
-                            p_name = (f"📐 YÜKS. ÜÇGEN ({dur_bars} Gün) — Kırılım Bölgesinde"
-                                      if breaking else
-                                      f"⏳ OLUŞAN ÜÇGEN ({dur_bars} Gün) — Dirençten %{(avg_res-curr_price)/avg_res*100:.1f} uzakta")
-                            base_score    = 88 if breaking else 68
+            if not pattern_found and len(_swh_y) >= 2 and len(_swl_y) >= 1:
+                for ri in range(len(_swh_y) - 1, 0, -1):
+                    if pattern_found: break
+                    sh2_i, sh2_v = _swh_y[ri]
+                    if _bt - sh2_i > 60: continue
+                    for li in range(ri - 1, max(ri - 12, -1), -1):
+                        sh1_i, sh1_v = _swh_y[li]
+                        cup_dur = sh2_i - sh1_i
+                        if not (40 <= cup_dur <= 252): continue
+                        cup_lows = [(i, v) for i, v in _swl_y if sh1_i < i < sh2_i]
+                        if not cup_lows: continue
+                        sl_i, sl_v = min(cup_lows, key=lambda x: x[1])
+                        depth = (sh1_v - sl_v) / sh1_v
+                        if not (0.12 <= depth <= 0.55): continue
+                        if abs(sh1_v - sh2_v) / sh1_v > 0.12: continue
+                        try:
+                            cup_arr = close.iloc[sh1_i:sh2_i + 1].values.astype(float)
+                            if len(cup_arr) < 10: continue
+                            xf = np.linspace(0, 1, len(cup_arr))
+                            cf = np.polyfit(xf, cup_arr, 2)
+                            yp = np.polyval(cf, xf)
+                            ss_res = np.sum((cup_arr - yp) ** 2)
+                            ss_tot = np.sum((cup_arr - cup_arr.mean()) ** 2)
+                            r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+                            if r2 < 0.55 or cf[0] <= 0: continue
+                        except: continue
+                        h_lows = [(i, v) for i, v in _swl_y if i > sh2_i]
+                        if h_lows:
+                            hl_i, hl_v = h_lows[0]
+                        else:
+                            after = close.iloc[sh2_i:]
+                            if len(after) < 3: continue
+                            rel = int(after.values.argmin())
+                            hl_i, hl_v = sh2_i + rel, float(after.iloc[rel])
+                        if not (hl_v > sl_v + (sh2_v - sl_v) * 0.35): continue
+                        if not (hl_v > sh2_v * 0.82): continue
+                        target = sh2_v + (sh2_v - sl_v)
+                        risk   = max(curr_price - hl_v * 0.98, 0.01)
+                        if (target - curr_price) / risk < 1.0: continue
+                        breaking = curr_price >= sh2_v * 0.97 and curr_price <= sh2_v * 1.10
+                        forming  = curr_price >= hl_v * 0.98 and not breaking
+                        if not (breaking or forming): continue
+                        dur_months = max(1, round(cup_dur / 21))
+                        dist = ((sh2_v - curr_price) / sh2_v * 100) if curr_price < sh2_v else 0
+                        if breaking:
+                            p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — Kırılım Bölgesinde"
+                            base_score = 92
+                        else:
+                            p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — %{dist:.1f} kaldı"
+                            base_score = 75
+                        pattern_found = True
+                        break
+
+            # B) TOBO — Swing tabanlı: 5 pivot L, H, L(derin), H, L
+            if not pattern_found and len(_swh_y) >= 2 and len(_swl_y) >= 3:
+                for i_rs in range(len(_swl_y) - 1, 1, -1):
+                    if pattern_found: break
+                    sl3_i, sl3_v = _swl_y[i_rs]
+                    if _bt - sl3_i > 60: continue
+                    for i_hd in range(i_rs - 1, 0, -1):
+                        if pattern_found: break
+                        sl2_i, sl2_v = _swl_y[i_hd]
+                        for i_ls in range(i_hd - 1, max(i_hd - 8, -1), -1):
+                            sl1_i, sl1_v = _swl_y[i_ls]
+                            dur = sl3_i - sl1_i
+                            if not (40 <= dur <= 252): continue
+                            if not (sl2_v < sl1_v * 0.95 and sl2_v < sl3_v * 0.95): continue
+                            sh1_c = [(i, v) for i, v in _swh_y if sl1_i < i < sl2_i]
+                            sh2_c = [(i, v) for i, v in _swh_y if sl2_i < i < sl3_i]
+                            if not sh1_c or not sh2_c: continue
+                            sh1_i, sh1_v = max(sh1_c, key=lambda x: x[1])
+                            sh2_i, sh2_v = max(sh2_c, key=lambda x: x[1])
+                            neck = (sh1_v + sh2_v) / 2
+                            if abs(sh1_v - sh2_v) / sh1_v > 0.06: continue
+                            if abs(sl1_v - sl3_v) / sl1_v > 0.15: continue
+                            recovery = (sl3_v - sl2_v) / (neck - sl2_v) if (neck - sl2_v) > 0 else 0
+                            if recovery < 0.45: continue
+                            target = neck + (neck - sl2_v)
+                            risk   = max(curr_price - sl3_v * 0.98, 0.01)
+                            if (target - curr_price) / risk < 1.0: continue
+                            breaking = curr_price >= neck * 0.97 and curr_price <= neck * 1.08
+                            forming  = curr_price > sl3_v * 1.01 and curr_price < neck * 0.96
+                            if not (breaking or forming): continue
+                            dur_months = max(1, round(dur / 21))
+                            dist = ((neck - curr_price) / neck * 100) if curr_price < neck else 0
+                            if breaking:
+                                p_name = f"🧛 TOBO ({dur_months} Ay) — Kırılım Bölgesinde"
+                                base_score = 90
+                            else:
+                                p_name = f"⏳ OLUŞAN TOBO ({dur_months} Ay) — %{dist:.1f} kaldı"
+                                base_score = 72
                             pattern_found = True
+                            break
+
+            # C) YÜKSELEN ÜÇGEN — Düz direnç + yükselen destek
+            if not pattern_found and len(_swh_y) >= 2 and len(_swl_y) >= 2:
+                top_v_gp   = max(v for _, v in _swh_y)
+                flat_sh_gp = [(i, v) for i, v in _swh_y if abs(v - top_v_gp) / top_v_gp < 0.04]
+                if len(flat_sh_gp) >= 2:
+                    first_sh_i_gp = min(i for i, _ in flat_sh_gp)
+                    tri_lows_gp   = [(i, v) for i, v in _swl_y if i >= first_sh_i_gp]
+                    if len(tri_lows_gp) >= 2:
+                        tri_lows_s_gp = sorted(tri_lows_gp, key=lambda x: x[0])
+                        x_l_gp = np.array([i for i, _ in tri_lows_s_gp], dtype=float)
+                        y_l_gp = np.array([v for _, v in tri_lows_s_gp], dtype=float)
+                        sl_coef_gp = np.polyfit(x_l_gp, y_l_gp, 1)
+                        if sl_coef_gp[0] > 0:
+                            avg_res_gp  = sum(v for _, v in flat_sh_gp) / len(flat_sh_gp)
+                            first_i_gp  = min(first_sh_i_gp, tri_lows_s_gp[0][0])
+                            last_i_gp   = max(max(i for i, _ in flat_sh_gp), tri_lows_s_gp[-1][0])
+                            dur_bars_gp = last_i_gp - first_i_gp
+                            if 20 <= dur_bars_gp <= 252 and (_bt - last_i_gp) <= 60:
+                                sup_gp   = float(np.polyval(sl_coef_gp, _bt - 1))
+                                breaking = curr_price >= avg_res_gp * 0.98 and curr_price <= avg_res_gp * 1.06
+                                approach = sup_gp * 0.99 <= curr_price <= avg_res_gp * 0.98
+                                if breaking or approach:
+                                    target_gp = avg_res_gp + (avg_res_gp - sup_gp)
+                                    risk_gp   = max(curr_price - sup_gp * 0.98, 0.01)
+                                    if (target_gp - curr_price) / risk_gp >= 1.0:
+                                        dur_months_gp = max(1, round(dur_bars_gp / 21))
+                                        p_name = (f"📐 YÜKS. ÜÇGEN ({dur_months_gp} Ay) — Kırılım"
+                                                  if breaking else
+                                                  f"⏳ OLUŞAN ÜÇGEN ({dur_months_gp} Ay) — Dirence Yaklaşıyor")
+                                        base_score    = 88 if breaking else 68
+                                        pattern_found = True
+
 
             # D) RANGE (YATAY BANT) — direnç kırılımı veya tabandan destek
             if not pattern_found:
@@ -3526,206 +3572,124 @@ def detect_supply_demand_zones(df):
 # ==============================================================================
 def process_single_ict_setup(symbol, df):
     """
-    ICT 2022 Mentorship Model - MAXIMUM WIN RATE (KESKİN NİŞANCI AJANI)
-    v2 İyileştirmeleri:
-    1. Fractal pivot tespiti (2-bar her yanda) — _compute_smc_elements ile tutarlı
-    2. Mitigated FVG filtresi — zaten dolmuş gap'ler dışlanır
-    3. OTE/Fibonacci bonus katman — FVG CE (50%) zorunlu, OTE confluence varsa +bonus
-    4. Displacement + RRR >= 2.5 korundu
+    ICT Sniper — BIST Günlük Uyarlaması
+    Klasik ICT'nin BIST günlük verisinde çalışan özü:
+      1. SMA50 üstünde (kısa vade trend sağlam)
+      2. Son 30 barda swing low sweep + recovery (stop avı + dönüş)
+      3. Sweep sonrası kapanış swept seviyenin üstünde
+      4. Son 10 günde pozitif momentum (close bugün > close 10 gün önce)
+      5. RRR ≥ 1.5 (yakın direnç hedef)
     """
     try:
-        if df.empty or len(df) < 50: return None
+        if df.empty or len(df) < 60: return None
 
-        close = df['Close']; high = df['High']; low = df['Low']; open_ = df['Open']
+        close = df['Close']; high = df['High']; low = df['Low']
         current_price = float(close.iloc[-1])
         n = len(df)
 
-        # --- 1. HACİM VE GÖVDE (Displacement Teyidi) ---
+        # ── 1. TREND FİLTRESİ: SMA50 üstünde olmalı ──────────────────────────
+        sma50 = float(close.rolling(50).mean().iloc[-1])
+        if current_price <= sma50: return None
+
+        # ── 2. MOMENTUM: Son 10 günde yükseliş ────────────────────────────────
+        if float(close.iloc[-1]) <= float(close.iloc[-6]): return None
+
+        # ── 3. HACİM HAZIRLIĞI: 20 günlük ortalama hacim ─────────────────────
         has_vol = 'Volume' in df.columns and not df['Volume'].isnull().all()
-        volume = df['Volume'] if has_vol else pd.Series([1]*len(df), index=df.index)
-        avg_vol = volume.rolling(20).mean()
+        vol_arr = df['Volume'].values if has_vol else None
+        avg_vol_arr = df['Volume'].rolling(20).mean().values if has_vol else None
 
-        body_sizes = abs(close - open_)
-        avg_body = body_sizes.rolling(20).mean()
+        # ── 4. REFERANS DIPLARI: Pencere [-90:-30] arası swing low'lar ────────
+        #    (sweep taramasının dışında kalan "eski dip" seviyeleri)
+        ref_lows = []
+        lookback = 5  # her yanda 5 bar
+        ref_start = max(lookback, n - 90)
+        ref_end   = max(lookback, n - 30)
+        low_arr   = low.values
+        high_arr  = high.values
+        for i in range(ref_start, ref_end):
+            lo = float(low_arr[i])
+            window = low_arr[max(0, i - lookback): i + lookback + 1]
+            if lo <= float(window.min()) + 1e-9:
+                ref_lows.append((i, lo))
 
-        # --- 2. FRACTAL PIVOT TESPİTİ (2-bar her yanda) ---
-        # Eski: 7-mumluk katı eşitlik window → düz barlarda çift kayıt, false positive
-        # Yeni: fractal mantığı — her iki yanda 2 bar daha düşük/yüksek olmalı
-        sw_highs = []; sw_lows = []
-        search_start = max(2, n - 40)
-        for i in range(search_start, n - 2):
-            h = float(high.iloc[i])
-            if (h > high.iloc[i-1] and h >= high.iloc[i-2] and
-                    h > high.iloc[i+1] and h >= high.iloc[i+2]):
-                sw_highs.append((df.index[i], h, i))
-            lo = float(low.iloc[i])
-            if (lo < low.iloc[i-1] and lo <= low.iloc[i-2] and
-                    lo < low.iloc[i+1] and lo <= low.iloc[i+2]):
-                sw_lows.append((df.index[i], lo, i))
+        if not ref_lows: return None
 
-        if not sw_highs or not sw_lows: return None
+        # ── 5. SWEEP + RECOVERY + HACİM TEYİDİ: Son 30 barda ────────────────
+        #    a) Herhangi bir ref_low'un altına inilmiş (sweep)
+        #    b) Sweep gününde hacim 20g ort. × 1.5 üstünde (kurumsal baskı)
+        #    c) O gün veya sonrasında kapanış swept seviyenin ÜSTÜNDE (recovery)
+        sweep_found   = False
+        sweep_ref_low = None
+        sweep_bar_idx = None
 
-        last_sh_val = sw_highs[-1][1]
-        last_sl_val = sw_lows[-1][1]
+        for ref_i, ref_lo in ref_lows:
+            sweep_window_start = n - 30
+            for j in range(sweep_window_start, n):
+                if float(low_arr[j]) < ref_lo:           # sweep gerçekleşti
+                    # Hacim teyidi: sweep gününde yeterli hacim var mı?
+                    if has_vol and avg_vol_arr is not None:
+                        avg_v = float(avg_vol_arr[j]) if not np.isnan(avg_vol_arr[j]) else 0
+                        sweep_vol = float(vol_arr[j])
+                        if avg_v > 0 and sweep_vol < avg_v * 2.0:
+                            continue                       # Hacimsiz sweep → geçersiz
+                    # Recovery: j veya sonraki barlarda kapanış > ref_lo
+                    for k in range(j, min(j + 6, n)):
+                        if float(close.iloc[k]) > ref_lo:
+                            sweep_found   = True
+                            sweep_ref_low = ref_lo
+                            sweep_bar_idx = k
+                            break
+                if sweep_found: break
+            if sweep_found: break
 
-        # --- 3. HTF TREND FİLTRESİ (SMA200 — büyük trend yönü) ---
-        sma_200 = close.rolling(200).mean().iloc[-1]
-        htf_bullish = current_price > sma_200
-        htf_bearish = current_price < sma_200
+        if not sweep_found: return None
 
-        # numpy arrays (FVG tarama için hızlı erişim)
-        high_arr = high.values
-        low_arr  = low.values
+        # ── 5. STOP / HEDEF / RRR ─────────────────────────────────────────────
+        stop_loss   = sweep_ref_low * 0.985          # sweep seviyesinin %1.5 altı
+        entry_price = current_price
+        risk        = entry_price - stop_loss
+        if risk <= 0: return None
 
-        # =========================================================
-        # SENARYO A: LONG (BOĞA) SETUP — YENİ MİMARİ
-        # Zorunlu : Sweep + MSS + Displacement + RRR ≥ 2.0
-        # Bonus   : FVG CE'de fiyat → rozet + açıklama
-        #           OTE Fibonacci (0.618–0.786) → ek rozet
-        # =========================================================
-        if htf_bullish:
-            # --- Likidite Avı (son 20 bar) ---
-            recent_low = low.iloc[-20:].min()
-            sweep_lows = [sl for sl in sw_lows[:-1] if recent_low < sl[1]]
+        # Hedef: mevcut fiyatın üzerindeki en yakın swing high (son 90 bar)
+        sw_highs = []
+        for i in range(max(lookback, n - 90), n - lookback):
+            hi = float(high_arr[i])
+            window = high_arr[max(0, i - lookback): i + lookback + 1]
+            if hi >= float(window.max()) - 1e-9:
+                sw_highs.append(hi)
 
-            if sweep_lows:
-                # --- MSS: Yapı kırılımı ---
-                if close.iloc[-1] > last_sh_val or close.iloc[-2] > last_sh_val:
+        targets = [h for h in sw_highs if h > entry_price * 1.01]
+        if not targets: return None
+        target_price = min(targets)                  # En yakın direnç
 
-                    # --- Displacement: Hacimli yeşil mum (son 8 bar, eşik gevşetildi) ---
-                    green_bodies = body_sizes.where(close > open_, 0)
-                    max_green_recent = green_bodies.iloc[-8:].max()
-                    idx_max_green = green_bodies.iloc[-8:].idxmax()
-                    vol_check = volume[idx_max_green] > (avg_vol[idx_max_green] * 1.1) if has_vol else True
+        rrr = (target_price - entry_price) / risk
+        if rrr < 2.0: return None
 
-                    if max_green_recent > (avg_body.iloc[-1] * 1.3) and vol_check:
+        # ── 6. SKOR & AÇIKLAMA ───────────────────────────────────────────────
+        skor = 75
+        if rrr >= 2.5: skor += 15
+        elif rrr >= 2.0: skor += 10
+        elif rrr >= 1.5: skor += 5
+        skor = min(100, skor)
 
-                        # --- Stop / Target / RRR (zorunlu) ---
-                        stop_loss   = recent_low * 0.99
-                        entry_price = current_price
-                        risk        = entry_price - stop_loss
-                        if risk <= 0: return None
-                        targets = [sh[1] for sh in sw_highs if sh[1] > entry_price * 1.01]
-                        if not targets: return None
-                        target_price = min(targets)
-                        rrr = (target_price - entry_price) / risk
-                        if rrr < 2.0: return None
+        days_since_sweep = n - 1 - sweep_bar_idx
+        aciklama = (
+            f"Stop avı yapıldı ({days_since_sweep} gün önce), fiyat toparlandı ve "
+            f"SMA50 üstünde momentum devam ediyor — giriş bölgesinde kurulum hazır"
+        )
 
-                        # Ana sinyal tamam — bonus kontrolleri başlıyor
-                        bonus_badges   = []
-                        bonus_aciklama = []
-                        skor = 80
-
-                        # BONUS 1: FVG CE'de fiyat var mı? (son 20 bar)
-                        for i in range(n - 1, max(n - 20, 2), -1):
-                            if low_arr[i] > high_arr[i - 2]:           # Bullish FVG
-                                fvg_top = float(low_arr[i])
-                                fvg_bot = float(high_arr[i - 2])
-                                if any(low_arr[j] < fvg_top for j in range(i + 1, n)):
-                                    continue                             # Dolmuş FVG — atla
-                                fvg_ce = fvg_bot + (fvg_top - fvg_bot) * 0.5
-                                # ±%3 tolerans (eskiden ±%1)
-                                if current_price <= (fvg_ce * 1.03) and current_price >= (fvg_bot * 0.97):
-                                    bonus_badges.append("🎯 FVG CE")
-                                    bonus_aciklama.append(
-                                        "Fiyat kurumsal boşluk bölgesinin (FVG) tam ortasında — "
-                                        "kurumlar bu bölgeyi geri doldururken alım yapıyor olabilir"
-                                    )
-                                    skor += 12
-
-                                    # BONUS 2: OTE Fibonacci (sadece FVG CE varsa kontrol edilir)
-                                    if recent_low < last_sh_val:
-                                        fib_618 = last_sh_val - (last_sh_val - recent_low) * 0.618
-                                        fib_786 = last_sh_val - (last_sh_val - recent_low) * 0.786
-                                        if (fib_786 * 0.99) <= fvg_ce <= (fib_618 * 1.01):
-                                            bonus_badges.append("⭐ OTE")
-                                            bonus_aciklama.append(
-                                                "Fibonacci %61.8–%78.6 bölgesiyle örtüşüyor — "
-                                                "Optimal Trade Entry: kurumların en çok tercih ettiği giriş aralığı"
-                                            )
-                                            skor += 8
-                                break  # İlk geçerli FVG yeterli
-
-                        skor = min(100, skor)
-                        badge_str    = " | ".join(bonus_badges) if bonus_badges else ""
-                        aciklama_str = " · ".join(bonus_aciklama) if bonus_aciklama else \
-                                       "Stop avı tamamlandı, yapı kırıldı, kurumsal itme var — temel kurulum hazır"
-
-                        durum = f"RRR: {rrr:.1f} | Stop: {stop_loss:.2f} | Hedef: {target_price:.2f}"
-                        if badge_str:
-                            durum = f"{badge_str} | {durum}"
-
-                        return {
-                            "Sembol":    symbol,
-                            "Fiyat":     current_price,
-                            "Yön":       "LONG",
-                            "İkon":      "🎯",
-                            "Renk":      "#16a34a",
-                            "Durum":     durum,
-                            "Aciklama":  aciklama_str,
-                            "Stop_Loss": f"{stop_loss:.2f}",
-                            "Skor":      skor
-                        }
-
-        # =========================================================
-        # SENARYO B: SHORT (AYI) SETUP ARANIYOR
-        # =========================================================
-        elif htf_bearish:
-            # Likidite Avı
-            recent_high = high.iloc[-10:].max()
-            sweep_highs = [sh for sh in sw_highs[:-1] if recent_high > sh[1]]
-
-            if sweep_highs:
-                # MSS (Market Structure Shift)
-                if close.iloc[-1] < last_sl_val or close.iloc[-2] < last_sl_val:
-
-                    # Hacimli Kırmızı Mum (Displacement)
-                    red_bodies = body_sizes.where(close < open_, 0)
-                    max_red_recent = red_bodies.iloc[-5:].max()
-                    idx_max_red = red_bodies.iloc[-5:].idxmax()
-
-                    vol_check = volume[idx_max_red] > (avg_vol[idx_max_red] * 1.3) if has_vol else True
-
-                    if max_red_recent > (avg_body.iloc[-1] * 1.5) and vol_check:
-
-                        # FVG Tespiti + Mitigation Filtresi
-                        for i in range(n - 1, max(n - 6, 2), -1):
-                            if high_arr[i] < low_arr[i - 2]:           # Bearish FVG
-                                fvg_top = float(low_arr[i - 2])
-                                fvg_bot = float(high_arr[i])
-                                # Mitigated: sonraki herhangi bir high gap'e girdi mi?
-                                if any(high_arr[j] > fvg_bot for j in range(i + 1, n)):
-                                    continue                             # Dolmuş FVG — atla
-                                # Consequent Encroachment (CE)
-                                fvg_ce = fvg_bot + (fvg_top - fvg_bot) * 0.5
-                                if current_price >= (fvg_ce * 0.99) and current_price <= (fvg_top * 1.01):
-                                    stop_loss    = recent_high * 1.01
-                                    entry_price  = current_price
-                                    risk         = stop_loss - entry_price
-                                    if risk <= 0: continue
-                                    targets = [sl[1] for sl in sw_lows if sl[1] < entry_price * 0.98]
-                                    if not targets: continue
-                                    target_price = max(targets)
-                                    rrr = (entry_price - target_price) / risk
-                                    if rrr >= 2.5:
-                                        # --- BONUS: Fibonacci OTE Confluence (0.618–0.786) ---
-                                        ote_bonus = ""
-                                        ote_skor  = 99
-                                        if recent_high > last_sl_val:
-                                            fib_618 = last_sl_val + (recent_high - last_sl_val) * 0.618
-                                            fib_786 = last_sl_val + (recent_high - last_sl_val) * 0.786
-                                            if (fib_618 * 0.99) <= fvg_ce <= (fib_786 * 1.01):
-                                                ote_bonus = " | ⭐ OTE Confluence (Bonus)"
-                                                ote_skor  = 100
-                                        return {
-                                            "Sembol": symbol, "Fiyat": current_price,
-                                            "Yön": "SHORT", "İkon": "🎯", "Renk": "#dc2626",
-                                            "Durum": f"Giriş: CE | RRR: {rrr:.1f} | Hedef: {target_price:.2f}{ote_bonus}",
-                                            "Stop_Loss": f"{stop_loss:.2f}",
-                                            "Skor": ote_skor
-                                        }
-
-        return None
+        return {
+            "Sembol":    symbol,
+            "Fiyat":     current_price,
+            "Yön":       "LONG",
+            "İkon":      "🎯",
+            "Renk":      "#16a34a",
+            "Durum":     f"RRR: {rrr:.1f} | Stop: {stop_loss:.2f} | Hedef: {target_price:.2f}",
+            "Aciklama":  aciklama,
+            "Stop_Loss": f"{stop_loss:.2f}",
+            "Skor":      skor
+        }
 
     except Exception:
         return None
@@ -3772,14 +3736,15 @@ def scan_ict_batch(asset_list):
 def scan_nadir_firsat_batch(asset_list):
     """
     Royal Flush Nadir Fırsat Toplu Tarama
-    4/4 Kriter (AND mantığı — hepsi sağlanmalı):
+    5/5 Kriter (AND mantığı — hepsi sağlanmalı):
       1. BOS / MSS (Bullish yapı kırılımı) — ICT
-      2. RS Alpha > 0  (piyasayı geçiyor)
-      3. VWAP sapması < %12  (aşırı şişmemiş)
+      2. RS Alpha > %1.5  (endeksi en az %1.5 geçiyor)
+      3. VWAP sapması < %10  (aşırı şişmemiş)
       4. Hacim canlanması:
-           A) Son 3 gün ort. > 20 gün ort. × 1.2  (zaten yüksek)
+           A) Son 3 gün ort. > 20 gün ort. × 1.3  (zaten yüksek)
            VEYA
            B) Son 2 gün ort. > önceki 5 gün ort. × 1.3  (yeni canlanıyor)
+      5. RSI < 65  (aşırı alım değil)
     """
     results = []
     for symbol in asset_list:
@@ -3799,8 +3764,8 @@ def scan_nadir_firsat_batch(asset_list):
             pa = calculate_price_action_dna(symbol)
             if not pa:
                 continue
-            cond_rs   = pa.get('rs',   {}).get('alpha', 0) > 0
-            cond_vwap = pa.get('vwap', {}).get('diff',  0) < 12
+            cond_rs   = pa.get('rs',   {}).get('alpha', 0) > 1.5
+            cond_vwap = pa.get('vwap', {}).get('diff',  0) < 10
             if not (cond_rs and cond_vwap):
                 continue
 
@@ -3813,15 +3778,33 @@ def scan_nadir_firsat_batch(asset_list):
             son3_ort = vol.iloc[-3:].mean()             # son 3 gün
             son2_ort = vol.iloc[-2:].mean()             # son 2 gün
             onc5_ort = vol.iloc[-7:-2].mean()           # önceki 5 gün
-            cond_vol = (son3_ort > ort20 * 1.2) or (son2_ort > onc5_ort * 1.3)
+            cond_vol = (son3_ort > ort20 * 1.3) or (son2_ort > onc5_ort * 1.3)
             if not cond_vol:
                 continue
 
-            price = round(float(df_p['Close'].iloc[-1]), 2)
+            # ── 4. RSI < 65 (aşırı alım değil) ──
+            _dd = df_p['Close'].diff()
+            _gg = _dd.where(_dd > 0, 0).rolling(14).mean()
+            _ll = (-_dd.where(_dd < 0, 0)).rolling(14).mean()
+            _rsi_rf = float((100 - (100 / (1 + _gg / _ll))).iloc[-1])
+            if _rsi_rf >= 65:
+                continue
+
+            price    = round(float(df_p['Close'].iloc[-1]), 2)
+            _rs_a    = round(pa.get('rs',   {}).get('alpha', 0), 2)
+            _vwap_d  = round(pa.get('vwap', {}).get('diff',  0), 1)
+            _aciklama_rf = (
+                f"BOS/MSS yapı kırılımı teyitli · "
+                f"RS Alpha +{_rs_a}% (endeks üstü güç) · "
+                f"VWAP sapması %{_vwap_d} (şişmemiş) · "
+                f"RSI {_rsi_rf:.0f} (aşırı alım yok) · "
+                f"Hacim canlandı"
+            )
             results.append({
-                'Sembol': symbol,
-                'Fiyat':  price,
-                'Durum':  '4/4 | BOS+RS+VWAP+VOL',
+                'Sembol':   symbol,
+                'Fiyat':    price,
+                'Durum':    '5/5 | BOS+RS+VWAP+VOL+RSI',
+                'Aciklama': _aciklama_rf,
             })
         except:
             continue
@@ -6449,7 +6432,8 @@ def render_harmonic_banner(ticker):
             for k, (lbl, idx) in enumerate(zip(pivot_labels, p_idx)):
                 try:
                     if idx is None:
-                        dt_str  = "bekleniyor"
+                        _d_prz_str = f" (~{prz:.2f})" if lbl == 'D' and prz else ""
+                        dt_str  = f"bekleniyor{_d_prz_str}"
                         px_str  = ""
                     else:
                         dt      = df.index[idx]
@@ -12136,13 +12120,13 @@ if st.session_state.generate_prompt:
     # Final Onay Durumu
     is_golden = "🚀 EVET (3/3 Onaylı - KRİTİK FIRSAT)" if (c_pwr and c_loc and c_nrg) else "HAYIR"
 
-    # --- ROYAL FLUSH NADİR FIRSAT DURUMU HESAPLAMA (4/4 Kesişim) ---
+    # --- ROYAL FLUSH NADİR FIRSAT DURUMU HESAPLAMA (5/5 Kesişim) ---
     # 1. Yapı: BOS veya MSS Bullish olmalı
     c_struct = "BOS (Yükseliş" in ict_data.get('structure', '') or "MSS" in ict_data.get('structure', '')
-    # 2. Güç: Alpha Pozitif olmalı (RS Liderliği)
-    c_rs = pa_data.get('rs', {}).get('alpha', 0) > 0
-    # 3. Maliyet: VWAP sapması %12'den az olmalı (Güvenli Zemin)
-    c_vwap = pa_data.get('vwap', {}).get('diff', 0) < 12
+    # 2. Güç: RS Alpha > %1.5 (endeksi en az %1.5 geçiyor)
+    c_rs = pa_data.get('rs', {}).get('alpha', 0) > 1.5
+    # 3. Maliyet: VWAP sapması %10'dan az olmalı (Güvenli Zemin)
+    c_vwap = pa_data.get('vwap', {}).get('diff', 0) < 10
     # 4. Hacim canlanması
     try:
         _vol = df_hist['Volume']
@@ -12150,11 +12134,19 @@ if st.session_state.generate_prompt:
         _s3  = _vol.iloc[-3:].mean()
         _s2  = _vol.iloc[-2:].mean()
         _o5  = _vol.iloc[-7:-2].mean()
-        c_vol = (_s3 > _o20 * 1.2) or (_s2 > _o5 * 1.3)
+        c_vol = (_s3 > _o20 * 1.3) or (_s2 > _o5 * 1.3)
     except:
         c_vol = False
+    # 5. RSI < 65 (aşırı alım bölgesinde değil)
+    try:
+        _dd = df_hist['Close'].diff()
+        _gg = _dd.where(_dd > 0, 0).rolling(14).mean()
+        _ll = (-_dd.where(_dd < 0, 0)).rolling(14).mean()
+        c_rsi = float((100 - (100 / (1 + _gg / _ll))).iloc[-1]) < 65
+    except:
+        c_rsi = False
     # Final Royal Flush Nadir Fırsat Onayı
-    is_nadir = "♠️ EVET (4/4 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_rs and c_vwap and c_vol) else "HAYIR"
+    is_nadir = "♠️ EVET (5/5 KRALİYET SET-UP - EN YÜKSEK OLASILIK)" if (c_struct and c_rs and c_vwap and c_vol and c_rsi) else "HAYIR"
 
     # [YENİ EKLENTİ] MOMENTUM DEDEKTİFİ (Yorgun Boğa Analizi)
     momentum_analiz_txt = "Veri Yok"
@@ -12647,7 +12639,7 @@ if st.session_state.generate_prompt:
     # === HOOK BAŞLIĞI ve DİNAMİK BÖLÜM BAŞLIĞI ===
     # En güçlü sinyal etiketi (Python tarafı)
     if is_nadir != "HAYIR":
-        _hook_sinyal = "💎 Platin Fırsat Tetiklendi"
+        _hook_sinyal = "♠️ Royal Flush Nadir Fırsat"
     elif "EVET" in str(is_golden):
         _hook_sinyal = "🏆 Altın Fırsat Aktif"
     elif "TOPLAMA" in ai_scenario_title.upper():
@@ -13534,9 +13526,20 @@ with col_left:
         if _k not in st.session_state: st.session_state[_k] = []
 
     # Skor kartı başlığı — gradient progress bar + puan badge
-    def _scan_card_header(icon, title, score, subtitle, color="#3b82f6"):
-        pct = score
+    def _darken(hex_color, factor=0.65):
+        h = hex_color.lstrip('#')
+        r, g, b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
+        return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+
+    def _scan_card_header(icon, title, score, subtitle, color="#3b82f6", desc=""):
+        pct   = score
         stars = "⭐" * (score // 20)
+        dc    = _darken(color)
+        if desc:
+            bottom = (f"<span style='color:{dc};font-weight:700;font-size:0.72rem;'>{desc}</span> "
+                      f"<span style='color:#94a3b8;font-size:0.80rem;'>({subtitle})</span>")
+        else:
+            bottom = f"<span style='color:#64748b;font-size:0.7rem;'>{stars} {subtitle}</span>"
         return (f"<div style='background:linear-gradient(135deg,{color}18,{color}06);"
                 f"border:1px solid {color}50;border-radius:10px;padding:9px 13px;margin-bottom:7px;'>"
                 f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;'>"
@@ -13545,7 +13548,7 @@ with col_left:
                 f"</div>"
                 f"<div style='background:rgba(0,0,0,0.12);border-radius:3px;height:4px;margin-bottom:5px;'>"
                 f"<div style='background:{color};height:4px;border-radius:3px;width:{pct}%;'></div></div>"
-                f"<div style='font-size:0.7rem;color:#64748b;'>{stars} {subtitle}</div></div>")
+                f"<div style='margin-top:3px;'>{stars} {bottom}</div></div>")
 
     # ══════════════════════════════════════════════════════════
     # ① CONFLUENCE & ELİTLER — Her Zaman Görünür
@@ -13557,8 +13560,9 @@ with col_left:
 
     with _c_left:
         st.markdown(_scan_card_header("🔥", "CONFLUENCE", 95,
-            "2-3 bağımsız metodoloji aynı hisseyi işaret ettiğinde — en güvenilir sinyal",
-            "#7c3aed"), unsafe_allow_html=True)
+            "2-3 Metodoloji Kesişimi", "#7c3aed",
+            desc="2-3 bağımsız metodoloji aynı hisseyi işaret ettiğinde — en güvenilir sinyal"
+        ), unsafe_allow_html=True)
         _hits  = st.session_state.get('confluence_hits')
         _hc_df = st.session_state.get('harmonic_confluence_data')
         _dark  = st.session_state.get('dark_mode', False)
@@ -13613,8 +13617,10 @@ with col_left:
 
     with _c_right:
         st.markdown(_scan_card_header("💎", "ELİTLER", 88,
-            "Altın (RS+Discount+Enerji) · Platin = Altın + SMA200+SMA50+RSI<70",
-            "#1d4ed8"), unsafe_allow_html=True)
+            "RS+Discount+Enerji · SMA200+SMA50+RSI<70",
+            "#1d4ed8",
+            desc="Kurumsal fonların pozisyon almak istediği yapısal kalite hisseleri"
+        ), unsafe_allow_html=True)
         if st.button("💎 ELİT TARAMA (Platin + Altın)", use_container_width=True, key="btn_elit_tara_main",
                      help="Piyasanın en kaliteli hisselerini iki kategoride listeler.\n\n💎 Platin Fırsat: Fiyat hem 200 hem 50 günlük ortalamanın üstünde, RS endeksten güçlü, Discount bölgede ve hacim artıyor — tüm kriterler aynı anda sağlanmalı.\n\n🦁 Altın Fırsat: Son 10 günde endeksi geçmiş, son 60 güne göre hâlâ ucuz, enerji/hacim yükseliyor. Büyük oyunculara yakın ama henüz fazla yükselmemiş hisseler."):
             with st.spinner("Elit hisseler aranıyor..."):
@@ -13688,7 +13694,9 @@ with col_left:
     with _t1c1:
         st.markdown(_scan_card_header(
             "🦅", "ICT Sniper  &  ♠️ Royal Flush", 90,
-            "MSS + FVG + OTE  |  BOS/MSS + AI(7/8) + RS Alpha + VWAP · 4/4", "#16a34a"
+            "SMA50+Sweep+Hacim×2+RRR≥2  |  BOS/MSS+RS>1.5+VWAP<10+Hacim×1.3+RSI<65",
+            "#16a34a",
+            desc="🦅 ICT Sniper: Hacimsiz stop avı + toparlanma = kurumsal giriş noktası &nbsp;·&nbsp; ♠️ Royal Flush: 5 kriterin aynı anda kesiştiği nadir kraliyet kurulumu"
         ), unsafe_allow_html=True)
 
         # İki iç sütun: ICT | Royal Flush
@@ -13722,15 +13730,16 @@ with col_left:
                         for i, row in longs.iterrows():
                             sym = row['Sembol']
                             _aciklama = row.get('Aciklama', '')
-                            _tip = f"Stop: {row['Stop_Loss']}\n\n{_aciklama}" if _aciklama else f"Stop: {row['Stop_Loss']}"
                             if st.button(f"🐂 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}",
-                                         key=f"ict_long_{sym}_{i}", use_container_width=True, help=_tip):
+                                         key=f"ict_long_{sym}_{i}", use_container_width=True):
                                 on_scan_result_click(sym); st.rerun()
+                            if _aciklama:
+                                st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                            f"line-height:1.3;'>{_aciklama}</div>", unsafe_allow_html=True)
                         for i, row in shorts.iterrows():
                             sym = row['Sembol']
                             if st.button(f"🐻 {sym.replace('.IS','')} ({row['Fiyat']:.2f}) | {row['Durum']}",
-                                         key=f"ict_short_{sym}_{i}", use_container_width=True,
-                                         help=f"Stop Loss: {row['Stop_Loss']}"):
+                                         key=f"ict_short_{sym}_{i}", use_container_width=True):
                                 on_scan_result_click(sym); st.rerun()
 
         with _rf_sub:
@@ -13741,9 +13750,10 @@ with col_left:
                          use_container_width=True, key="btn_scan_nadir_firsat",
                          help="4 kriter aynı anda sağlanmalı:\n\n"
                               "♠️ BOS / MSS (Bullish yapı kırılımı)\n"
-                              "📈 RS Alpha > 0 (piyasayı geçiyor)\n"
-                              "⚖️ VWAP sapması < %12 (aşırı şişmemiş)\n"
-                              "📊 Hacim canlanması (son 3 gün > 20 gün ort×1.2 VEYA son 2 gün > önceki 5 gün×1.3)\n\n"
+                              "📈 RS Alpha > %1.5 (endeksi en az %1.5 geçiyor)\n"
+                              "⚖️ VWAP sapması < %10 (aşırı şişmemiş)\n"
+                              "📊 Hacim canlanması (son 3 gün > 20 gün ort×1.3 VEYA son 2 gün > önceki 5 gün×1.3)\n"
+                              "💡 RSI < 65 (aşırı alım bölgesinde değil)\n\n"
                               "Yılda nadiren görülen en seçici kurulum. Tüm kriterlerin aynı anda kesişmesi gerekir."):
                 with st.spinner("♠️ 4/4 Kraliyet kurulumu taranıyor (BOS/MSS + AI + RS + VWAP)..."):
                     current_assets = ASSET_GROUPS.get(st.session_state.category, [])
@@ -13763,13 +13773,19 @@ with col_left:
                             fs    = f"{int(fv)}" if fv >= 1000 else f"{fv:.2f}"
                             icon  = "♠️♠️" if row.get('Votes', 0) >= 7 else "♠️"
                             if st.button(f"{icon} {sym.replace('.IS','')} ({fs}) | {row['Durum']}",
-                                         key=f"nadir_firsat_{sym}_{i}", use_container_width=True,
-                                         help="4/4: BOS/MSS + AI + RS Alpha + VWAP"):
+                                         key=f"nadir_firsat_{sym}_{i}", use_container_width=True):
                                 on_scan_result_click(sym); st.rerun()
+                            _rf_ac = row.get('Aciklama', '')
+                            if _rf_ac:
+                                st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                            f"line-height:1.3;'>{_rf_ac}</div>", unsafe_allow_html=True)
 
     # ── Sağ Ana Sütun: Altın Fırsat & VIP FORMASYON ──
     with _t1c2:
-        st.markdown(_scan_card_header("💎", "Altın Fırsat & VIP FORMASYON", 78, "RS güçlü + Discount + Hacim + Formasyon", "#16a34a"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("💎", "Altın Fırsat & VIP FORMASYON", 78,
+            "RS güçlü + Discount + Hacim + Formasyon", "#16a34a",
+            desc="Güçlü ama henüz pahalılaşmamış — büyük oyuncuya yakın erken konum"
+        ), unsafe_allow_html=True)
         if st.button(f"💎 ALTIN FIRSAT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_golden",
                      help="İki aşamalı eleme yapar: önce 'Altın Fırsat' kriterleri, sonra formasyon.\n\nAltın Fırsat: RS güçlü (endeksten iyi performans) + fiyat ICT Discount bölgesinde (henüz ucuz) + hacim en az 1.1× normale çıkmış. Bu 3 kriteri geçenlerin içinde grafik formasyonu arayanlar asıl listeye girer.\n\nFormasyon: Fincan-Kulp (☕), Ters Omuz-Baş-Omuz (🧛), Üçgen veya Direnç Kırılımı. Hazırlık listesi ise formasyon henüz tamamlanmamış ama yakında patlayabilecek hisseleri gösterir."):
             with st.spinner("Fincan-Kulp, TOBO ve Üçgenlerde Altın Fırsat (1.1x Hacim) aranıyor..."):
@@ -13789,6 +13805,10 @@ with col_left:
                         mf_icon = "📈" if (isinstance(mf_v, float) and mf_v > 0) else "📉"
                         if st.button(f"{prefix} {sym.replace('.IS','')} | Skor:{row['Puan']} | RS:{mf_icon}{mf_v}", key=f"golden_btn_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym); st.rerun()
+                        _gp_detay = row.get('Detay', '')
+                        if _gp_detay:
+                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                        f"line-height:1.3;'>{_gp_detay}</div>", unsafe_allow_html=True)
             elif not _hazirlik.empty:
                 with st.container(height=120, border=True):
                     for i, row in _hazirlik.head(10).iterrows():
@@ -13810,7 +13830,10 @@ with col_left:
     _t2c1, _t2c2 = st.columns(2)
 
     with _t2c1:
-        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 68, "RSI Diverjans + Birikim + Dip", "#3b82f6"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 68,
+            "RSI Diverjans + Birikim + Dip", "#3b82f6",
+            desc="Satıcılar bitmiş, alıcılar toplamaya başlamış — dip bölgesi adayları"
+        ), unsafe_allow_html=True)
         if st.button(f"🔄 GÜÇLÜ DÖNÜŞ TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_guclu_donus",
                      help="Düşüşün bitmek üzere olduğunu gösteren 3 ayrı sinyal aynı anda arıyor.\n\n1) RSI Diverjansı: Fiyat yeni dip yaparken RSI yapmıyor — satış gücü tükeniyor demek. 2) Z-Score aşırı ucuzluk: Hisse tarihsel ortalamasının çok altında, istatistiksel olarak dibe yakın. 3) OBV gizli birikim: Fiyat düşerken hacimli alımlar var, büyük oyuncu topluyor olabilir.\n\nÜçü aynı anda gerçekleşmişse dönüş ihtimali güçlü. Düşen trende erken girmek risklidir ama bu tarama o riski minimize etmeye çalışır."):
             with st.spinner("RSI Diverjans, Gizli Birikim ve 20-Bar Dip taranıyor..."):
@@ -13824,13 +13847,21 @@ with col_left:
                         sym = row["Sembol"]
                         _zs = row.get('Z-Score', 0)
                         _zs_str = f"{_zs:.1f}" if isinstance(_zs, float) else str(_zs)
+                        _hk = row.get('Hacim_Kat', 0)
+                        _hk_str = f"{_hk:.1f}x" if isinstance(_hk, float) else str(_hk)
                         if st.button(f"🔄 {sym.replace('.IS','')} | Z:{_zs_str} | {row.get('RSI_Div','')}", key=f"gd_res_btn_{sym}", use_container_width=True):
                             on_scan_result_click(sym); st.rerun()
+                        _gd_ac = f"Z-Score {_zs_str} (tarihsel dip bölgesi) · Hacim {_hk_str} normale göre · OBV birikim + RSI bullish diverjans"
+                        st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                    f"line-height:1.3;'>{_gd_ac}</div>", unsafe_allow_html=True)
             else:
                 st.warning("3 kriteri birlikte karşılayan hisse bulunamadı.")
 
     with _t2c2:
-        st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 62, "Force Index + STP + Pocket Pivot", "#3b82f6"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 62,
+            "Force Index + STP + Pocket Pivot", "#3b82f6",
+            desc="Fiyat henüz hareket etmeden para akışını yakalayan öncü göstergeler"
+        ), unsafe_allow_html=True)
         if st.button(f"🕵️ SENTIMENT TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sentiment",
                      help="Piyasada 'sessiz sedasız' birikim yapan büyük oyuncuları tespit eder.\n\nSTP (Sentiment Point) çizgisi bir momentum göstergesidir — fiyat bu çizgiyi yukarı keserse ivme başlıyor demektir. Force Index ise her günkü alım baskısını ölçer; 7-10 günün çoğunda pozitifse ve RSI 60'ın altındaysa henüz aşırı alınmamış ama ilgi artıyor demektir.\n\nBonus: Pocket Pivot — anormal hacimle ani yükseliş. A Kalite etiketi en sıkı kriterleri geçen hisselere verilir."):
             with st.spinner("Ajan piyasayı didik didik ediyor (STP + Akıllı Para?)..."):
@@ -13867,7 +13898,10 @@ with col_left:
     _t2c3, _t2c4 = st.columns(2)
 
     with _t2c3:
-        st.markdown(_scan_card_header("🦁", "Minervini SEPA", 76, "VCP + SMA hizalama + RS güç", "#d97706"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("🦁", "Minervini SEPA", 76,
+            "VCP + SMA hizalama + RS güç", "#d97706",
+            desc="Dünya şampiyonunun metodolojisi: dar bant, güçlü trend, doğru an"
+        ), unsafe_allow_html=True)
         if st.button(f"🦁 SEPA TARAMASI ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_sepa",
                      help="Mark Minervini'nin onlarca yıllık şampiyon hisse araştırmasına dayanan tarama yöntemi.\n\nKriterler: Fiyat 50, 150 ve 200 günlük ortalamalarının hepsinin üstünde ve bu ortalamalar doğru sırada hizalanmış olmalı. Hisse piyasadan güçlü (RS > 70) ve son 52 haftanın dibinden en az %25 yukarıda olmalı.\n\nEk bonus: VCP (Volatility Contraction Pattern) — hisse giderek daralan bir sıkışma içindeyse ve hacimli kırılım yaşandıysa 'Süper' etiketiyle çıkar."):
             with st.spinner("Aslan avda... Trend şablonu, VCP ve RS taranıyor..."):
@@ -13881,11 +13915,18 @@ with col_left:
                         icon = "💎💎" if "SÜPER" in row['Durum'] else "🔥"
                         if st.button(f"{icon} {sym} ({row['Fiyat']}) | {row['Durum']}", key=f"sepa_{sym}_{i}", use_container_width=True):
                             on_scan_result_click(sym); st.rerun()
+                        _sepa_detay = row.get('Detay', '')
+                        if _sepa_detay:
+                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                        f"line-height:1.3;'>{_sepa_detay}</div>", unsafe_allow_html=True)
             else:
                 st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
 
     with _t2c4:
-        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 70, "Fibonacci PRZ zorunlu · ICT Zone + RSI Div kriterleri", "#7c3aed"), unsafe_allow_html=True)
+        st.markdown(_scan_card_header("⚡", "Harmonik Confluence", 70,
+            "Fibonacci PRZ · ICT Zone + RSI Div", "#7c3aed",
+            desc="Fibonacci matematiği ile ICT yapısı aynı noktada — dönüş ihtimali en yüksek fiyat bölgesi"
+        ), unsafe_allow_html=True)
         if st.button(f"⚡ HARMONİK CONFLUENCE TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic_conf",
                      help="En seçici tarama — 3 tamamen farklı metodoloji aynı fiyat noktasında çakışmalı.\n\n1) Fibonacci Harmonik PRZ: Gartley, Butterfly, Bat gibi XABCD formasyonlarının dönüş bölgesi. 2) ICT Discount Zone: Kurumsal alım bölgesi (fiyat ortalamanın altında). 3) RSI Diverjansı: Fiyat düşerken momentum artıyor.\n\nÜçü aynı fiyat seviyesinde buluşursa tesadüf değil yapısal dönüş noktası olabilir. Bu yüzden CONFLUENCE panelinde tüm gruplara otomatik eklenir — en yüksek kalite setup sayılır."):
             with st.spinner("3 metodoloji kesişiyor: Fibonacci + ICT + RSI Diverjansı..."):
@@ -13905,10 +13946,13 @@ with col_left:
                     _hc_badge_suffix = f" | {_hc_badges}" if _hc_badges else ""
                     _hc_tooltip = _hcr.get('Aciklama', 'Harmonik PRZ teyitli')
                     _hc_durum = str(_hcr.get('Durum', ''))
-                    _hc_tooltip_full = f"⚡ Harmonik Confluence\n📐 {_hcr.get('Pattern','')}\n{_hc_tooltip}\n{_hc_durum}"
-                    if st.button(f"⚡{_cyon_lbl} {_hcs} ({_hcp_s}) | {_hcr.get('Pattern','')}{_hc_badge_suffix}", key=f"hconf_scan_{_hcs}_{_hci}", use_container_width=True, help=_hc_tooltip_full):
+                    if st.button(f"⚡{_cyon_lbl} {_hcs} ({_hcp_s}) | {_hcr.get('Pattern','')}{_hc_badge_suffix}", key=f"hconf_scan_{_hcs}_{_hci}", use_container_width=True):
                         st.session_state.ticker = _hcr.get('Sembol', _hcs)
                         on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
+                    _hc_inline = f"{_hc_tooltip}" + (f" · {_hc_durum}" if _hc_durum else "")
+                    if _hc_inline:
+                        st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                    f"line-height:1.3;'>{_hc_inline}</div>", unsafe_allow_html=True)
         elif _hc_scan is not None:
             st.caption("Harmonik Confluence bulunamadı.")
 
@@ -13922,7 +13966,10 @@ with col_left:
         _t3c1, _t3c2 = st.columns(2)
 
         with _t3c1:
-            st.markdown(_scan_card_header("⚡", "Breakout Ajanı", 57, "Isınanlar + Kırılım onayı", "#d97706"), unsafe_allow_html=True)
+            st.markdown(_scan_card_header("⚡", "Breakout Ajanı", 57,
+                "Isınanlar + Kırılım onayı", "#d97706",
+                desc="Isınma aşamasını geçmiş, kırılımı onaylayan hisseler"
+            ), unsafe_allow_html=True)
             if st.button(f"⚡ BREAKOUT TARA ({st.session_state.category})", type="secondary", key="dual_breakout_btn", use_container_width=True,
                          help="İki farklı breakout aşamasını aynı anda tarar.\n\n🔥 Isınanlar: 52 hafta zirvesine yakın (%5-15), hacim artıyor ama henüz kırmamış. 'Patlama öncesi sıkışma' olarak düşün.\n\n🔨 Kıranlar: Direnç seviyesini en az 1.5× normal hacimle geçmiş, kırılım teyitlenmiş hisseler. Geç kalınmış olabilir ama trend başlamış demektir.\n\nIsınanları erken, Kıranları momentum girişi için kullanabilirsin."):
                 with st.spinner("Hem ısınanlar hem kıranlar taranıyor..."):
@@ -13955,7 +14002,10 @@ with col_left:
                             st.caption("Yok.")
 
         with _t3c2:
-            st.markdown(_scan_card_header("📐", "Formasyon Ajanı", 55, "TOBO · Bayrak · Range · Fincan-Kulp", "#64748b"), unsafe_allow_html=True)
+            st.markdown(_scan_card_header("📐", "Formasyon Ajanı", 55,
+                "TOBO · Bayrak · Range · Fincan-Kulp", "#64748b",
+                desc="Grafik yapıları tamamlanmak üzere — fincan, bayrak, üçgen, omuz baş omuz"
+            ), unsafe_allow_html=True)
             if st.button(f"📐 FORMASYON TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_pattern",
                          help="Grafik üzerinde gözle görülen klasik teknik formasyonları otomatik tespit eder.\n\nAranan yapılar: Ters Omuz-Baş-Omuz (TOBO 🧛), Bayrak/Flama 🚩, Yatay Range 📦, Fincan-Kulp ☕, Yükselen Üçgen. Her formasyon için minimum 40 bar (yaklaşık 2 ay) genişlik şartı var — kısa vadeli gürültüyü eliyor.\n\nFormasyonlar Zigzag algoritmasıyla tespit edilir: fiyat %4'ten fazla ters döndüğünde pivot sayılır, insan gözünün grafikte gördüğü ana iskelet budur."):
                 with st.spinner("Cetveller çekiliyor... Bayraklar ve TOBO'lar aranıyor..."):
@@ -13976,7 +14026,10 @@ with col_left:
         _t3c3, _t3c4 = st.columns(2)
 
         with _t3c3:
-            st.markdown(_scan_card_header("🔮", "Harmonik Formasyon", 55, "Fibonacci PRZ — Gartley/Bat/Crab", "#64748b"), unsafe_allow_html=True)
+            st.markdown(_scan_card_header("🔮", "Harmonik Formasyon", 55,
+                "Fibonacci PRZ — Gartley/Bat/Crab", "#64748b",
+                desc="PRZ'ye yaklaşan harmonik yapılar — matematiksel dönüm noktası adayları"
+            ), unsafe_allow_html=True)
             if st.button(f"🔮 HARMONİK TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_harmonic",
                          help="Fibonacci oranlarına dayanan 5 noktalı fiyat formasyonlarını tarar.\n\nAranan desenler: Gartley, Butterfly, Bat, Crab, Shark — hepsi X-A-B-C-D nokta yapısıyla tanımlanır. D noktası 'PRZ' (Potansiyel Dönüş Bölgesi) olarak adlandırılır ve alım/satım için hedef seviyedir.\n\nFiyat PRZ'ye ne kadar yakınsa o kadar anlamlı. 'Yaklaşıyor' etiketi D henüz oluşmadı, 'Tamamlandı' ise formasyon bitmiş demektir. Fibonacci seviyeleri doğaya ve insan psikolojisine dayandığından teknik analizin en eski araçlarından biridir."):
                 with st.spinner("Gartley, Butterfly, Bat, Crab, Shark — PRZ bölgeleri aranıyor..."):
@@ -13997,7 +14050,10 @@ with col_left:
                     st.caption("PRZ yakınında formasyon bulunamadı.")
 
         with _t3c4:
-            st.markdown(_scan_card_header("🕵️", "RS Momentum Liderleri", 45, "Son 5 günde endeksten hızlı yükselenler", "#64748b"), unsafe_allow_html=True)
+            st.markdown(_scan_card_header("🕵️", "RS Momentum Liderleri", 45,
+                "Son 5 günde endeksten hızlı yükselenler", "#64748b",
+                desc="Son 5 günde piyasayı geride bırakan hisseler — momentum sürüyor"
+            ), unsafe_allow_html=True)
             if st.button(f"🕵️ RS LİDER TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_rs_leaders",
                          help="Son 5 günde endeksin çok üzerinde getiri sağlayan 'şampiyon' hisseleri listeler.\n\nAlpha = hissenin getirisi eksi endeksin getirisi. Alpha > %2 ise hisse piyasayı gerçekten yeniyor demektir. Hacim de normale göre yüksekse büyük oyuncu ilgisi var demektir.\n\nBu tarama geçmişe değil anlık güce bakıyor. Momentum stratejilerinde 'güçlü olan daha güçlenir' prensibi işler. Bugün lider olan hisse yarın da lider olmaya devam etme eğilimindedir."):
                 with st.spinner("Piyasayı ezip geçen hisseler (Alpha > %2) sıralanıyor..."):
