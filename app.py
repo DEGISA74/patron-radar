@@ -1349,69 +1349,84 @@ def scan_chart_patterns(asset_list):
 
             # ---------------------------------------------------------------
             # 2. FİNCAN-KULP — Zigzag şablonu: H → L → H(≈ilk) → L(kulp)
-            # Son 4 anlamlı pivot; fiyat sağ rimi test ediyor veya kırdı.
+            # %4 (kısa) ve %8 (büyük) threshold ile çift tarama.
             # ---------------------------------------------------------------
             if not pattern_found and len(zz_chron) >= 4:
-                # Son 20 pivot penceresini tara; 1 yıldan eski paterni dikkate alma
-                for start_offset in range(min(20, len(zz_chron) - 3)):
-                    p1_i, p1_v, p1_t = zz_chron[-(4 + start_offset)]
-                    p2_i, p2_v, p2_t = zz_chron[-(3 + start_offset)]
-                    p3_i, p3_v, p3_t = zz_chron[-(2 + start_offset)]
-                    p4_i, p4_v, p4_t = zz_chron[-(1 + start_offset)]
+                # Büyük formasyonlar için %8 threshold ile ek zigzag
+                zz8       = zigzag_pivots(close, threshold=0.08)
+                zz8_chron = sorted(zz8, key=lambda x: x[0])
+                # İki zigzag listesini birleştir: önce %4, sonra %8 taranır
+                _zz_sets = [(zz_chron, "%4"), (zz8_chron, "%8")]
+                for _zz_src, _zz_lbl in _zz_sets:
+                    if pattern_found: break
+                    if len(_zz_src) < 4: continue
+                    # Son 20 pivot penceresini tara; 1 yıldan eski paterni dikkate alma
+                    for start_offset in range(min(20, len(_zz_src) - 3)):
+                        p1_i, p1_v, p1_t = _zz_src[-(4 + start_offset)]
+                        p2_i, p2_v, p2_t = _zz_src[-(3 + start_offset)]
+                        p3_i, p3_v, p3_t = _zz_src[-(2 + start_offset)]
+                        p4_i, p4_v, p4_t = _zz_src[-(1 + start_offset)]
 
-                    # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
-                    if p1_i < bar_total - 252: break
+                        # 1 yıldan önce başlayan paterni atla (ve daha geri gitme)
+                        if p1_i < bar_total - 252: break
 
-                    # Şablon kontrolü: H, L, H, L
-                    if not (p1_t == 'H' and p2_t == 'L' and p3_t == 'H' and p4_t == 'L'):
-                        continue
+                        # Şablon kontrolü: H, L, H, L
+                        if not (p1_t == 'H' and p2_t == 'L' and p3_t == 'H' and p4_t == 'L'):
+                            continue
 
-                    rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
+                        rim_l, cup_b, rim_r, handle_l = p1_v, p2_v, p3_v, p4_v
 
-                    rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12       # Rimler ±%12
-                    cup_deep       = cup_b < rim_l * 0.88                     # Fincan min %12 derin
-                    handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4 # Kulp üst %60'ta
-                    handle_shallow = handle_l > rim_r * 0.85                  # Kulp çok derin değil
-                    cup_wide       = (p3_i - p1_i) >= 40                      # Min 40 bar (~2 ay) — noise elenir
+                        rims_aligned   = abs(rim_l - rim_r) / rim_l < 0.12       # Rimler ±%12
+                        cup_deep       = cup_b < rim_l * 0.88                     # Fincan min %12 derin
+                        handle_ok      = handle_l > cup_b + (rim_r - cup_b) * 0.4 # Kulp üst %60'ta
+                        handle_shallow = handle_l > rim_r * 0.85                  # Kulp çok derin değil
+                        cup_wide       = (p3_i - p1_i) >= 40                      # Min 40 bar (~2 ay) — noise elenir
 
-                    if start_offset == 0:
-                        # Son pivotlar: fiyat breakout veya kulp bölgesinde
+                        # Kırılım / oluşma durumu — tüm offset'ler için hesapla
                         breaking  = curr_price >= rim_r * 0.97 and curr_price <= rim_r * 1.08
                         forming   = curr_price >= handle_l * 0.99 and not breaking
                         active    = breaking or forming
-                    else:
-                        # Eski pivotlar: kırılım zaten gerçekleşti mi?
-                        active = curr_price >= rim_r * 0.98
 
-                    if rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide and active:
-                        dur_months = max(1, round((p3_i - p1_i) / 21))
-                        dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
-                        if start_offset == 0 and breaking:
-                            status_txt = "Kırılım Bölgesinde"
-                            p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                            base_score = 95
-                        elif start_offset == 0 and forming:
-                            status_txt = f"Tamamlanmasına %{dist_to_rim:.1f} kaldı"
-                            p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                            base_score = 78
+                        if start_offset == 0:
+                            pass  # active zaten doğru
                         else:
-                            days_since = bar_total - p3_i
-                            if days_since > 3: continue  # Sadece son 3 günde kırılan formasyon
-                            status_txt = f"Tamamlandı ({days_since} gün önce)"
-                            p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
-                            base_score = 80
-                        p_desc = f"Sol Rim: {rim_l:.2f} | Dip: {cup_b:.2f} | Sağ Rim: {rim_r:.2f} | Kulp: {handle_l:.2f}"
-                        chart_d = {
-                            "pivot_dates":  [str(close.index[p1_i].date()), str(close.index[p2_i].date()),
-                                             str(close.index[p3_i].date()), str(close.index[p4_i].date())],
-                            "pivot_prices": [p1_v, p2_v, p3_v, p4_v],
-                            "pivot_types":  ["H", "L", "H", "L"],
-                            "neck":  float(rim_r),
-                            "type":  "cup",
-                        }
-                        pattern_found = True
-                        pattern_name = p_name; desc = p_desc
-                        break
+                            # Eski pivotlar: oluşmakta mı? kırıldı mı?
+                            if not active:
+                                # Fiyat kırılım bölgesini çoktan geçtiyse — son 3 günde mi?
+                                if curr_price >= rim_r * 0.98:
+                                    days_since_check = bar_total - p3_i
+                                    active = days_since_check <= 3
+                                # active False kalırsa aşağıda zaten geçilecek
+
+                        if rims_aligned and cup_deep and handle_ok and handle_shallow and cup_wide and active:
+                            dur_months = max(1, round((p3_i - p1_i) / 21))
+                            dist_to_rim = ((rim_r - curr_price) / rim_r * 100) if curr_price < rim_r else 0
+                            if breaking:
+                                status_txt = "Kırılım Bölgesinde"
+                                p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                                base_score = 95
+                            elif forming:
+                                status_txt = f"Tamamlanmasına %{dist_to_rim:.1f} kaldı"
+                                p_name = f"⏳ OLUŞAN FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                                base_score = 78
+                            else:
+                                days_since = bar_total - p3_i
+                                if days_since > 3: continue
+                                status_txt = f"Tamamlandı ({days_since} gün önce)"
+                                p_name = f"☕ FİNCAN KULP ({dur_months} Ay) — {status_txt}"
+                                base_score = 80
+                            p_desc = f"Sol Rim: {rim_l:.2f} | Dip: {cup_b:.2f} | Sağ Rim: {rim_r:.2f} | Kulp: {handle_l:.2f}"
+                            chart_d = {
+                                "pivot_dates":  [str(close.index[p1_i].date()), str(close.index[p2_i].date()),
+                                                 str(close.index[p3_i].date()), str(close.index[p4_i].date())],
+                                "pivot_prices": [p1_v, p2_v, p3_v, p4_v],
+                                "pivot_types":  ["H", "L", "H", "L"],
+                                "neck":  float(rim_r),
+                                "type":  "cup",
+                            }
+                            pattern_found = True
+                            pattern_name = p_name; desc = p_desc
+                            break
 
             # ---------------------------------------------------------------
             # 3. TOBO — Zigzag şablonu: L → H → L*(baş) → H(≈ilk H) → L(≈ilk L)
@@ -8115,17 +8130,22 @@ def render_smart_volume_panel(ticker):
         t4_pos = None; rvol_fill = 0
     elif rvol >= 2.0:
         t4_ic  = "#10b981" if dark else "#15803d"
-        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Yüksek Hacim"
+        _rvol_pct = (rvol - 1.0) * 100
+        t4_pct = f"+%{_rvol_pct:.0f}"; t4_lbl = "Yüksek Hacim"
         t4_sub = f"Normalin {rvol:.1f} katı hacim — kurumsal aktivite var."
         t4_pos = True; rvol_fill = min((rvol - 1.0) / 2.0 * 100, 100)
     elif rvol >= 0.8:
         t4_ic  = "#f59e0b" if dark else "#92400e"
-        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Normale Yakın Hacim"
+        _rvol_pct = (rvol - 1.0) * 100
+        _sign = "+%" if _rvol_pct >= 0 else "-%"
+        t4_pct = f"{_sign}{abs(_rvol_pct):.0f}"
+        t4_lbl = "Normale Yakın Hacim"
         t4_sub = "Normale yakın hacim — bekleme modu."
         t4_pos = None; rvol_fill = 0
     else:
         t4_ic  = "#ef4444" if dark else "#dc2626"
-        t4_pct = f"{rvol:.1f}x"; t4_lbl = "Düşük Hacim"
+        _rvol_pct = (1.0 - rvol) * 100
+        t4_pct = f"-%{_rvol_pct:.0f}"; t4_lbl = "Düşük Hacim"
         t4_sub = "Düşük hacim — piyasa ilgisiz, sinyal zayıf."
         t4_pos = False; rvol_fill = min((1.0 - rvol) * 100, 100)
 
@@ -12980,6 +13000,7 @@ YASAKLI CÜMLE KALIPLARI — Aşağıdaki kalıpları ASLA kullanma, bunları ku
    YASAKLI: Her paragrafı "X tespit edilmiştir, bu durum Y anlamına gelmektedir" yapısıyla bitirmek
    YASAKLI: Her bölümü "Bu veriler ışığında şunu söyleyebiliriz ki..." ile açmak
    YASAKLI: Sonuç paragrafını her zaman "Genel itibarıyla değerlendirildiğinde..." ile başlatmak
+   YASAKLI: "perakende yatırımcı", onun yerine "küçük yatırımcı"
 3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
 4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
 5. ALGORİTMA REFERANSI: Algoritmadan gelen bulguları aktarırken "Sistemin ürettiği veriler" ifadesini kullanabilirsin — bu ifade algoritmamızın gücünü yansıtır ve abonelerde güven oluşturur. Ama her cümleyi bu kalıpla başlatma; analizin geri kalanı insan diliyle akmalı. YASAK: Her cümleyi "Sistemin ürettiği veriler gösteriyor ki..." ile açmak. OLMASI GEREKEN: Algoritmaya atıfta bulunduğun yerlerde kullan, diğer yorumlarında doğal konuş. "İstatistiksel durum", "Matematiksel sapma" gibi steril kalıpları kullanma — bunların yerine direkt veriyi söyle. ASLA parantez içinde İngilizce terim koyma, Türkçe terimler kullanarak sadeleştir. (mean reversion, accumulation, distribution, liquidity sweep gibi tüm ICT, Price Action, Teknik analiz terimlerini Türkçe'ye çevirerek kullan)
@@ -13481,7 +13502,7 @@ with col_left:
         st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
     # --------------------------------------------------
     # --- SMART MONEY HACİM ANALİZİ ---
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 0px;'></div>", unsafe_allow_html=True)
     render_smart_volume_panel(st.session_state.ticker)
 
     # --- ICT SMART MONEY ANALİZİ ---
