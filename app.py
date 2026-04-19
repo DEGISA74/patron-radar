@@ -3137,85 +3137,168 @@ def get_fundamental_score(ticker):
 # ==============================================================================
 # GÜÇLÜ DÖNÜŞ ADAYLARI — RSI Bullish Diverjans + 20-Bar Dip + Gizli Birikim
 # ==============================================================================
-def calculate_guclu_donus_adaylari(ticker, df):
+def calculate_guclu_donus_adaylari(ticker, df, bist100_close=None):
     """
-    🔄 GÜÇLÜ DÖNÜŞ ADAYLARI (v2 — Bear Trap bağımsız)
-    3 Ana Kriter (hepsi aynı anda gerekli):
-    1. Gizli Birikim  : OBV yükseliyor (ortalamanın üzerinde, yön yukarı)
-    2. 20-Bar Dip + Hacim Artışı : Fiyat 20-bar dibindeyken hacim ortalamanın üstünde
-    3. RSI Bullish Diverjans : Son iki fiyat dibi düşerken RSI dipleri yükseliyor
-    Destekleyici: Z-Score <= -1.5 (aşırı satım bölgesi)
+    🔄 GÜÇLÜ DÖNÜŞ+ ADAYLARI (v9 — 7 Bağımsız Kriter, min 5/7)
+    ZORUNLU  : 50 ≤ RSI ≤ 65  (bant dışı = direkt elenme)
+    PUANLANAN: 7 bağımsız kriter — her biri farklı bir boyut ölçer
+      P1. Fiyat > EMA13              : Kısa vade trend
+      P2. EMA13 eğimi + (son 5g)     : Trend kalitesi / ivme
+      P3. RS vs BIST100 > 0 (20g)    : Göreceli güç — endeksten güçlü mü?
+      P4. RSI > RSI EMA9             : Momentum ivmeleniyor
+      P5. OBV son 5g ↑               : Akıllı para yönü
+      P6. Hacim 5+/10g ort. üstünde  : Kurumsal aktivite frekansı
+      P7. Fiyat > Yıllık VWAP        : Kurumsal ortalama maliyet üstünde
+    BONUS (puan ekler, zorunlu değil):
+      +1   Geçen ay stop avı 🔍
+      +0.5 Haftalık yükseliş ↑
+    MİNİMUM: 5/7 baz puan (bonus sayılmaz)
     """
     try:
-        if df is None or df.empty or len(df) < 50:
+        if df is None or df.empty or len(df) < 30:
             return None
 
-        df_calc = df.copy()
-        close  = df_calc['Close']
-        low    = df_calc['Low']
-        high   = df_calc['High']
-        open_p = df_calc['Open']
+        close  = df['Close']
 
-        if 'Volume' not in df_calc.columns or df_calc['Volume'].isnull().all():
+        if 'Volume' not in df.columns or df['Volume'].isnull().all():
             return None
-        volume = df_calc['Volume']
+        volume = df['Volume']
 
-        # --- DESTEKLEYICI: Z-SCORE (Ucuzluk: <= -1.5) ---
-        sma20  = close.rolling(20).mean()
-        std20  = close.rolling(20).std()
-        z_score = (close.iloc[-1] - sma20.iloc[-1]) / std20.iloc[-1]
-        if pd.isna(z_score) or z_score > -1.5:
+        # ── ZORUNLU: 50 ≤ RSI ≤ 65 ──────────────────────────────────────
+        delta   = close.diff()
+        gain    = delta.where(delta > 0, 0).rolling(14).mean()
+        loss    = (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi     = 100 - (100 / (1 + gain / loss))
+        rsi_val = float(rsi.iloc[-1])
+        if pd.isna(rsi_val) or rsi_val < 50 or rsi_val > 65:
+            return None   # bant dışı → direkt elenme
+
+        # ── PUANLAMA ─────────────────────────────────────────────────────
+        score  = 0
+        passed = []
+        missed = []
+
+        # P1: Fiyat > EMA13  [Kısa vade trend]
+        ema13 = close.ewm(span=13, adjust=False).mean()
+        if float(close.iloc[-1]) > float(ema13.iloc[-1]):
+            score += 1; passed.append("EMA13↑")
+        else:
+            missed.append("EMA13")
+
+        # P2: EMA13 eğimi pozitif (son 5 günde yükseliyor)  [Trend kalitesi]
+        if len(ema13) >= 6 and float(ema13.iloc[-1]) > float(ema13.iloc[-6]):
+            score += 1; passed.append("EMA eğimi↑")
+        else:
+            missed.append("EMA eğimi")
+
+        # P3: Göreceli Güç — hisse son 20g BIST100'den güçlü mü?  [Farklı boyut]
+        rs_pozitif = False
+        rs_pct     = 0.0
+        if bist100_close is not None and len(bist100_close) >= 21:
+            try:
+                # Ortak tarihleri hizala
+                _merged = close.align(bist100_close, join='inner')
+                _hisse_c, _bist_c = _merged[0], _merged[1]
+                if len(_hisse_c) >= 21:
+                    hisse_ret = float(_hisse_c.iloc[-1]) / float(_hisse_c.iloc[-21]) - 1
+                    bist_ret  = float(_bist_c.iloc[-1])  / float(_bist_c.iloc[-21])  - 1
+                    rs_pct    = round((hisse_ret - bist_ret) * 100, 1)
+                    rs_pozitif = rs_pct > 2.0   # en az %2 endeks üstü güç
+            except Exception:
+                rs_pozitif = False
+        if rs_pozitif:
+            score += 1; passed.append(f"RS+{rs_pct:.1f}%")
+        else:
+            missed.append(f"RS({rs_pct:+.1f}%)")
+
+        # P4: RSI > RSI EMA9 (momentum ivmeleniyor)  [Momentum]
+        rsi_ema9 = rsi.ewm(span=9, adjust=False).mean()
+        if float(rsi.iloc[-1]) > float(rsi_ema9.iloc[-1]):
+            score += 1; passed.append("RSI ivme")
+        else:
+            missed.append("RSI ivme")
+
+        # P5: OBV son 5 günde yükseliyor  [Akıllı para yönü]
+        obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+        if float(obv.iloc[-1]) > float(obv.iloc[-6]):
+            score += 1; passed.append("OBV↑")
+        else:
+            missed.append("OBV")
+
+        # P6: Son 10 günde 5+ kez hacim ortalaması üstünde  [Kurumsal aktivite]
+        avg_vol20 = volume.rolling(20).mean()
+        if pd.isna(avg_vol20.iloc[-1]):
+            return None
+        vol_arr = volume.values
+        avg_arr = avg_vol20.values
+        vol_10g = sum(1 for i in range(-10, 0)
+                      if not np.isnan(avg_arr[i]) and avg_arr[i] > 0
+                      and float(vol_arr[i]) > float(avg_arr[i]))
+        if vol_10g >= 5:
+            score += 1; passed.append(f"Hacim {vol_10g}/10g")
+        else:
+            missed.append(f"Hacim {vol_10g}/10g")
+
+        # P7: Fiyat > Yıllık VWAP  [Kurumsal referans fiyat]
+        try:
+            vwap_annual = (close * volume).cumsum() / volume.cumsum()
+            vwap_val    = float(vwap_annual.iloc[-1])
+            if not np.isnan(vwap_val) and float(close.iloc[-1]) > vwap_val:
+                score += 1; passed.append("VWAP↑")
+            else:
+                missed.append("VWAP")
+        except Exception:
+            missed.append("VWAP")
+
+        # ── BONUS ────────────────────────────────────────────────────────
+        weekly_up   = len(close) >= 6 and float(close.iloc[-1]) > float(close.iloc[-6])
+        sweep_month = False
+        if len(close) >= 42:
+            c1 = float(close.iloc[-42])
+            c2 = float(close.iloc[-21])
+            sweep_month = (c2 < c1) and (float(close.iloc[-1]) > c2)
+
+        bonus = 0.0
+        if sweep_month: bonus += 1.0
+        if weekly_up:   bonus += 0.5
+
+        total_score = score + bonus
+
+        # ── MINIMUM PUAN KONTROLÜ (6/7 baz) ─────────────────────────────
+        _MIN_SCORE = 6
+        if score < _MIN_SCORE:
             return None
 
-        # --- KRİTER 1: GİZLİ BİRİKİM (OBV yükseliyor) ---
-        obv      = (np.sign(close.diff()) * volume).fillna(0).cumsum()
-        obv_sma  = obv.rolling(20).mean()
-        if pd.isna(obv.iloc[-1]) or pd.isna(obv_sma.iloc[-1]):
-            return None
-        if not (obv.iloc[-1] > obv_sma.iloc[-1] and obv.iloc[-1] >= obv.iloc[-2]):
-            return None
+        # ── AÇIKLAMA ─────────────────────────────────────────────────────
+        hacim_kat = round(float(vol_arr[-1]) / float(avg_arr[-1]), 2) if float(avg_arr[-1]) > 0 else 0.0
 
-        # --- KRİTER 2: FİYAT 20-BAR DİBİNDE + HACİM ARTIYOR ---
-        avg_vol20  = volume.rolling(20).mean()
-        if pd.isna(avg_vol20.iloc[-1]): return None
-        low_20     = low.rolling(20).min().iloc[-1]           # 20-bar dip
-        near_20low = float(close.iloc[-1]) <= float(low_20) * 1.05  # Dibe %5 yakın
-        vol_rising = float(volume.iloc[-1]) > float(avg_vol20.iloc[-1])  # Hacim ortalamanın üstünde
-        if not (near_20low and vol_rising):
-            return None
+        _ac_parts = []
+        if sweep_month:
+            _ac_parts.append("⚡ stop avı")
+        _ac_parts.append(f"RSI {rsi_val:.0f} · {score}/7 kriter")
+        _ac_parts.append(" + ".join(passed))
+        if missed:
+            _ac_parts.append(f"eksik: {', '.join(missed)}")
+        if weekly_up:
+            _ac_parts.append("haftalık ↑")
 
-        # --- KRİTER 3: RSI BULLISH DİVERJANS ---
-        # Fiyat yeni dip yaparken RSI daha yüksek dip yapıyor
-        delta = close.diff()
-        gain  = (delta.where(delta > 0, 0)).rolling(14).mean()
-        loss  = (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi   = 100 - (100 / (1 + gain / loss))
-
-        n = len(close)
-        price_troughs = []
-        for i in range(max(1, n - 30), n - 1):
-            if float(low.iloc[i]) < float(low.iloc[i-1]) and float(low.iloc[i]) < float(low.iloc[i+1]):
-                rsi_val = float(rsi.iloc[i])
-                if not pd.isna(rsi_val):
-                    price_troughs.append((float(low.iloc[i]), rsi_val))
-
-        rsi_div_ok = False
-        if len(price_troughs) >= 2:
-            t1, t2 = price_troughs[-2], price_troughs[-1]
-            # Fiyat düşerken (t2 daha alçak) RSI yükseliyorsa (t2 daha yüksek) → diverjans
-            if t2[0] < t1[0] and t2[1] > t1[1]:
-                rsi_div_ok = True
-        if not rsi_div_ok:
-            return None
-
-        # 3 KRİTER GEÇİLDİ → SONUCU DÖNDÜR
-        hacim_kat = round(float(volume.iloc[-1]) / float(avg_vol20.iloc[-1]), 2) if float(avg_vol20.iloc[-1]) > 0 else 0.0
         return {
-            "Sembol"   : ticker,
-            "Fiyat"    : float(close.iloc[-1]),
-            "Z-Score"  : float(round(z_score, 2)),
-            "Hacim_Kat": hacim_kat,
-            "RSI_Div"  : "✅ Bullish"
+            "Sembol"     : ticker,
+            "Fiyat"      : float(close.iloc[-1]),
+            "RSI"        : round(rsi_val, 1),
+            "Skor"       : score,
+            "ToplamSkor" : total_score,
+            "RS_Pct"     : rs_pct,
+            "Z-Score"    : 0.0,
+            "Z_Cheap"    : False,
+            "Hacim_Kat"  : hacim_kat,
+            "Hacim_10g"  : vol_10g,
+            "Sweep_Ay"   : sweep_month,
+            "Weekly_Up"  : weekly_up,
+            "RSI_Div"    : "✅",
+            "Passed"     : passed,
+            "Missed"     : missed,
+            "Aciklama"   : " · ".join(_ac_parts),
         }
 
     except Exception:
@@ -3223,10 +3306,25 @@ def calculate_guclu_donus_adaylari(ticker, df):
 
 def scan_guclu_donus_batch(asset_list):
     """
-    Güçlü Dönüş Adayları — Toplu Tarama Ajanı
+    Güçlü Dönüş Adayları — Toplu Tarama Ajanı (v9)
+    BIST100 verisini RS hesabı için ayrıca çeker (parquet cache'den — ek Yahoo isteği yok)
     """
     data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
+
+    # ── BIST100 göreceli güç için ────────────────────────────────────────
+    bist100_close = None
+    try:
+        _bist_ticker = "XU100.IS"
+        _bist_data   = get_batch_data_cached([_bist_ticker], period="1y")
+        if not _bist_data.empty:
+            if isinstance(_bist_data.columns, pd.MultiIndex):
+                if _bist_ticker in _bist_data.columns.levels[0]:
+                    bist100_close = _bist_data[_bist_ticker]['Close'].dropna()
+            else:
+                bist100_close = _bist_data['Close'].dropna()
+    except Exception:
+        bist100_close = None
 
     results   = []
     stock_dfs = []
@@ -3244,10 +3342,19 @@ def scan_guclu_donus_batch(asset_list):
         except: continue
 
     for symbol, df in stock_dfs:
-        res = calculate_guclu_donus_adaylari(symbol, df)
+        res = calculate_guclu_donus_adaylari(symbol, df, bist100_close=bist100_close)
         if res: results.append(res)
 
-    return pd.DataFrame(results)
+    if not results:
+        return pd.DataFrame()
+
+    df_out = pd.DataFrame(results)
+    # Skor DESC → RS_Pct DESC → Sweep_Ay DESC → Hacim_10g DESC
+    df_out = df_out.sort_values(
+        by=['Skor', 'RS_Pct', 'Sweep_Ay', 'Hacim_10g'],
+        ascending=[False, False, False, False]
+    ).reset_index(drop=True)
+    return df_out
 
 # ==============================================================================
 # YENİ: TEMEL ANALİZ VE MASTER SKOR MOTORU (GLOBAL STANDART)
@@ -12238,6 +12345,25 @@ if st.session_state.generate_prompt:
         elif "Sıkışma" in bo_res['Zirveye Yakınlık']:
             scan_box_txt.append("💣 VOLATİLİTE DARALMASI: Bir Sıkışma (Squeeze) var. (Enerji birikti, yay gerildi. Her an sert bir yön patlaması gelebilir.)")
 
+    # G2. GÜÇLÜ DÖNÜŞ+ SİNYALİ (Kurumsal dip alımı + stop avı teyidi)
+    try:
+        _gd_data = st.session_state.get('guclu_donus_data')
+        if _gd_data is not None and not _gd_data.empty:
+            _gd_match = _gd_data[_gd_data['Sembol'] == t]
+            if not _gd_match.empty:
+                _gd_row = _gd_match.iloc[0]
+                _gd_sweep = _gd_row.get('Sweep_Ay', False)
+                _gd_h10   = _gd_row.get('Hacim_10g', '-')
+                _gd_zs    = _gd_row.get('Z-Score', 0)
+                _gd_sweep_txt = " Geçen ay stop avı tespit edildi (C2<C1) —" if _gd_sweep else ""
+                scan_box_txt.append(
+                    f"🔄 GÜÇLÜ DÖNÜŞ+ SİNYALİ:{_gd_sweep_txt} "
+                    f"Z-Score {_gd_zs:.1f} (tarihsel dip bölgesi), son 10 günde {_gd_h10} kez yüksek hacim, "
+                    f"OBV birikim ve RSI bullish diverjans aynı anda teyit ediyor. "
+                    f"Bu hafta geçen haftadan yüksek kapandı — kurumsal dip alımının ilk somut adımı olabilir."
+                )
+    except: pass
+
     # H. İSTATİSTİKSEL ANOMALİLER (Z-Score Aşırılıkları)
     try:
         z_val = calculate_z_score_live(df_hist)
@@ -13830,32 +13956,56 @@ with col_left:
     _t2c1, _t2c2 = st.columns(2)
 
     with _t2c1:
-        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş", 68,
-            "RSI Diverjans + Birikim + Dip", "#3b82f6",
-            desc="Satıcılar bitmiş, alıcılar toplamaya başlamış — dip bölgesi adayları"
+        st.markdown(_scan_card_header("🔄", "Güçlü Dönüş+", 75,
+            "RSI 50-65 + EMA13↑ + RS/BIST100 + VWAP + OBV · min 5/7", "#3b82f6",
+            desc="Dipten döndükten sonra momentumu teyit eden hisseler — ne çok erken ne çok geç"
         ), unsafe_allow_html=True)
         if st.button(f"🔄 GÜÇLÜ DÖNÜŞ TARA ({st.session_state.category})", type="secondary", use_container_width=True, key="btn_scan_guclu_donus",
-                     help="Düşüşün bitmek üzere olduğunu gösteren 3 ayrı sinyal aynı anda arıyor.\n\n1) RSI Diverjansı: Fiyat yeni dip yaparken RSI yapmıyor — satış gücü tükeniyor demek. 2) Z-Score aşırı ucuzluk: Hisse tarihsel ortalamasının çok altında, istatistiksel olarak dibe yakın. 3) OBV gizli birikim: Fiyat düşerken hacimli alımlar var, büyük oyuncu topluyor olabilir.\n\nÜçü aynı anda gerçekleşmişse dönüş ihtimali güçlü. Düşen trende erken girmek risklidir ama bu tarama o riski minimize etmeye çalışır."):
+                     help="7 bağımsız kriter, min 5/7. Zorunlu: RSI 50-65. Puanlanan: EMA13↑ · EMA eğimi↑ · RS>BIST100 · RSI ivme · OBV↑ · Hacim 5+/10g · Yıllık VWAP↑. Bonus: 🔍 stop avı · ↑ haftalık."):
             with st.spinner("RSI Diverjans, Gizli Birikim ve 20-Bar Dip taranıyor..."):
                 current_assets = ASSET_GROUPS.get(st.session_state.category, [])
                 st.session_state.guclu_donus_data = scan_guclu_donus_batch(current_assets)
         if st.session_state.guclu_donus_data is not None:
             df_gd = st.session_state.guclu_donus_data
             if not df_gd.empty:
+                _sweep_cnt  = int(df_gd['Sweep_Ay'].sum()) if 'Sweep_Ay' in df_gd.columns else 0
+                _weekly_cnt = int(df_gd['Weekly_Up'].sum()) if 'Weekly_Up' in df_gd.columns else 0
+                _tam_7      = int((df_gd['Skor'] == 7).sum()) if 'Skor' in df_gd.columns else 0
+                _alti_7     = int((df_gd['Skor'] == 6).sum()) if 'Skor' in df_gd.columns else 0
+                _skor_str   = ""
+                if _tam_7:   _skor_str += f"  ·  ⭐ {_tam_7} tam 7/7"
+                if _alti_7:  _skor_str += f"  ·  ✦ {_alti_7} adet 6/7"
+                st.markdown(
+                    f"<div style='text-align:center;font-size:0.65rem;font-weight:700;"
+                    f"color:#3b82f6;margin-bottom:3px;'>"
+                    f"🔄 {len(df_gd)} Hisse{_skor_str}"
+                    f"{'  ·  🔍 ' + str(_sweep_cnt) + ' Stop Avı' if _sweep_cnt else ''}"
+                    f"{'  ·  ↑ ' + str(_weekly_cnt) + ' Haftalık' if _weekly_cnt else ''}"
+                    f"</div>", unsafe_allow_html=True
+                )
                 with st.container(height=150, border=True):
                     for i, (_, row) in enumerate(df_gd.iterrows()):
-                        sym = row["Sembol"]
-                        _zs = row.get('Z-Score', 0)
+                        sym    = row["Sembol"]
+                        _zs    = row.get('Z-Score', 0)
                         _zs_str = f"{_zs:.1f}" if isinstance(_zs, float) else str(_zs)
-                        _hk = row.get('Hacim_Kat', 0)
-                        _hk_str = f"{_hk:.1f}x" if isinstance(_hk, float) else str(_hk)
-                        if st.button(f"🔄 {sym.replace('.IS','')} | Z:{_zs_str} | {row.get('RSI_Div','')}", key=f"gd_res_btn_{sym}", use_container_width=True):
+                        _h10   = row.get('Hacim_10g', '-')
+                        _sweep = row.get('Sweep_Ay', False)
+                        _sweep_icon  = "🔍" if _sweep else ""
+                        _weekly_icon = "↑" if row.get('Weekly_Up', False) else ""
+                        _rsi_v   = row.get('RSI', 0)
+                        _rsi_str = f"{_rsi_v:.0f}" if isinstance(_rsi_v, float) else str(_rsi_v)
+                        _skor_v  = row.get('Skor', 0)
+                        _rs_v    = row.get('RS_Pct', 0.0)
+                        _rs_str  = f"RS:{_rs_v:+.1f}%" if isinstance(_rs_v, float) else ""
+                        _lbl     = f"🔄{_sweep_icon}{_weekly_icon} {sym.replace('.IS','')} | RSI:{_rsi_str} | {_skor_v}/7 | {_rs_str}"
+                        if st.button(_lbl, key=f"gd_res_btn_{sym}", use_container_width=True):
                             on_scan_result_click(sym); st.rerun()
-                        _gd_ac = f"Z-Score {_zs_str} (tarihsel dip bölgesi) · Hacim {_hk_str} normale göre · OBV birikim + RSI bullish diverjans"
-                        st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
-                                    f"line-height:1.3;'>{_gd_ac}</div>", unsafe_allow_html=True)
+                        _gd_ac = row.get('Aciklama', '')
+                        if _gd_ac:
+                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                        f"line-height:1.3;'>{_gd_ac}</div>", unsafe_allow_html=True)
             else:
-                st.warning("3 kriteri birlikte karşılayan hisse bulunamadı.")
+                st.warning("OBV birikim + RSI diverjans + hacim frekansı kriterlerini karşılayan hisse bulunamadı.")
 
     with _t2c2:
         st.markdown(_scan_card_header("🕵️", "Sentiment Ajanı", 62,
