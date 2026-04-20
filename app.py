@@ -8161,13 +8161,17 @@ def render_synthetic_sentiment_panel(data):
         </div>
         """, unsafe_allow_html=True)
         
+        _price_fmt = ',.0f' if data['Price'].max() >= 1000 else '.2f'
         c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45, labelOverlap=False), sort=None)
         with c1:
             base = alt.Chart(data).encode(x=x_axis)
             color_condition = alt.condition(alt.datum.MF_Smooth > 0, alt.value("#38bdf8"), alt.value("#ef4444"))
+            _tt1 = [alt.Tooltip('Date_Str:N', title='Tarih'),
+                    alt.Tooltip('Price:Q',    title='Fiyat',    format=_price_fmt),
+                    alt.Tooltip('MF_Smooth:Q',title='Para Akışı', format='.2f')]
             bars = base.mark_bar(size=12, opacity=0.9).encode(
-                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#94a3b8')), 
-                color=color_condition, tooltip=['Date_Str', 'Price', 'MF_Smooth']
+                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#94a3b8')),
+                color=color_condition, tooltip=_tt1
             )
             price_line = base.mark_line(color='#10b981', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#94a3b8', labelColor='#94a3b8')))
             chart1 = alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#38bdf8")).configure(background='transparent').configure_axis(gridColor='#1f2937', domainColor='#1f2937', labelColor='#94a3b8', titleColor='#94a3b8').configure_view(strokeWidth=0)
@@ -8177,10 +8181,24 @@ def render_synthetic_sentiment_panel(data):
             _ymax2 = max(data['STP'].max(), data['Price'].max()) * 1.001
             _ys2   = alt.Scale(zero=False, domain=[_ymin2, _ymax2])
             base2  = alt.Chart(data).encode(x=x_axis)
+            _hover2 = alt.selection_point(fields=['Date_Str'], nearest=True, on='mouseover', empty=False)
+            _tt2 = [alt.Tooltip('Date_Str:N', title='Tarih'),
+                    alt.Tooltip('Price:Q',    title='Fiyat', format='.2f'),
+                    alt.Tooltip('STP:Q',      title='STP',   format='.2f')]
             area       = base2.mark_area(opacity=0.12, color='#38bdf8').encode(y=alt.Y('STP:Q', scale=_ys2), y2=alt.Y2('Price:Q'))
-            line_stp   = base2.mark_line(color='#f59e0b', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=_ys2, axis=alt.Axis(title='Fiyat', titleColor='#94a3b8', labelColor='#94a3b8')), tooltip=['Date_Str', 'STP', 'Price'])
+            line_stp   = base2.mark_line(color='#f59e0b', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=_ys2, axis=alt.Axis(title='Fiyat', titleColor='#94a3b8', labelColor='#94a3b8')))
             line_price = base2.mark_line(color='#38bdf8', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=_ys2))
-            chart2 = alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=12, color="#38bdf8")).configure(background='transparent').configure_axis(gridColor='#1f2937', domainColor='#1f2937', labelColor='#94a3b8', titleColor='#94a3b8').configure_view(strokeWidth=0)
+            _vrule2    = base2.mark_rule(color='#475569', strokeWidth=1, strokeDash=[4,3]).encode(
+                            opacity=alt.condition(_hover2, alt.value(0.7), alt.value(0)))
+            _dot_p2    = base2.mark_point(size=70, color='#38bdf8', filled=True).encode(
+                            y=alt.Y('Price:Q', scale=_ys2), opacity=alt.condition(_hover2, alt.value(1), alt.value(0)))
+            _dot_s2    = base2.mark_point(size=70, color='#f59e0b', filled=True).encode(
+                            y=alt.Y('STP:Q', scale=_ys2), opacity=alt.condition(_hover2, alt.value(1), alt.value(0)))
+            _overlay2  = base2.mark_point(opacity=0, size=200).encode(
+                            y=alt.Y('Price:Q', scale=_ys2), tooltip=_tt2).add_params(_hover2)
+            chart2 = alt.layer(area, line_stp, line_price, _vrule2, _dot_p2, _dot_s2, _overlay2).properties(
+                        height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=12, color="#38bdf8")
+                     ).configure(background='transparent').configure_axis(gridColor='#1f2937', domainColor='#1f2937', labelColor='#94a3b8', titleColor='#94a3b8').configure_view(strokeWidth=0)
             st.altair_chart(chart2, use_container_width=True, theme=None)
     else:
         header_color = "#3b82f6" 
@@ -8194,18 +8212,22 @@ def render_synthetic_sentiment_panel(data):
             </div>
         </div>
         """, unsafe_allow_html=True)
+        _price_fmt = ',.0f' if data['Price'].max() >= 1000 else '.2f'
         c1, c2 = st.columns([1, 1]); x_axis = alt.X('Date_Str', axis=alt.Axis(title=None, labelAngle=-45, labelOverlap=False, labelColor="#062C63"), sort=None)
         with c1:
             base = alt.Chart(data).encode(x=x_axis)
             color_condition = alt.condition(
                 alt.datum.MF_Smooth > 0,
-                alt.value("#5B84C4"), 
+                alt.value("#5B84C4"),
                 alt.value("#ef4444")
             )
+            _tt1 = [alt.Tooltip('Date_Str:N', title='Tarih'),
+                    alt.Tooltip('Price:Q',    title='Fiyat',    format=_price_fmt),
+                    alt.Tooltip('MF_Smooth:Q',title='Para Akışı', format='.2f')]
             bars = base.mark_bar(size=12, opacity=0.9).encode(
-                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')), 
-                color=color_condition, 
-                tooltip=['Date_Str', 'Price', 'MF_Smooth']
+                y=alt.Y('MF_Smooth:Q', axis=alt.Axis(title='Para Akışı (Güç)', labels=False, titleColor='#4338ca')),
+                color=color_condition,
+                tooltip=_tt1
             )
             price_line = base.mark_line(color='#1e40af', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=alt.Scale(zero=False), axis=alt.Axis(title='Fiyat', titleColor='#0f172a')))
             st.altair_chart(alt.layer(bars, price_line).resolve_scale(y='independent').properties(height=280, title=alt.TitleParams("Momentum", fontSize=14, color="#1e40af")), use_container_width=True)
@@ -8214,10 +8236,23 @@ def render_synthetic_sentiment_panel(data):
             _ymax2 = max(data['STP'].max(), data['Price'].max()) * 1.001
             _ys2   = alt.Scale(zero=False, domain=[_ymin2, _ymax2])
             base2  = alt.Chart(data).encode(x=x_axis)
+            _hover2 = alt.selection_point(fields=['Date_Str'], nearest=True, on='mouseover', empty=False)
+            _tt2 = [alt.Tooltip('Date_Str:N', title='Tarih'),
+                    alt.Tooltip('Price:Q',    title='Fiyat', format='.2f'),
+                    alt.Tooltip('STP:Q',      title='STP',   format='.2f')]
             area       = base2.mark_area(opacity=0.15, color='gray').encode(y=alt.Y('STP:Q', scale=_ys2), y2=alt.Y2('Price:Q'))
-            line_stp   = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=_ys2, axis=alt.Axis(title='Fiyat', titleColor='#64748B')), tooltip=['Date_Str', 'STP', 'Price'])
+            line_stp   = base2.mark_line(color='#fbbf24', strokeWidth=3).encode(y=alt.Y('STP:Q', scale=_ys2, axis=alt.Axis(title='Fiyat', titleColor='#64748B')))
             line_price = base2.mark_line(color='#2563EB', strokeWidth=2).encode(y=alt.Y('Price:Q', scale=_ys2))
-            st.altair_chart(alt.layer(area, line_stp, line_price).properties(height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
+            _vrule2    = base2.mark_rule(color='#94a3b8', strokeWidth=1, strokeDash=[4,3]).encode(
+                            opacity=alt.condition(_hover2, alt.value(0.7), alt.value(0)))
+            _dot_p2    = base2.mark_point(size=70, color='#2563EB', filled=True).encode(
+                            y=alt.Y('Price:Q', scale=_ys2), opacity=alt.condition(_hover2, alt.value(1), alt.value(0)))
+            _dot_s2    = base2.mark_point(size=70, color='#fbbf24', filled=True).encode(
+                            y=alt.Y('STP:Q', scale=_ys2), opacity=alt.condition(_hover2, alt.value(1), alt.value(0)))
+            _overlay2  = base2.mark_point(opacity=0, size=200).encode(
+                            y=alt.Y('Price:Q', scale=_ys2), tooltip=_tt2).add_params(_hover2)
+            st.altair_chart(alt.layer(area, line_stp, line_price, _vrule2, _dot_p2, _dot_s2, _overlay2).properties(
+                height=280, title=alt.TitleParams("Sentiment Analizi: Mavi (Fiyat) Sarıyı (STP-DEMA6) Yukarı Keserse AL, aşağıya keserse SAT", fontSize=14, color="#1e40af")), use_container_width=True)
 
 def render_smart_volume_panel(ticker):
     """SMART MONEY HACİM ANALİZİ — 4 tile kompakt panel. ICT altında gösterilir."""
@@ -8251,8 +8286,8 @@ def render_smart_volume_panel(ticker):
         except Exception:
             _cp = poc
 
-    # Fiyat formatı: 1000+ tam sayı (binlik ayırıcı yok), 10-999 iki ondalık, <10 üç ondalık
-    _cp_str = f"{_cp:.0f}" if _cp >= 1000 else f"{_cp:.2f}" if _cp >= 10 else f"{_cp:.3f}"
+    # Fiyat formatı: 1000+ tam sayı, diğerleri 2 ondalık
+    _cp_str = f"{int(_cp):,}" if _cp >= 1000 else f"{_cp:.2f}"
 
     # Bar fill: 0-100 ölçeği (her yarı bar kendi 100%'ü)
     d1_fill  = min(abs(delta_yuzde), 100) if not is_index else (65 if delta_val != 0 else 0)
