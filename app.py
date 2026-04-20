@@ -11596,6 +11596,9 @@ def _render_health_signals_panel():
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
 
+    # --- TEKNİK GÖRÜNÜM (GAUGE) — SMART MONEY RADAR'ın hemen altı ---
+    _render_health_signals_panel()
+
     # --- ICT BOTTOM LINE (SONUÇ) ---
     try:
         if st.session_state.get('ticker'):
@@ -13500,30 +13503,68 @@ if st.session_state.get('_cache_toast_msg'):
     st.toast(st.session_state.pop('_cache_toast_msg'), icon="📦")
     st.session_state['_cache_toast_shown'] = False  # sonraki tarama için sıfırla
 
+# ── TAM EKRAN GRAFİK DIALOG ──────────────────────────────────────────────────
+@st.dialog("🧠 SMC Derin Yapı Analizi", width="large")
+def _show_fullscreen_chart():
+    _ticker = st.session_state.ticker
+    _dark   = st.session_state.dark_mode
+    _disp   = get_display_name(_ticker)
+
+    # ── Başlık ───────────────────────────────────────────────────────────────
+    _info   = fetch_stock_info(_ticker)
+    _px     = _info.get('price', 0) if _info else 0
+    _px_str = f"{int(_px)}" if _px > 1000 else f"{_px:.2f}"
+    st.markdown(
+        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>"
+        f"<span style='font-weight:900;font-size:1.1rem;'>📊 {_disp} — SMC Fiyat Yapısı</span>"
+        f"<span style='font-family:monospace;font-size:1.2rem;font-weight:800;color:#10b981;'>{_px_str}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Tab sistemi — scroll çakışması yok ───────────────────────────────────
+    _tab1, _tab2, _tab3 = st.tabs(["📊 SMC Grafik", "🌊 Para Akış İvmesi", "💰 Smart Money Hacim"])
+
+    with _tab1:
+        _fig = _main_price_chart_plotly(_ticker, _dark)
+        if _fig is None:
+            st.warning("Grafik oluşturulamadı.")
+        else:
+            _fig.update_layout(height=620)
+            st.plotly_chart(
+                _fig,
+                use_container_width=True,
+                config={
+                    'scrollZoom'             : True,
+                    'displayModeBar'         : True,
+                    'modeBarButtonsToRemove' : ['select2d', 'lasso2d'],
+                    'displaylogo'            : False,
+                },
+            )
+
+    with _tab2:
+        _synth = calculate_synthetic_sentiment(_ticker)
+        if _synth is not None and not _synth.empty:
+            render_synthetic_sentiment_panel(_synth)
+        else:
+            st.info("Para Akış verisi hesaplanamadı.")
+
+    with _tab3:
+        render_smart_volume_panel(_ticker)
+
 col_left, col_right = st.columns([4, 1])
 
 # --- SOL SÜTUN ---
 with col_left:
-    # ── ANA FİYAT GRAFİĞİ ────────────────────────────────────────────────────
-    try:
-        _mpc_fig = _main_price_chart_plotly(st.session_state.ticker, st.session_state.dark_mode)
-        if _mpc_fig is None:
-            st.warning("⚠️ Grafik oluşturulamadı (None döndü)")
-        elif isinstance(_mpc_fig, str):
-            st.error(f"⚠️ Grafik hatası: {_mpc_fig}")
-        else:
-            st.plotly_chart(
-                _mpc_fig,
-                use_container_width=True,
-                config={
-                    'scrollZoom': True,
-                    'displayModeBar': True,
-                    'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d'],
-                    'displaylogo': False,
-                },
-            )
-    except Exception as _chart_err:
-        st.error(f"Grafik hatası: {_chart_err}")
+    # ── ANA FİYAT GRAFİĞİ (buton → popup) ───────────────────────────────────
+    _disp_name = get_display_name(st.session_state.ticker)
+    if st.button(
+        f"🧠  {_disp_name}  ·  AKILLI PARA İZİ  ·  SMC Derin Yapı Grafiğini İncele",
+        key="btn_fullscreen_chart",
+        use_container_width=True,
+        type="secondary",
+    ):
+        _show_fullscreen_chart()
     # ─────────────────────────────────────────────────────────────────────────
 
     # 1. PARA AKIŞ İVMESİ & FİYAT DENGESİ (EN TEPE)
@@ -14254,8 +14295,6 @@ with col_left:
 
 # --- SAĞ SÜTUN ---
 with col_right:
-    _render_health_signals_panel()
-
     if not info: info = fetch_stock_info(st.session_state.ticker)
 
     # 1. Fiyat (YENİ TERMİNAL GÖRÜNÜMÜ)
