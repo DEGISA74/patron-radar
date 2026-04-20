@@ -8364,6 +8364,19 @@ def render_smart_volume_panel(ticker):
         t5_pct = "%0"; t5_lbl = "5 Gün Dengede"; t5_sub = "Son 5 günde alım-satım dengede. Net sinyal yok."
         t5_pos = None
 
+    # ── Tile arka plan renkleri (içeriğe göre) ───────────────────
+    def _tile_bg(is_pos):
+        if is_pos is True:
+            return "rgba(16,185,129,0.11)" if dark else "#dcfce7"
+        elif is_pos is False:
+            return "rgba(239,68,68,0.11)" if dark else "#fee2e2"
+        else:
+            return "rgba(245,158,11,0.07)" if dark else "#fffbeb"
+
+    t3_bb = _tile_bg(t3_pos)
+    t4_bb = _tile_bg(t4_pos)
+    t5_bb = _tile_bg(t5_pos)
+
     def bidir_bar(fill_pct, color, is_pos, track):
         """Çift yönlü bar — düz inline-block span'lar, nesting/overflow/height:100% yok.
         fill_pct = 0-100 (her yarının kendi ölçeği).
@@ -8442,7 +8455,7 @@ def render_smart_volume_panel(ticker):
         f'</div>'
 
         # — TILE 3: Bugünkü Delta —
-        f'<div style="padding:6px 8px; border-right:1px solid {divider};">'
+        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t3_bb};">'
         f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#9889; Bugünkü Baskı</div>'
         f'<div style="display:flex; justify-content:{"flex-end" if t3_pos is True else "flex-start" if t3_pos is False else "center"}; margin-bottom:1px;">'
         f'<span style="font-size:0.92rem; font-weight:900; color:{t3_ic};">{t3_pct}</span></div>'
@@ -8452,7 +8465,7 @@ def render_smart_volume_panel(ticker):
         f'</div>'
 
         # — TILE 4: Ortalamaya Göre Hacim —
-        f'<div style="padding:6px 8px; border-right:1px solid {divider};">'
+        f'<div style="padding:6px 8px; border-right:1px solid {divider}; background:{t4_bb};">'
         f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128202; 20G Ort. Göre Bugünkü Hacim</div>'
         f'<div style="display:flex; justify-content:{"flex-end" if t4_pos is True else "flex-start" if t4_pos is False else "center"}; margin-bottom:1px;">'
         f'<span style="font-size:0.92rem; font-weight:900; color:{t4_ic};">{t4_pct}</span></div>'
@@ -8462,7 +8475,7 @@ def render_smart_volume_panel(ticker):
         f'</div>'
 
         # — TILE 5: 5 Seans Delta —
-        f'<div style="padding:6px 8px;">'
+        f'<div style="padding:6px 8px; background:{t5_bb};">'
         f'<div style="font-size:0.62rem; color:{text_muted}; font-weight:700; letter-spacing:0.5px; margin-bottom:2px; text-transform:uppercase;">&#128200; Son 5 Günlük Alım-Satım</div>'
         f'<div style="display:flex; justify-content:{"flex-end" if t5_pos is True else "flex-start" if t5_pos is False else "center"}; margin-bottom:1px;">'
         f'<span style="font-size:0.92rem; font-weight:900; color:{t5_ic};">{t5_pct}</span></div>'
@@ -13832,9 +13845,6 @@ with col_left:
     # 4. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
 
-    # 5. GELİŞMİŞ TEKNİK KART (ICT ALTINDA)
-    render_detail_card_advanced(st.session_state.ticker)
-
     # ---------------------------------------------------------
     # 🏆 TARAMA MERKEZİ — TİERELİ DÜZEN (YENİ)
     # ---------------------------------------------------------
@@ -14420,6 +14430,9 @@ with col_left:
                 else:
                     st.info("Endekse belirgin fark atan hisse bulunamadı.")
 
+
+    # 5. GELİŞMİŞ TEKNİK KART
+    render_detail_card_advanced(st.session_state.ticker)
 
     st.markdown(f"<div style='font-size:0.9rem;font-weight:600;margin-bottom:4px; margin-top:20px;'>📡 {st.session_state.ticker} hakkında haberler ve analizler</div>", unsafe_allow_html=True)
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
