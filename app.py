@@ -105,11 +105,11 @@ if st.session_state.dark_mode:
         .delta-pos { color: #10b981; } .delta-neg { color: #ef4444; }
         
         div.stButton > button[kind="primary"], div.stButton > button[data-testid="baseButton-primary"] {
-            background-color: #3b82f6 !important; border-color: #3b82f6 !important; color: white !important;
-            opacity: 1 !important; border-radius: 6px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            background-color: #1e3a8a !important; border-color: #1e40af !important; color: white !important;
+            opacity: 1 !important; border-radius: 6px; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 2px 6px rgba(30,58,138,0.4);
         }
         div.stButton > button[kind="primary"]:hover, div.stButton > button[data-testid="baseButton-primary"]:hover {
-            background-color: #2563eb !important; border-color: #2563eb !important; color: white !important; transform: translateY(-1px);
+            background-color: #1e40af !important; border-color: #2563eb !important; color: white !important; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30,58,138,0.5);
         }
         div.stButton button[data-testid="baseButton-secondary"] {
             background-color: #1e293b !important; border: 1px solid #334155 !important; color: #cbd5e1 !important; font-weight: 700 !important; transition: all 0.2s ease-in-out;
@@ -7463,7 +7463,7 @@ def _main_price_chart_plotly(symbol, dark_mode):
 
         df_full = get_safe_historical_data(symbol, period="1y")
         if df_full is None or len(df_full) < 10:
-            return None
+            return None, {}
 
         # MA'ları tam veri üzerinde hesapla (doğru seed için)
         close_full = df_full['Close']
@@ -7668,6 +7668,114 @@ def _main_price_chart_plotly(symbol, dark_mode):
         disp = TICKER_DISPLAY_NAMES.get(symbol,
                symbol.split('.')[0].replace('=F','').replace('-USD',''))
 
+        # ── 1. ANLIK FİYAT ÇİZGİSİ ───────────────────────────────────
+        _cur_price = closes[-1]
+        _pfmt_cur  = f"{int(_cur_price):,}" if _cur_price >= 1000 else f"{_cur_price:.2f}"
+        shapes.append(dict(
+            type='line', xref='x', yref='y',
+            x0=dates[0], x1=dates[-1],
+            y0=_cur_price, y1=_cur_price,
+            line=dict(color='#facc15', width=1.2, dash='dot'),
+            layer='above'
+        ))
+        annotations.append(dict(
+            x=dates[-1], y=_cur_price, xref='x', yref='y',
+            text=f"<b>{_pfmt_cur}</b>",
+            showarrow=False, xanchor='left',
+            font=dict(size=11, color='#facc15', family='monospace'),
+            bgcolor='rgba(0,0,0,0.45)', borderpad=3,
+        ))
+
+        # ── 2. POC ÇİZGİSİ (Son 90g en çok işlem gören fiyat) ─────────
+        _poc_val = None
+        try:
+            _poc_val = calculate_volume_profile_poc(df, lookback=90, bins=30)
+            if _poc_val and not np.isnan(_poc_val):
+                _poc_fmt = f"{int(_poc_val):,}" if _poc_val >= 1000 else f"{_poc_val:.2f}"
+                shapes.append(dict(
+                    type='line', xref='x', yref='y',
+                    x0=dates[0], x1=dates[-1],
+                    y0=_poc_val, y1=_poc_val,
+                    line=dict(color='#fbbf24', width=1.8, dash='dashdot'),
+                    layer='above'
+                ))
+                # Etiket — sağ kenara, fiyat etiketinin hemen altına
+                annotations.append(dict(
+                    x=dates[-1], y=_poc_val, xref='x', yref='y',
+                    text=f"<b>POC {_poc_fmt}</b>",
+                    showarrow=False, xanchor='left', yanchor='middle',
+                    font=dict(size=11, color='#fbbf24', family='monospace'),
+                    bgcolor='rgba(0,0,0,0.55)', borderpad=3,
+                ))
+        except Exception:
+            _poc_val = None
+
+        # ── 3. YILLIK VWAP ────────────────────────────────────────────
+        _vwap_cur = None
+        try:
+            _vwap_s   = (df_full['Close'] * df_full['Volume']).cumsum() / df_full['Volume'].cumsum()
+            _vwap_arr = _vwap_s.iloc[-90:].values.astype(float)
+            _vwap_cur = _vwap_arr[-1]
+            _vwap_fmt = f"{int(_vwap_cur):,}" if _vwap_cur >= 1000 else f"{_vwap_cur:.2f}"
+            fig.add_trace(go.Scatter(
+                x=dates, y=_vwap_arr,
+                name=f'VWAP(Y): {_vwap_fmt}',
+                line=dict(color='#e879f9', width=2.0, dash='dash'),
+                hoverinfo='skip',
+            ), row=1, col=1)
+            # Sağ kenarda VWAP etiketi
+            annotations.append(dict(
+                x=dates[-1], y=_vwap_cur, xref='x', yref='y',
+                text=f"<b>VWAP {_vwap_fmt}</b>",
+                showarrow=False, xanchor='left', yanchor='middle',
+                font=dict(size=11, color='#e879f9', family='monospace'),
+                bgcolor='rgba(0,0,0,0.55)', borderpad=3,
+            ))
+        except Exception:
+            _vwap_cur = None
+
+        # ── 4. YAPISAL ÖZET — grafik dışında st.markdown ile gösterilecek ──
+        # Hesapla, fig ile birlikte döndür
+        _smc_summary = {}
+        try:
+            if sh is not None and sl is not None and sh > sl:
+                _rng     = sh - sl
+                _disc_hi = sl + _rng * 0.30
+                _prem_lo = sh - _rng * 0.30
+                _eq_lo   = sl + _rng * 0.45
+                _eq_hi   = sl + _rng * 0.55
+                if _cur_price >= _prem_lo:
+                    _smc_summary['zone'] = ('PREMIUM', '#ef4444', '⚠️ dikkat')
+                elif _cur_price <= _disc_hi:
+                    _smc_summary['zone'] = ('DISCOUNT', '#26a69a', '✅ fırsat')
+                elif _eq_lo <= _cur_price <= _eq_hi:
+                    _smc_summary['zone'] = ('EQ', '#a78bfa', '➖ denge')
+                else:
+                    _smc_summary['zone'] = ('Geçiş', '#94a3b8', '')
+
+            if _poc_val:
+                _poc_dist = (_cur_price - _poc_val) / _poc_val * 100
+                _smc_summary['poc'] = (_poc_val, _poc_dist)
+
+            if _vwap_cur:
+                _vwap_dist = (_cur_price - _vwap_cur) / _vwap_cur * 100
+                _smc_summary['vwap'] = (_vwap_cur, _vwap_dist)
+
+            if smc['bos_lines']:
+                _bos_s = sorted(smc['bos_lines'], key=lambda x: abs(x[1] - _cur_price))
+                _smc_summary['bos'] = (_bos_s[0][2], _bos_s[0][1],
+                                       (_cur_price - _bos_s[0][1]) / _bos_s[0][1] * 100)
+
+            _all_fvgs = [(p_lo, p_hi, 'bull') for (_, p_lo, p_hi) in smc['fvg_bull']] + \
+                        [(p_lo, p_hi, 'bear') for (_, p_lo, p_hi) in smc['fvg_bear']]
+            if _all_fvgs:
+                _fvg_s = sorted(_all_fvgs, key=lambda x: abs((x[0]+x[1])/2 - _cur_price))
+                _flo, _fhi, _fdir = _fvg_s[0]
+                _fmid = (_flo + _fhi) / 2
+                _smc_summary['fvg'] = (_fdir, _fmid, (_cur_price - _fmid) / _fmid * 100)
+        except Exception:
+            pass
+
         fig.update_layout(
             shapes=shapes,
             annotations=annotations,
@@ -7727,10 +7835,10 @@ def _main_price_chart_plotly(symbol, dark_mode):
             zeroline=False, side='right',
             tickformat='.2s',
         )
-        return fig
+        return fig, _smc_summary
     except Exception as _e:
         import traceback; traceback.print_exc()
-        return str(_e)   # hata mesajını döndür, None değil
+        return str(_e), {}   # hata mesajını döndür, None değil
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -13510,14 +13618,64 @@ def _show_fullscreen_chart():
     _dark   = st.session_state.dark_mode
     _disp   = get_display_name(_ticker)
 
-    # ── Başlık ───────────────────────────────────────────────────────────────
+    # ── Grafik + özet verilerini önceden hesapla (başlıkta göstermek için) ──
+    _fig, _smc_sum = _main_price_chart_plotly(_ticker, _dark)
+
+    # ── Chip HTML'i oluştur ───────────────────────────────────────────────────
+    def _chip(label, color, mono=True):
+        _ff = "font-family:monospace;" if mono else ""
+        return (
+            f"<span style='background:#0d1117;border:2px solid {color};"
+            f"padding:3px 10px;border-radius:5px;font-size:11.5px;font-weight:700;"
+            f"color:{color};white-space:nowrap;{_ff}'>{label}</span>"
+        )
+
+    _chips_html = ""
+    if _smc_sum:
+        _parts = []
+        if 'zone' in _smc_sum:
+            _z_lbl, _z_col, _z_note = _smc_sum['zone']
+            _parts.append(_chip(f"📍 {_z_lbl} {_z_note}", _z_col, mono=False))
+        if 'poc' in _smc_sum:
+            _pv, _pd = _smc_sum['poc']
+            _pf = f"{int(_pv):,}" if _pv >= 1000 else f"{_pv:.2f}"
+            _ps = '+' if _pd >= 0 else ''
+            _parts.append(_chip(f"◈ POC {_pf} ({_ps}{_pd:.1f}%)", "#fbbf24"))
+        if 'vwap' in _smc_sum:
+            _vv, _vd = _smc_sum['vwap']
+            _vf = f"{int(_vv):,}" if _vv >= 1000 else f"{_vv:.2f}"
+            _vs = '+' if _vd >= 0 else ''
+            _parts.append(_chip(f"〜 VWAP(Y) {_vf} ({_vs}{_vd:.1f}%)", "#e879f9"))
+        if 'bos' in _smc_sum:
+            _bkind, _bprice, _bdist = _smc_sum['bos']
+            _bf = f"{int(_bprice):,}" if _bprice >= 1000 else f"{_bprice:.2f}"
+            _bsg = '+' if _bdist >= 0 else ''
+            _parts.append(_chip(f"⚡ {_bkind} {_bf} ({_bsg}{_bdist:.1f}%)", "#38bdf8"))
+        if 'fvg' in _smc_sum:
+            _fdir, _fmid, _fdist = _smc_sum['fvg']
+            _ff2 = f"{int(_fmid):,}" if _fmid >= 1000 else f"{_fmid:.2f}"
+            _fsg = '+' if _fdist >= 0 else ''
+            _farr = '↑' if _fdir == 'bull' else '↓'
+            _fcl  = '#4ade80' if _fdir == 'bull' else '#f87171'
+            _parts.append(_chip(f"FVG{_farr} {_ff2} ({_fsg}{_fdist:.1f}%)", _fcl))
+        if _parts:
+            _chips_html = (
+                "<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>"
+                + "".join(_parts) + "</div>"
+            )
+
+    # ── Başlık satırı: sol=isim+fiyat  sağ=chip şeridi ───────────────────────
     _info   = fetch_stock_info(_ticker)
     _px     = _info.get('price', 0) if _info else 0
-    _px_str = f"{int(_px)}" if _px > 1000 else f"{_px:.2f}"
+    _px_str = f"{int(_px):,}" if _px > 1000 else f"{_px:.2f}"
     st.markdown(
-        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;'>"
-        f"<span style='font-weight:900;font-size:1.1rem;'>📊 {_disp} — SMC Fiyat Yapısı</span>"
-        f"<span style='font-family:monospace;font-size:1.2rem;font-weight:800;color:#10b981;'>{_px_str}</span>"
+        f"<div style='display:flex;justify-content:space-between;"
+        f"align-items:center;margin-bottom:8px;gap:12px;'>"
+        f"<div style='display:flex;align-items:baseline;gap:10px;flex-shrink:0;'>"
+        f"<span style='font-weight:900;font-size:1.05rem;'>📊 {_disp} — SMC Fiyat Yapısı</span>"
+        f"<span style='font-family:monospace;font-size:1.1rem;font-weight:800;"
+        f"color:#10b981;'>{_px_str}</span></div>"
+        f"{_chips_html}"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -13526,11 +13684,10 @@ def _show_fullscreen_chart():
     _tab1, _tab2, _tab3 = st.tabs(["📊 SMC Grafik", "🌊 Para Akış İvmesi", "💰 Smart Money Hacim"])
 
     with _tab1:
-        _fig = _main_price_chart_plotly(_ticker, _dark)
-        if _fig is None:
-            st.warning("Grafik oluşturulamadı.")
+        if _fig is None or isinstance(_fig, str):
+            st.warning(f"Grafik oluşturulamadı. {_fig or ''}")
         else:
-            _fig.update_layout(height=620)
+            _fig.update_layout(height=640)
             st.plotly_chart(
                 _fig,
                 use_container_width=True,
@@ -13558,11 +13715,12 @@ col_left, col_right = st.columns([4, 1])
 with col_left:
     # ── ANA FİYAT GRAFİĞİ (buton → popup) ───────────────────────────────────
     _disp_name = get_display_name(st.session_state.ticker)
+
     if st.button(
         f"🧠  {_disp_name}  ·  AKILLI PARA İZİ  ·  SMC Derin Yapı Grafiğini İncele",
         key="btn_fullscreen_chart",
         use_container_width=True,
-        type="secondary",
+        type="primary",
     ):
         _show_fullscreen_chart()
     # ─────────────────────────────────────────────────────────────────────────
