@@ -454,39 +454,48 @@ def toggle_watchlist(symbol):
 # ==============================================================================
 
 def apply_volume_projection(df, ticker=""):
-    # Projeksiyon devre dışı — sadece gerçek veri kullanılır
-    return df
     if df is None or df.empty or 'Volume' not in df.columns:
         return df
 
-    now = datetime.now()
-    
+    # Türkiye saatini güvenli şekilde al (Streamlit Cloud UTC'de çalışır)
+    try:
+        from datetime import timezone, timedelta
+        _tz_tr = timezone(timedelta(hours=3))
+        now = datetime.now(_tz_tr).replace(tzinfo=None)
+    except Exception:
+        now = datetime.now()
+
     # Hafta sonuysa projeksiyon yapma
     if now.weekday() >= 5:
         return df
-        
+
     # Elimizdeki son veri BUGÜNE mi ait? Değilse dokunma.
     last_date = df.index[-1].date()
     if last_date != now.date():
-        return df 
+        return df
 
     # Kripto, ABD veya BIST saatlerine göre hesaplama
+    now_min = now.hour * 60 + now.minute  # günün kaçıncı dakikası
     if "-USD" in ticker:
         # Kripto 7/24 (1440 dakika)
-        elapsed_minutes = (now.hour * 60) + now.minute
+        elapsed_minutes = now_min
         total_minutes = 1440
     elif "^" in ticker or (not ".IS" in ticker and not ticker.startswith("XU")):
-        # ABD Piyasası (16:30 - 23:00 TR Saati) -> 390 dakika
-        if now.hour < 16 or (now.hour == 16 and now.minute < 30) or now.hour >= 23:
+        # ABD Piyasası 16:30-23:00 TR Saati → 390 dakika
+        open_min = 16 * 60 + 30   # 990
+        close_min = 23 * 60        # 1380
+        if now_min < open_min or now_min >= close_min:
             return df
-        elapsed_minutes = ((now.hour - 16) * 60) + now.minute - 30
+        elapsed_minutes = now_min - open_min
         total_minutes = 390
     else:
-        # BIST (09:00 - 19:00 TR Saati) -> 600 dakika
-        if now.hour < 9 or now.hour >= 19:
-            return df
-        elapsed_minutes = ((now.hour - 9) * 60) + now.minute
-        total_minutes = 600
+        # BIST 09:55-18:15 TR Saati → 500 dakika
+        open_min  = 9 * 60 + 55   # 595
+        close_min = 18 * 60 + 15  # 1095
+        if now_min < open_min or now_min >= close_min:
+            return df  # Seans öncesi veya 18:15 sonrası → ham veri
+        elapsed_minutes = now_min - open_min
+        total_minutes = 500
 
     # Güvenlik Kilidi: Sıfıra bölünmeyi ve açılıştaki ilk 15 dakikanın aşırı şişkinliğini önle
     if elapsed_minutes < 15:
