@@ -11738,6 +11738,142 @@ def _render_health_signals_panel():
             </details>
             """, unsafe_allow_html=True)
 
+            # ── GENEL ÖZET (3. accordion bar) ──────────────────
+            _gs_items_html = ""
+            try:
+                _gs_dna = calculate_price_action_dna(st.session_state.ticker)
+
+                # Ardışık mum sayısı (cache'den)
+                _gs_consec_label = ""
+                try:
+                    _gs_df = get_safe_historical_data(st.session_state.ticker, period="1mo")
+                    if _gs_df is not None and len(_gs_df) >= 3:
+                        _gs_cc = _gs_df['Close'].values; _gs_co = _gs_df['Open'].values
+                        _gs_bull = _gs_cc[-1] > _gs_co[-1]
+                        _gs_cnt = 1
+                        for _gsi in range(2, min(8, len(_gs_df))):
+                            if (_gs_cc[-_gsi] > _gs_co[-_gsi]) == _gs_bull:
+                                _gs_cnt += 1
+                            else:
+                                break
+                        _gs_consec_label = f"{_gs_cnt} gündür {'yeşil' if _gs_bull else 'kırmızı'} mum"
+                except Exception:
+                    pass
+
+                if _gs_dna:
+                    _gs_sv    = _gs_dna.get('smart_volume', {})
+                    _gs_rvol  = _gs_sv.get('rvol', 1.0)
+                    _gs_cum5  = _gs_sv.get('cum_delta_5', 0)
+                    _gs_can   = _gs_dna.get('candle', {})
+                    _gs_vol   = _gs_dna.get('vol', {})
+                    _gs_obv   = _gs_dna.get('obv', {})
+                    _gs_sfp   = _gs_dna.get('sfp', {})
+                    _gs_cdesc = _gs_can.get('desc', '')
+                    _gs_otitle= _gs_obv.get('title', '')
+
+                    # Net yön oylama (3 sinyal)
+                    _gs_up = 0; _gs_dn = 0
+                    if _gs_cum5 > 0:  _gs_up += 1
+                    elif _gs_cum5 < 0: _gs_dn += 1
+                    if 'GİRİŞ' in _gs_otitle or 'Destekli' in _gs_otitle or 'Toplama' in _gs_otitle: _gs_up += 1
+                    elif 'ÇIKIŞ' in _gs_otitle: _gs_dn += 1
+                    if _gs_cdesc.startswith('ALICI'):  _gs_up += 1
+                    elif _gs_cdesc.startswith('SATICI'): _gs_dn += 1
+
+                    if _gs_up >= 2:
+                        _gs_net_clr = "#4ade80"; _gs_net_txt = "YUKARI"
+                    elif _gs_dn >= 2:
+                        _gs_net_clr = "#f87171"; _gs_net_txt = "AŞAĞI"
+                    else:
+                        _gs_net_clr = "#fbbf24"; _gs_net_txt = "KARARSIZ"
+
+                    _gs_txt  = "#c7d9f0" if _dark else "#1e3a5f"
+                    _gs_line = "rgba(56,189,248,0.12)" if _dark else "rgba(56,189,248,0.2)"
+
+                    def _gs_row(icon, content):
+                        return (
+                            f"<div style='display:flex;align-items:flex-start;gap:6px;"
+                            f"padding:5px 0;border-bottom:1px solid {_gs_line};'>"
+                            f"<span style='flex-shrink:0;font-size:0.85rem;margin-top:2px;'>{icon}</span>"
+                            f"<span style='font-size:0.85rem;line-height:1.45;color:{_gs_txt};'>{content}</span>"
+                            f"</div>"
+                        )
+
+                    # Satır 1: Net yön
+                    _gs_items_html += _gs_row(
+                        "📡",
+                        f"Genel görünüm: <b style='color:{_gs_net_clr};'>{_gs_net_txt}</b> "
+                        f"<span style='opacity:0.55;'>({_gs_up}↑ {_gs_dn}↓ / 3 sinyal)</span>"
+                    )
+
+                    # Satır 2: Hacim
+                    _gs_delta_txt = "alım ağır" if _gs_cum5 > 0 else ("satış ağır" if _gs_cum5 < 0 else "dengede")
+                    _gs_vtitle = _gs_vol.get('title', 'Normal')
+                    if _gs_rvol < 0.05:
+                        _gs_items_html += _gs_row("📊", f"Bugünkü hacim henüz oluşmadı — 5 seans: <b>{_gs_delta_txt}</b>.")
+                    elif _gs_rvol >= 1.5:
+                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — {_gs_vtitle}, 5 seans {_gs_delta_txt}.")
+                    elif _gs_rvol >= 1.1:
+                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — ortalama üstü, 5 seans {_gs_delta_txt}.")
+                    else:
+                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — zayıf aktivite, 5 seans {_gs_delta_txt}.")
+
+                    # Satır 3: OBV
+                    _gs_odesc = _gs_obv.get('desc', '')
+                    if _gs_otitle and _gs_otitle != 'Nötr / Zayıf':
+                        _gs_items_html += _gs_row("🧠", f"<b>{_gs_otitle}</b> — {_gs_odesc}")
+                    else:
+                        _gs_items_html += _gs_row("🧠", "Akıllı para hareketi nötr / zayıf.")
+
+                    # Satır 4: Mum + vade
+                    _gs_vade = f" <span style='opacity:0.55;'>· {_gs_consec_label}</span>" if _gs_consec_label else ""
+                    if _gs_cdesc and _gs_cdesc != 'Belirgin, güçlü bir formasyon yok.':
+                        if _gs_cdesc.startswith('ALICI'):
+                            _gs_items_html += _gs_row("🕯", f"<b style='color:#4ade80;'>ALICI</b>{_gs_cdesc[5:]}{_gs_vade}")
+                        elif _gs_cdesc.startswith('SATICI'):
+                            _gs_items_html += _gs_row("🕯", f"<b style='color:#f87171;'>SATICI</b>{_gs_cdesc[6:]}{_gs_vade}")
+                        else:
+                            _gs_items_html += _gs_row("🕯", f"{_gs_cdesc}{_gs_vade}")
+                    elif _gs_consec_label:
+                        _gs_cc_col = "#4ade80" if "yeşil" in _gs_consec_label else "#f87171"
+                        _gs_items_html += _gs_row("🕯", f"Belirgin formasyon yok · <b style='color:{_gs_cc_col};'>{_gs_consec_label}</b>")
+
+                    # Satır 5: SFP (varsa)
+                    _gs_sfp_title = _gs_sfp.get('title', 'Yok')
+                    if _gs_sfp_title and _gs_sfp_title != 'Yok':
+                        _gs_items_html += _gs_row("⚠️", f"<b>{_gs_sfp_title}</b> — {_gs_sfp.get('desc', '')}")
+
+            except Exception:
+                _gs_items_html = f"<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Özet hesaplanamadı.</div>"
+
+            if _dark:
+                _gs_hdr_bg  = "linear-gradient(90deg,#0c2340 0%,#0a1929 100%)"
+                _gs_hdr_txt = "#7dd3fc"
+                _gs_cnt_bg  = "rgba(12,35,64,0.55)"
+                _gs_border  = "#38bdf8"
+            else:
+                _gs_hdr_bg  = "linear-gradient(90deg,#dbeafe 0%,#eff6ff 100%)"
+                _gs_hdr_txt = "#1e40af"
+                _gs_cnt_bg  = "#eff6ff"
+                _gs_border  = "#3b82f6"
+
+            st.markdown(f"""
+            <details style="margin-bottom:7px;border-radius:10px;overflow:hidden;
+                            border:1px solid {_gs_border};box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+              <summary style="cursor:pointer;padding:7px 13px;background:{_gs_hdr_bg};
+                              display:flex;align-items:center;gap:8px;
+                              font-size:0.72rem;font-weight:700;color:{_gs_hdr_txt};
+                              letter-spacing:0.03em;list-style:none;user-select:none;">
+                <span style="font-size:1rem;line-height:1;">⚡</span>
+                GENEL ÖZET
+                <span style="margin-left:auto;font-size:0.65rem;opacity:0.5;">▾</span>
+              </summary>
+              <div style="background:{_gs_cnt_bg};padding:8px 12px 10px 12px;">
+                {_gs_items_html if _gs_items_html else "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Veri bekleniyor...</div>"}
+              </div>
+            </details>
+            """, unsafe_allow_html=True)
+
     except Exception as e:
         st.warning(f"Genel Sağlık tablosu oluşturulamadı. Hata: {e}")
 
@@ -14519,7 +14655,7 @@ with col_right:
             arrow = "▼"
             shadow_color = "rgba(220, 38, 38, 0.4)"
 
-        # HTML Kodları (Sola Yaslı - Hata Vermez)
+        # HTML Kodları
         st.markdown(f"""<div style="background-color:{bg_color}; border-radius:12px; padding:15px; color:white; text-align:center; box-shadow: 0 10px 15px -3px {shadow_color}, 0 4px 6px -2px rgba(0,0,0,0.05); margin-bottom:15px; border: 1px solid rgba(255,255,255,0.2);">
 <div style="font-size:1.1rem; font-weight:600; opacity:0.9; letter-spacing:1px; margin-bottom:5px; text-transform:uppercase;">FİYAT: {display_ticker}</div>
 <div style="font-family:'JetBrains Mono', monospace; font-size:2.4rem; font-weight:800; line-height:1; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">{price_val:.2f}</div>
