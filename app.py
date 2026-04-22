@@ -8867,8 +8867,8 @@ def render_price_action_panel(ticker):
     html_content = (
         f'<div class="info-card" style="border-top:3px solid #6366f1;{card_extra}">'
         f'<div class="info-header" style="color:{header_col};'
-        f'{"border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:8px;margin-bottom:12px;font-weight:800;" if is_dark else ""}">'
-        f'🕯️ Price Action Analizi: {display_ticker}</div>'
+        f'{"border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:8px;margin-bottom:12px;font-weight:1300;" if is_dark else ""}">'
+        f'🕯️ PRICE ACTION ANALİZİ: {display_ticker}</div>'
         f'{summary_html}'
         f'{candle_html}'
         f'{sections_html}'
