@@ -352,7 +352,7 @@ raw_bist_stocks = [
     "UFUK.IS", "ULAS.IS", "ULKER.IS", "ULUFA.IS", "ULUSE.IS", "ULUUN.IS", "UMPAS.IS", "UNLU.IS", "USAK.IS", "UZERB.IS", "TATEN.IS",
     "VAKBN.IS", "VAKFN.IS", "VAKKO.IS", "VANGD.IS", "VBTYZ.IS", "VERUS.IS", "VESBE.IS", "VESTL.IS", "VKFYO.IS", "VKGYO.IS", "VKING.IS", "VRGYO.IS",
     "YAPRK.IS", "YATAS.IS", "YAYLA.IS", "YBTAS.IS", "YEOTK.IS", "YESIL.IS", "YGGYO.IS", "YGYO.IS", "YKBNK.IS", "YKSLN.IS", "YONGA.IS", "YUNSA.IS", "YYAPI.IS", "YYLGD.IS",
-    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS", "PAHOL.IS", "MARMR.IS", "BIGEN.IS", "GLRMK.IS", "TRHOL.IS"
+    "ZEDUR.IS", "ZOREN.IS", "ZRGYO.IS", "GIPTA.IS", "TEHOL.IS", "PAHOL.IS", "MARMR.IS", "BIGEN.IS", "GLRMK.IS", "TRHOL.IS", "AAGYO.IS"
 ]
 
 # Kopyaları Temizle ve Birleştir
@@ -457,7 +457,7 @@ def apply_volume_projection(df, ticker=""):
     if df is None or df.empty or 'Volume' not in df.columns:
         return df
 
-    # Türkiye saatini güvenli şekilde al (Streamlit Cloud UTC'de çalışır)
+    # Türkiye saatini güvenli şekilde al
     try:
         from datetime import timezone, timedelta
         _tz_tr = timezone(timedelta(hours=3))
@@ -474,47 +474,61 @@ def apply_volume_projection(df, ticker=""):
     if last_date != now.date():
         return df
 
-    # Kripto, ABD veya BIST saatlerine göre hesaplama
-    now_min = now.hour * 60 + now.minute  # günün kaçıncı dakikası
-    if "-USD" in ticker:
-        # Kripto 7/24 (1440 dakika)
-        elapsed_minutes = now_min
-        total_minutes = 1440
-    elif "^" in ticker or (not ".IS" in ticker and not ticker.startswith("XU")):
-        # ABD Piyasası 16:30-23:00 TR Saati → 390 dakika
-        open_min = 16 * 60 + 30   # 990
-        close_min = 23 * 60        # 1380
-        if now_min < open_min or now_min >= close_min:
-            return df
-        elapsed_minutes = now_min - open_min
-        total_minutes = 390
-    else:
-        # BIST 09:55-18:15 TR Saati → 500 dakika
-        open_min  = 9 * 60 + 55   # 595
-        close_min = 18 * 60 + 15  # 1095
-        if now_min < open_min or now_min >= close_min:
-            return df  # Seans öncesi veya 18:15 sonrası → ham veri
-        elapsed_minutes = now_min - open_min
-        total_minutes = 500
+    now_min = now.hour * 60 + now.minute
+    current_volume = float(df['Volume'].iloc[-1])
 
-    # Güvenlik Kilidi: Sıfıra bölünmeyi ve açılıştaki ilk 15 dakikanın aşırı şişkinliğini önle
-    if elapsed_minutes < 15:
-        elapsed_minutes = 15
-
-    progress = elapsed_minutes / total_minutes
-    progress = max(0.1, min(progress, 1.0))
-
-    # Orijinal veritabanı bozulmasın diye KOPYA (copy) oluşturuyoruz
-    df_proj = df.copy()
-    current_volume = float(df_proj['Volume'].iloc[-1])
-
-    # Hacim 0 veya anlamsız küçükse (endeks gibi) projeksiyon yapma, olduğu gibi bırak
+    # KARANTİNA KONTROLÜ: Hacim sıfır veya anlamsız küçükse projeksiyon yapma
     if current_volume < 100:
         return df
 
-    projected_volume = current_volume / progress if progress > 0 else current_volume
+    progress = 1.0
 
-    # Sadece en son satırın (bugünün) hacmini güncelle
+    # PİYASA TÜRÜNE GÖRE DİNAMİK AĞIRLIK HARİTASI (U-Şekilli)
+    if "-USD" in ticker:
+        # Kripto 24 saat kesintisiz (doğrusal akışa daha uygundur)
+        progress = max(0.01, now_min / 1440)
+
+    elif "^" in ticker or (not ".IS" in ticker and not ticker.startswith("XU")):
+        # ABD Piyasası 16:30-23:00 TR Saati (Toplam 390 dakika)
+        open_min = 16 * 60 + 30
+        close_min = 23 * 60
+        if now_min < open_min:
+            return df
+        if now_min >= close_min:
+            progress = 1.0
+        else:
+            elapsed = now_min - open_min
+            # U-Şeklinde Ağırlık: İlk 60 dk %25 | Orta 270 dk %40 | Son 60 dk %35
+            if elapsed <= 60:
+                progress = (elapsed / 60) * 0.25
+            elif elapsed <= 330:
+                progress = 0.25 + ((elapsed - 60) / 270) * 0.40
+            else:
+                progress = 0.65 + ((elapsed - 330) / 60) * 0.35
+
+    else:
+        # BIST 09:55-18:15 TR Saati (Toplam 500 dakika)
+        open_min = 9 * 60 + 55
+        close_min = 18 * 60 + 15
+        if now_min < open_min:
+            return df
+        if now_min >= close_min:
+            progress = 1.0
+        else:
+            elapsed = now_min - open_min
+            # U-Şeklinde Ağırlık: İlk 120 dk %40 | Orta 260 dk %20 | Son 120 dk %40
+            if elapsed <= 120:
+                progress = (elapsed / 120) * 0.40
+            elif elapsed <= 380:
+                progress = 0.40 + ((elapsed - 120) / 260) * 0.20
+            else:
+                progress = 0.60 + ((elapsed - 380) / 120) * 0.40
+
+    # Güvenlik kilidi: çarpan çok uçuk çıkmasın
+    progress = max(0.05, min(progress, 1.0))
+
+    df_proj = df.copy()
+    projected_volume = current_volume / progress
     df_proj.loc[df_proj.index[-1], 'Volume'] = projected_volume
 
     return df_proj
@@ -593,7 +607,8 @@ def get_batch_data_cached(asset_list, period="1y"):
                 
                 df_sym_new = df_sym_new.loc[:, ~df_sym_new.columns.duplicated()]
                 df_sym_new.columns = [str(c).capitalize() for c in df_sym_new.columns]
-                if 'Volume' not in df_sym_new.columns: df_sym_new['Volume'] = 1.0
+                if 'Volume' not in df_sym_new.columns or df_sym_new['Volume'].isna().all():
+                    df_sym_new['Volume'] = 0.0  # KARANTİNA: Sahte hacim yerine sıfır atıyoruz
 
                 df_sym_new = df_sym_new.dropna(subset=['Close'])
                 df_sym_new.index = df_sym_new.index.tz_localize(None) # Zaman dilimi çakışmasını önle
@@ -691,7 +706,8 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
                     df.columns = df.columns.get_level_values(1)
             df = df.loc[:, ~df.columns.duplicated()].copy()
             df.columns = [str(c).capitalize() for c in df.columns]
-            if 'Volume' not in df.columns: df['Volume'] = 1.0
+            if 'Volume' not in df.columns or df['Volume'].isna().all():
+                df['Volume'] = 0.0  # KARANTİNA: Sahte 1.0 atamasını iptal ettik
             return df
 
         if os.path.exists(file_path):
@@ -1330,6 +1346,30 @@ def scan_chart_patterns(asset_list):
             zz_l     = [(i, p) for (i, p, t) in zz_chron if t == 'L']
 
             # ---------------------------------------------------------------
+            # WICK/BODY FİLTRESİ — Gürültülü bölgeleri eliyor
+            # Formasyon bölgesindeki barların fitil/gövde oranını kontrol eder.
+            # Median fitil > 2 × median gövde ise formasyon geçersiz sayılır.
+            # ---------------------------------------------------------------
+            def is_clean_zone(start_idx, end_idx):
+                """True döndürürse bölge temiz, False ise gürültülü/fitilli."""
+                try:
+                    s = max(0, start_idx)
+                    e = min(bar_total, end_idx + 1)
+                    if e - s < 5: return True  # Çok kısa bölge, filtre uygulama
+                    o_arr = open_.iloc[s:e].values.astype(float)
+                    c_arr = close.iloc[s:e].values.astype(float)
+                    h_arr = high.iloc[s:e].values.astype(float)
+                    l_arr = low.iloc[s:e].values.astype(float)
+                    bodies = np.abs(c_arr - o_arr)
+                    wicks  = (h_arr - l_arr) - bodies
+                    med_body = np.median(bodies)
+                    med_wick = np.median(wicks)
+                    if med_body < 1e-9: return False  # Doji bölgesi — geçersiz
+                    return med_wick <= 2.0 * med_body
+                except:
+                    return True  # Hata durumunda filtreyi geç
+
+            # ---------------------------------------------------------------
             # 1. BOĞA BAYRAĞI — Kısa vadeli, ham fiyat bazlı (zigzag gerekmez)
             # ---------------------------------------------------------------
             if not pattern_found:
@@ -1409,6 +1449,8 @@ def scan_chart_patterns(asset_list):
                             r2  = 1 - ss_res / ss_tot if ss_tot > 0 else 0
                             if r2 < 0.55 or cf[0] <= 0: continue  # Konkav yukarı zorunlu
                         except: continue
+                        # Wick/Body filtresi: fincan bölgesi gürültülü değil mi?
+                        if not is_clean_zone(sh1_i, sh2_i): continue
                         # Handle: sh2'den sonraki ilk swing low
                         h_lows = [(i, v) for i, v in sw_l_y if i > sh2_i]
                         if h_lows:
@@ -1483,6 +1525,8 @@ def scan_chart_patterns(asset_list):
                             if abs(sl1_v - sl3_v) / sl1_v > 0.15: continue  # Omuz simetrisi
                             recovery = (sl3_v - sl2_v) / (neck - sl2_v) if (neck - sl2_v) > 0 else 0
                             if recovery < 0.45: continue
+                            # Wick/Body filtresi: TOBO bölgesi gürültülü değil mi?
+                            if not is_clean_zone(sl1_i, sl3_i): continue
                             # R/R filtresi
                             target = neck + (neck - sl2_v)
                             risk   = max(curr_price - sl3_v * 0.98, 0.01)
@@ -1969,6 +2013,13 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                             r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
                             if r2 < 0.55 or cf[0] <= 0: continue
                         except: continue
+                        # Wick/Body filtresi: fincan bölgesi gürültülü değil mi?
+                        o_z = open_.iloc[sh1_i:sh2_i+1].values.astype(float)
+                        c_z = close.iloc[sh1_i:sh2_i+1].values.astype(float)
+                        h_z = high.iloc[sh1_i:sh2_i+1].values.astype(float)
+                        l_z = low.iloc[sh1_i:sh2_i+1].values.astype(float)
+                        _bodies = np.abs(c_z - o_z); _wicks = (h_z - l_z) - _bodies
+                        if np.median(_bodies) > 1e-9 and np.median(_wicks) > 2.0 * np.median(_bodies): continue
                         h_lows = [(i, v) for i, v in _swl_y if i > sh2_i]
                         if h_lows:
                             hl_i, hl_v = h_lows[0]
@@ -2020,6 +2071,13 @@ def scan_golden_pattern_agent(asset_list, category="S&P 500"):
                             if abs(sl1_v - sl3_v) / sl1_v > 0.15: continue
                             recovery = (sl3_v - sl2_v) / (neck - sl2_v) if (neck - sl2_v) > 0 else 0
                             if recovery < 0.45: continue
+                            # Wick/Body filtresi: TOBO bölgesi gürültülü değil mi?
+                            o_z = open_.iloc[sl1_i:sl3_i+1].values.astype(float)
+                            c_z = close.iloc[sl1_i:sl3_i+1].values.astype(float)
+                            h_z = high.iloc[sl1_i:sl3_i+1].values.astype(float)
+                            l_z = low.iloc[sl1_i:sl3_i+1].values.astype(float)
+                            _bodies = np.abs(c_z - o_z); _wicks = (h_z - l_z) - _bodies
+                            if np.median(_bodies) > 1e-9 and np.median(_wicks) > 2.0 * np.median(_bodies): continue
                             target = neck + (neck - sl2_v)
                             risk   = max(curr_price - sl3_v * 0.98, 0.01)
                             if (target - curr_price) / risk < 1.0: continue
@@ -3762,7 +3820,18 @@ def process_single_ict_setup(symbol, df):
         if not sweep_found: return None
 
         # ── 5. STOP / HEDEF / RRR ─────────────────────────────────────────────
-        stop_loss   = sweep_ref_low * 0.985          # sweep seviyesinin %1.5 altı
+        # ATR tabanlı dinamik stop (sabit % yerine volatiliteye göre)
+        atr_period = 14
+        tr = pd.concat([
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low  - close.shift(1)).abs()
+        ], axis=1).max(axis=1)
+        atr14 = float(tr.rolling(atr_period).mean().iloc[-1])
+
+        # Stop: sweep seviyesinin altı — en az 1.0×ATR, en fazla 2.0×ATR mesafe
+        atr_buffer  = max(atr14 * 1.0, min(atr14 * 2.0, sweep_ref_low * 0.02))
+        stop_loss   = sweep_ref_low - atr_buffer
         entry_price = current_price
         risk        = entry_price - stop_loss
         if risk <= 0: return None
@@ -5489,10 +5558,24 @@ def calculate_price_action_dna(ticker):
         c3_o, c3_h, c3_l, c3_c = float(o.iloc[-3]), float(h.iloc[-3]), float(l.iloc[-3]), float(c.iloc[-3]) # Önceki Gün
         
         c1_v = float(v.iloc[-1])
-        avg_v = float(v.rolling(20).mean().iloc[-1]) 
+        # RVOL için avg_v ve today_v: yfinance'in kendi hesapladığı averageVolume kullan.
+        # Sebep: tarihi hacim serisi (v.rolling) split/sermaye artışı düzeltmeleri nedeniyle
+        # TradingView ile uyuşmuyor. yfinance.info['averageVolume'] tutarlı ve tek kaynaktan.
+        try:
+            _yf_info = yf.Ticker(ticker).fast_info
+            _avg_vol_yf  = float(getattr(_yf_info, 'three_month_average_volume', 0) or 0)
+            _today_vol_yf = float(getattr(_yf_info, 'last_volume', 0) or 0)
+        except Exception:
+            _avg_vol_yf = 0.0
+            _today_vol_yf = 0.0
+
+        # Fallback: yfinance fast_info boş döndürdüyse rolling mean'e dön
+        avg_v       = _avg_vol_yf   if _avg_vol_yf   > 100 else float(v.iloc[:-1].rolling(19).mean().iloc[-1])
+        raw_today_v = _today_vol_yf if _today_vol_yf > 100 else c1_v
+
         sma50 = c.rolling(50).mean().iloc[-1]
         # --- [YENİ] GELİŞMİŞ HACİM ANALİZİ DEĞİŞKENLERİ ---
-        rvol = c1_v / avg_v if avg_v > 0 else 1.0
+        rvol = raw_today_v / avg_v if avg_v > 0 else 1.0
         
         # RSI Serisi
         delta = c.diff()
@@ -5986,7 +6069,8 @@ def calculate_price_action_dna(ticker):
         # ======================================================
         std_v_20 = float(v.rolling(20).std().iloc[-1])
         c_std = std_v_20 if std_v_20 > 0 else 1.0
-        rvol = c1_v / avg_v if avg_v > 0 else 1.0
+        # raw_today_v ve avg_v: yukarıda yfinance.fast_info'dan alındı (TradingView ile tutarlı)
+        rvol = raw_today_v / avg_v if avg_v > 0 else 1.0
         
         # Stopping Volume: Fiyat dipteyken gelen devasa karşılayıcı hacim
         stop_vol_msg = "Yok"
@@ -13874,7 +13958,72 @@ def _show_fullscreen_chart():
     )
 
     # ── Tab sistemi — scroll çakışması yok ───────────────────────────────────
-    _tab1, _tab2, _tab3 = st.tabs(["📊 SMC Grafik", "🌊 Para Akış İvmesi", "💰 Smart Money Hacim"])
+
+    # Dinamik tab: bu ticker için taranmış formasyon / harmonik var mı?
+    _pat_row  = None
+    _harm_row = None
+
+    # ① Önce batch tarama session state'lerine bak
+    _pat_df = st.session_state.get('pattern_data')
+    if _pat_df is not None and hasattr(_pat_df, 'empty') and not _pat_df.empty:
+        _pat_matches = _pat_df[_pat_df['Sembol'] == _ticker]
+        if not _pat_matches.empty:
+            _pat_row = _pat_matches.iloc[0]
+
+    # golden_pattern_data da kontrol et (formations kısmı)
+    if _pat_row is None:
+        _gp_raw = st.session_state.get('golden_pattern_data')
+        if _gp_raw is not None:
+            _gp_formations = _gp_raw.get('formations', pd.DataFrame()) if isinstance(_gp_raw, dict) else _gp_raw
+            if hasattr(_gp_formations, 'empty') and not _gp_formations.empty and 'Sembol' in _gp_formations.columns:
+                _gp_matches = _gp_formations[_gp_formations['Sembol'] == _ticker]
+                if not _gp_matches.empty:
+                    _pat_row = _gp_matches.iloc[0]
+
+    # ② Batch sonuç yoksa bu hisse için anlık tarama yap (tek hisse, hızlı)
+    if _pat_row is None:
+        try:
+            _live_pat_df = scan_chart_patterns([_ticker])
+            if _live_pat_df is not None and not _live_pat_df.empty:
+                _pat_row = _live_pat_df.iloc[0]
+        except Exception:
+            pass
+
+    _harm_df = st.session_state.get('harmonic_data')
+    if _harm_df is not None and hasattr(_harm_df, 'empty') and not _harm_df.empty:
+        _harm_matches = _harm_df[_harm_df['Sembol'] == _ticker]
+        if not _harm_matches.empty:
+            _harm_row = _harm_matches.iloc[0]
+
+    # Harmonik confluence da kontrol et
+    if _harm_row is None:
+        _hconf_df = st.session_state.get('harmonic_confluence_data')
+        if _hconf_df is not None and hasattr(_hconf_df, 'empty') and not _hconf_df.empty and 'Sembol' in _hconf_df.columns:
+            _hconf_matches = _hconf_df[_hconf_df['Sembol'] == _ticker]
+            if not _hconf_matches.empty:
+                _harm_row = _hconf_matches.iloc[0]
+
+    # ③ Harmonik batch yoksa anlık tarama yap (cached ttl=900)
+    if _harm_row is None:
+        try:
+            _live_harm_df = scan_harmonic_patterns_batch((_ticker,))
+            if _live_harm_df is not None and not _live_harm_df.empty:
+                _harm_row = _live_harm_df.iloc[0]
+        except Exception:
+            pass
+
+    _tab_labels = ["📊 SMC Grafik", "🌊 Para Akış İvmesi", "💰 Smart Money Hacim"]
+    if _pat_row is not None:
+        _tab_labels.append("📐 Formasyon")
+    if _harm_row is not None:
+        _tab_labels.append("🔮 Harmonik")
+
+    _tabs = st.tabs(_tab_labels)
+    _tab1 = _tabs[0]
+    _tab2 = _tabs[1]
+    _tab3 = _tabs[2]
+    _tab_pat  = _tabs[3] if _pat_row is not None else None
+    _tab_harm = _tabs[4] if (_pat_row is not None and _harm_row is not None) else (_tabs[3] if (_pat_row is None and _harm_row is not None) else None)
 
     with _tab1:
         if _fig is None or isinstance(_fig, str):
@@ -13901,6 +14050,121 @@ def _show_fullscreen_chart():
 
     with _tab3:
         render_smart_volume_panel(_ticker)
+
+    # ── Formasyon Tab ────────────────────────────────────────────────────────
+    if _tab_pat is not None and _pat_row is not None:
+        with _tab_pat:
+            _pat_name  = _pat_row.get('Formasyon', _pat_row.get('Detay', 'Formasyon'))
+            _pat_detay = _pat_row.get('Detay', '')
+            _pat_skor  = _pat_row.get('Skor', _pat_row.get('Puan', '—'))
+            _pat_fiyat = _pat_row.get('Fiyat', 0)
+            _chart_dat = _pat_row.get('ChartData', None)
+
+            # Başlık
+            _fiyat_str = f"{int(_pat_fiyat):,}" if _pat_fiyat > 1000 else f"{_pat_fiyat:.2f}" if _pat_fiyat else "—"
+            st.markdown(
+                f"<div style='background:rgba(56,189,248,0.08);border-left:3px solid #38bdf8;"
+                f"border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:10px;'>"
+                f"<span style='color:#38bdf8;font-weight:900;font-size:1rem;'>📐 {_pat_name}</span>"
+                f"{'  <span style=\"color:#94a3b8;font-size:0.8rem;\">Skor: ' + str(_pat_skor) + '</span>' if _pat_skor != '—' else ''}"
+                f"{'  <span style=\"color:#10b981;font-family:monospace;font-size:0.9rem;font-weight:700;\"> ₺' + _fiyat_str + '</span>' if _pat_fiyat else ''}"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # Mini formasyon grafiği
+            if _chart_dat and isinstance(_chart_dat, dict):
+                try:
+                    _b64 = _mini_pattern_chart_b64(_ticker, _chart_dat, _dark)
+                    if _b64:
+                        st.markdown(
+                            f"<img src='data:image/png;base64,{_b64}' "
+                            f"style='width:100%;border-radius:8px;margin-bottom:10px;display:block;'/>",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.caption("Grafik oluşturulamadı.")
+                except Exception as _e:
+                    st.caption(f"Grafik hatası: {_e}")
+            else:
+                st.caption("Bu formasyon için mini grafik verisi mevcut değil.")
+
+            # Detay açıklaması
+            if _pat_detay:
+                st.markdown(
+                    f"<div style='font-size:0.82rem;color:#94a3b8;line-height:1.6;"
+                    f"margin-top:4px;'>{_pat_detay}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── Harmonik Tab ─────────────────────────────────────────────────────────
+    if _tab_harm is not None and _harm_row is not None:
+        with _tab_harm:
+            _h_pattern = _harm_row.get('Pattern', _harm_row.get('Formasyon', '—'))
+            _h_yon     = _harm_row.get('Yön', _harm_row.get('Yön', '—'))
+            _h_prz     = _harm_row.get('PRZ', '—')
+            _h_fark    = _harm_row.get('PRZ_Fark%', _harm_row.get('Fark%', '—'))
+            _h_durum   = _harm_row.get('Durum', '—')
+            _h_bar_once = _harm_row.get('Bar_Önce', '—')
+
+            # Renk yön'e göre
+            _h_col = "#10b981" if "Yük" in str(_h_yon) or "bull" in str(_h_yon).lower() or "AL" in str(_h_yon).upper() else "#f87171"
+            _h_icon = "🟢" if _h_col == "#10b981" else "🔴"
+
+            st.markdown(
+                f"<div style='background:rgba(167,139,250,0.08);border-left:3px solid #a78bfa;"
+                f"border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:12px;'>"
+                f"<span style='color:#a78bfa;font-weight:900;font-size:1rem;'>🔮 {_h_pattern}</span>"
+                f"  <span style='color:{_h_col};font-weight:700;font-size:0.9rem;'>{_h_icon} {_h_yon}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            # PRZ bilgi kartları
+            _hc1, _hc2, _hc3 = st.columns(3)
+            with _hc1:
+                st.markdown(
+                    f"<div style='text-align:center;padding:10px;background:rgba(167,139,250,0.1);"
+                    f"border-radius:8px;border:1px solid rgba(167,139,250,0.3);'>"
+                    f"<div style='color:#94a3b8;font-size:0.72rem;'>PRZ Seviyesi</div>"
+                    f"<div style='color:#a78bfa;font-family:monospace;font-size:1rem;font-weight:800;'>{_h_prz}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with _hc2:
+                st.markdown(
+                    f"<div style='text-align:center;padding:10px;background:rgba(251,191,36,0.1);"
+                    f"border-radius:8px;border:1px solid rgba(251,191,36,0.3);'>"
+                    f"<div style='color:#94a3b8;font-size:0.72rem;'>PRZ Farkı</div>"
+                    f"<div style='color:#fbbf24;font-family:monospace;font-size:1rem;font-weight:800;'>%{_h_fark}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            with _hc3:
+                st.markdown(
+                    f"<div style='text-align:center;padding:10px;background:rgba(16,185,129,0.1);"
+                    f"border-radius:8px;border:1px solid rgba(16,185,129,0.3);'>"
+                    f"<div style='color:#94a3b8;font-size:0.72rem;'>Durum</div>"
+                    f"<div style='color:#10b981;font-size:0.85rem;font-weight:700;'>{_h_durum}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+            # Ek satırlar varsa (confluence vs)
+            _h_aciklama = _harm_row.get('Aciklama', _harm_row.get('Detay', ''))
+            if _h_aciklama:
+                st.markdown(
+                    f"<div style='font-size:0.82rem;color:#94a3b8;line-height:1.6;"
+                    f"padding:8px 12px;background:rgba(255,255,255,0.03);"
+                    f"border-radius:6px;margin-top:4px;'>{_h_aciklama}</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # Bar önce bilgisi
+            if _h_bar_once != '—' and str(_h_bar_once).strip():
+                st.caption(f"D noktası {_h_bar_once} gün önce oluştu." if str(_h_bar_once) != 'bekleniyor' else "D noktası henüz bekleniyor — PRZ yaklaşıyor.")
 
 col_left, col_right = st.columns([4, 1])
 
@@ -14049,12 +14313,11 @@ with col_left:
     def _scan_card_header(icon, title, score, subtitle, color="#3b82f6", desc=""):
         pct   = score
         stars = "⭐" * (score // 20)
-        dc    = _darken(color)
         if desc:
-            bottom = (f"<span style='color:{dc};font-weight:700;font-size:0.72rem;'>{desc}</span> "
-                      f"<span style='color:#94a3b8;font-size:0.80rem;'>({subtitle})</span>")
+            bottom = (f"<span style='color:#1e3a5f;font-weight:700;font-size:0.72rem;'>{desc}</span> "
+                      f"<span style='color:#1e3a5f;font-size:0.80rem;font-weight:600;'>({subtitle})</span>")
         else:
-            bottom = f"<span style='color:#64748b;font-size:0.7rem;'>{stars} {subtitle}</span>"
+            bottom = f"<span style='color:#1e3a5f;font-size:0.7rem;font-weight:600;'>{stars} {subtitle}</span>"
         return (f"<div style='background:linear-gradient(135deg,{color}18,{color}06);"
                 f"border:1px solid {color}50;border-radius:10px;padding:9px 13px;margin-bottom:7px;'>"
                 f"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;'>"
@@ -14102,9 +14365,22 @@ with col_left:
                         _cp = _ch.get('price', 0)
                         _cp_s = f"{int(_cp)}" if _cp >= 1000 else f"{_cp:.2f}"
                         _icon = "🔥" if _ch.get('group_count',0) == 3 else "⚡"
+                        # Açıklama: hangi metodoloji grupları ve scanner'lar buldu
+                        _hg = _ch.get('hit_groups', [])
+                        _conf_desc_parts = []
+                        for _hg_item in _hg:
+                            _scanners_str = " + ".join(_hg_item.get('scanners', []))
+                            _conf_desc_parts.append(f"{_hg_item['label']}: {_scanners_str}")
+                        _conf_desc = " | ".join(_conf_desc_parts)
                         if st.button(f"{_icon} {_cs} ({_cp_s})", key=f"conf_top_{_cs}_{_ci}", use_container_width=True):
                             st.session_state.ticker = _ch['Sembol']
                             on_scan_result_click(_ch['Sembol']); st.rerun()
+                        if _conf_desc:
+                            st.markdown(
+                                f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;"
+                                f"margin:-4px 0 6px 4px;line-height:1.4;'>{_conf_desc}</div>",
+                                unsafe_allow_html=True
+                            )
             else:
                 st.markdown(f"<div style='border:1px dashed #7c3aed50;border-radius:7px;"
                             f"padding:18px 10px;text-align:center;color:#94a3b8;font-size:0.8rem;'>"
@@ -14249,7 +14525,7 @@ with col_left:
                                          key=f"ict_long_{sym}_{i}", use_container_width=True):
                                 on_scan_result_click(sym); st.rerun()
                             if _aciklama:
-                                st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                             f"line-height:1.3;'>{_aciklama}</div>", unsafe_allow_html=True)
                         for i, row in shorts.iterrows():
                             sym = row['Sembol']
@@ -14292,7 +14568,7 @@ with col_left:
                                 on_scan_result_click(sym); st.rerun()
                             _rf_ac = row.get('Aciklama', '')
                             if _rf_ac:
-                                st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                                st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                             f"line-height:1.3;'>{_rf_ac}</div>", unsafe_allow_html=True)
 
     # ── Sağ Ana Sütun: Altın Fırsat & VIP FORMASYON ──
@@ -14322,7 +14598,7 @@ with col_left:
                             on_scan_result_click(sym); st.rerun()
                         _gp_detay = row.get('Detay', '')
                         if _gp_detay:
-                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                            st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                         f"line-height:1.3;'>{_gp_detay}</div>", unsafe_allow_html=True)
             elif not _hazirlik.empty:
                 with st.container(height=120, border=True):
@@ -14391,7 +14667,7 @@ with col_left:
                             on_scan_result_click(sym); st.rerun()
                         _gd_ac = row.get('Aciklama', '')
                         if _gd_ac:
-                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                            st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                         f"line-height:1.3;'>{_gd_ac}</div>", unsafe_allow_html=True)
             else:
                 st.warning("OBV birikim + RSI diverjans + hacim frekansı kriterlerini karşılayan hisse bulunamadı.")
@@ -14456,7 +14732,7 @@ with col_left:
                             on_scan_result_click(sym); st.rerun()
                         _sepa_detay = row.get('Detay', '')
                         if _sepa_detay:
-                            st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                            st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                         f"line-height:1.3;'>{_sepa_detay}</div>", unsafe_allow_html=True)
             else:
                 st.warning("Bu zorlu kriterlere uyan hisse bulunamadı.")
@@ -14490,7 +14766,7 @@ with col_left:
                         on_scan_result_click(_hcr.get('Sembol', _hcs)); st.rerun()
                     _hc_inline = f"{_hc_tooltip}" + (f" · {_hc_durum}" if _hc_durum else "")
                     if _hc_inline:
-                        st.markdown(f"<div style='font-size:0.62rem;color:#64748b;margin:-6px 0 4px 4px;"
+                        st.markdown(f"<div style='font-size:0.72rem;color:#1e3a5f;font-weight:600;margin:-6px 0 4px 4px;"
                                     f"line-height:1.3;'>{_hc_inline}</div>", unsafe_allow_html=True)
         elif _hc_scan is not None:
             st.caption("Harmonik Confluence bulunamadı.")
