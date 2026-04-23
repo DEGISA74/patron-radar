@@ -552,7 +552,7 @@ def get_benchmark_data(category):
         return None
 
 # --- GLOBAL DATA CACHE KATMANI ---
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)
 def get_batch_data_cached(asset_list, period="1y"):
     """
     GATEKEEPER DESTEKLİ TOPLU TARAMA MOTORU - MULTIINDEX HATASI GİDERİLDİ
@@ -585,7 +585,7 @@ def get_batch_data_cached(asset_list, period="1y"):
             missing_assets.append(sym)
 
     if missing_assets:
-        df_new = yf.download(" ".join(missing_assets), period="2y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
+        df_new = yf.download(" ".join(missing_assets), period="1y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
 
         for sym in missing_assets:
             clean_sym = sym.replace(".IS", "")
@@ -719,7 +719,7 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
                 return apply_volume_projection(df_cached.tail(500).copy(), ticker)
 
             import datetime as _dt
-            _start = str(_dt.date.today() - _dt.timedelta(days=730))
+            _start = str(_dt.date.today() - _dt.timedelta(days=380))
             _end   = str(_dt.date.today() + _dt.timedelta(days=1))
             df_new = yf.download(clean_ticker, start=_start, end=_end, interval=interval, progress=False, auto_adjust=True)
             if not df_new.empty:
@@ -734,7 +734,7 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             return apply_volume_projection(df_cached.tail(500).copy(), ticker)
         else:
             import datetime as _dt
-            _start = str(_dt.date.today() - _dt.timedelta(days=730))
+            _start = str(_dt.date.today() - _dt.timedelta(days=380))
             _end   = str(_dt.date.today() + _dt.timedelta(days=1))
             df_full = yf.download(clean_ticker, start=_start, end=_end, interval=interval, progress=False, auto_adjust=True)
             if not df_full.empty:
@@ -931,7 +931,7 @@ def fetch_stock_info(ticker):
 @st.cache_data(ttl=600)
 def get_tech_card_data(ticker):
     try:
-        df = get_safe_historical_data(ticker, period="2y")
+        df = get_safe_historical_data(ticker, period="1y")
         if df is None: return None
         
         close = df['Close'].iloc[:, 0] if isinstance(df['Close'], pd.DataFrame) else df['Close']
@@ -1255,7 +1255,7 @@ def scan_chart_patterns(asset_list):
     - Fincan-Kulp: H,L,H≈ilk,L(kulp) — son 4 anlamlı pivot üzerinden
     - 2 yıllık veri ile büyük formasyonlar kaçmaz.
     """
-    data = get_batch_data_cached(asset_list, period="2y")
+    data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
 
     current_cat = st.session_state.get('category', 'S&P 500')
@@ -2221,7 +2221,7 @@ def scan_stp_signals(asset_list):
     """
     Optimize edilmiş STP tarayıcı.
     """
-    data = get_batch_data_cached(asset_list, period="2y")
+    data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return [], [], []
 
     cross_signals = []
@@ -4013,7 +4013,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
         if provided_df is not None:
             df = provided_df
         else:
-            df = get_safe_historical_data(ticker, period="2y")
+            df = get_safe_historical_data(ticker, period="1y")
             
         if df is None or len(df) < 260: return None
         
@@ -4022,7 +4022,7 @@ def calculate_minervini_sepa(ticker, benchmark_ticker="^GSPC", provided_df=None)
             df.columns = df.columns.get_level_values(0)
 
         # Endeks verisi (RS için) - Eğer cache'de yoksa indir
-        bench_df = get_safe_historical_data(benchmark_ticker, period="2y")
+        bench_df = get_safe_historical_data(benchmark_ticker, period="1y")
         
         close = df['Close']; volume = df['Volume']
         curr_price = float(close.iloc[-1])
@@ -4420,7 +4420,7 @@ def compile_confluence_hits():
 @st.cache_data(ttl=900)
 def scan_minervini_batch(asset_list):
     # 1. Veri İndirme (Hızlı Batch)
-    data = get_batch_data_cached(asset_list, period="2y")
+    data = get_batch_data_cached(asset_list, period="1y")
     if data.empty: return pd.DataFrame()
     
     # 2. Endeks Belirleme
@@ -4578,7 +4578,7 @@ def scan_rs_momentum_leaders(asset_list):
 def calculate_sentiment_score(ticker):
     try:
         # Veri Çekme (2y: SMA200 garantisi için)
-        df = get_safe_historical_data(ticker, period="2y")
+        df = get_safe_historical_data(ticker, period="1y")
         if df is None or len(df) < 200: return None
         
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
@@ -4744,7 +4744,7 @@ def calculate_sentiment_score(ticker):
         if not is_index:
             bench_ticker = "XU100.IS" if ".IS" in ticker else "^GSPC"
             try:
-                bench_df = get_safe_historical_data(bench_ticker, period="2y")
+                bench_df = get_safe_historical_data(bench_ticker, period="1y")
                 if bench_df is not None:
                     common_idx = close.index.intersection(bench_df.index)
                     stock_p = close.loc[common_idx]
@@ -10139,7 +10139,7 @@ def _mini_pattern_chart_b64(symbol, chart_data, dark_mode):
     """Her formasyon tipine göre mum grafik çizer. Döndürür: base64 PNG string."""
     try:
         from matplotlib.patches import Rectangle
-        df = get_safe_historical_data(symbol, period="2y")
+        df = get_safe_historical_data(symbol, period="1y")
         if df is None or df.empty:
             return ""
 
@@ -12427,7 +12427,7 @@ with col_btn:
             # En geniş veriyi (2y) bir kez çağırıyoruz ki önbelleğe (cache) girsin.
             # Diğer ajanlar cache'den okuyacağı için Yahoo'ya tekrar gitmeyecekler.
             my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...%10")
-            get_batch_data_cached(scan_list, period="2y")
+            get_batch_data_cached(scan_list, period="1y")
             
             # 2. STP & MOMENTUM AJANI - %15
             my_bar.progress(15, text="⚡ STP ve Momentum Taranıyor...%15")
