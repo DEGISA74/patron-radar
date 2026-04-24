@@ -13196,8 +13196,8 @@ def get_golden_trio_batch_scan(ticker_list):
 # 6. ANA SAYFA (MAIN UI) - GÜNCELLENMİŞ MASTER SCAN VERSİYONU
 # ==============================================================================
 
-# Üst Menü Düzeni: Tema | Kategori | Varlık | Tazele | Master Scan
-col_theme, col_cat, col_ass, col_ref, col_btn = st.columns([0.5, 1.5, 1.5, 0.5, 1])
+# Üst Menü Düzeni: Tema | Kategori | Varlık | Master Scan
+col_theme, col_cat, col_ass, col_btn = st.columns([0.5, 1.5, 1.5, 1])
 
 # 1. TEMA DEĞİŞTİRME BUTONU
 with col_theme:
@@ -13223,31 +13223,6 @@ with col_ass:
         try: asset_idx = current_opts.index(active_ticker)
         except ValueError: asset_idx = 0
     st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=get_display_name)
-
-# 3.5 VERİYİ TAZELE BUTONU
-with col_ref:
-    if st.button("🔄", use_container_width=True, help="Tüm eski parquet verilerini güncelle"):
-        _ref_cat   = st.session_state.get('category', 'BIST 500 ')
-        _ref_list  = ASSET_GROUPS.get(_ref_cat, [])
-        _ref_bar   = st.progress(0, text="Veriler güncelleniyor...")
-        _ref_total = len(_ref_list)
-        _ref_ok = 0; _ref_fail = 0
-        get_safe_historical_data.clear()
-        get_batch_data_cached.clear()
-        for _ri, _rt in enumerate(_ref_list):
-            try:
-                _df_r = get_safe_historical_data(_rt, period="1y")
-                if _df_r is not None and not _df_r.empty:
-                    _ref_ok += 1
-                else:
-                    _ref_fail += 1
-            except:
-                _ref_fail += 1
-            _ref_bar.progress((_ri + 1) / _ref_total,
-                              text=f"Güncelleniyor: {_rt} ({_ri+1}/{_ref_total})")
-        _ref_bar.empty()
-        st.toast(f"✅ {_ref_ok} ticker güncellendi, {_ref_fail} başarısız.", icon="🔄")
-        st.rerun()
 
 # 4. MASTER SCAN BUTONU
 with col_btn:
@@ -15990,10 +15965,9 @@ with col_left:
     symbol_raw = st.session_state.ticker; base_symbol = (symbol_raw.replace(".IS", "").replace("=F", "").replace("-USD", "")); lower_symbol = base_symbol.lower()
     st.markdown(f"""<div class="news-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; border-left:none;"><a href="https://seekingalpha.com/symbol/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">SeekingAlpha</div></a><a href="https://finance.yahoo.com/quote/{base_symbol}/news" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Yahoo Finance</div></a><a href="https://www.nasdaq.com/market-activity/stocks/{lower_symbol}/news-headlines" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Nasdaq</div></a><a href="https://stockanalysis.com/stocks/{lower_symbol}/" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">StockAnalysis</div></a><a href="https://finviz.com/quote.ashx?t={base_symbol}&p=d" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.8rem; font-weight:600;">Finviz</div></a><a href="https://unusualwhales.com/stock/{base_symbol}/overview" target="_blank" style="text-decoration:none;"><div style="padding:4px 8px; border-radius:4px; border:1px solid #e5e7eb; font-size:0.7rem; font-weight:600;">UnusualWhales</div></a></div>""", unsafe_allow_html=True)
 
-    # --- GİZLİ TEMETTÜ / BÖLÜNME SIFIRLAMA BUTONU ---
-    col_reset, _ = st.columns([1, 3]) # Sekmeyi daraltmak için ekranı 1'e 3 oranında bölüyoruz
+    # --- GİZLİ TEMETTÜ / BÖLÜNME SIFIRLAMA + VERİ TAZELE BUTONLARI ---
+    col_reset, col_refresh, _ = st.columns([1, 1, 2])
     with col_reset:
-        # Metinleri de minik kutuya sığacak şekilde kısalttık
         with st.expander("⚙️ Veriyi Onar (Temettü/Bölünme)"):
             if st.button("🔄 Sıfırla ve İndir", use_container_width=True, key="reset_data_btn"):
                 t_clean = st.session_state.ticker.replace(".IS", "")
@@ -16014,6 +15988,34 @@ with col_left:
                     get_batch_data_cached.clear()
                     st.toast("⚠️ Dosya bulunamadı ama önbellek temizlendi.", icon="⚠️")
                 
+                st.rerun()
+
+    with col_refresh:
+        with st.expander("🔄 Veriyi Tazele (Tüm Kategori)"):
+            st.caption("Seçili kategorideki tüm eski parquet verilerini yeniden indirir.")
+            if st.button("▶ Güncellemeyi Başlat", use_container_width=True, key="refresh_all_btn"):
+                _ref_cat   = st.session_state.get('category', 'BIST 500 ')
+                _ref_list  = ASSET_GROUPS.get(_ref_cat, [])
+                _ref_total = len(_ref_list)
+                _ref_bar   = st.progress(0, text="Başlatılıyor...")
+                _ref_ok = 0; _ref_fail = 0
+                get_safe_historical_data.clear()
+                get_batch_data_cached.clear()
+                for _ri, _rt in enumerate(_ref_list):
+                    try:
+                        _df_r = get_safe_historical_data(_rt, period="1y")
+                        if _df_r is not None and not _df_r.empty:
+                            _ref_ok += 1
+                        else:
+                            _ref_fail += 1
+                    except:
+                        _ref_fail += 1
+                    _ref_bar.progress(
+                        (_ri + 1) / _ref_total,
+                        text=f"{_rt} ({_ri+1}/{_ref_total})"
+                    )
+                _ref_bar.empty()
+                st.toast(f"✅ {_ref_ok} güncellendi, {_ref_fail} başarısız.", icon="🔄")
                 st.rerun()
 
 # --- SAĞ SÜTUN ---
