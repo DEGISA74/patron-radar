@@ -12010,18 +12010,8 @@ def render_unified_signals_panel(ticker):
                     _kv_warnings.append(f"Momentum ↓ %{_mom5*100:.1f}")
         except: pass
 
-        # Kısa vade notu sadece "AL" kararında ve uyarı varsa göster
-        _kv_note_html = ""
-        if karar_txt == "AL" and _kv_warnings:
-            _kv_str = " · ".join(_kv_warnings)
-            _kv_note_html = (
-                f"<div style='font-size:0.68rem;color:#f59e0b;font-weight:700;"
-                f"padding:3px 10px 3px;background:rgba(245,158,11,0.08);"
-                f"border-bottom:1px solid rgba(245,158,11,0.2);'>"
-                f"⚠️ Kısa Vade: İzle &nbsp;·&nbsp; <span style='font-weight:500;"
-                f"color:#fbbf24;'>{_kv_str}</span>"
-                f"</div>"
-            )
+        # Kısa vade uyarısı — _kv_note_html ayrı st.markdown ile render edilir
+        _kv_show = (karar_txt == "AL" and bool(_kv_warnings))
 
         # signals: (icon, text, color, edu_note, is_positive)
         signals = []
@@ -12048,6 +12038,10 @@ def render_unified_signals_panel(ticker):
         # ── Regime Engine + Conviction Score ────────────────────────
         _regime     = detect_market_regime(df, pa)
         _conviction = calculate_conviction_score(df, pa, ict_data, sent_data, bench_s, ticker)
+
+        # ── Session state'e yaz (AI prompt için) ─────────────────────
+        st.session_state["_last_regime"]     = _regime
+        st.session_state["_last_conviction"] = _conviction
 
         # ── 1. STP ──────────────────────────────────────────────────
         try:
@@ -12298,7 +12292,7 @@ def render_unified_signals_panel(ticker):
                 _against = True
             if _against:
                 _t = f"{_t} ⚡Karşı Trend"
-                _e = f"[Regime Uyarısı: {_regime['label']}] " + _e
+                _e = f"[Uyarı: {_regime['label']}] " + _e
                 # Gri değil — orijinal rengi koru, sadece italik + soluk badge
             gated_signals.append((_i, _t, _c, _e, _p))
 
@@ -12369,8 +12363,8 @@ def render_unified_signals_panel(ticker):
             f"<div style='padding:6px 10px 5px;border-bottom:1px solid {border_dim};"
             f"background:rgba(255,255,255,0.02);'>"
             f"<div style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
-            f"<span style='font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;"
-            f"letter-spacing:0.06em;'>🎯 Kaanaat Skoru</span>"
+            f"<span style='font-size:0.72rem;font-weight:700;color:{'#93c5fd' if is_dark else '#1e3a8a'};text-transform:uppercase;"
+            f"letter-spacing:0.06em;'>🎯 Kanaat Skoru</span>"
             f"<span style='flex:1;'></span>"
             # Skor sayısı ÖNCE
             f"<span style='font-size:1.0rem;font-weight:900;color:{_cv_color};min-width:28px;"
@@ -12395,53 +12389,63 @@ def render_unified_signals_panel(ticker):
         regime_html = (
             f"<div style='display:flex;align-items:center;gap:6px;padding:4px 10px;"
             f"background:{_rg_color}18;border-bottom:1px solid {border_dim};'>"
-            f"<span style='font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;"
-            f"letter-spacing:0.06em;'>📡 Piyasa Fazı</span>"
-            f"<span style='flex:1;font-size:0.78rem;font-weight:800;color:{_rg_color};'>"
+            f"<div style='display:flex;flex-direction:column;line-height:1.2;'>"
+            f"<span style='font-size:0.72rem;font-weight:700;color:{'#93c5fd' if is_dark else '#1e3a8a'};text-transform:uppercase;"
+            f"letter-spacing:0.06em;'>📡 Piyasa Yapısı</span>"
+            f"<span style='font-size:0.60rem;font-weight:500;color:#64748b;'>20-200 Gün</span>"
+            f"</div>"
+            f"<span style='flex:1;font-size:0.78rem;font-weight:800;color:{_rg_color};text-align:right;'>"
             f"{_rg_icon} {_rg_label}</span>"
             f"<span style='font-size:0.68rem;color:{_rg_color};font-weight:800;"
-            f"background:{_rg_color}22;padding:1px 6px;border-radius:4px;'>%{_rg_conf}</span>"
+            f"background:{_rg_color}22;padding:1px 6px;border-radius:4px;flex-shrink:0;'>%{_rg_conf}</span>"
             f"</div>"
         )
 
-        # ── Kısa Vade Uyarı HTML ─────────────────────────────────────
-        if _kv_note_html:
+        # ── Ana panel (kısa vade dahil değil — ayrı render edilecek) ──
+        _br_bottom = "0 0 8px 8px" if _kv_show else "8px"
+        st.markdown(
+            "<style>.usp-row:hover .usp-edu{max-height:100px!important;opacity:1!important;}</style>"
+            f'<div style="background:{panel_bg};border:2px solid {panel_border};'
+            f'border-radius:8px {_br_bottom};overflow:hidden;'
+            f'margin-bottom:{"0" if _kv_show else "8px"};">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid {border_dim};">'
+            f'<span style="font-size:0.85rem;font-weight:800;color:{title_col};">🔔 CANLI SİNYALLER</span>'
+            f'<span style="font-size:0.78rem;font-weight:900;color:{karar_color};background:{karar_color}20;padding:2px 8px;border-radius:6px;border:1px solid {karar_color};white-space:nowrap;">{karar_icon} {karar_txt}</span>'
+            f'</div>'
+            f'{regime_html}'
+            f'{conviction_html}'
+            f'<div style="display:flex;align-items:center;gap:6px;padding:5px 10px 3px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#1A237E;background:rgba(255,255,255,0.03);">'
+            f'<span style="flex:1;">Olumlu</span>{pc}'
+            f'</div>'
+            f'<div style="padding:4px 8px;">{pos_html}</div>'
+            f'{neg_sec}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+        # ── Kısa Vade uyarısı: ayrı st.markdown, panele yapışık ──────
+        if _kv_show:
             _kv_str_disp = " · ".join(_kv_warnings)
             _kv_bg   = "rgba(180,83,9,0.55)"  if is_dark else "rgba(217,119,6,0.15)"
             _kv_bord = "#d97706"               if is_dark else "#b45309"
             _kv_titl = "#fde68a"               if is_dark else "#78350f"
             _kv_det  = "#fcd34d"               if is_dark else "#92400e"
-            _kv_note_html = (
-                f"<div style='display:flex;align-items:center;gap:8px;"
-                f"padding:6px 10px;"
-                f"background:{_kv_bg};"
-                f"border-top:2px solid {_kv_bord};'>"
-                f"<span style='font-size:0.9rem;flex-shrink:0;'>⚠️</span>"
-                f"<span style='font-size:0.74rem;font-weight:900;color:{_kv_titl};"
-                f"text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;'>"
-                f"Kısa Vade: İzle</span>"
-                f"<span style='font-size:0.69rem;color:{_kv_det};font-weight:700;"
-                f"flex:1;text-align:right;'>{_kv_str_disp}</span>"
-                f"</div>"
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;'
+                f'background:{_kv_bg};border:2px solid {_kv_bord};border-top:none;'
+                f'border-radius:0 0 8px 8px;margin-bottom:8px;">'
+                f'<span style="font-size:0.9rem;flex-shrink:0;">⚠️</span>'
+                f'<div style="display:flex;flex-direction:column;line-height:1.2;flex-shrink:0;">'
+                f'<span style="font-size:0.74rem;font-weight:900;color:{_kv_titl};'
+                f'text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">'
+                f'Kısa Vade: İzle</span>'
+                f'<span style="font-size:0.60rem;font-weight:500;color:{_kv_det};opacity:0.8;">1-15 Gün</span>'
+                f'</div>'
+                f'<span style="font-size:0.69rem;color:{_kv_det};font-weight:700;'
+                f'flex:1;text-align:right;">{_kv_str_disp}</span>'
+                f'</div>',
+                unsafe_allow_html=True
             )
-
-        st.markdown(f"""
-        <style>.usp-row:hover .usp-edu{{max-height:100px!important;opacity:1!important;}}</style>
-        <div style="background:{panel_bg};border:2px solid {panel_border};border-radius:8px;overflow:hidden;margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid {border_dim};">
-                <span style="font-size:0.85rem;font-weight:800;color:{title_col};">🔔 CANLI SİNYALLER</span>
-                <span style="font-size:0.78rem;font-weight:900;color:{karar_color};background:{karar_color}20;padding:2px 8px;border-radius:6px;border:1px solid {karar_color};white-space:nowrap;">{karar_icon} {karar_txt}</span>
-            </div>
-            {regime_html}
-            {conviction_html}
-            <div style="display:flex;align-items:center;gap:6px;padding:5px 10px 3px;font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.08em;color:#1A237E;background:rgba(255,255,255,0.03);">
-                <span style="flex:1;">Olumlu</span>{pc}
-            </div>
-            <div style="padding:4px 8px;">{pos_html}</div>
-            {neg_sec}
-            {_kv_note_html}
-        </div>
-        """, unsafe_allow_html=True)
     except Exception:
         pass
 
@@ -14071,6 +14075,48 @@ if st.session_state.generate_prompt:
     except Exception:
         _sms_str = "Hesaplanamadı"
 
+    # ── Piyasa Fazı + Kanaat Skoru (session_state'ten) ───────────────
+    try:
+        _ss_regime = st.session_state.get("_last_regime", {})
+        _rg_phase  = _ss_regime.get("phase", 0)
+        _rg_label  = _ss_regime.get("label", "Belirsiz")
+        _rg_conf   = int(_ss_regime.get("confidence", 0) * 100)
+        _rg_desc   = _ss_regime.get("desc", "")
+        _rg_bull   = _ss_regime.get("bull_bias", None)
+        _rg_warn   = ""
+        if _rg_phase == 3:
+            _rg_warn = "⚠️ Dağıtım fazında AL sinyalleri karşı-trend sayılır — dikkatli yorumla."
+        elif _rg_phase == 4:
+            _rg_warn = "⚠️ Düşüş fazında. Olumlu sinyalleri karşı-trend olarak değerlendir."
+        elif _rg_phase == 1:
+            _rg_warn = "ℹ️ Birikim fazı — kırılım onaylanmadan erken giriş riski var."
+        _regime_prompt_str = (
+            f"Faz {_rg_phase} — {_rg_label} | Güven: %{_rg_conf}\n"
+            f"Açıklama: {_rg_desc}\n"
+            + (f"{_rg_warn}\n" if _rg_warn else "")
+        ) if _rg_phase else "Hesaplanamadı"
+    except Exception:
+        _regime_prompt_str = "Hesaplanamadı"
+
+    try:
+        _ss_conv   = st.session_state.get("_last_conviction", {})
+        _cv_score  = _ss_conv.get("score", 50)
+        _cv_label  = _ss_conv.get("label", "NÖTR")
+        _cv_raw    = _ss_conv.get("raw", 0)
+        _cv_factors = _ss_conv.get("factors", [])
+        # factors = list of (açıklama_str, pts_int) tuple
+        _cv_pos = [f for f in _cv_factors if f[1] > 0]
+        _cv_neg = [f for f in _cv_factors if f[1] < 0]
+        _cv_pos_str = ", ".join(f[0] for f in _cv_pos) if _cv_pos else "Yok"
+        _cv_neg_str = ", ".join(f[0] for f in _cv_neg) if _cv_neg else "Yok"
+        _conviction_prompt_str = (
+            f"Skor: {_cv_score}/100 — {_cv_label}\n"
+            f"Olumlu faktörler: {_cv_pos_str}\n"
+            f"Olumsuz faktörler: {_cv_neg_str}"
+        )
+    except Exception:
+        _conviction_prompt_str = "Hesaplanamadı"
+
     # --- 5. FİNAL PROMPT ---
 # --- PERSONA SEÇİMİ (Senaryo bazlı dinamik kimlik) ---
     # Öncelik sırası: Royal Flush Nadir Fırsat > Z-Score aşırılık > Formasyon > Nötr
@@ -14355,6 +14401,12 @@ Tüm analizi şu tek soruya göre çerçevele: "Akıllı para (kurumsal oyuncula
 Bu sorunun cevabı diğer her sinyalden önce gelir. Örneğin fiyat SMA200'ün altında 100 gündür seyrediyorsa ama OBV artıyorsa, bu durum SMA200 altında olmaktan daha kritiktir — zira kurumların sessizce mal topladığına işaret edebilir. Her veriyi bu birincil mercekten geçirerek yorumla.
 Birikim (Accumulation) işaretleri: Fiyat yatay/aşağı + OBV yukarı, düşük hacimli dip testleri, stopping volume, pozitif delta yüksekken fiyatın sakin kalması.
 Dağıtım (Distribution) işaretleri: Fiyat yukarı + OBV aşağı, yüksek hacimli tepki satışları, climax volume, negatif delta yüksekken fiyatın sahte yükselmesi.
+
+*** PİYASA FAZI VE ALGORİTMİK KANAAT (REJİM + CONVICTION) ***
+(Bu iki veri, sistemin tüm sinyalleri sentezleyerek ürettiği makro çerçevedir. Analizinde bu çerçeveyi arka plan bağlamı olarak kullan; sinyalleri bu faza göre ağırlıklandır.)
+- Piyasa Yapısı (20-200 Gün — SMA50/200 bazlı): {_regime_prompt_str}
+- Algoritmik Kanaat Skoru: {_conviction_prompt_str}
+Kural: Faz 3 (Dağıtım) veya Faz 4 (Düşüş) iken gelen AL sinyallerini "karşı-trend" olarak işaretle ve riskini vurgula. Faz 2 (Yükseliş) iken SAT sinyali varsa aynı şekilde dikkat çek. Kanaat skoru 45 altında (SHORT/GÜÇLÜ SHORT) iken pozitif senaryo çiziyorsan bunu açıkça "algoritmanın genel eğilimiyle çelişiyor" diye belirt.
 
 *** AKILLI PARA HAZIRLIK SKORU (5 KRİTERLİ ALGORİTMİK ANALİZ) ***
 {_sms_str}
@@ -14831,48 +14883,160 @@ def _show_fullscreen_chart():
     # ── Formasyon Tab ────────────────────────────────────────────────────────
     if _tab_pat is not None and _pat_row is not None:
         with _tab_pat:
-            _pat_name  = _pat_row.get('Formasyon', _pat_row.get('Detay', 'Formasyon'))
-            _pat_detay = _pat_row.get('Detay', '')
-            _pat_skor  = _pat_row.get('Skor', _pat_row.get('Puan', '—'))
-            _pat_fiyat = _pat_row.get('Fiyat', 0)
             _chart_dat = _pat_row.get('ChartData', None)
+            _curr_px   = _px  # fetch_stock_info ile çekilen mevcut fiyat
 
-            # Başlık
-            _fiyat_str = f"{int(_pat_fiyat):,}" if _pat_fiyat > 1000 else f"{_pat_fiyat:.2f}" if _pat_fiyat else "—"
-            st.markdown(
-                f"<div style='background:rgba(56,189,248,0.08);border-left:3px solid #38bdf8;"
-                f"border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:10px;'>"
-                f"<span style='color:#38bdf8;font-weight:900;font-size:1rem;'>📐 {_pat_name}</span>"
-                f"{'  <span style=\"color:#94a3b8;font-size:0.8rem;\">Skor: ' + str(_pat_skor) + '</span>' if _pat_skor != '—' else ''}"
-                f"{'  <span style=\"color:#10b981;font-family:monospace;font-size:0.9rem;font-weight:700;\"> ₺' + _fiyat_str + '</span>' if _pat_fiyat else ''}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-            # Mini formasyon grafiği
             if _chart_dat and isinstance(_chart_dat, dict):
+                # ── _formasyon_dialog ile tamamen aynı tam analiz ──────────
                 try:
-                    _b64 = _mini_pattern_chart_b64(_ticker, _chart_dat, _dark)
-                    if _b64:
-                        st.markdown(
-                            f"<img src='data:image/png;base64,{_b64}' "
-                            f"style='width:100%;border-radius:8px;margin-bottom:10px;display:block;'/>",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.caption("Grafik oluşturulamadı.")
-                except Exception as _e:
-                    st.caption(f"Grafik hatası: {_e}")
-            else:
-                st.caption("Bu formasyon için mini grafik verisi mevcut değil.")
+                    _a   = _build_pattern_analysis(_chart_dat, _curr_px, _ticker)
+                    _fp  = _a["fp"]
+                    _txt = "#f1f5f9" if _dark else "#0f172a"
+                    _sub = "#94a3b8" if _dark else "#475569"
+                    _brd = "rgba(255,255,255,0.08)" if _dark else "#e2e8f0"
+                    _lbl = "#64748b"
+                    _crd = "rgba(30,41,59,0.5)" if _dark else "#f8fafc"
 
-            # Detay açıklaması
-            if _pat_detay:
+                    # Başlık
+                    _ttl_col = "#38bdf8" if _dark else "#1e3a8a"
+                    st.markdown(
+                        f"<div style='font-size:1.2rem;font-weight:800;color:{_ttl_col};margin-bottom:10px;'>"
+                        f"{_a['emoji']} {_disp} — {_a['name']}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    _col_ch, _col_inf = st.columns([60, 40], gap="medium")
+
+                    with _col_ch:
+                        _b64 = _mini_pattern_chart_b64(_ticker, _chart_dat, _dark)
+                        if _b64:
+                            st.markdown(
+                                f"<img src='data:image/png;base64,{_b64}' "
+                                f"style='width:100%;border-radius:8px;display:block;'/>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.caption("Grafik oluşturulamadı.")
+
+                    with _col_inf:
+                        # Aşama göstergesi
+                        _dots = "".join(
+                            f'<span style="width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:5px;'
+                            f'background:{"#3b82f6" if j <= _a["stage"] else ("#334155" if _dark else "#e2e8f0")};"></span>'
+                            for j in range(1, _a["stage_total"] + 1)
+                        )
+                        st.markdown(
+                            f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+                            f'<div>{_dots}</div>'
+                            f'<div style="font-size:0.92rem;font-weight:700;color:#3b82f6;">'
+                            f'Aşama {_a["stage"]}/{_a["stage_total"]} — {_a["stage_label"]}</div></div>',
+                            unsafe_allow_html=True
+                        )
+
+                        # Kilit seviye kartları
+                        def _ic(label, val_html, bg, bc, full=False):
+                            span = "1 / span 2" if full else "auto"
+                            return (f'<div style="grid-column:{span};background:{bg};border-left:3px solid {bc};'
+                                    f'border-radius:7px;padding:7px 10px;">'
+                                    f'<div style="font-size:0.82rem;font-weight:600;color:{bc};margin-bottom:3px;">{label}</div>'
+                                    f'<div style="font-size:0.94rem;font-weight:800;color:{_txt};font-family:monospace;line-height:1.3;">{val_html}</div>'
+                                    f'</div>')
+
+                        _gh = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                        st.markdown(
+                            f'<div style="font-size:0.82rem;font-weight:700;color:{_lbl};text-transform:uppercase;'
+                            f'letter-spacing:.5px;margin-bottom:6px;">Kilit Seviyeler</div>',
+                            unsafe_allow_html=True
+                        )
+
+                        for _lv_lbl, _lv_px, _lv_col in _a["levels"]:
+                            _arr = "▲" if _curr_px >= _lv_px else "▼"
+                            _arc = "#10b981" if _curr_px >= _lv_px else "#ef4444"
+                            _nte = "üstünde ✓" if _curr_px >= _lv_px else "altında"
+                            _gh += _ic(_lv_lbl,
+                                       f'{_fp(_lv_px)} <span style="font-size:0.76rem;color:{_arc};font-weight:600;">{_arr} {_nte}</span>',
+                                       "rgba(100,116,139,0.08)", _lv_col)
+                        if _a["target"]:
+                            _t_pct = _a["pct"](_a["target"], _curr_px)
+                            _gh += _ic("🎯 Tahmini Hedef",
+                                       f'{_fp(_a["target"])} <span style="font-size:0.8rem;color:#10b981;font-weight:600;">({_t_pct})</span>',
+                                       "rgba(16,185,129,0.10)", "#10b981")
+                        if _a["invalid"]:
+                            _s_pct = _a["pct"](_a["invalid"], _curr_px)
+                            _gh += _ic("🔴 Stop / Geçersizlik",
+                                       f'{_fp(_a["invalid"])} <span style="font-size:0.8rem;color:#ef4444;font-weight:600;">({_s_pct})</span>',
+                                       "rgba(239,68,68,0.08)", "#ef4444")
+                        if _a["rr_ratio"]:
+                            _rrc = "#10b981" if _a["rr_ratio"] >= 2.0 else ("#f59e0b" if _a["rr_ratio"] >= 1.0 else "#ef4444")
+                            _rrl = "Mükemmel" if _a["rr_ratio"] >= 3.0 else ("İyi" if _a["rr_ratio"] >= 2.0 else ("Kabul" if _a["rr_ratio"] >= 1.0 else "Zayıf"))
+                            _gh += _ic("📐 Risk / Ödül",
+                                       f'<span style="color:{_rrc};">{_a["rr_str"]}</span> <span style="font-size:0.76rem;color:{_rrc};font-weight:600;">({_rrl})</span>',
+                                       "rgba(100,116,139,0.08)", _rrc)
+                        if _a["pat_age_days"] > 0:
+                            _gh += _ic("📅 Formasyon Yaşı",
+                                       f'{_a["pat_age_days"]} gün <span style="font-size:0.8rem;color:{_sub};font-weight:600;">({_a["pat_start_str"]})</span>',
+                                       "rgba(100,116,139,0.06)", _lbl)
+                        _gh += '</div>'
+
+                        # Hacim teyidi
+                        _vol_h = ""
+                        if _a["vol_dip_ok"] is not None or _a["vol_bounce_ok"] is not None:
+                            def _vr(lbl_v, ok):
+                                _c = "#10b981" if ok else "#f59e0b"; _ic2 = "✅" if ok else "⚠️"
+                                _nt = ("Düşük hacim — tükenme işareti" if ok else "Yüksek hacim — baskı hâlâ var") if "Dip" in lbl_v \
+                                      else ("Yüksek hacim — güçlü dönüş" if ok else "Zayıf hacim — teyit bekleniyor")
+                                return (f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                                        f'padding:4px 0;border-bottom:1px solid {_brd};">'
+                                        f'<span style="font-size:0.86rem;color:{_sub};">{_ic2} {lbl_v}</span>'
+                                        f'<span style="font-size:0.82rem;font-weight:600;color:{_c};">{_nt}</span></div>')
+                            _vi = ""
+                            if _a["vol_dip_ok"]    is not None: _vi += _vr("Dip testi hacmi", _a["vol_dip_ok"])
+                            if _a["vol_bounce_ok"] is not None: _vi += _vr("Dönüş hacmi",     _a["vol_bounce_ok"])
+                            _vol_h = (f'<div style="padding:8px 10px;border-radius:7px;background:{_crd};'
+                                      f'border:1px solid {_brd};margin-bottom:6px;">'
+                                      f'<div style="font-size:0.82rem;font-weight:700;color:{_lbl};'
+                                      f'text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;">Hacim Teyidi</div>'
+                                      f'{_vi}</div>')
+
+                        st.markdown(f'{_gh}{_vol_h}', unsafe_allow_html=True)
+
+                    # Alt bölüm: Sahne Hikayesi + Sonuç
+                    st.markdown("<hr style='margin:12px 0 8px 0;border-color:#334155;'>", unsafe_allow_html=True)
+                    _sbg = "rgba(30,41,59,0.5)" if _dark else "#f1f5f9"
+                    _cbg = "rgba(16,185,129,0.08)" if _dark else "#f0fdf4"
+                    st.markdown(
+                        f'<div style="background:{_sbg};border-radius:10px;padding:12px 16px;margin-bottom:8px;">'
+                        f'<div style="font-size:0.85rem;font-weight:700;color:{_lbl};text-transform:uppercase;'
+                        f'letter-spacing:.6px;margin-bottom:6px;">📖 Sahne Hikayesi</div>'
+                        f'<div style="font-size:0.95rem;color:{_txt};line-height:1.7;">{_a["story"]}</div>'
+                        f'</div>'
+                        f'<div style="background:{_cbg};border:1px solid #10b98140;border-left:3px solid #10b981;'
+                        f'border-radius:10px;padding:12px 16px;">'
+                        f'<div style="font-size:0.85rem;font-weight:700;color:#10b981;text-transform:uppercase;'
+                        f'letter-spacing:.6px;margin-bottom:6px;">⚡ SONUÇ — Ne Yapılmalı?</div>'
+                        f'<div style="font-size:0.95rem;color:{_txt};line-height:1.7;">{_a["conclusion"]}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                except Exception as _fe:
+                    st.caption(f"Formasyon analizi yüklenemedi: {_fe}")
+            else:
+                _pat_name  = _pat_row.get('Formasyon', _pat_row.get('Detay', 'Formasyon'))
+                _pat_detay = _pat_row.get('Detay', '')
+                _pat_skor  = _pat_row.get('Skor', _pat_row.get('Puan', '—'))
                 st.markdown(
-                    f"<div style='font-size:0.82rem;color:#94a3b8;line-height:1.6;"
-                    f"margin-top:4px;'>{_pat_detay}</div>",
+                    f"<div style='background:rgba(56,189,248,0.08);border-left:3px solid #38bdf8;"
+                    f"border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:10px;'>"
+                    f"<span style='color:#38bdf8;font-weight:900;font-size:1rem;'>📐 {_pat_name}</span>"
+                    f"{'  <span style=\"color:#94a3b8;font-size:0.8rem;\">Skor: ' + str(_pat_skor) + '</span>' if _pat_skor != '—' else ''}"
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
+                if _pat_detay:
+                    st.markdown(f"<div style='font-size:0.82rem;color:#94a3b8;line-height:1.6;'>{_pat_detay}</div>",
+                                unsafe_allow_html=True)
+                st.caption("Bu formasyon için grafik verisi mevcut değil.")
 
     # ── Harmonik Tab ─────────────────────────────────────────────────────────
     if _tab_harm is not None and _harm_row is not None:
