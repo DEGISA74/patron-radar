@@ -55,14 +55,14 @@ def _scan_last_close_dt():
 
 def save_scan_result(key, data, category=""):
     """Tarama sonucunu diske pickle olarak yaz."""
-    import pickle
+    import pickle, logging
     safe_cat = category.replace(" ", "_").replace("&", "and").replace("/", "-")
     fpath = os.path.join(SCAN_CACHE_DIR, f"{key}__{safe_cat}.pkl")
     try:
         with open(fpath, "wb") as f:
             pickle.dump({"data": data, "ts": datetime.now(_TZ_ISTANBUL)}, f)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"[scan_cache] save_scan_result HATA — key={key}: {e}")
 
 def load_scan_result(key, category=""):
     """
@@ -5667,8 +5667,16 @@ def calculate_price_action_dna(ticker):
             else:
                 c1_v = _fi_last_vol  # projeksiyon yok, ham hacim
 
-        # avg_v: geçmiş ortalama — fast_info öncelikli, yoksa rolling(19) fallback
-        avg_v       = _avg_vol_yf if _avg_vol_yf > 100 else float(v.iloc[:-1].rolling(19).mean().iloc[-1])
+        # avg_v: geçmiş ortalama
+        # KRİPTO İSTİSNASI: Binance BTC cinsinden hacim verir (ör: 17,000 BTC/gün)
+        # Yahoo fast_info ise USD cinsinden döner (ör: 43 milyar) → birim uyumsuzluğu → rvol=0
+        # Bu yüzden -USD tickerları için Yahoo ortalaması asla kullanılmaz.
+        _is_crypto = "-USD" in ticker
+        avg_v = (
+            float(v.iloc[:-1].rolling(19).mean().iloc[-1])
+            if _is_crypto
+            else (_avg_vol_yf if _avg_vol_yf > 100 else float(v.iloc[:-1].rolling(19).mean().iloc[-1]))
+        )
         # raw_today_v: projeksiyon uygulanmış son bar hacmi (c1_v = v.iloc[-1], veya yukarıda fast_info ile dolduruldu)
         raw_today_v = c1_v
 
@@ -8981,9 +8989,29 @@ def render_smart_volume_panel(ticker):
         t3_pos = False
     else:
         t3_ic = "#94a3b8" if dark else "#6b7280"
-        # Eğer hacim de sıfırsa (volume=0) delta anlamsız — farklı mesaj ver
+        # Eğer hacim de sıfırsa (volume=0) delta anlamsız — bağlama göre mesaj ver
         if rvol < 0.05:
-            t3_pct = "—"; t3_lbl = "Veri Bekleniyor"; t3_sub = "Hacim verisi 0 — delta hesaplanamıyor. Seans ilerledikçe güncellenecek."
+            try:
+                _now_hm2      = datetime.now(_TZ_ISTANBUL).hour * 100 + datetime.now(_TZ_ISTANBUL).minute
+                _bist_open2   = 955 <= _now_hm2 <= 1820
+                _us_open2     = 1630 <= _now_hm2 <= 2300
+                _bist_tick2   = ".IS" in ticker or ticker.startswith("XU")
+                _in_sess2     = _bist_open2 if _bist_tick2 else (_bist_open2 or _us_open2)
+            except:
+                _in_sess2 = False
+            _bist_post2 = (not _in_sess2 and _bist_tick2 and 1820 <= _now_hm2 <= 2000)
+            if _in_sess2 and is_index:
+                t3_pct = "—"; t3_lbl = "Endeks Delta"
+                t3_sub = "Seans içinde endeks delta verisi alınamıyor."
+            elif _in_sess2:
+                t3_pct = "—"; t3_lbl = "Veri Bekleniyor"
+                t3_sub = "Hacim verisi 0 — delta hesaplanamıyor. Seans ilerledikçe güncellenecek."
+            elif is_index:
+                t3_pct = "—"; t3_lbl = "Endeks Delta"
+                t3_sub = "Endeks icin delta verisi saglanamadi."
+            else:
+                t3_pct = "—"; t3_lbl = "Veri Yok"
+                t3_sub = "Hacim verisi alınamadı — delta hesaplanamıyor."
         else:
             t3_pct = "%0"; t3_lbl = "Alım = Satım (Denge)"; t3_sub = "Bugün alıcı ve satıcı dengede. Yön yok."
         t3_pos = None
@@ -8994,17 +9022,24 @@ def render_smart_volume_panel(ticker):
         # Seans içindeyse daha bilgilendirici mesaj ver
         try:
             _now_hm = datetime.now(_TZ_ISTANBUL).hour * 100 + datetime.now(_TZ_ISTANBUL).minute
-            _is_bist_hours = 955 <= _now_hm <= 1830
-            _is_us_hours   = 1630 <= _now_hm <= 2300
-            _in_session    = _is_bist_hours or _is_us_hours
+            _is_bist_hours  = 955 <= _now_hm <= 1820
+            _is_us_hours    = 1630 <= _now_hm <= 2300
+            _is_bist_ticker = ".IS" in ticker or ticker.startswith("XU")
+            # BIST tickerları için ABD saatini sayma — sadece kendi seansı
+            _in_session = _is_bist_hours if _is_bist_ticker else (_is_bist_hours or _is_us_hours)
         except:
             _in_session = False
+        # Kapanış sonrası endeks gecikmesi: BIST 18:20 kapanır, Yahoo ~30-90dk sonra yazar
+        _is_bist_post_close = (not _in_session and _is_bist_ticker and 1820 <= _now_hm <= 2000)
         if _in_session and is_index:
             t4_pct = "—"; t4_lbl = "Endeks Hacmi"
-            t4_sub = "Endeks için seans bitince güncellenir."
+            t4_sub = "Seans içinde endeks hacmi alınamıyor. Kapanıştan sonra güncellenir."
         elif _in_session:
             t4_pct = "—"; t4_lbl = "Güncelleniyor…"
             t4_sub = "Gün içi hacim verisi henüz alınamadı. Birkaç dakika içinde yenilenir."
+        elif is_index:
+            t4_pct = "—"; t4_lbl = "Endeks Hacmi"
+            t4_sub = "Endeks icin hacim verisi saglanamadi."
         else:
             t4_pct = "—"; t4_lbl = "Veri Yok"
             t4_sub = "Hacim verisi alınamadı."
@@ -12011,7 +12046,7 @@ def render_unified_signals_panel(ticker):
         except: pass
 
         # Kısa vade uyarısı — _kv_note_html ayrı st.markdown ile render edilir
-        _kv_show = (karar_txt == "AL" and bool(_kv_warnings))
+        _kv_show = (karar_txt in ("AL", "İZLE") and bool(_kv_warnings))
 
         # signals: (icon, text, color, edu_note, is_positive)
         signals = []
@@ -13179,6 +13214,8 @@ with col_btn:
         try:
             # 1. ÖNCE VERİYİ ÇEK (Yahoo Koruması) - %10
             my_bar.progress(10, text="📡 Veriler İndiriliyor (Batch Download)...%10")
+            # st.cache_data TTL'ini atla — master scan her zaman taze veri çekmeli
+            get_batch_data_cached.clear()
             get_batch_data_cached(scan_list, period="1y")
 
             # 2. STP & MOMENTUM AJANI - %15
@@ -13258,32 +13295,48 @@ with col_btn:
             st.session_state.confluence_hits = compile_confluence_hits()
 
             # ── TARAMA SONUÇLARINI DİSKE KAYDET (agresif cache) ────────────
+            import pickle, logging
             _master_snapshot = {
-                "stp_crosses":             st.session_state.stp_crosses,
-                "stp_trends":              st.session_state.stp_trends,
-                "stp_filtered":            st.session_state.stp_filtered,
-                "stp_scanned":             True,
-                "ict_scan_data":           st.session_state.ict_scan_data,
-                "nadir_firsat_scan_data":  st.session_state.nadir_firsat_scan_data,
-                "golden_results":          st.session_state.golden_results,
-                "platin_results":          st.session_state.platin_results,
-                "accum_data":              st.session_state.accum_data,
-                "rs_leaders_data":         st.session_state.rs_leaders_data,
-                "breakout_left":           st.session_state.breakout_left,
-                "breakout_right":          st.session_state.breakout_right,
-                "scan_data":               st.session_state.scan_data,
-                "radar2_data":             st.session_state.radar2_data,
-                "pattern_data":            st.session_state.pattern_data,
-                "af_scan_data":            st.session_state.af_scan_data,
-                "golden_pattern_data":     st.session_state.golden_pattern_data,
-                "harmonic_data":           st.session_state.harmonic_data,
-                "harmonic_confluence_data":st.session_state.harmonic_confluence_data,
-                "minervini_data":          st.session_state.minervini_data,
-                "guclu_donus_data":        st.session_state.guclu_donus_data,
-                "top_20_summary":          st.session_state.top_20_summary,
-                "confluence_hits":         st.session_state.confluence_hits,
+                "stp_crosses":              st.session_state.stp_crosses,
+                "stp_trends":               st.session_state.stp_trends,
+                "stp_filtered":             st.session_state.stp_filtered,
+                "stp_scanned":              True,
+                "ict_scan_data":            st.session_state.ict_scan_data,
+                "nadir_firsat_scan_data":   st.session_state.nadir_firsat_scan_data,
+                "golden_results":           st.session_state.golden_results,
+                "platin_results":           st.session_state.platin_results,
+                "accum_data":               st.session_state.accum_data,
+                "rs_leaders_data":          st.session_state.rs_leaders_data,
+                "breakout_left":            st.session_state.breakout_left,
+                "breakout_right":           st.session_state.breakout_right,
+                "scan_data":                st.session_state.scan_data,
+                "radar2_data":              st.session_state.radar2_data,
+                "pattern_data":             st.session_state.pattern_data,
+                "af_scan_data":             st.session_state.af_scan_data,
+                "golden_pattern_data":      st.session_state.golden_pattern_data,
+                "harmonic_data":            st.session_state.harmonic_data,
+                "harmonic_confluence_data": st.session_state.harmonic_confluence_data,
+                "minervini_data":           st.session_state.minervini_data,
+                "guclu_donus_data":         st.session_state.guclu_donus_data,
+                "top_20_summary":           st.session_state.top_20_summary,
+                "confluence_hits":          st.session_state.confluence_hits,
             }
-            save_scan_result("master_scan", _master_snapshot, _cat)
+            # Önce tüm snapshot'ı bir arada dene
+            try:
+                pickle.dumps(_master_snapshot)   # bellek testi
+                save_scan_result("master_scan", _master_snapshot, _cat)
+            except Exception as _pe:
+                # Toplu pickle başarısız — her key'i ayrı ayrı dene, bozuk olanı atla
+                logging.warning(f"[scan_cache] Toplu pickle hatası: {_pe} — key bazlı kayda geçiliyor")
+                _clean_snapshot = {}
+                for _sk, _sv in _master_snapshot.items():
+                    try:
+                        pickle.dumps(_sv)
+                        _clean_snapshot[_sk] = _sv
+                    except Exception as _ke:
+                        logging.warning(f"[scan_cache] pickle edilemeyen key atlandı: {_sk} — {_ke}")
+                if _clean_snapshot:
+                    save_scan_result("master_scan", _clean_snapshot, _cat)
             # ────────────────────────────────────────────────────────────────
 
             # --- BİTİŞ ---
