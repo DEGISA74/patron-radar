@@ -649,7 +649,10 @@ def get_batch_data_cached(asset_list, period="1y"):
             missing_assets.append(sym)
 
     if missing_assets:
-        df_new = yf.download(" ".join(missing_assets), period="1y", group_by='ticker', threads=True, progress=False, auto_adjust=True, prepost=False)
+        df_new = _yf_download_with_retry(
+            " ".join(missing_assets),
+            period="1y", group_by='ticker', threads=True, prepost=False
+        )
 
         for sym in missing_assets:
             clean_sym = sym.replace(".IS", "")
@@ -732,6 +735,30 @@ def _fetch_from_binance(ticker, limit=730):
         return None
 # ─────────────────────────────────────────────────────────────────────
 
+# ── YF RETRY HELPER ──────────────────────────────────────────────────
+def _yf_download_with_retry(ticker, max_tries=3, base_delay=1.5, **kwargs):
+    """
+    yf.download() için retry sarmalayıcı.
+    max_tries kez dener; her başarısızlıkta bekleme süresi katlanır.
+    Tüm denemeler başarısızsa boş DataFrame döner.
+    """
+    import time
+    last_exc = None
+    for attempt in range(max_tries):
+        try:
+            df = yf.download(ticker, progress=False, auto_adjust=True, **kwargs)
+            if not df.empty:
+                return df
+        except Exception as e:
+            last_exc = e
+        if attempt < max_tries - 1:
+            time.sleep(base_delay * (attempt + 1))   # 1.5s, 3s, 4.5s
+    if last_exc:
+        import logging
+        logging.warning(f"[yf_retry] {ticker} — {max_tries} denemede veri alınamadı: {last_exc}")
+    return pd.DataFrame()
+# ─────────────────────────────────────────────────────────────────────
+
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
 @st.cache_data(ttl=300)
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
@@ -774,6 +801,10 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
                 df['Volume'] = 0.0  # KARANTİNA: Sahte 1.0 atamasını iptal ettik
             return df
 
+        import datetime as _dt
+        _start = str(_dt.date.today() - _dt.timedelta(days=380))
+        _end   = str(_dt.date.today() + _dt.timedelta(days=1))
+
         if os.path.exists(file_path):
             df_cached = pd.read_parquet(file_path)
             df_cached = safe_clean_columns(df_cached)
@@ -782,34 +813,41 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
             if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
                 return apply_volume_projection(df_cached.tail(500).copy(), ticker)
 
-            import datetime as _dt
-            _start = str(_dt.date.today() - _dt.timedelta(days=380))
-            _end   = str(_dt.date.today() + _dt.timedelta(days=1))
-            df_new = yf.download(clean_ticker, start=_start, end=_end, interval=interval, progress=False, auto_adjust=True)
+            # Güncelleme gerekiyor — retry ile dene
+            df_new = _yf_download_with_retry(
+                clean_ticker, start=_start, end=_end, interval=interval
+            )
             if not df_new.empty:
                 df_new = safe_clean_columns(df_new)
                 df_new.index = df_new.index.tz_localize(None)
-
-                # Dosyayı tamamen yenile (Temettü düzeltmesi için şart)
                 df_new.to_parquet(file_path)
-
                 return apply_volume_projection(df_new.tail(500).copy(), ticker)
 
+            # Retry başarısız → eski cache'i döndür + staleness işareti
+            _stale_days = (datetime.now(_TZ_ISTANBUL).date() - df_cached.index[-1].date())
+            st.session_state['_data_stale'] = {
+                'ticker': ticker,
+                'days':   _stale_days.days,
+                'last':   df_cached.index[-1].strftime('%d.%m.%Y'),
+            }
             return apply_volume_projection(df_cached.tail(500).copy(), ticker)
+
         else:
-            import datetime as _dt
-            _start = str(_dt.date.today() - _dt.timedelta(days=380))
-            _end   = str(_dt.date.today() + _dt.timedelta(days=1))
-            df_full = yf.download(clean_ticker, start=_start, end=_end, interval=interval, progress=False, auto_adjust=True)
+            # Parquet yok — retry ile çek
+            df_full = _yf_download_with_retry(
+                clean_ticker, start=_start, end=_end, interval=interval
+            )
             if not df_full.empty:
                 df_full = safe_clean_columns(df_full)
                 df_full.index = df_full.index.tz_localize(None)
                 df_full.to_parquet(file_path)
-
                 return apply_volume_projection(df_full.tail(500).copy(), ticker)
+
         return None
 
     except Exception as e:
+        import logging
+        logging.warning(f"[get_safe_historical_data] {ticker} hata: {e}")
         return None
 
 def calculate_harsi(df, period=14):
@@ -13158,10 +13196,10 @@ def get_golden_trio_batch_scan(ticker_list):
 # 6. ANA SAYFA (MAIN UI) - GÜNCELLENMİŞ MASTER SCAN VERSİYONU
 # ==============================================================================
 
-# Üst Menü Düzeni: Kategori | Varlık Listesi | DEV TARAMA BUTONU | TEMA BUTONU
-col_theme, col_cat, col_ass, col_btn = st.columns([0.5, 1.5, 1.5, 1])
+# Üst Menü Düzeni: Tema | Kategori | Varlık | Tazele | Master Scan
+col_theme, col_cat, col_ass, col_ref, col_btn = st.columns([0.5, 1.5, 1.5, 0.5, 1])
 
-# 1. TEMA DEĞİŞTİRME BUTONU (YENİ)
+# 1. TEMA DEĞİŞTİRME BUTONU
 with col_theme:
     mode_text = "🌙 Karanlık Mod" if not st.session_state.dark_mode else "☀️ Aydınlık Mod"
     if st.button(mode_text, use_container_width=True):
@@ -13186,7 +13224,32 @@ with col_ass:
         except ValueError: asset_idx = 0
     st.selectbox("Varlık Listesi", current_opts, index=asset_idx, key="selected_asset_key", on_change=on_asset_change, label_visibility="collapsed", format_func=get_display_name)
 
-# 4. MASTER SCAN BUTONU (Eski arama kutusu yerine geldi)
+# 3.5 VERİYİ TAZELE BUTONU
+with col_ref:
+    if st.button("🔄", use_container_width=True, help="Tüm eski parquet verilerini güncelle"):
+        _ref_cat   = st.session_state.get('category', 'BIST 500 ')
+        _ref_list  = ASSET_GROUPS.get(_ref_cat, [])
+        _ref_bar   = st.progress(0, text="Veriler güncelleniyor...")
+        _ref_total = len(_ref_list)
+        _ref_ok = 0; _ref_fail = 0
+        get_safe_historical_data.clear()
+        get_batch_data_cached.clear()
+        for _ri, _rt in enumerate(_ref_list):
+            try:
+                _df_r = get_safe_historical_data(_rt, period="1y")
+                if _df_r is not None and not _df_r.empty:
+                    _ref_ok += 1
+                else:
+                    _ref_fail += 1
+            except:
+                _ref_fail += 1
+            _ref_bar.progress((_ri + 1) / _ref_total,
+                              text=f"Güncelleniyor: {_rt} ({_ri+1}/{_ref_total})")
+        _ref_bar.empty()
+        st.toast(f"✅ {_ref_ok} ticker güncellendi, {_ref_fail} başarısız.", icon="🔄")
+        st.rerun()
+
+# 4. MASTER SCAN BUTONU
 with col_btn:
     if st.button("🕵️ TÜM PİYASAYI TARA (MASTER SCAN)", type="primary", use_container_width=True):
 
@@ -15174,6 +15237,21 @@ with col_left:
         type="primary",
     ):
         _show_fullscreen_chart()
+
+    # ── Stale data uyarısı (veri güncellenemediğinde) ─────────────────
+    _stale = st.session_state.pop('_data_stale', None)
+    if _stale and _stale.get('ticker') == st.session_state.ticker:
+        _sd = _stale['days']; _sl = _stale['last']
+        _sc = "#7f1d1d" if is_dark else "#fef2f2"
+        _sb = "#ef4444"
+        st.markdown(
+            f'<div style="background:{_sc};border:1px solid {_sb};border-radius:6px;'
+            f'padding:6px 12px;margin-bottom:6px;font-size:0.78rem;color:{_sb};font-weight:700;">'
+            f'⚠️ Veri güncellenemedi — gösterilen veriler <b>{_sd} gün eski</b> '
+            f'(son güncelleme: {_sl}). Bağlantıyı kontrol edin veya sayfayı yenileyin.'
+            f'</div>',
+            unsafe_allow_html=True
+        )
     # ─────────────────────────────────────────────────────────────────────────
 
     # 1. PARA AKIŞ İVMESİ & FİYAT DENGESİ (EN TEPE)
