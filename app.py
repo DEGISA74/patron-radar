@@ -759,9 +759,81 @@ def _yf_download_with_retry(ticker, max_tries=3, base_delay=1.5, **kwargs):
     return pd.DataFrame()
 # ─────────────────────────────────────────────────────────────────────
 
+# --- CANLI FİYAT YARDIMCI FONKSİYONLARI ---
+@st.cache_data(ttl=60)
+def get_live_price(ticker: str) -> float:
+    """fast_info üzerinden canlı fiyat çeker. 60 sn cache'li.
+    Not: fast_info bir dict değil, object — .get() yerine attribute erişimi kullanılıyor."""
+    try:
+        fi = yf.Ticker(ticker).fast_info
+        # Önce last_price, yoksa regular_market_price dene (attribute, dict değil)
+        for _attr in ("last_price", "regular_market_price", "previousClose"):
+            try:
+                _v = getattr(fi, _attr, None)
+                if _v is not None and float(_v) > 0:
+                    return float(_v)
+            except Exception:
+                continue
+        # Fallback: info dict'ten dene (daha yavaş ama güvenli)
+        _info2 = yf.Ticker(ticker).info
+        for _key in ("currentPrice", "regularMarketPrice", "previousClose"):
+            _v = _info2.get(_key)
+            if _v and float(_v) > 0:
+                return float(_v)
+        return 0.0
+    except Exception:
+        return 0.0
+
+def _patch_live_price(df: pd.DataFrame, ticker: str, interval: str = "1d") -> pd.DataFrame:
+    """
+    Günlük veri için son satırın Close fiyatını canlı fiyatla günceller.
+    Grafik ile fiyat kutusu arasındaki cache kaynaklı uyuşmazlığı giderir.
+    Sadece interval='1d' için çalışır; intraday verilere dokunmaz.
+    """
+    if interval != "1d" or df is None or df.empty:
+        return df
+    try:
+        _live = get_live_price(ticker)
+        if _live <= 0:
+            return df
+        _today = datetime.now(_TZ_ISTANBUL).date()
+        _last_date = df.index[-1]
+        if hasattr(_last_date, "date"):
+            _last_date = _last_date.date()
+        if _last_date == _today:
+            # Bugünün satırı var → Close'u canlı fiyatla güncelle
+            df = df.copy()
+            df.loc[df.index[-1], "Close"] = _live
+            df.loc[df.index[-1], "High"]  = max(float(df.loc[df.index[-1], "High"]),  _live)
+            df.loc[df.index[-1], "Low"]   = min(float(df.loc[df.index[-1], "Low"]),   _live)
+        else:
+            # Bugün için satır yok → yeni satır ekle
+            df = df.copy()
+            new_row = df.iloc[-1].copy()
+            new_row["Close"]  = _live
+            new_row["Open"]   = _live
+            new_row["High"]   = _live
+            new_row["Low"]    = _live
+            new_row["Volume"] = 0.0
+            try:
+                import pytz
+                _tz = df.index.tz if df.index.tz is not None else None
+                _new_idx = pd.Timestamp(_today)
+                if _tz is not None:
+                    _new_idx = _new_idx.tz_localize(_tz)
+            except Exception:
+                _new_idx = pd.Timestamp(_today)
+            df = pd.concat([df, pd.DataFrame([new_row], index=[_new_idx])])
+    except Exception as _pe:
+        import logging
+        logging.warning(f"[patch_live_price] {ticker} — {_pe}")
+    return df
+
 # --- SINGLE STOCK CACHE (DETAY SAYFASI İÇİN) ---
+# _get_safe_historical_data_cached: saf OHLCV verisi, 300 sn cache'li
+# get_safe_historical_data: wrapper — cache sonrasına canlı fiyat patch'i uygular
 @st.cache_data(ttl=300)
-def get_safe_historical_data(ticker, period="1y", interval="1d"):
+def _get_safe_historical_data_cached(ticker, period="1y", interval="1d"):
     try:
         # ── KRİPTO YÖNLENDİRMESİ: -USD tickerları Binance'den çek ──
         if "-USD" in ticker and interval == "1d":
@@ -849,6 +921,15 @@ def get_safe_historical_data(ticker, period="1y", interval="1d"):
         import logging
         logging.warning(f"[get_safe_historical_data] {ticker} hata: {e}")
         return None
+
+def get_safe_historical_data(ticker, period="1y", interval="1d"):
+    """
+    Public wrapper — önce cache'li OHLCV'yi alır, sonra
+    cache dışında canlı fiyat patch'ini uygular.
+    Bu sayede fiyat her render'da güncellenir, OHLCV cache'i bozulmaz.
+    """
+    df = _get_safe_historical_data_cached(ticker, period=period, interval=interval)
+    return _patch_live_price(df, ticker, interval)
 
 def calculate_harsi(df, period=14):
     """
@@ -15991,7 +16072,7 @@ with col_left:
                 st.rerun()
 
     with col_refresh:
-        with st.expander("🔄 Veriyi Tazele (Tüm Kategori)"):
+        with st.expander("🔄 Veriyi Tazele (Kategorideki Tüm hisseler)"):
             st.caption("Seçili kategorideki tüm eski parquet verilerini yeniden indirir.")
             if st.button("▶ Güncellemeyi Başlat", use_container_width=True, key="refresh_all_btn"):
                 _ref_cat   = st.session_state.get('category', 'BIST 500 ')
