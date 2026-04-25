@@ -6485,6 +6485,16 @@ def calculate_price_action_dna(ticker):
             n_pct = abs(closest - fiyat) / (fiyat + 1e-9) * 100
             naked_txt = f"{closest:.2f} (fiyattan %{n_pct:.1f} {direction})"
 
+        # OBV direction sayısal flag (GENEL ÖZET voting için — string matching yok)
+        if p_tr == "AŞAĞI" and o_tr_raw == "YUKARI":
+            _obv_direction = +1
+        elif p_tr == "YUKARI" and o_tr_raw == "AŞAĞI":
+            _obv_direction = -1
+        elif is_obv_strong:
+            _obv_direction = +1
+        else:
+            _obv_direction = 0
+
         return {
             "candle": {"title": candle_title, "desc": candle_desc},
             "sfp": {"title": sfp_txt, "desc": sfp_desc},
@@ -6492,6 +6502,9 @@ def calculate_price_action_dna(ticker):
             "loc": {"title": loc_txt, "desc": loc_desc},
             "sq": {"title": sq_txt, "desc": sq_desc},
             "obv": obv_data,
+            "obv_direction": _obv_direction,
+            "rsi_val":       float(rsi_val),
+            "sma50_val":     float(sma50),
             "div": {"title": div_txt, "desc": div_desc, "type": div_type},
             "vwap": {"val": vwap_now, "diff": vwap_diff},
             "rs": {"alpha": alpha_val},
@@ -9815,8 +9828,10 @@ def calculate_smart_money_score(ticker):
                       ("Fiyat 50MA altında" if not above_sma50 else "50MA yönü aşağı"))
         trend_edu  = "50 günlük hareketli ortalama trendin omurgasıdır. Fiyat bu çizginin üstündeyken ve çizgi yukarı eğimliyken, piyasanın genel eğilimi alış yönünde demektir. Kurumsal fonlar genellikle bu koşulu karşılayan hisseler için pozisyon açar."
 
-        # ── KRİTER 2: RELATİF GÜÇ ───────────────────────────────
-        rs_pass = None  # None = N/A (endeks)
+        # ── KRİTER 2: RELATİF GÜÇ (hisse) / EMA HİZALAMASI (endeks) ──
+        # Hisseler: 20G RS vs endeks (swing vade için yeterli)
+        # Endeksler: EMA8>EMA21 hizalaması + ivme (N/A yerine anlamlı kriter)
+        rs_pass = None
         rs_days = 0
         rs_desc = "Endeks — kıyaslama yapılmaz"
         rs_edu  = "Relatif güç, bir hissenin kendi endeksine kıyasla ne kadar iyi performans gösterdiğini ölçer. Endeksten güçlü seyreden hisseler kurumsal ilgi görüyor anlamına gelir; zayıf piyasada bile ayakta kalabilirler."
@@ -9846,29 +9861,48 @@ def calculate_smart_money_score(ticker):
             except:
                 rs_pass = False
                 rs_desc = "RS hesaplanamadı"
+        else:
+            # Endeks için EMA hizalaması — swing trade ivmesini ölçer
+            try:
+                _ema8  = close.ewm(span=8,  adjust=False).mean()
+                _ema21 = close.ewm(span=21, adjust=False).mean()
+                _ema_aligned = bool(close.iloc[-1] > _ema8.iloc[-1]) and bool(_ema8.iloc[-1] > _ema21.iloc[-1])
+                _ema_accel   = bool(_ema8.iloc[-1] > _ema8.iloc[-3])  # EMA8 son 3 günde yukarı mı?
+                _pct_vs_ema21 = (float(close.iloc[-1]) / float(_ema21.iloc[-1]) - 1) * 100
+                rs_pass = _ema_aligned and _ema_accel
+                if rs_pass:
+                    rs_desc = f"EMA8>EMA21 hizalı, ivme artıyor (+%{_pct_vs_ema21:.1f} EMA21 üstünde)"
+                elif _ema_aligned:
+                    rs_desc = f"EMA dizilimi hizalı ama ivme kaybediyor"
+                else:
+                    rs_desc = f"EMA dizilimi bozuk (fiyat veya EMA8, EMA21 altında)"
+                rs_edu = "Endeksler için EMA hizalaması (fiyat>EMA8>EMA21) kısa vadeli momentum sağlığını gösterir. EMA8 son 3 günde yükseliyorsa swing trade için trend desteği aktif demektir."
+            except:
+                rs_pass = False
+                rs_desc = "EMA hesaplanamadı"
 
-        # ── KRİTER 3: BIRIKIM (OBV DİVERJANS) ──────────────────
+        # ── KRİTER 3: BIRIKIM (OBV) — 10G pencere (swing vadeyle uyumlu) ──
         price_chg  = close.diff()
         direction  = price_chg.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
         obv        = (volume * direction).cumsum()
-        obv_sma20  = obv.rolling(20).mean()
-        obv_above  = bool(obv.iloc[-1] > obv_sma20.iloc[-1])
-        obv_rising = bool(obv.iloc[-1] > obv.iloc[-6])
+        obv_sma10  = obv.rolling(10).mean()          # 20G → 10G: swing için daha reaktif
+        obv_above  = bool(obv.iloc[-1] > obv_sma10.iloc[-1])
+        obv_rising = bool(obv.iloc[-1] > obv.iloc[-3])  # 6G → 3G: son 3 günde yükselen ivme
         accum_pass = obv_above and obv_rising
 
         accum_days = 0
         if accum_pass:
-            for i in range(1, min(30, len(df) - 20)):
-                if obv.iloc[-i-1] > obv_sma20.iloc[-i-1]:
+            for i in range(1, min(30, len(df) - 10)):
+                if obv.iloc[-i-1] > obv_sma10.iloc[-i-1]:
                     accum_days += 1
                 else:
                     break
         accum_days  = max(1, accum_days) if accum_pass else 0
-        price_flat  = abs(float(close.iloc[-1] / close.iloc[-11] - 1)) < 0.03
-        accum_desc  = (f"{accum_days} gündür OBV yükseliyor, fiyat henüz hareketsiz (diverjans)" if (accum_pass and price_flat)
-                       else f"{accum_days} gündür OBV ortalaması üstünde birikim var" if accum_pass
+        price_flat  = abs(float(close.iloc[-1] / close.iloc[-6] - 1)) < 0.02  # 10G→6G, eşik %3→%2
+        accum_desc  = (f"{accum_days} gündür OBV yükseliyor, fiyat hareketsiz (diverjans)" if (accum_pass and price_flat)
+                       else f"{accum_days} gündür OBV 10G ort. üstünde — aktif alım" if accum_pass
                        else "Net birikim sinyali yok")
-        accum_edu   = "OBV (On-Balance Volume), fiyat hareketinden bağımsız olarak para akışını izler. Fiyat yatay veya aşağıdayken OBV yükseliyorsa, akıllı para sessizce alım yapıyor demektir. Bu diverjans genellikle büyük kırılımların habercisidir."
+        accum_edu   = "OBV (On-Balance Volume) para akışını izler. 10 günlük pencerede OBV ortalaması üstündeyse ve son 3 günde yükseliyorsa swing trade için aktif kurumsal alım baskısı var demektir. Kısa vadeli diverjans büyük kırılımın habercisi olabilir."
 
         # ── KRİTER 4: SIKIŞTMA (BB SQUEEZE) — bugün yoksa son 10 güne bak ──────
         sq_now, sq_prev = check_lazybear_squeeze_breakout(df)
@@ -9909,10 +9943,26 @@ def calculate_smart_money_score(ticker):
             squeeze_desc = "Aktif volatilite sıkışması yok"
         squeeze_edu  = "Bollinger Bantları Keltner Kanalı'nın içine girdiğinde 'squeeze' oluşur. Bu, fiyatın bir yay gibi gerildiği anlamına gelir. Tarihsel olarak squeeze sonrası güçlü yönlü hareketler gelir. Son 5 gün içinde squeeze varsa, kırılım enerjisi hâlâ taze sayılır."
 
-        # ── KRİTER 5: TETİKLEYİCİ ───────────────────────────────
-        vol_sma20   = volume.rolling(20).mean()
-        high20      = close.iloc[-21:-1].max()
-        trigger_pass = False
+        # ── KRİTER 5: TETİKLEYİCİ (SWING ENTRY KALİTESİ) ──────────
+        vol_sma20 = volume.rolling(20).mean()
+        high20    = close.iloc[-21:-1].max()
+
+        # RSI — aşırı alım/satım filtresi (overbought girişi engelle)
+        _tr_delta = close.diff()
+        _tr_gain  = (_tr_delta.where(_tr_delta > 0, 0)).rolling(14).mean()
+        _tr_loss  = (-_tr_delta.where(_tr_delta < 0, 0)).rolling(14).mean().replace(0, 0.00001)
+        _rsi      = float((100 - (100 / (1 + _tr_gain / _tr_loss))).iloc[-1])
+        _rsi_ok   = 35 <= _rsi <= 70  # Aşırı alım/satım dışı bölge
+
+        # R/R tahmini: stop = son 5G dip, hedef = 20G zirve
+        _low5   = float(df['Low'].iloc[-5:].min())
+        _curr   = float(close.iloc[-1])
+        _risk   = max(_curr - _low5, 0.001)
+        _reward = max(float(high20) - _curr, 0)
+        _rr     = _reward / _risk if _risk > 0 else 0
+        _rr_ok  = _rr >= 1.5
+
+        trigger_pass     = False
         trigger_days_ago = 0
 
         for i in range(1, 4):
@@ -9925,35 +9975,45 @@ def calculate_smart_money_score(ticker):
                 is_green = day_cl > prev_cl
                 vol_high = day_vol > avg_vol * 1.5
                 breakout = day_cl > float(high20) and vol_high
-                if (is_green and vol_high) or breakout:
+                # RSI filtresi eklendi: aşırı alım bölgesinde sinyal geçersiz
+                if ((is_green and vol_high) or breakout) and _rsi_ok:
                     trigger_pass     = True
                     trigger_days_ago = i
                     break
             except:
                 continue
 
+        _rr_txt  = f" | R/R {_rr:.1f}:1" if _rr > 0.1 else ""
+        _rsi_txt = f" | RSI {_rsi:.0f}"
+        _rr_warn = " ⚠️ Hedef yakın" if (trigger_pass and _rr < 1.5) else ""
+
         if trigger_pass:
-            trigger_desc = ("Bugün: Yüksek hacimli kırılım sinyali oluştu"
+            trigger_desc = (f"Bugün: Yüksek hacimli sinyal{_rr_txt}{_rsi_txt}{_rr_warn}"
                             if trigger_days_ago == 1
-                            else f"{trigger_days_ago} gün önce kırılım başladı")
+                            else f"{trigger_days_ago}g önce kırılım{_rr_txt}{_rsi_txt}{_rr_warn}")
+        elif _rsi > 70:
+            trigger_desc = f"RSI {_rsi:.0f} — aşırı alım, giriş riskli{_rr_txt}"
+        elif _rsi < 35:
+            trigger_desc = f"RSI {_rsi:.0f} — aşırı satım, dönüş yakın{_rr_txt}"
         elif squeeze_pass and accum_pass:
-            trigger_desc = "Henüz kırılım yok — ama hazır"
+            trigger_desc = f"Hazır ama tetik atılmadı{_rr_txt}{_rsi_txt}"
         else:
-            trigger_desc = "Tetikleyici henüz oluşmadı"
-        trigger_edu  = "Kırılım; fiyatın son 20 günün en yüksek kapanışını aşmasıyla ve hacimin 20 günlük ortalamasının %50 üstünde olmasıyla teyit edilir. Hacimsiz kırılımlar sıklıkla başarısız olur — bu yüzden güçlü hacim onayı kritiktir."
+            trigger_desc = f"Tetikleyici oluşmadı{_rsi_txt}"
+        trigger_edu = "Kırılım: 20G zirve aşıldı + hacim 1.5x ort. + RSI 35-70 bölgesi. RSI 70 üstündeyse giriş riskli (overbought). R/R 1.5:1 altındaysa hedef yakın — geç kalınmış olabilir. Tüm koşullar aynı anda gerçekleşince ideal swing entry sinyali oluşur."
 
         # ── SKOR ─────────────────────────────────────────────────
-        w = {"trend": 1.0, "rs": 1.5, "accum": 1.7, "squeeze": 1.1, "trigger": 1.0}
+        # trigger ağırlığı artırıldı (swing için giriş zamanlaması kritik)
+        # rs ağırlığı hafif düşürüldü (endeks için EMA, hisse için RS — farklı önem)
+        w = {"trend": 1.0, "rs": 1.3, "accum": 1.7, "squeeze": 1.1, "trigger": 1.2}
 
         def _bool(v): return 1.0 if v is True else 0.0
 
-        if is_index:
-            raw     = _bool(trend_pass)*w["trend"] + _bool(accum_pass)*w["accum"] + _bool(squeeze_pass)*w["squeeze"] + _bool(trigger_pass)*w["trigger"]
-            max_w   = w["trend"] + w["accum"] + w["squeeze"] + w["trigger"]
-        else:
-            raw     = _bool(trend_pass)*w["trend"] + _bool(rs_pass)*w["rs"] + _bool(accum_pass)*w["accum"] + _bool(squeeze_pass)*w["squeeze"] + _bool(trigger_pass)*w["trigger"]
-            max_w   = sum(w.values())
-
+        # Artık hem hisse hem endeks için aynı formül
+        # (rs_pass endeksler için EMA hizalaması ile anlamlı bir değer alıyor)
+        raw   = (_bool(trend_pass)*w["trend"] + _bool(rs_pass)*w["rs"] +
+                 _bool(accum_pass)*w["accum"] + _bool(squeeze_pass)*w["squeeze"] +
+                 _bool(trigger_pass)*w["trigger"])
+        max_w = sum(w.values())
         score = round((raw / max_w) * 100)
 
         # ── PRE-LAUNCH TESPİTİ ────────────────────────────────────
@@ -10008,12 +10068,11 @@ def calculate_smart_money_score(ticker):
                                 or (float(close5.iloc[-j]) > h20_5 and float(vol5.iloc[-j]) > float(vsma5.iloc[-j]) * 1.5)):
                             trig5 = True; break
                     except: continue
-                if is_index:
-                    raw5  = _bool(trend5)*w["trend"] + _bool(accum5)*w["accum"] + _bool(squeeze5)*w["squeeze"] + _bool(trig5)*w["trigger"]
-                    score5 = round((raw5 / max_w) * 100)
-                else:
-                    raw5  = _bool(trend5)*w["trend"] + _bool(rs_pass)*w["rs"] + _bool(accum5)*w["accum"] + _bool(squeeze5)*w["squeeze"] + _bool(trig5)*w["trigger"]
-                    score5 = round((raw5 / max_w) * 100)
+                # Hem hisse hem endeks aynı formül (rs_pass 5G hesabında mevcut değer kullanılır)
+                raw5   = (_bool(trend5)*w["trend"] + _bool(rs_pass)*w["rs"] +
+                          _bool(accum5)*w["accum"] + _bool(squeeze5)*w["squeeze"] +
+                          _bool(trig5)*w["trigger"])
+                score5 = round((raw5 / max_w) * 100)
                 diff5 = score - score5
                 score_trend = f"↑{diff5}" if diff5 > 3 else (f"↓{abs(diff5)}" if diff5 < -3 else "→")
             except:
@@ -10064,7 +10123,7 @@ def calculate_smart_money_score(ticker):
             "market_note":    market_note,
             "criteria": {
                 "trend":   {"pass": trend_pass,   "desc": trend_desc,   "edu": trend_edu,   "label": "Trend Zemini"},
-                "rs":      {"pass": rs_pass,      "desc": rs_desc,      "edu": rs_edu,      "label": "Relatif Güç"},
+                "rs":      {"pass": rs_pass,      "desc": rs_desc,      "edu": rs_edu,      "label": "EMA Hizalaması" if is_index else "Relatif Güç"},
                 "accum":   {"pass": accum_pass,   "desc": accum_desc,   "edu": accum_edu,   "label": "Akıllı Para Birikimi"},
                 "squeeze": {"pass": squeeze_pass, "desc": squeeze_desc, "edu": squeeze_edu, "label": "Volatilite Sıkışması"},
                 "trigger": {"pass": trigger_pass, "desc": trigger_desc, "edu": trigger_edu, "label": "Kırılım Tetikleyici"},
@@ -12818,6 +12877,320 @@ def render_unified_signals_panel(ticker):
         pass
 
 
+def _render_genel_ozet_panel():
+    """GENEL ÖZET — 4 bağımsız sinyal, trend bağlamı, iptal koşulu, LONG RADAR skoru."""
+    try:
+        if not (st.session_state.get('ticker')):
+            return
+        _dark   = st.session_state.get('dark_mode', False)
+        _ticker = st.session_state.ticker
+
+        _gs_items_html = ""
+        try:
+            _gs_dna = calculate_price_action_dna(_ticker)
+
+            # Ardışık mum sayısı
+            _gs_consec_label = ""
+            _gs_df = None
+            try:
+                _gs_df = get_safe_historical_data(_ticker, period="3mo")
+                if _gs_df is not None and len(_gs_df) >= 3:
+                    _gs_cc = _gs_df['Close'].values; _gs_co = _gs_df['Open'].values
+                    _gs_bull = _gs_cc[-1] > _gs_co[-1]; _gs_cnt = 1
+                    for _gsi in range(2, min(8, len(_gs_df))):
+                        if (_gs_cc[-_gsi] > _gs_co[-_gsi]) == _gs_bull: _gs_cnt += 1
+                        else: break
+                    _gs_consec_label = f"{_gs_cnt} gündür {'yeşil' if _gs_bull else 'kırmızı'} mum"
+            except Exception:
+                pass
+
+            if _gs_dna:
+                # — Veri çek —
+                _gs_sv      = _gs_dna.get('smart_volume', {})
+                _gs_rvol    = _gs_sv.get('rvol', 1.0)
+                _gs_cum5    = _gs_sv.get('cum_delta_5', 0)
+                _gs_cdpct   = _gs_sv.get('cum_delta_pct', 0.0)
+                _gs_can     = _gs_dna.get('candle', {})
+                _gs_vol     = _gs_dna.get('vol', {})
+                _gs_obv     = _gs_dna.get('obv', {})
+                _gs_sfp     = _gs_dna.get('sfp', {})
+                _gs_cdesc   = _gs_can.get('desc', '')
+                # Madde 2: sayısal OBV flag (string matching yok)
+                _gs_obv_dir = _gs_dna.get('obv_direction', 0)
+                # Madde 6: RSI (hacimden tamamen bağımsız)
+                _gs_rsi_val = _gs_dna.get('rsi_val', 50.0)
+
+                # Madde 1: Price structure HH+HL — son 3 günde var mı?
+                _gs_hh_hl = False; _gs_hh_hl_txt = ""
+                try:
+                    if _gs_df is not None and len(_gs_df) >= 4:
+                        _hs = _gs_df['High'].values; _ls = _gs_df['Low'].values
+                        if (_hs[-1] > _hs[-2] > _hs[-3]) and (_ls[-1] > _ls[-2] > _ls[-3]):
+                            _gs_hh_hl = True; _gs_hh_hl_txt = "HH+HL yapısı"
+                except Exception:
+                    pass
+
+                # Madde 3: SMA50 bağlam
+                _gs_sma50_txt = ""; _gs_sma50_above = None
+                try:
+                    if _gs_df is not None and len(_gs_df) >= 52:
+                        _cl = _gs_df['Close']; _s50 = _cl.rolling(50).mean()
+                        _curr = float(_cl.iloc[-1]); _s50v = float(_s50.iloc[-1])
+                        _gs_sma50_above = _curr > _s50v
+                        _cnt = sum(1 for i in range(1, min(80, len(_gs_df)))
+                                   if not pd.isna(float(_s50.iloc[-i])) and
+                                   (_cl.iloc[-i] > _s50.iloc[-i]) == _gs_sma50_above)
+                        _side = "üstünde" if _gs_sma50_above else "altında"
+                        if _gs_sma50_above:
+                            _interp = "Köklü yükseliş" if _cnt >= 20 else ("Yükseliş trendi" if _cnt >= 5 else "Yeni kırılım ↑")
+                        else:
+                            _interp = "Köklü düşüş" if _cnt >= 20 else ("Düşüş trendi" if _cnt >= 5 else "Yeni kırılım ↓")
+                        _gs_sma50_txt = f"SMA50 {_side} · {_cnt} gün · {_interp}"
+                except Exception:
+                    _gs_sma50_txt = ""
+
+                # Madde 5: İptal koşulu — 5G dip
+                _gs_low5_txt = ""
+                try:
+                    if _gs_df is not None and len(_gs_df) >= 5:
+                        _low5 = float(_gs_df['Low'].iloc[-5:].min())
+                        _gs_low5_txt = f"{_low5:.0f}" if _low5 >= 100 else (f"{_low5:.2f}" if _low5 >= 1 else f"{_low5:.4f}")
+                except Exception:
+                    pass
+
+                # Madde 6: RSI zone sinyal
+                _gs_rsi_sig = 0; _gs_rsi_disp = ""
+                if _gs_rsi_val < 30:
+                    _gs_rsi_sig = +1; _gs_rsi_disp = f"RSI {_gs_rsi_val:.0f} — aşırı satım 💎"
+                elif _gs_rsi_val <= 60:
+                    _gs_rsi_sig = +1; _gs_rsi_disp = f"RSI {_gs_rsi_val:.0f} — alım bölgesi ✅"
+                elif _gs_rsi_val > 70:
+                    _gs_rsi_sig = -1; _gs_rsi_disp = f"RSI {_gs_rsi_val:.0f} — aşırı alım ⚠️"
+                else:
+                    _gs_rsi_disp = f"RSI {_gs_rsi_val:.0f} — nötr"
+
+                # Voting: 4 BAĞIMSIZ sinyal
+                _gs_up = 0; _gs_dn = 0
+                if _gs_cum5 > 0:      _gs_up += 1   # 1. Kümülatif delta
+                elif _gs_cum5 < 0:    _gs_dn += 1
+                if _gs_obv_dir > 0:   _gs_up += 1   # 2. OBV sayısal flag
+                elif _gs_obv_dir < 0: _gs_dn += 1
+                if _gs_hh_hl:         _gs_up += 1   # 3. Price structure (hacimden bağımsız)
+                if _gs_rsi_sig > 0:   _gs_up += 1   # 4. RSI zone (hacimden bağımsız)
+                elif _gs_rsi_sig < 0: _gs_dn += 1
+
+                if   _gs_up >= 3:                    _gs_net_clr = "#4ade80"; _gs_net_txt = "YUKARI"
+                elif _gs_dn >= 3:                    _gs_net_clr = "#f87171"; _gs_net_txt = "AŞAĞI"
+                elif _gs_up >= 2 and _gs_dn < 2:    _gs_net_clr = "#86efac"; _gs_net_txt = "HAFİF YUKARI"
+                elif _gs_dn >= 2 and _gs_up < 2:    _gs_net_clr = "#fca5a5"; _gs_net_txt = "HAFİF AŞAĞI"
+                else:                                _gs_net_clr = "#fbbf24"; _gs_net_txt = "KARARSIZ"
+
+                _gs_txt  = "#c7d9f0" if _dark else "#1e3a5f"
+                _gs_line = "rgba(56,189,248,0.12)" if _dark else "rgba(56,189,248,0.2)"
+
+                def _gs_row(icon, content):
+                    return (f"<div style='display:flex;align-items:flex-start;gap:6px;"
+                            f"padding:7px 0;border-bottom:1px solid {_gs_line};'>"
+                            f"<span style='flex-shrink:0;font-size:0.9rem;margin-top:1px;'>{icon}</span>"
+                            f"<span style='font-size:0.83rem;line-height:1.4;color:{_gs_txt};flex:1;'>{content}</span>"
+                            f"</div>")
+
+                # Açıklama rengi — lacivert (dark/light mode'a göre)
+                _gs_expl_col = "#93c5fd" if _dark else "#1e3a8a"
+
+                def _gs_explain(text):
+                    """Açıklama satırı — lacivert renk."""
+                    return f"<div style='font-size:0.72rem;color:{_gs_expl_col};margin-top:2px;'>↳ {text}</div>"
+
+                # Sinyal yön okları (her bir sinyalin durumu)
+                def _arrow(direction):
+                    """direction: +1 (up), -1 (down), 0 (neutral)"""
+                    if direction > 0:  return "<span style='color:#16a34a;font-weight:800;'>↑</span>"
+                    if direction < 0:  return "<span style='color:#dc2626;font-weight:800;'>↓</span>"
+                    return "<span style='opacity:0.5;font-weight:700;'>≈</span>"
+
+                # Her sinyalin yönünü belirle
+                _sig_hacim = (1 if _gs_cum5 > 0 else (-1 if _gs_cum5 < 0 else 0))
+                _sig_obv   = (1 if _gs_obv_dir > 0 else (-1 if _gs_obv_dir < 0 else 0))
+                _sig_yapi  = (1 if _gs_hh_hl else 0)
+                _sig_rsi   = _gs_rsi_sig
+
+                # S1: Net yön — sinyallerin tek tek yönü ok ile
+                _sig_breakdown = (
+                    f"Hacim {_arrow(_sig_hacim)} · "
+                    f"OBV {_arrow(_sig_obv)} · "
+                    f"Yapı {_arrow(_sig_yapi)} · "
+                    f"RSI {_arrow(_sig_rsi)}"
+                )
+                _gs_items_html += _gs_row("📡",
+                    f"<b>Genel görünüm:</b> <b style='color:{_gs_net_clr};'>{_gs_net_txt}</b>"
+                    f"{_gs_explain(_sig_breakdown)}")
+
+                # S2: Hacim + delta yüzdesi
+                _gs_vtitle = _gs_vol.get('title', 'Normal')
+                if _gs_cdpct > 0:
+                    _bp = 50 + _gs_cdpct / 2; _sp = 50 - _gs_cdpct / 2
+                    _dpct = f"%{_bp:.0f} alım / %{_sp:.0f} satış" if _gs_cum5 >= 0 else f"%{_sp:.0f} alım / %{_bp:.0f} satış"
+                else:
+                    _dpct = "dengede"
+                if _gs_rvol < 0.05:
+                    _gs_items_html += _gs_row("📊",
+                        f"<b>Hacim:</b> bugün henüz oluşmadı"
+                        f"{_gs_explain(f'Son 5 günün alıcı/satıcı dengesi: <b>{_dpct}</b>')}")
+                else:
+                    _vol_lbl = f"Hacim <b>{_gs_rvol:.1f}x</b>"
+                    _vol_intp = "ortalama üstü" if _gs_rvol >= 1.5 else ("normal" if _gs_rvol >= 0.8 else "zayıf")
+                    _gs_items_html += _gs_row("📊",
+                        f"<b>{_vol_lbl}</b> · {_vol_intp}"
+                        f"{_gs_explain(f'Son 5 gün alıcı/satıcı dengesi: <b>{_dpct}</b>')}")
+
+                # S3: OBV — basit açıklama
+                _obv_t = _gs_obv.get('title', ''); _obv_d = _gs_obv.get('desc', '')
+                _obv_simple = {
+                    "🔥 GÜÇLÜ GİZLİ GİRİŞ": "Fiyat düşerken büyük oyuncular sessizce alım yapıyor (kurumsal toplama)",
+                    "👀 Olası Toplama (Zayıf)": "Hafif alım emaresi var ama henüz güçlü değil",
+                    "⚠️ GİZLİ ÇIKIŞ": "Fiyat yükseliyor ama büyük oyuncular sessizce satış yapıyor",
+                    "✅ Hacim Destekli Trend": "Yön ne olursa olsun hacim yönü destekliyor (sağlıklı hareket)",
+                }
+                if _obv_t and _obv_t != 'Nötr / Zayıf':
+                    _expl = _obv_simple.get(_obv_t, _obv_d)
+                    _gs_items_html += _gs_row("🧠",
+                        f"<b>{_obv_t}</b>"
+                        f"{_gs_explain(_expl)}")
+                else:
+                    _gs_items_html += _gs_row("🧠",
+                        f"<b>OBV: nötr</b>"
+                        f"{_gs_explain('Akıllı para hareketi belirgin değil — yön net değil')}")
+
+                # S4: SMA50 trend bağlamı
+                if _gs_sma50_txt:
+                    _s50col = "#4ade80" if _gs_sma50_above else "#f87171"
+                    _s50_main = "Ana trend YUKARI" if _gs_sma50_above else "Ana trend AŞAĞI"
+                    _s50_expl = _gs_sma50_txt + (" (uzun vadeli yükseliş sağlam)" if _gs_sma50_above else " (uzun vadeli baskı devam ediyor)")
+                    _gs_items_html += _gs_row("📈",
+                        f"<b style='color:{_s50col};'>{_s50_main}</b>"
+                        f"{_gs_explain(_s50_expl)}")
+
+                # S5: Mum formasyonu — sadeleştir
+                def _strip_emoji(s):
+                    import re
+                    return re.sub(r'[^\w\s\(\)\.\,\:\!\?çğıöşüÇĞİÖŞÜ%/-]', '', s).strip()
+                if _gs_cdesc and _gs_cdesc != 'Belirgin, güçlü bir formasyon yok.':
+                    # Mum adını çıkar (parantez içinde Türkçe ad)
+                    _cand_clean = _gs_cdesc.replace('ALICI:', '').replace('SATICI:', '').strip()
+                    # "Hanging Man (Asılı Adam)" gibi yapıdan adı al
+                    _cand_short = _cand_clean.split('|')[0].strip() if '|' in _cand_clean else _cand_clean
+                    _cand_short = _strip_emoji(_cand_short)[:60]
+                    _bg_extra = []
+                    if _gs_consec_label: _bg_extra.append(f"bugün {_gs_consec_label.split(' ')[-2] if 'gündür' in _gs_consec_label else _gs_consec_label}")
+                    if _gs_hh_hl_txt: _bg_extra.append("yapısal yükseliş (HH+HL)")
+                    _bg_txt = " · ".join(_bg_extra)
+                    if _gs_cdesc.startswith('ALICI'):
+                        _expl = f"Yükseliş sinyali veren mum formasyonu" + (f" · {_bg_txt}" if _bg_txt else "")
+                        _gs_items_html += _gs_row("🕯",
+                            f"<b style='color:#4ade80;'>ALICI sinyali:</b> {_cand_short}"
+                            f"{_gs_explain(_expl)}")
+                    elif _gs_cdesc.startswith('SATICI'):
+                        _expl = f"Düşüş sinyali veren mum formasyonu" + (f" · {_bg_txt}" if _bg_txt else "")
+                        _gs_items_html += _gs_row("🕯",
+                            f"<b style='color:#f87171;'>SATICI sinyali:</b> {_cand_short}"
+                            f"{_gs_explain(_expl)}")
+                    else:
+                        _gs_items_html += _gs_row("🕯",
+                            f"<b>Mum:</b> {_cand_short}"
+                            f"{_gs_explain('Yön belirsiz formasyon')}")
+                elif _gs_consec_label or _gs_hh_hl_txt:
+                    _cc = "#4ade80" if (_gs_consec_label and "yeşil" in _gs_consec_label) else "#f87171"
+                    _bg = []
+                    if _gs_consec_label: _bg.append(_gs_consec_label)
+                    if _gs_hh_hl_txt: _bg.append("HH+HL yapısı (her zirve önceki zirveden yüksek)")
+                    _gs_items_html += _gs_row("🕯",
+                        f"<b>Mum durumu:</b> belirgin formasyon yok"
+                        f"{_gs_explain(' · '.join(_bg))}")
+
+                # S6: RSI zonu — açıklamalı
+                if _gs_rsi_disp:
+                    _rc = "#4ade80" if _gs_rsi_sig > 0 else ("#f87171" if _gs_rsi_sig < 0 else _gs_txt)
+                    if _gs_rsi_val < 30:
+                        _rsi_expl = "Çok hızlı düştü, dipten dönüş yakın olabilir (al fırsatı bölgesi)"
+                    elif _gs_rsi_val <= 60:
+                        _rsi_expl = "Sağlıklı alım bölgesi, momentum iyi"
+                    elif _gs_rsi_val > 70:
+                        _rsi_expl = "Çok hızlı yükseldi, kısa vadede düzeltme/satış riski yüksek"
+                    else:
+                        _rsi_expl = "Nötr bölge, yön sinyali zayıf"
+                    _gs_items_html += _gs_row("📉" if _gs_rsi_sig < 0 else "📈",
+                        f"<b style='color:{_rc};'>RSI {_gs_rsi_val:.0f}</b> — {('aşırı satım' if _gs_rsi_val<30 else ('alım bölgesi' if _gs_rsi_val<=60 else ('aşırı alım' if _gs_rsi_val>70 else 'nötr')))}"
+                        f"{_gs_explain(_rsi_expl)}")
+
+                # S7: İptal koşulu — net açıklama
+                if _gs_low5_txt:
+                    if _gs_net_txt in ("YUKARI", "HAFİF YUKARI"):
+                        _gs_items_html += _gs_row("⛔",
+                            f"<b>Stop seviyesi:</b> {_gs_low5_txt}"
+                            f"{_gs_explain(f'Bu seviyenin <b>altında</b> kapanış olursa yükseliş senaryosu iptal — pozisyondan çıkılır')}")
+                    elif _gs_net_txt in ("AŞAĞI", "HAFİF AŞAĞI"):
+                        _gs_items_html += _gs_row("⛔",
+                            f"<b>İptal noktası:</b> {_gs_low5_txt}"
+                            f"{_gs_explain(f'Bu seviyenin <b>üstünde</b> kapanış olursa düşüş senaryosu iptal')}")
+
+                # S8: SFP (varsa)
+                _sfp_t = _gs_sfp.get('title', 'Yok')
+                if _sfp_t and _sfp_t != 'Yok':
+                    _gs_items_html += _gs_row("⚠️",
+                        f"<b>{_sfp_t}</b>"
+                        f"{_gs_explain(_gs_sfp.get('desc', 'Sahte kırılım — fiyat seviyeyi geçti ama tutmadı'))}")
+
+                # S9: LONG RADAR skoru — açıklamalı
+                try:
+                    _sms = calculate_smart_money_score(_ticker)
+                    if _sms and _sms.get('score') is not None:
+                        _sc = _sms['score']; _st = _sms.get('status', '')
+                        _scol = "#4ade80" if _sc >= 60 else ("#fbbf24" if _sc >= 40 else "#f87171")
+                        if _sc >= 65:
+                            _radar_expl = "Tüm kriterler hizalandı — alım için hazır kurulum"
+                        elif _sc >= 45:
+                            _radar_expl = "Bazı kriterler eksik — henüz alım zamanı değil, takipte tut"
+                        elif _sc >= 25:
+                            _radar_expl = "Çok az kriter geçti — henüz erken, beklemede"
+                        else:
+                            _radar_expl = "Kriterler genel olarak olumsuz — şimdilik radar dışı"
+                        _gs_items_html += _gs_row("🏆",
+                            f"<b>LONG RADAR:</b> <b style='color:{_scol};'>{_sc}/100</b> — {_st}"
+                            f"{_gs_explain(_radar_expl + ' (5 alım kriterinin birleşik skoru)')}")
+                except Exception:
+                    pass
+
+        except Exception:
+            _gs_items_html = "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Özet hesaplanamadı.</div>"
+
+        if _dark:
+            _hdr_bg = "linear-gradient(90deg,#0c2340 0%,#0a1929 100%)"
+            _hdr_txt = "#7dd3fc"; _cnt_bg = "rgba(12,35,64,0.55)"; _border = "#38bdf8"
+        else:
+            _hdr_bg = "linear-gradient(90deg,#dbeafe 0%,#eff6ff 100%)"
+            _hdr_txt = "#1e40af"; _cnt_bg = "#eff6ff"; _border = "#3b82f6"
+
+        st.markdown(f"""
+        <details open style="margin-bottom:7px;border-radius:10px;overflow:hidden;
+                        border:1px solid {_border};box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+          <summary style="cursor:pointer;padding:7px 13px;background:{_hdr_bg};
+                          display:flex;align-items:center;gap:8px;
+                          font-size:0.72rem;font-weight:700;color:{_hdr_txt};
+                          letter-spacing:0.03em;list-style:none;user-select:none;">
+            <span style="font-size:1rem;line-height:1;">⚡</span>
+            GENEL ÖZET
+            <span style="margin-left:auto;font-size:0.65rem;opacity:0.5;">▾</span>
+          </summary>
+          <div style="background:{_cnt_bg};padding:8px 12px 10px 12px;">
+            {_gs_items_html if _gs_items_html else "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Veri bekleniyor...</div>"}
+          </div>
+        </details>
+        """, unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
 def _render_health_signals_panel():
     # --- YENİ YERİ: GENEL SAĞLIK PANELİ (SIDEBAR İÇİN OPTİMİZE EDİLDİ) ---
     try:
@@ -12941,142 +13314,6 @@ def _render_health_signals_panel():
             </details>
             """, unsafe_allow_html=True)
 
-            # ── GENEL ÖZET (3. accordion bar) ──────────────────
-            _gs_items_html = ""
-            try:
-                _gs_dna = calculate_price_action_dna(st.session_state.ticker)
-
-                # Ardışık mum sayısı (cache'den)
-                _gs_consec_label = ""
-                try:
-                    _gs_df = get_safe_historical_data(st.session_state.ticker, period="1mo")
-                    if _gs_df is not None and len(_gs_df) >= 3:
-                        _gs_cc = _gs_df['Close'].values; _gs_co = _gs_df['Open'].values
-                        _gs_bull = _gs_cc[-1] > _gs_co[-1]
-                        _gs_cnt = 1
-                        for _gsi in range(2, min(8, len(_gs_df))):
-                            if (_gs_cc[-_gsi] > _gs_co[-_gsi]) == _gs_bull:
-                                _gs_cnt += 1
-                            else:
-                                break
-                        _gs_consec_label = f"{_gs_cnt} gündür {'yeşil' if _gs_bull else 'kırmızı'} mum"
-                except Exception:
-                    pass
-
-                if _gs_dna:
-                    _gs_sv    = _gs_dna.get('smart_volume', {})
-                    _gs_rvol  = _gs_sv.get('rvol', 1.0)
-                    _gs_cum5  = _gs_sv.get('cum_delta_5', 0)
-                    _gs_can   = _gs_dna.get('candle', {})
-                    _gs_vol   = _gs_dna.get('vol', {})
-                    _gs_obv   = _gs_dna.get('obv', {})
-                    _gs_sfp   = _gs_dna.get('sfp', {})
-                    _gs_cdesc = _gs_can.get('desc', '')
-                    _gs_otitle= _gs_obv.get('title', '')
-
-                    # Net yön oylama (3 sinyal)
-                    _gs_up = 0; _gs_dn = 0
-                    if _gs_cum5 > 0:  _gs_up += 1
-                    elif _gs_cum5 < 0: _gs_dn += 1
-                    if 'GİRİŞ' in _gs_otitle or 'Destekli' in _gs_otitle or 'Toplama' in _gs_otitle: _gs_up += 1
-                    elif 'ÇIKIŞ' in _gs_otitle: _gs_dn += 1
-                    if _gs_cdesc.startswith('ALICI'):  _gs_up += 1
-                    elif _gs_cdesc.startswith('SATICI'): _gs_dn += 1
-
-                    if _gs_up >= 2:
-                        _gs_net_clr = "#4ade80"; _gs_net_txt = "YUKARI"
-                    elif _gs_dn >= 2:
-                        _gs_net_clr = "#f87171"; _gs_net_txt = "AŞAĞI"
-                    else:
-                        _gs_net_clr = "#fbbf24"; _gs_net_txt = "KARARSIZ"
-
-                    _gs_txt  = "#c7d9f0" if _dark else "#1e3a5f"
-                    _gs_line = "rgba(56,189,248,0.12)" if _dark else "rgba(56,189,248,0.2)"
-
-                    def _gs_row(icon, content):
-                        return (
-                            f"<div style='display:flex;align-items:flex-start;gap:6px;"
-                            f"padding:5px 0;border-bottom:1px solid {_gs_line};'>"
-                            f"<span style='flex-shrink:0;font-size:0.85rem;margin-top:2px;'>{icon}</span>"
-                            f"<span style='font-size:0.85rem;line-height:1.45;color:{_gs_txt};'>{content}</span>"
-                            f"</div>"
-                        )
-
-                    # Satır 1: Net yön
-                    _gs_items_html += _gs_row(
-                        "📡",
-                        f"Genel görünüm: <b style='color:{_gs_net_clr};'>{_gs_net_txt}</b> "
-                        f"<span style='opacity:0.55;'>({_gs_up}↑ {_gs_dn}↓ / 3 sinyal)</span>"
-                    )
-
-                    # Satır 2: Hacim
-                    _gs_delta_txt = "alım ağır" if _gs_cum5 > 0 else ("satış ağır" if _gs_cum5 < 0 else "dengede")
-                    _gs_vtitle = _gs_vol.get('title', 'Normal')
-                    if _gs_rvol < 0.05:
-                        _gs_items_html += _gs_row("📊", f"Bugünkü hacim henüz oluşmadı — 5 seans: <b>{_gs_delta_txt}</b>.")
-                    elif _gs_rvol >= 1.5:
-                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — {_gs_vtitle}, 5 seans {_gs_delta_txt}.")
-                    elif _gs_rvol >= 1.1:
-                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — ortalama üstü, 5 seans {_gs_delta_txt}.")
-                    else:
-                        _gs_items_html += _gs_row("📊", f"Hacim <b>{_gs_rvol:.1f}x</b> — zayıf aktivite, 5 seans {_gs_delta_txt}.")
-
-                    # Satır 3: OBV
-                    _gs_odesc = _gs_obv.get('desc', '')
-                    if _gs_otitle and _gs_otitle != 'Nötr / Zayıf':
-                        _gs_items_html += _gs_row("🧠", f"<b>{_gs_otitle}</b> — {_gs_odesc}")
-                    else:
-                        _gs_items_html += _gs_row("🧠", "Akıllı para hareketi nötr / zayıf.")
-
-                    # Satır 4: Mum + vade
-                    _gs_vade = f" <span style='opacity:0.55;'>· {_gs_consec_label}</span>" if _gs_consec_label else ""
-                    if _gs_cdesc and _gs_cdesc != 'Belirgin, güçlü bir formasyon yok.':
-                        if _gs_cdesc.startswith('ALICI'):
-                            _gs_items_html += _gs_row("🕯", f"<b style='color:#4ade80;'>ALICI</b>{_gs_cdesc[5:]}{_gs_vade}")
-                        elif _gs_cdesc.startswith('SATICI'):
-                            _gs_items_html += _gs_row("🕯", f"<b style='color:#f87171;'>SATICI</b>{_gs_cdesc[6:]}{_gs_vade}")
-                        else:
-                            _gs_items_html += _gs_row("🕯", f"{_gs_cdesc}{_gs_vade}")
-                    elif _gs_consec_label:
-                        _gs_cc_col = "#4ade80" if "yeşil" in _gs_consec_label else "#f87171"
-                        _gs_items_html += _gs_row("🕯", f"Belirgin formasyon yok · <b style='color:{_gs_cc_col};'>{_gs_consec_label}</b>")
-
-                    # Satır 5: SFP (varsa)
-                    _gs_sfp_title = _gs_sfp.get('title', 'Yok')
-                    if _gs_sfp_title and _gs_sfp_title != 'Yok':
-                        _gs_items_html += _gs_row("⚠️", f"<b>{_gs_sfp_title}</b> — {_gs_sfp.get('desc', '')}")
-
-            except Exception:
-                _gs_items_html = f"<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Özet hesaplanamadı.</div>"
-
-            if _dark:
-                _gs_hdr_bg  = "linear-gradient(90deg,#0c2340 0%,#0a1929 100%)"
-                _gs_hdr_txt = "#7dd3fc"
-                _gs_cnt_bg  = "rgba(12,35,64,0.55)"
-                _gs_border  = "#38bdf8"
-            else:
-                _gs_hdr_bg  = "linear-gradient(90deg,#dbeafe 0%,#eff6ff 100%)"
-                _gs_hdr_txt = "#1e40af"
-                _gs_cnt_bg  = "#eff6ff"
-                _gs_border  = "#3b82f6"
-
-            st.markdown(f"""
-            <details style="margin-bottom:7px;border-radius:10px;overflow:hidden;
-                            border:1px solid {_gs_border};box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-              <summary style="cursor:pointer;padding:7px 13px;background:{_gs_hdr_bg};
-                              display:flex;align-items:center;gap:8px;
-                              font-size:0.72rem;font-weight:700;color:{_gs_hdr_txt};
-                              letter-spacing:0.03em;list-style:none;user-select:none;">
-                <span style="font-size:1rem;line-height:1;">⚡</span>
-                GENEL ÖZET
-                <span style="margin-left:auto;font-size:0.65rem;opacity:0.5;">▾</span>
-              </summary>
-              <div style="background:{_gs_cnt_bg};padding:8px 12px 10px 12px;">
-                {_gs_items_html if _gs_items_html else "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Veri bekleniyor...</div>"}
-              </div>
-            </details>
-            """, unsafe_allow_html=True)
-
     except Exception as e:
         st.warning(f"Genel Sağlık tablosu oluşturulamadı. Hata: {e}")
 
@@ -13091,7 +13328,10 @@ def _render_health_signals_panel():
 with st.sidebar:
     st.markdown(f"""<div style="font-size:1.5rem; font-weight:700; color:#1e3a8a; text-align:center; padding-top: 10px; padding-bottom: 10px;">SMART MONEY RADAR</div>""", unsafe_allow_html=True)
 
-    # --- TEKNİK GÖRÜNÜM (GAUGE) — SMART MONEY RADAR'ın hemen altı ---
+    # --- GENEL ÖZET — başlığın hemen altında ---
+    _render_genel_ozet_panel()
+
+    # --- TEKNİK GÖRÜNÜM (GAUGE) ---
     _render_health_signals_panel()
 
     # --- ICT BOTTOM LINE (SONUÇ) ---
