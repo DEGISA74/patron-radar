@@ -5882,16 +5882,13 @@ def calculate_price_action_dna(ticker):
             else:
                 c1_v = _fi_last_vol  # projeksiyon yok, ham hacim
 
-        # avg_v: geçmiş ortalama
+        # avg_v: geçmiş 20 günlük ortalama (TradingView mavi çizgisiyle uyumlu — SMA20)
+        # ÖNEMLİ: three_month_average_volume (~65G) KULLANILMIYOR — etiket "20G" diyor, oran tutarlı olmalı.
         # KRİPTO İSTİSNASI: Binance BTC cinsinden hacim verir (ör: 17,000 BTC/gün)
-        # Yahoo fast_info ise USD cinsinden döner (ör: 43 milyar) → birim uyumsuzluğu → rvol=0
-        # Bu yüzden -USD tickerları için Yahoo ortalaması asla kullanılmaz.
+        # Yahoo fast_info ise USD cinsinden döner → birim uyumsuzluğu → direkt rolling kullan.
         _is_crypto = "-USD" in ticker
-        avg_v = (
-            float(v.iloc[:-1].rolling(19).mean().iloc[-1])
-            if _is_crypto
-            else (_avg_vol_yf if _avg_vol_yf > 100 else float(v.iloc[:-1].rolling(19).mean().iloc[-1]))
-        )
+        _vol_20g = float(v.iloc[:-1].rolling(20).mean().iloc[-1])
+        avg_v = _vol_20g if (_vol_20g > 0 and not pd.isna(_vol_20g)) else 1.0
         # raw_today_v: projeksiyon uygulanmış son bar hacmi (c1_v = v.iloc[-1], veya yukarıda fast_info ile dolduruldu)
         raw_today_v = c1_v
 
