@@ -54,15 +54,19 @@ def _scan_last_close_dt():
     return d.replace(hour=18, minute=20, second=0, microsecond=0)
 
 def save_scan_result(key, data, category=""):
-    """Tarama sonucunu diske pickle olarak yaz."""
+    """Tarama sonucunu diske pickle olarak yaz. Başarı/hata durumunu döndürür."""
     import pickle, logging
     safe_cat = category.replace(" ", "_").replace("&", "and").replace("/", "-")
     fpath = os.path.join(SCAN_CACHE_DIR, f"{key}__{safe_cat}.pkl")
     try:
         with open(fpath, "wb") as f:
             pickle.dump({"data": data, "ts": datetime.now(_TZ_ISTANBUL)}, f)
+            f.flush()
+            os.fsync(f.fileno())   # Dosya sistemi tamponunu diske zorla
+        return True
     except Exception as e:
         logging.warning(f"[scan_cache] save_scan_result HATA — key={key}: {e}")
+        return False, str(e)       # Hata detayını döndür
 
 def load_scan_result(key, category=""):
     """
@@ -884,7 +888,9 @@ def _get_safe_historical_data_cached(ticker, period="1y", interval="1d"):
         if os.path.exists(file_path):
             df_cached = pd.read_parquet(file_path)
             df_cached = safe_clean_columns(df_cached)
-            df_cached.index = df_cached.index.tz_localize(None)
+            # tz-aware ise convert, tz-naive ise dokunma (her iki durumda güvenli)
+            if df_cached.index.tz is not None:
+                df_cached.index = df_cached.index.tz_convert(None)
 
             if not is_yahoo_update_needed(ticker, df_cached.index[-1]):
                 return apply_volume_projection(df_cached.tail(500).copy(), ticker)
@@ -895,7 +901,8 @@ def _get_safe_historical_data_cached(ticker, period="1y", interval="1d"):
             )
             if not df_new.empty:
                 df_new = safe_clean_columns(df_new)
-                df_new.index = df_new.index.tz_localize(None)
+                if df_new.index.tz is not None:
+                    df_new.index = df_new.index.tz_convert(None)
                 df_new.to_parquet(file_path)
                 return apply_volume_projection(df_new.tail(500).copy(), ticker)
 
@@ -909,15 +916,31 @@ def _get_safe_historical_data_cached(ticker, period="1y", interval="1d"):
             return apply_volume_projection(df_cached.tail(500).copy(), ticker)
 
         else:
-            # Parquet yok — retry ile çek
+            # Parquet yok — önce start/end ile dene, başarısız olursa period ile dene
             df_full = _yf_download_with_retry(
                 clean_ticker, start=_start, end=_end, interval=interval
             )
+            if df_full.empty:
+                # start/end başarısız → period="1y" ile dene (Yahoo farklı davranıyor)
+                import logging as _log2
+                _log2.warning(f"[get_hist] {clean_ticker} start/end başarısız → period='1y' fallback")
+                df_full = _yf_download_with_retry(
+                    clean_ticker, period="1y", interval=interval
+                )
             if not df_full.empty:
                 df_full = safe_clean_columns(df_full)
-                df_full.index = df_full.index.tz_localize(None)
+                # tz-aware ise convert, tz-naive ise dokunma
+                if df_full.index.tz is not None:
+                    df_full.index = df_full.index.tz_convert(None)
                 df_full.to_parquet(file_path)
                 return apply_volume_projection(df_full.tail(500).copy(), ticker)
+            else:
+                # Her iki yöntem de başarısız — session_state'e hata işareti bırak
+                st.session_state['_data_stale'] = {
+                    'ticker': ticker,
+                    'days':   999,
+                    'last':   'Hiç çekilemedi',
+                }
 
         return None
 
@@ -926,12 +949,66 @@ def _get_safe_historical_data_cached(ticker, period="1y", interval="1d"):
         logging.warning(f"[get_safe_historical_data] {ticker} hata: {e}")
         return None
 
+def _ensure_parquet_on_disk(ticker: str, interval: str = "1d") -> None:
+    """
+    @st.cache_data YAN ETKİ SORUNU İÇİN GÜVENLİK NETI:
+    Cached fonksiyon bellekten döndüğünde parquet yazılmayabilir.
+    Bu fonksiyon cache DIŞINDA çalışır — her çağrıda parquet var mı kontrol eder,
+    yoksa indirir ve kaydeder. Crypto ve intraday atlanır.
+    """
+    # Sadece günlük ve kripto olmayan tickerlar için
+    if interval != "1d" or "-USD" in ticker:
+        return
+    try:
+        # file_path'i hesapla (cached fonksiyonla aynı mantık)
+        _ct = ticker.replace(".IS", "")
+        if "BIST" in ticker or ".IS" in ticker or ticker.startswith("XU"):
+            _ct = ticker if ticker.endswith(".IS") else f"{ticker}.IS"
+        _fp = os.path.join(CACHE_DIR, f"{_ct}_{interval}.parquet")
+
+        if os.path.exists(_fp):
+            return  # Zaten var → işlem yok
+
+        import datetime as _dt2
+        _s = str(_dt2.date.today() - _dt2.timedelta(days=380))
+        _e = str(_dt2.date.today() + _dt2.timedelta(days=1))
+
+        _df = _yf_download_with_retry(_ct, start=_s, end=_e, interval=interval)
+        if _df.empty:
+            _df = _yf_download_with_retry(_ct, period="1y", interval=interval)
+        if _df.empty:
+            return
+
+        # Sütunları temizle
+        if isinstance(_df.columns, pd.MultiIndex):
+            _lvl = _df.columns.get_level_values(0)
+            _df.columns = _lvl if "Close" in _lvl else _df.columns.get_level_values(1)
+        _df = _df.loc[:, ~_df.columns.duplicated()].copy()
+        _df.columns = [str(c).capitalize() for c in _df.columns]
+        if "Volume" not in _df.columns or _df["Volume"].isna().all():
+            _df["Volume"] = 0.0
+        # Timezone temizle
+        if _df.index.tz is not None:
+            _df.index = _df.index.tz_convert(None)
+        # Kaydet
+        _df.to_parquet(_fp)
+        import logging as _lg2
+        _lg2.info(f"[ensure_parquet] {_ct} yazildi: {len(_df)} satir")
+    except Exception as _ep:
+        import logging as _lg3
+        _lg3.warning(f"[ensure_parquet] {ticker} hata: {_ep}")
+
+
 def get_safe_historical_data(ticker, period="1y", interval="1d"):
     """
     Public wrapper — önce cache'li OHLCV'yi alır, sonra
     cache dışında canlı fiyat patch'ini uygular.
     Bu sayede fiyat her render'da güncellenir, OHLCV cache'i bozulmaz.
+
+    _ensure_parquet_on_disk: cache'in bellek sonucu döndürdüğü durumlarda
+    parquet'in diske yazılmasını garanti eder.
     """
+    _ensure_parquet_on_disk(ticker, interval)
     df = _get_safe_historical_data_cached(ticker, period=period, interval=interval)
     return _patch_live_price(df, ticker, interval)
 
@@ -13538,7 +13615,7 @@ with col_btn:
             st.session_state.confluence_hits = compile_confluence_hits()
 
             # ── TARAMA SONUÇLARINI DİSKE KAYDET (agresif cache) ────────────
-            import pickle, logging
+            import pickle, logging as _logging
             _master_snapshot = {
                 "stp_crosses":              st.session_state.stp_crosses,
                 "stp_trends":               st.session_state.stp_trends,
@@ -13565,31 +13642,49 @@ with col_btn:
                 "confluence_hits":          st.session_state.confluence_hits,
             }
             # Önce tüm snapshot'ı bir arada dene
+            _save_ok = False
+            _skipped_keys = []
             try:
                 pickle.dumps(_master_snapshot)   # bellek testi
-                save_scan_result("master_scan", _master_snapshot, _cat)
+                _res = save_scan_result("master_scan", _master_snapshot, _cat)
+                _save_ok = (_res is True)
             except Exception as _pe:
                 # Toplu pickle başarısız — her key'i ayrı ayrı dene, bozuk olanı atla
-                logging.warning(f"[scan_cache] Toplu pickle hatası: {_pe} — key bazlı kayda geçiliyor")
+                _logging.warning(f"[scan_cache] Toplu pickle hatası: {_pe} — key bazlı kayda geçiliyor")
                 _clean_snapshot = {}
                 for _sk, _sv in _master_snapshot.items():
                     try:
                         pickle.dumps(_sv)
                         _clean_snapshot[_sk] = _sv
                     except Exception as _ke:
-                        logging.warning(f"[scan_cache] pickle edilemeyen key atlandı: {_sk} — {_ke}")
+                        _skipped_keys.append(_sk)
+                        _logging.warning(f"[scan_cache] pickle edilemeyen key atlandı: {_sk} — {_ke}")
                 if _clean_snapshot:
-                    save_scan_result("master_scan", _clean_snapshot, _cat)
+                    _res = save_scan_result("master_scan", _clean_snapshot, _cat)
+                    _save_ok = (_res is True)
             # ────────────────────────────────────────────────────────────────
 
             # --- BİTİŞ ---
             my_bar.progress(100, text="✅ TARAMA TAMAMLANDI! Sonuçlar Yükleniyor...%100")
+
+            if _save_ok:
+                st.toast("💾 Tarama sonuçları diske kaydedildi.", icon="✅")
+            else:
+                _skip_str = ", ".join(_skipped_keys[:5]) if _skipped_keys else "bilinmiyor"
+                st.warning(f"⚠️ Tarama önbelleği kaydedilemedi. Atlanan keyler: {_skip_str}")
+
             st.session_state.generate_prompt = False
-            st.rerun() # Sayfayı yenile ki tablolar dolsun
-            
+
         except Exception as e:
+            # Streamlit'in kendi exception'larını (RerunException, StopException) yeniden fırlat
+            _etype = type(e).__name__
+            if any(x in _etype for x in ("Rerun", "Stop", "Script")):
+                raise
             st.error(f"Tarama sırasında bir hata oluştu: {str(e)}")
             st.stop()
+
+        # st.rerun() try/except DIŞINDA — Streamlit exception'ı artık yakalanmıyor
+        st.rerun()
 
 st.markdown("<hr style='margin-top:0.5rem; margin-bottom:0.5rem;'>", unsafe_allow_html=True)
 
