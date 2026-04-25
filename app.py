@@ -823,7 +823,11 @@ def _patch_live_price(df: pd.DataFrame, ticker: str, interval: str = "1d") -> pd
                     _new_idx = _new_idx.tz_localize(_tz)
             except Exception:
                 _new_idx = pd.Timestamp(_today)
-            df = pd.concat([df, pd.DataFrame([new_row], index=[_new_idx])])
+            # ÖNEMLİ: index name'i koru — yoksa reset_index() 'Date' kolonunu kaybeder
+            _orig_name = df.index.name
+            _new_df = pd.DataFrame([new_row], index=[_new_idx])
+            _new_df.index.name = _orig_name
+            df = pd.concat([df, _new_df])
     except Exception as _pe:
         import logging
         logging.warning(f"[patch_live_price] {ticker} — {_pe}")
@@ -1198,7 +1202,7 @@ def check_lazybear_squeeze(df):
 def calculate_synthetic_sentiment(ticker):
     try:
         df = get_safe_historical_data(ticker, period="6mo")
-        if df is None: return None
+        if df is None or df.empty: return None
 
         close = df['Close']; high = df['High']; low = df['Low']; volume = df['Volume']
 
@@ -1212,8 +1216,23 @@ def calculate_synthetic_sentiment(ticker):
         stp = ema1
         
         df = df.reset_index()
-        if 'Date' not in df.columns: df['Date'] = df.index
-        else: df['Date'] = pd.to_datetime(df['Date'])
+        # Index name kaybolmuş olabilir — 'Date', 'Datetime', 'index' gibi kontrol et
+        _date_col = None
+        for _dc in ('Date', 'Datetime', 'date', 'datetime'):
+            if _dc in df.columns:
+                _date_col = _dc
+                break
+        if _date_col:
+            df['Date'] = pd.to_datetime(df[_date_col])
+        else:
+            # Fallback: index sütununu kullan veya RangeIndex'ten tarih üret
+            _idx_cols = [c for c in df.columns if 'index' in str(c).lower() or df[c].dtype == 'datetime64[ns]']
+            if _idx_cols:
+                df['Date'] = pd.to_datetime(df[_idx_cols[0]])
+            else:
+                # Son çare: mevcut son satırdan geriye giderek tarih üret
+                _end = pd.Timestamp.today().normalize()
+                df['Date'] = pd.date_range(end=_end, periods=len(df), freq='B')
         
         plot_df = pd.DataFrame({
             'Date': df['Date'], 
@@ -12217,10 +12236,16 @@ def render_unified_signals_panel(ticker):
         try:
             harsi = calculate_harsi(df)
             if harsi:
+                _ha_val = harsi.get('ha_close', None)
+                _ha_str = f" (HA-RSI: {_ha_val:.1f})" if _ha_val is not None else ""
                 if harsi['is_green']:
-                    signals.append(("🌊","HARSI: Boğa Momentumu","#38bdf8" if is_dark else "#0369a1","Heikin Ashi RSI yukarı döndü. Standart RSI'dan daha az gürültülü; trendin başlangıcını daha erken yakalar.",True))
+                    signals.append(("🌊",f"HARSI: Boğa Momentumu","#38bdf8" if is_dark else "#0369a1",
+                        f"Heikin Ashi RSI yukarı döndü{_ha_str}. Standart RSI'dan daha az gürültülü; "
+                        f"dönüş sinyalini daha erken yakalar. Alıcı baskısı artıyor, trend yukarı.",True))
                 else:
-                    signals.append(("🌊","HARSI: Ayı Momentumu","#f87171" if is_dark else "#b91c1c","Heikin Ashi RSI aşağı döndü. Momentum satıcıların kontrolünde — tepki rallileri kısa süreli olabilir.",False))
+                    signals.append(("🌊",f"HARSI: Ayı Momentumu","#f87171" if is_dark else "#b91c1c",
+                        f"Heikin Ashi RSI aşağı döndü{_ha_str}. Momentum satıcıların kontrolünde. "
+                        f"Tepki rallileri kısa süreli olabilir — dip onaylanmadan alım riskli.",False))
         except: pass
 
 
@@ -12229,7 +12254,19 @@ def render_unified_signals_panel(ticker):
             obv_title, obv_color, _ = get_obv_divergence_status(ticker)
             if "ZAYIF" not in obv_title and "Veri Yok" not in obv_title and "Hesaplanamadı" not in obv_title:
                 is_obv_pos = any(k in obv_title.upper() for k in ["GİRİŞ","GÜÇLÜ","POZİTİF","ALIŞ","DİRENÇ","EMİLİM","BİRİKİM","SAĞLIKLI","TOPLAMA"])
-                signals.append(("📊",f"OBV: {obv_title}",obv_color,"On-Balance Volume fiyatla uyumsuz hareket ediyor. Fiyat düşerken OBV yükseliyorsa kurumsal birikim (Akümülasyon) sinyali.",is_obv_pos))
+                if is_obv_pos:
+                    _obv_edu = (
+                        f"OBV yukarı trendde ve fiyatla uyumlu hareket ediyor. "
+                        f"Kurumsal para fiyat düşüşlerinde bile birikim yapmaya devam ediyor — "
+                        f"bu güçlü bir akümülasyon sinyali. Mevcut durum: {obv_title}."
+                    )
+                else:
+                    _obv_edu = (
+                        f"OBV aşağı trendde — fiyat yükselirken hacim desteği zayıflıyor. "
+                        f"Kurumsal para sessizce çıkış yapıyor olabilir (dağıtım). "
+                        f"Yükseliş sorgulanabilir. Mevcut durum: {obv_title}."
+                    )
+                signals.append(("📊",f"OBV: {obv_title}",obv_color,_obv_edu,is_obv_pos))
         except: pass
 
         # ── 5. ICT Sniper ───────────────────────────────────────────
@@ -12237,7 +12274,25 @@ def render_unified_signals_panel(ticker):
             ict_res = process_single_ict_setup(ticker, df)
             if ict_res:
                 is_ict_pos = "YÜKSELİŞ" in ict_res.get('Yön','') or "AL" in ict_res.get('Yön','').upper()
-                signals.append((ict_res['İkon'],f"ICT Sniper: {ict_res['Yön']} ({ict_res['Durum'].split('|')[0].strip()})",ict_res['Renk'],"ICT metodolojisi: BOS/MSS yapı kırılımı + Order Block/FVG bölgesi teyidi. Kurumsal paranın iz bıraktığı noktalar.",is_ict_pos))
+                _ict_yon   = ict_res.get('Yön','')
+                _ict_durum = ict_res.get('Durum','').split('|')[0].strip()
+                _ict_zone  = ict_data.get('zone','') if ict_data else ''
+                _ict_struct= ict_data.get('structure','') if ict_data else ''
+                if is_ict_pos:
+                    _ict_edu = (
+                        f"ICT kurulumu aktif: {_ict_yon} yönünde {_ict_durum}. "
+                        f"{'DISCOUNT bölgesinde fiyat — kurumsal alım noktası.' if 'DISCOUNT' in _ict_zone else ''} "
+                        f"{'Yapı kırılımı (BOS/MSS) yukarı teyit edildi.' if any(x in _ict_struct for x in ['BOS','MSS']) else ''} "
+                        f"Order Block / FVG desteği geçerli."
+                    ).strip()
+                else:
+                    _ict_edu = (
+                        f"ICT kurulumu aktif: {_ict_yon} yönünde {_ict_durum}. "
+                        f"{'PREMIUM bölgesinde fiyat — kurumsal dağıtım riski.' if 'PREMIUM' in _ict_zone else ''} "
+                        f"{'Yapı kırılımı aşağı — alıcı yapısı bozuldu.' if any(x in _ict_struct for x in ['BOS','MSS']) else ''} "
+                        f"Bearish Order Block / FVG baskısı var."
+                    ).strip()
+                signals.append((ict_res['İkon'],f"ICT Sniper: {_ict_yon} ({_ict_durum})",ict_res['Renk'],_ict_edu,is_ict_pos))
         except: pass
 
         # ── 6. Altın Fırsat ─────────────────────────────────────────
@@ -12275,7 +12330,14 @@ def render_unified_signals_panel(ticker):
                 _dd = _c2.diff(); _gg = _dd.where(_dd>0,0).rolling(14).mean(); _ll = (-_dd.where(_dd<0,0)).rolling(14).mean()
                 _rsi2 = float((100-(100/(1+_gg/_ll))).iloc[-1])
                 if _cp2>_s200 and _cp2>_s50 and _rsi2<70:
-                    signals.append(("💎","Platin Fırsat (Elit): Yapısal Güç","#60a5fa" if is_dark else "#1d4ed8","Fiyat SMA200 ve SMA50 üzerinde, RSI aşırı alım değil. Kurumsal fonların girmek istediği sağlıklı boğa yapısı.",True))
+                    _p200_dist = (_cp2-_s200)/_s200*100
+                    _p50_dist  = (_cp2-_s50)/_s50*100
+                    _platin_edu = (
+                        f"Fiyat {_cp2:.2f}: SMA200 üzeri %{_p200_dist:.1f}, SMA50 üzeri %{_p50_dist:.1f}. "
+                        f"RSI(14): {_rsi2:.0f} — aşırı alım sınırı (70) altında, hâlâ alan var. "
+                        f"Kurumsal fonların tercih ettiği sağlıklı boğa yapısı — dip alımları geçerli strateji."
+                    )
+                    signals.append(("💎","Platin Fırsat (Elit): Yapısal Güç","#60a5fa" if is_dark else "#1d4ed8",_platin_edu,True))
         except: pass
 
         # ── 9. Harmonik Confluence ───────────────────────────────────
@@ -12290,7 +12352,15 @@ def render_unified_signals_panel(ticker):
         try:
             gd = calculate_guclu_donus_adaylari(ticker, df)
             if gd:
-                signals.append(("🔄",f"Güçlü Dönüş Adayı (Z:{gd['Z-Score']})","#34d399" if is_dark else "#15803d","İstatistiksel aşırı satım + fiyat yapısı dip oluşum sinyali veriyor. Dönüş ihtimali yüksek — konfirmasyon bekle.",True))
+                _gd_z     = gd.get('Z-Score', 0)
+                _gd_crit  = gd.get('Kriter', '') or gd.get('kriter', '') or gd.get('Detay','')
+                _gd_edu   = (
+                    f"Z-Score: {_gd_z} — istatistiksel olarak aşırı satım bölgesinde. "
+                    f"{'Aktif kriterler: ' + str(_gd_crit)[:100] + '. ' if _gd_crit else ''}"
+                    f"Fiyat yapısı dip oluşum bölgesinde — dönüş ihtimali matematiksel olarak yüksek. "
+                    f"Kırılım veya hacim artışıyla konfirmasyon gel gelsin, erken giriş riskli."
+                )
+                signals.append(("🔄",f"Güçlü Dönüş Adayı (Z:{_gd_z})","#34d399" if is_dark else "#15803d",_gd_edu,True))
         except: pass
 
         # ── 11. RS Momentum ──────────────────────────────────────────
@@ -12305,7 +12375,21 @@ def render_unified_signals_panel(ticker):
                     ri = "🔥" if alpha>2 else ("💪" if alpha>0 else ("⚠️" if alpha>-2 else "🐢"))
                     rc = ("#10b981" if is_dark else "#15803d") if is_rsp else ("#ef4444" if is_dark else "#dc2626")
                     rl = f"Endeksi Eziyor (+%{alpha:.1f})" if alpha>2 else (f"Endeksi Yeniyor (+%{alpha:.1f})" if alpha>0 else (f"Endeksle Paralel (%{alpha:.1f})" if alpha>-2 else f"Endeksin Gerisinde (%{alpha:.1f})"))
-                    signals.append((ri,f"RS Momentum (5Gün): {rl}",rc,"Son 5 günde hissenin endekse göre fazla/eksik getirisi. Kurumsal para öne çıkan hisseyi tercih eder.",is_rsp))
+                    if is_rsp:
+                        _rs_edu = (
+                            f"Son 5 günde hisse: %{s5:+.1f}, endeks: %{b5:+.1f}. "
+                            f"Göreli fark: {alpha:+.1f}%. "
+                            f"Hisse endeksten güçlü ayrışıyor — kurumsal para bu hisseyi tercih ediyor. "
+                            f"{'Güçlü momentum: endeksin 2 katından fazla getiri.' if alpha>4 else 'Sağlıklı göreli güç devam ediyor.'}"
+                        )
+                    else:
+                        _rs_edu = (
+                            f"Son 5 günde hisse: %{s5:+.1f}, endeks: %{b5:+.1f}. "
+                            f"Göreli fark: {alpha:+.1f}%. "
+                            f"Hisse endeksin gerisinde kalıyor — göreli zayıflık var. "
+                            f"{'Belirgin underperformance: endeks yükselirken hisse geri kaldı.' if alpha<-3 else 'Momentum endeksle kıyasla zayıf — dikkatli ol.'}"
+                        )
+                    signals.append((ri,f"RS Momentum (5Gün): {rl}",rc,_rs_edu,is_rsp))
         except: pass
 
         # ── 12. Akıllı Para ──────────────────────────────────────────
@@ -12323,14 +12407,30 @@ def render_unified_signals_panel(ticker):
                 prox = str(bo.get('Zirveye Yakınlık','')).split('<')[0].strip()
                 is_fired = "TETİKLENDİ" in prox or "Sıkışma" in prox
                 bc = ("#4ade80" if is_dark else "#15803d") if is_fired else ("#fb923c" if is_dark else "#d97706")
-                signals.append(("🔨" if is_fired else "🔥",f"Breakout: {'KIRILIM Onaylandı' if is_fired else prox}",bc,"Önemli bir direnç hacimle aşıldı, 'Fiyat Keşfi' moduna geçiliyor." if is_fired else "Fiyat tarihi zirveye yaklaşıyor. Hacimli mum bu seviyeyi geçerse momentum hızlanır.",True))
+                _bo_prx   = bo.get('Zirveye Yakınlık','')
+                _bo_direnç = bo.get('Direnç', '') or bo.get('direnç','') or bo.get('Seviye','')
+                _bo_edu = (
+                    f"{'Kritik direnç hacimle aşıldı — fiyat keşfi modu aktif. ' if is_fired else f'Fiyat tarihi zirveye yaklaşıyor: {_bo_prx}. '}"
+                    f"{'Yeni yüksek alan açıldı, üstünde kaldıkça momentum hızlanır.' if is_fired else 'Hacimli bir mum bu seviyeyi geçerse güçlü momentum beklenir. '}"
+                    f"{'Kırılım sonrası ilk geri çekilme alım fırsatı olabilir.' if is_fired else 'Haksız kırılım (fakeout) riskine karşı hacim teyidini bekle.'}"
+                )
+                signals.append(("🔨" if is_fired else "🔥",f"Breakout: {'KIRILIM Onaylandı' if is_fired else prox}",bc,_bo_edu,True))
         except: pass
 
         # ── 14. Minervini SEPA ───────────────────────────────────────
         try:
             mini = calculate_minervini_sepa(ticker, benchmark_ticker=bench_tkr)
             if mini:
-                signals.append(("🦁",f"Minervini: {mini.get('Durum','')} ({mini.get('Raw_Score',0)} puan)","#fb923c" if is_dark else "#ea580c","Minervini'nin 8 kriterli SEPA Trend Template metodolojisi. 'Süper Performans' adaylarını erken tespit eder.",True))
+                _mini_sc  = mini.get('Raw_Score', 0)
+                _mini_dur = mini.get('Durum', '')
+                _mini_det = mini.get('Detay', '') or mini.get('detail', '')
+                _mini_edu = (
+                    f"8 kriterden {_mini_sc} karşılandı → {_mini_dur}. "
+                    f"{'Detay: ' + _mini_det[:120] + '...' if _mini_det and len(_mini_det)>10 else ''} "
+                    f"Minervini SEPA: trend yönü, EMA düzeni, 52H yüksek yakınlığı ve RS gücü kontrol edilir. "
+                    f"{'Tüm kriterler yeşil — Süper Performans adayı.' if _mini_sc >= 7 else ('Çoğu kriter olumlu — izleme listesine al.' if _mini_sc >= 5 else 'Bazı kriterler eksik — onay bekle.')}"
+                ).strip()
+                signals.append(("🦁",f"Minervini: {_mini_dur} ({_mini_sc} puan)","#fb923c" if is_dark else "#ea580c",_mini_edu,True))
         except: pass
 
         # ── 15. Formasyon ────────────────────────────────────────────
@@ -12338,16 +12438,33 @@ def render_unified_signals_panel(ticker):
             _pdf = pd.DataFrame()
             _pdf = scan_chart_patterns([ticker])
             if not _pdf.empty:
-                pn = _pdf.iloc[0]['Formasyon'].split('(')[0].strip()
-                ps = _pdf.iloc[0]['Skor']
-                signals.append(("📐",f"Formasyon: {pn} (Puan: {ps})","#94a3b8" if is_dark else "#0f172a","Teknik analistlerin ekranına düşen geometrik yapı. Kırılım yönüne göre aksiyon al.",True))
+                pn   = _pdf.iloc[0]['Formasyon'].split('(')[0].strip()
+                ps   = _pdf.iloc[0]['Skor']
+                _pyon = _pdf.iloc[0].get('Yön', '') if 'Yön' in _pdf.columns else ''
+                _pdur = _pdf.iloc[0].get('Durum', '') if 'Durum' in _pdf.columns else ''
+                _pyon_str = f"Beklenen yön: {_pyon}. " if _pyon else ""
+                _pdur_str = f"Durum: {_pdur}. " if _pdur else ""
+                _pconf = "Yüksek güven (70+)" if ps>=70 else ("Orta güven (50-70)" if ps>=50 else "Düşük güven")
+                _form_edu = (
+                    f"'{pn}' formasyonu tespit edildi. {_pyon_str}{_pdur_str}"
+                    f"Güven puanı: {ps} ({_pconf}). "
+                    f"Kırılım gerçekleşirse hacim teyidini mutlaka bekle — haksız kırılımlar sık görülür."
+                )
+                signals.append(("📐",f"Formasyon: {pn} (Puan: {ps})","#94a3b8" if is_dark else "#0f172a",_form_edu,True))
         except: pass
 
         # ── 16. Radar 1 ──────────────────────────────────────────────
         try:
             r1 = process_single_radar1(ticker, df)
             if r1 and r1['Skor'] >= 4:
-                signals.append(("🧠",f"Radar 1: Momentum ({r1['Skor']}/7)","#38bdf8" if is_dark else "#0369a1",f"7 momentum kriterinden {r1['Skor']}'i yeşil: RSI yönü, MACD, fiyat-ortalama ilişkisi, hacim akışı.",True))
+                _r1_detay = r1.get('Detay', '') or r1.get('detay', '') or r1.get('detail', '')
+                _r1_edu   = (
+                    f"7 momentum kriterinden {r1['Skor']}'i yeşil. "
+                    f"{'Aktif kriterler: ' + str(_r1_detay)[:100] + '. ' if _r1_detay else ''}"
+                    f"RSI yönü, MACD çaprazı, fiyat/EMA ilişkisi ve hacim akışı ölçülüyor. "
+                    f"{'Çok güçlü momentum — 6/7 veya üzeri nadir.' if r1['Skor']>=6 else ('İyi momentum — trend devam etme ihtimali yüksek.' if r1['Skor']>=5 else 'Yeterli momentum — ama onay için daha fazla kriter bekle.')}"
+                )
+                signals.append(("🧠",f"Radar 1: Momentum ({r1['Skor']}/7)","#38bdf8" if is_dark else "#0369a1",_r1_edu,True))
         except: pass
 
         # ── 17. Radar 2 ──────────────────────────────────────────────
@@ -12355,7 +12472,14 @@ def render_unified_signals_panel(ticker):
             r2 = process_single_radar2(ticker, df, idx_data, 0, 100000, 0)
             if r2 and r2['Skor'] >= 4:
                 sn = r2['Setup'] if r2.get('Setup','-') != '-' else 'Trend Takibi'
-                signals.append(("🚀",f"Radar 2: {sn} ({r2['Skor']}/7)","#4ade80" if is_dark else "#15803d",f"7 trend kriterinden {r2['Skor']}'i yeşil: SMA hizalaması, EMA düzeni, OBV trendi, RS gücü.",True))
+                _r2_detay = r2.get('Detay', '') or r2.get('detay', '') or r2.get('detail', '')
+                _r2_edu   = (
+                    f"7 trend kriterinden {r2['Skor']}'i yeşil. Kurulum: {sn}. "
+                    f"{'Aktif kriterler: ' + str(_r2_detay)[:100] + '. ' if _r2_detay else ''}"
+                    f"SMA hizalaması, EMA düzeni, OBV yönü ve endekse göreli güç ölçülüyor. "
+                    f"{'Mükemmel trend yapısı.' if r2['Skor']>=6 else ('Trend güçleniyor — devam etme ihtimali yüksek.' if r2['Skor']>=5 else 'Trend oluşum aşamasında — sabırlı ol.')}"
+                )
+                signals.append(("🚀",f"Radar 2: {sn} ({r2['Skor']}/7)","#4ade80" if is_dark else "#15803d",_r2_edu,True))
         except: pass
 
         # ── 18. RSI Uyumsuzluk + Smart Volume ───────────────────────
@@ -15312,7 +15436,12 @@ with col_left:
 
     # 1. PARA AKIŞ İVMESİ & FİYAT DENGESİ (EN TEPE)
     synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
-    if synth_data is not None and not synth_data.empty: render_synthetic_sentiment_panel(synth_data)
+    if synth_data is None:
+        # Cache'de bozuk/None sonuç olabilir — temizle ve tekrar dene
+        calculate_synthetic_sentiment.clear()
+        synth_data = calculate_synthetic_sentiment(st.session_state.ticker)
+    if synth_data is not None and not synth_data.empty:
+        render_synthetic_sentiment_panel(synth_data)
     
     # --- YENİ YERİ: TEKNİK SEVİYELER (MA) PANELİ (TEK SATIR ŞERİT GÖRÜNÜMÜ) ---
     try:
