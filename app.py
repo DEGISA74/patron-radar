@@ -800,18 +800,34 @@ def _patch_live_price(df: pd.DataFrame, ticker: str, interval: str = "1d") -> pd
         _live = get_live_price(ticker)
         if _live <= 0:
             return df
-        _today = datetime.now(_TZ_ISTANBUL).date()
+
+        _now   = datetime.now(_TZ_ISTANBUL)
+        _today = _now.date()
+        # Cumartesi=5, Pazar=6 → hafta sonu
+        _is_weekend = (_now.weekday() >= 5)
+
         _last_date = df.index[-1]
         if hasattr(_last_date, "date"):
             _last_date = _last_date.date()
+
         if _last_date == _today:
-            # Bugünün satırı var → Close'u canlı fiyatla güncelle
+            # Bugünün satırı var → Close/High/Low'u canlı fiyatla güncelle
             df = df.copy()
             df.loc[df.index[-1], "Close"] = _live
             df.loc[df.index[-1], "High"]  = max(float(df.loc[df.index[-1], "High"]),  _live)
             df.loc[df.index[-1], "Low"]   = min(float(df.loc[df.index[-1], "Low"]),   _live)
+
+        elif _is_weekend:
+            # ── HAFTA SONU: Sahte cumartesi/pazar barı EKLEME ──
+            # Piyasa kapalı; son barın (Cuma) kapanışını gerçek son fiyatla güncelle.
+            # Bu sayede parquet gün içinde yazılmışsa eksik kapanış düzelir.
+            df = df.copy()
+            df.loc[df.index[-1], "Close"] = _live
+            # High'ı ancak _live daha büyükse yukarı çek (aşağı çekme)
+            df.loc[df.index[-1], "High"]  = max(float(df.loc[df.index[-1], "High"]), _live)
+
         else:
-            # Bugün için satır yok → yeni satır ekle
+            # Hafta içi + bugünün satırı yok → yeni satır ekle (seans açık, veri henüz gelmemiş)
             df = df.copy()
             new_row = df.iloc[-1].copy()
             new_row["Close"]  = _live
@@ -820,7 +836,6 @@ def _patch_live_price(df: pd.DataFrame, ticker: str, interval: str = "1d") -> pd
             new_row["Low"]    = _live
             new_row["Volume"] = 0.0
             try:
-                import pytz
                 _tz = df.index.tz if df.index.tz is not None else None
                 _new_idx = pd.Timestamp(_today)
                 if _tz is not None:
@@ -832,6 +847,7 @@ def _patch_live_price(df: pd.DataFrame, ticker: str, interval: str = "1d") -> pd
             _new_df = pd.DataFrame([new_row], index=[_new_idx])
             _new_df.index.name = _orig_name
             df = pd.concat([df, _new_df])
+
     except Exception as _pe:
         import logging
         logging.warning(f"[patch_live_price] {ticker} — {_pe}")
