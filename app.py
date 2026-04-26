@@ -1731,8 +1731,9 @@ def scan_chart_patterns(asset_list):
                         # Derinlik ve rim hizası
                         depth = (sh1_v - sl_v) / sh1_v
                         if not (0.12 <= depth <= 0.55): continue
-                        if abs(sh1_v - sh2_v) / sh1_v > 0.12: continue
-                        # U-şekil: polinom fit (R² > 0.55, konkav yukarı)
+                        # FIX 2: Rim hizalaması daraltıldı (12% → 6%) — asimetrik fincanları eler
+                        if abs(sh1_v - sh2_v) / sh1_v > 0.06: continue
+                        # U-şekil: polinom fit (R² > 0.72, konkav yukarı)
                         try:
                             cup_arr = close.iloc[sh1_i:sh2_i + 1].values.astype(float)
                             if len(cup_arr) < 10: continue
@@ -1742,7 +1743,8 @@ def scan_chart_patterns(asset_list):
                             ss_res = np.sum((cup_arr - yp) ** 2)
                             ss_tot = np.sum((cup_arr - cup_arr.mean()) ** 2)
                             r2  = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-                            if r2 < 0.55 or cf[0] <= 0: continue  # Konkav yukarı zorunlu
+                            # FIX 1: R² eşiği yükseltildi (0.55 → 0.72) — V-shape ve asimetrik şekilleri eler
+                            if r2 < 0.72 or cf[0] <= 0: continue  # Konkav yukarı zorunlu
                         except: continue
                         # Wick/Body filtresi: fincan bölgesi gürültülü değil mi?
                         if not is_clean_zone(sh1_i, sh2_i): continue
@@ -9554,21 +9556,23 @@ def render_price_action_panel(ticker):
         sd_txt = (f"{sd_data['Type']} | {sd_data['Bottom']:.2f} - {sd_data['Top']:.2f}"
                   + (f" — {_sd_status_txt}" if _sd_status_txt else ""))
 
+    # VWAP display — bağlamsal dil (mean reversion fallacy YOK).
+    # VWAP referans seviyedir, sinyal değil. "Pahalı/Ucuz" yerine "üstünde/altında" + seviye fonksiyonu.
     if v_diff < -2.0:
-        vwap_txt = "🟢 DİP FIRSATI (Aşırı İskonto)"
-        vwap_desc = f"Fiyat maliyetin %{abs(v_diff):.1f} altında. Tepki ihtimali yüksek."
+        vwap_txt = "🟢 VWAP ALTINDA (İskonto Bölgesi)"
+        vwap_desc = f"Fiyat VWAP'ın %{abs(v_diff):.1f} altında. VWAP yukarıda direnç olarak izlenir; üstüne kapanış trend dönüş teyidi olabilir."
     elif v_diff < 0.0:
-        vwap_txt = "🟢 UCUZ (Toplama)"
-        vwap_desc = "Fiyat kurumsal maliyetin hemen altında."
+        vwap_txt = "🟢 VWAP TEST (Yakın)"
+        vwap_desc = "Fiyat VWAP'a yakın. VWAP geçişi alıcı/satıcı dengesinin kısa vadeli yön sinyali."
     elif v_diff < 8.0:
-        vwap_txt = "🚀 RALLİ MODU (Güçlü Trend)"
-        vwap_desc = f"Fiyat maliyetin %{v_diff:.1f} üzerinde. Momentum arkanda."
+        vwap_txt = "🚀 VWAP ÜSTÜNDE (Trend Aktif)"
+        vwap_desc = f"Fiyat VWAP'ın %{v_diff:.1f} üzerinde. VWAP geri çekilmede destek görevi yapabilir; altına düşmedikçe trend yapısı sağlam."
     elif v_diff < 15.0:
-        vwap_txt = "🟠 DİKKAT (Piyasa Isınıyor)"
-        vwap_desc = f"Fiyat ortalamadan %{v_diff:.1f} uzaklaştı. Stop seviyesi yükseltilse iyi olur."
+        vwap_txt = "🟠 VWAP'TAN GERİLDİ"
+        vwap_desc = f"Fiyat VWAP'tan %{v_diff:.1f} uzakta. Trend ivmesinin doğal sonucu — pozisyon varsa izleyen stop yükseltme noktası olarak izlenir."
     else:
-        vwap_txt = "🔴 PARABOLİK (Aşırı Kopuş)"
-        vwap_desc = f"Fiyat %{v_diff:.1f} saptı. Bu sürdürülemez, kâr almak düşünülebilir."
+        vwap_txt = "🔴 VWAP'TAN AŞIRI UZAK"
+        vwap_desc = f"Fiyat VWAP'tan %{v_diff:.1f} sapmış. Bu sadece momentum ölçüsüdür, tek başına dönüş sinyali değil. Yorgunluk teyidi için OBV/Hacim çelişkisi aranır."
 
     # ── RS STREAK & MOMENTUM ─────────────────────────────────────
     rs_streak   = 0
@@ -14290,8 +14294,8 @@ with col_btn:
             my_bar.progress(25, text="♠️ Royal Flush Nadir Fırsat (BOS/MSS + AI + RS + VWAP) Taranıyor...%25")
             st.session_state.nadir_firsat_scan_data = scan_nadir_firsat_batch(scan_list)
 
-            # 4. ALTIN FIRSATLAR VE PLATİN FIRSAT - %30
-            my_bar.progress(30, text="💎 Altın Fırsatlar ve Platin Fırsat Taranıyor...%30")
+            # 4. ELİTLER (Altın Fırsat + Platin Fırsat) - %30
+            my_bar.progress(30, text="💎 ELİTLER Taranıyor (Platin + Altın Fırsat)...%30")
             df_golden, df_nadir = get_golden_trio_batch_scan(scan_list)
             if not df_golden.empty:
                 st.session_state.golden_results = df_golden.sort_values(by="M.Cap", ascending=False).reset_index(drop=True)
@@ -14916,12 +14920,13 @@ if st.session_state.generate_prompt:
         v_val = vwap_info['val']
         v_diff = vwap_info['diff']
         
-        # VWAP Yorumu (Trend Dostu Mantık)
-        if v_diff < -2.0: vwap_ai_txt = "DİP FIRSATI (Aşırı İskonto)"
-        elif v_diff < 0.0: vwap_ai_txt = "UCUZ (Toplama Bölgesi)"
-        elif v_diff < 8.0: vwap_ai_txt = "RALLİ MODU (Güçlü Trend - Güvenli)"
-        elif v_diff < 15.0: vwap_ai_txt = "ISINIYOR (Dikkatli Takip Gerekir)"
-        else: vwap_ai_txt = "PARABOLİK (Aşırı Kopuş - Riskli)"
+        # VWAP Yorumu — bağlamsal etiket (sinyal değil, seviye konumu)
+        # AI POC/VWAP Bağlam Rehberi'ne göre bu etiketleri sadece konum bilgisi olarak kullanır.
+        if v_diff < -2.0: vwap_ai_txt = "VWAP ALTINDA (İskonto Bölgesi)"
+        elif v_diff < 0.0: vwap_ai_txt = "VWAP TEST (Yakın)"
+        elif v_diff < 8.0: vwap_ai_txt = "VWAP ÜSTÜNDE (Trend Aktif)"
+        elif v_diff < 15.0: vwap_ai_txt = "VWAP'TAN GERİLDİ"
+        else: vwap_ai_txt = "VWAP'TAN AŞIRI UZAK (Momentum Ölçüsü)"
 
         # RS Verisi
         rs_info = pa_data.get('rs', {'alpha': 0})
@@ -15484,6 +15489,7 @@ KURAL: Belirgin bir çelişki varsa analizini o çelişkinin etrafında kur. Çe
 
     prompt = f"""*** SİSTEM ROLLERİ VE BUGÜNKÜ KİMLİĞİN ***
 Sen 25 yılını finansın risk masasında geçirmiş, "Smart Money Radar" projesinin yaşayan ruhusun. Price Action, ICT (Akıllı Para), VWAP ve momentum yatırımcılığı konularında derin deneyim sahibisin — ama bu deneyimi o günün verisine göre farklı bir mercekten kullanırsın.
+Unutma, karşındaki kitle ortalama üzeri zekaya sahip ve hafızası güçlü bir topluluk. Bugün söylediğin bir şeyi yarın veri değişmeden inkar edersen güven kaybederiz. Bu yüzden 'kesinlik' satma, 'olasılık ve risk yönetimi' sat. Analizlerin bir 'kumarbazın heyecanı' değil, bir 'satranç ustasının soğukkanlılığı' tınısında olsun.
 
 Bugün sana verilen veri ve sinyaller incelendiğinde, analizini şu kimlikle yapman gerekiyor:
 {persona_kimlik}
@@ -15513,7 +15519,7 @@ HALKÇI ANALİST KİMLİĞİ: Analizlerini 'okumuşun halinden anlamayan' bir pr
 
 2. YASAKLI SIFAT VE ZARF KULLANIMI:
    — Yoğunluk zarfları YASAKTIR: "çok, oldukça, son derece, aşırı derecede, fazlasıyla, inanılmaz derecede" — bunları sıfatın önüne KOYMA.
-   — Drama sıfatları YASAKTIR: "sert, fena, ciddi, dramatik, şiddetli, ağır, derin, yıkıcı, kritik" — bunları veriye dayandırmadan kullanma.
+   — Drama sıfatları YASAKTIR: "sert, fena, ciddi, dramatik, şiddetli, ağır, derin, yıkıcı, kritik" — bunları kullanma.
    — Tarihi/eşsizlik iddiaları YASAKTIR: "tarihi, rekor, benzeri görülmemiş, nadir, olağanüstü, eşi benzeri yok"
    — KURAL: Sıfat kullanmak zorundaysan, veriyle karşılaştır. "Sert düşüş" değil → "önceki 5 güne göre daha belirgin bir düşüş". "Çok ciddi" değil → "geçmişte bu seviyelerde büyük hareketler görüldü".
 
@@ -15568,6 +15574,48 @@ Aksi tüm durumlarda: Scan kutusunda 🚨 Z-Score uyarısı görsen bile bunu an
 PRE-LAUNCH / FİTİL ÇEKİLİYOR durumu: Eğer KALKIŞ RADARI "FİTİL ÇEKİLİYOR" veya "⚡ LONG İÇİN HAZIR" statüsündeyse, bu analizin birincil hikayesi olmalıdır. Z-Score ne olursa olsun, birikim süreci tamamlanmış ve tetik bekleniyor demektir — bu bulguyu analizin en başına koy, Z-Score yorumunu ise ancak risk yönetimi notunda kısaca kullan.
 
 ALTIN FIRSAT (Golden Trio) + Yüksek Z-Score bir arada: Bu durum "tehlike" değil "güçlü momentum + uzama" kombinasyonudur. Analizin tonu olumlu kalmalı; Z-Score'u "stop seviyesini yukarı taşı" notu olarak kullan, "dikkat et, çöküş gelebilir" panikâr diline çevirme.
+
+*** POC / VWAP BAĞLAM REHBERİ (ZORUNLU OKUMA — Z-SCORE İLE AYNI MANTIK) ***
+POC ve VWAP "fair value" (adil değer) DEĞİLDİR. Geçmiş hacim merkezi ve kurumsal execution ortalamasıdır. Tek başına alım/satım sinyali olarak ASLA kullanılmaz.
+
+POC tek başına ne anlam taşır?
+- POC = "Son 20 günde en çok hacim gören fiyat" — geçmiş arz/talep dengesinin tepe noktası
+- Fiyatın POC üstünde olması = piyasa yeni denge arıyor (bullish auction, NORMAL bir durumdur)
+- Fiyatın POC altında olması = eski denge çöküyor (bearish auction)
+- POC'tan uzaklık MOMENTUM ölçer, "overvaluation" (aşırı pahalılık) DEĞİLDİR
+
+VWAP tek başına ne anlam taşır?
+- VWAP = Kurumsal execution benchmark (algo trading referansı)
+- Trendde fiyatın VWAP üstünde kalması BEKLENEN durumdur, "pahalı" değildir
+- VWAP'tan sapma = trend ivmesi göstergesi, "düzeltme ihtiyacı" değildir
+
+YANLIŞ kullanım örnekleri (BU TARZ CÜMLELER KESİNLİKLE YASAK):
+× "Fiyat POC'un %5 üstünde, pahalı, düzeltme gelebilir"
+× "VWAP'tan koptu, mean reversion bekleniyor"
+× "Kurumsal maliyet merkezinden %X uzaklaşması düzeltme ihtiyacı fısıldıyor"
+× "Pahalı bölgeye girdi, geri gelme zorunluluğu var"
+
+DOĞRU kullanım örnekleri:
+✓ "Fiyat POC üzerinde — POC seviyesi olası geri çekilmede destek olabilir"
+✓ "VWAP üstünde momentum sağlam — VWAP altına düşmedikçe trend yapısı bozulmaz"
+✓ "VAH üstünde kapanış var, kurumsal alıcılar yeni denge arıyor"
+✓ "Fiyat VWAP'tan %X sapmış — bu trend ivmesinin doğal sonucu, çelişki değil"
+
+POC/VWAP uzaklığını "düzeltme tezini" ANCAK şu durumlarda kur (yani çelişki varsa):
+  a) OBV düşüyor + RSI uyumsuzluk + POC üstünde → "yorgunluk emaresi" (kısa not, son paragraf)
+  b) Yatay piyasa (range) içinde POC'tan +2 std sapma → mean reversion ihtimali konuşulabilir
+  c) Stopping/Climax Volume + POC üstünde → kurumsal kar satışı sinyali olabilir
+  d) Trend zaten çökmüş + fiyat POC'a dönüyor → eski denge testi
+
+Aksi tüm durumlarda POC/VWAP'ı sadece SEVİYE olarak kullan, yön sinyali olarak değil.
+"%5 uzak", "%10 uzak" gibi yüzdesel uzaklık TEK BAŞINA analiz argümanı OLAMAZ.
+Bunlar ancak diğer çelişkilerle (OBV/RSI/Hacim divergence) BİRLİKTE değerlendirilirse anlamlıdır.
+
+Trade plan oluştururken POC/VWAP'ı ŞÖYLE kullan:
+- Giriş bölgesi: POC veya VWAP geri çekilmesinde re-test (level olarak)
+- Stop seviyesi: VAL (Value Area Low) altı
+- Hedef: VAH (Value Area High) veya bir önceki POC
+Yön kararı için POC/VWAP DEĞİL → akıllı para hareketi (OBV, delta, kurumsal hacim) kullanılır.
 
 *** YANILTICI VERİ TUZAKLARI — BUNLARI YANLIŞ OKUMA ***
 Aşağıdaki veriler trendin yan ürünüdür, trendin kendisi değildir. Hisse yükseliyorsa bu verileri tehlike olarak çerçeveleme:
@@ -15718,6 +15766,9 @@ Hacim artarken (RVOL > 1.5x) fiyatın dar bir bantta kalması 'Sessiz Birikim' v
 (NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise bu durumu teşhis et ve hatırlat. 'RALLİ MODU' ise trendi sürmeyi önerebilirsin.)
 
 *** SIFIRINCI GÖREV (ZORUNLU — EN BAŞA YAZ, SONRA DİĞERLERİNE GEÇ) ***
+"KURAL: Kancayı (Hook) bir tahmine değil, bir çelişkiyi teşhis etmeye dayandır. Zeki takipçi tahmine değil, analitik tespite güvenir.
+MESELA YASAK: 'X hissesi buradan dönebilir' (Bu ucuzdur).
+MESELA OLMASI GEREKEN: 'Fiyat %3 düşerken kurumsal alış hacmi neden zirve yapıyor? Birileri sessizce mal mı topluyor?' (Bu bir mantık bilmecesidir)."
 Algoritmamızın senaryo tespitinden üretilen temel başlık: {hook_baslik}
 Bu başlığı esas al. Analizindeki EN KRİTİK veya EN ŞOK EDİCİ TEK BULGUYA dayanan özelleştirilmiş bir hook başlığı üret.
 Format: [EMOJİ] #{clean_ticker} {fiyat_str} ({degisim_str}) | [SENARYO]: [GERİLİM CÜMLESİ — max 8 kelime] 👇📸
@@ -15726,6 +15777,9 @@ Kural: "ANCAK", "ama", "oysa", "peki" veya "?" kelimelerinden en az biri cümled
   🐳 #THYAO 327.50 (-1.2%) | TOPLAMA BÖLGESİ: OBV yükseliyor, fiyat neden düşüyor? 👇📸
   🔥 #SISE 48.20 (+3.1%) | AŞIRI ISINMA: Z-Score +2.7 — ama kurumsal alım devam ediyor? 👇📸
   🎯 #EREGL 140.00 (+0.5%) | KONSOLİDASYON: 3 aydır aynı bant — kırılım bu sefer gerçek mi? 👇📸
+  🐳 #THYAO 327.50 | HERKES ALIYOR: Fiyat yükseliyor ama para akışı neden zayıf? 👇📸
+  🔥 #SISE 48.20 | ANALİZ: Kurumlar mal mı boşaltıyor yoksa silkeleme mi yapılıyor? 👇📸
+  🎯 #EREGL 140.00 | KRİTİK SEVİYE: Robotlar burada neyi bekliyor olabilir? 👇📸
 Bu başlığı "📌 " ile işaretle. Sonra diğer görevlere geç.
 
 *** BEŞ GÖREVİN VAR ***
@@ -15897,6 +15951,7 @@ Sadece sunum sırası değişiyor. Beşinci Görev her zaman en sona yazılır.
 * Beşinci Görevin:
 Dördüncü görevinde yazdığın abone özetini al ve TAMAMEN YENİDEN YAZ. Aynı bilgiler, ama farklı bir insan gibi. Bu sefer hiçbir sabit başlık yok, hiçbir bölüm adı yok — sadece akıcı paragraflar.
 Referans ton — YASAK: "GENEL YORUM: Teknik tablo güçlü görünmektedir. UYARI: Z-Score yüksek seyrediyor." OLMASI GEREKEN: "97K direnç gibi duruyordu, ama bugün satıcılar isteksiz. OBV bunu zaten söylüyordu."
+ZORUNLU: 'Dostlar' kelimesini sadece ve sadece 'Rakamların bittiği, tecrübenin konuştuğu' o kritik risk uyarısında kullan.
 
 YASAK: "GENEL YORUM:", "Teknik Görünüm:", "Smart Money İzi:", "SONUÇ:", "UYARI:" başlıklarını KULLANMA.
 YASAK: "fısıldıyor", "fısıldıyor olabilir", "kanıtlar nitelikte", "işaret ediyor olsa da" gibi kalıplaşmış köprü cümlelerini KULLANMA.
@@ -15908,7 +15963,7 @@ ZORUNLU: En önemli tek bulguyla başla — başlık değil, direkt cümle. Okuy
 ZORUNLU: Verideki en baskın hikayeyi bul ve analizini onun üzerine kur. Eğer hisse ralli yapıyorsa rallinin hikayesini anlat — Z-Score yüksek ya da VWAP sapması varsa bunları "şunu da gözden kaçırma" olarak doğal akışta geç, analizin merkezine koyma. Eğer gerçek bir çelişki varsa (örn: hacim patlamış ama fiyat hareket etmiyorsa) o zaman onu merkeze al. Hikaye ne ise onu anlat — yapay gerilim üretme.
 ZORUNLU: Kritik fiyat seviyelerini doğal konuşma akışı içinde ver — ayrı madde olarak değil.
 ZORUNLU: Son cümle bir uyarı veya soru olsun, büyük harf olmadan.
-ZORUNLU: En sona "Yatırım tavsiyesi değildir." yaz (küçük harf, noktalı) ve altına "#SmartMoneyRadar #{clean_ticker}" yaz.
+ZORUNLU: En sona "Yatırım tavsiyesi değildir." yaz (küçük harf, noktalı) ve altına "#SmartMoneyRadar #BIST100 #{clean_ticker}" yaz.
 
 Uzunluk: Dördüncü görevden daha kısa. 4-5 paragraf yeterli.
 """
@@ -16607,6 +16662,11 @@ with col_left:
                     st.rerun()
         _has_elite = (st.session_state.platin_results is not None and not st.session_state.platin_results.empty) or \
                      (st.session_state.golden_results is not None and not st.session_state.golden_results.empty)
+        # Tarama çalıştı ama 0 sonuç döndü mü? (boş DataFrame, None değil)
+        _scan_ran_empty = (
+            (isinstance(st.session_state.platin_results, pd.DataFrame) and st.session_state.platin_results.empty) and
+            (isinstance(st.session_state.golden_results, pd.DataFrame) and st.session_state.golden_results.empty)
+        )
         if _has_elite:
             _platin = st.session_state.platin_results
             _gold   = st.session_state.golden_results
@@ -16650,8 +16710,23 @@ with col_left:
                         _gtip = "⚠️ Son gün kırmızı kapandı — dikkatli ol" if _gred else "Altın Fırsat: RS güçlü + discount + enerji"
                         if st.button(_glbl, key=f"elit_gold_{_gi}", use_container_width=True, help=_gtip):
                             on_scan_result_click(_gsym); st.rerun()
+        elif _scan_ran_empty:
+            # Master Scan çalıştı ama bu kategoride ELİT yok
+            st.markdown(
+                "<div style='border:1px dashed #1d4ed850;border-radius:7px;"
+                "padding:14px 10px;text-align:center;color:#94a3b8;font-size:0.78rem;line-height:1.4;'>"
+                "💤 <b>Bu kategoride ELİT bulunamadı</b><br>"
+                "<span style='font-size:0.7rem;opacity:0.85;'>Master Scan tamamlandı ancak Platin/Altın kriterlerini geçen hisse yok.</span>"
+                "</div>", unsafe_allow_html=True
+            )
         else:
-            pass
+            # Henüz hiç scan yapılmamış
+            st.markdown(
+                "<div style='border:1px dashed #1d4ed850;border-radius:7px;"
+                "padding:14px 10px;text-align:center;color:#94a3b8;font-size:0.78rem;'>"
+                "Master Scan çalıştırın veya yukarıdaki butona basın</div>",
+                unsafe_allow_html=True
+            )
 
     st.markdown("<hr style='margin:12px 0;border-color:rgba(150,150,150,0.2);'>", unsafe_allow_html=True)
 
