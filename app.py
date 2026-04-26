@@ -9149,6 +9149,40 @@ def render_smart_volume_panel(ticker):
     rvol        = sv.get("rvol", 1.0)
     is_index    = ticker.startswith(("XU", "XB", "XT", "XY", "^"))
 
+    # ── XU100 + HAFTA SONU FİX ────────────────────────────────────────────────
+    # XU100 için Yahoo bazen Cumartesi/Pazar'a 0-hacimli bar koyuyor → rvol=0
+    # ve "Endeks için veri sağlanamadı" yazıyor. Hafta sonu açılmışsa son geçerli
+    # işlem gününün (Cuma) verisini delta + rvol olarak göster.
+    _is_xu100   = ticker == "XU100.IS" or ticker == "XU100" or ticker.upper().startswith("XU100")
+    _is_weekend = datetime.now(_TZ_ISTANBUL).weekday() >= 5
+    if _is_xu100 and _is_weekend:
+        try:
+            _df_we = get_safe_historical_data(ticker, period="3mo")
+            if _df_we is not None and len(_df_we) >= 22:
+                # Son volume>0 olan bar'ı bul (yfinance Cumartesi'ye 0 koyabilir)
+                _last_valid_back = 0
+                for _b in range(1, min(10, len(_df_we))):
+                    if float(_df_we['Volume'].iloc[-_b]) > 0:
+                        _last_valid_back = _b
+                        break
+                if _last_valid_back > 0:
+                    _df_we_d = calculate_volume_delta(_df_we)
+                    _last_v   = float(_df_we_d['Volume'].iloc[-_last_valid_back])
+                    _last_dv  = float(_df_we_d['Volume_Delta'].iloc[-_last_valid_back])
+                    if _last_v > 0:
+                        delta_val   = _last_dv
+                        delta_yuzde = abs((_last_dv / _last_v) * 100)
+                    # 20G hacim ortalaması — yalnızca volume>0 olanlardan
+                    _vol_hist = _df_we['Volume'].iloc[max(0, len(_df_we) - _last_valid_back - 20):len(_df_we) - _last_valid_back]
+                    _vol_valid = _vol_hist[_vol_hist > 0]
+                    if len(_vol_valid) > 0:
+                        _avg_v = float(_vol_valid.mean())
+                        if _avg_v > 0:
+                            rvol = _last_v / _avg_v
+        except Exception:
+            pass
+    # ──────────────────────────────────────────────────────────────────────────
+
     # Mevcut fiyat + display ticker — ICT paneli ile aynı kaynak (fetch_stock_info)
     display_ticker = get_display_name(ticker)
     try:
@@ -12470,47 +12504,107 @@ def render_roadmap_8_panel(ticker):
     )
 
     # ──────────────────────────────────────────────────────────────────
-    # PHASE D — CARD B: MULTI-TIMEFRAME ALIGNMENT TABLOSU
+    # PHASE D — CARD B: MULTI-TIMEFRAME ALIGNMENT (Şık grid + skor bazlı renk)
     # ──────────────────────────────────────────────────────────────────
     _mtf = calculate_multi_timeframe_alignment(ticker)
     if _mtf and _mtf.get('matrix'):
-        def _mtf_cell(sig):
-            if sig > 0:  return '<span style="color:#16a34a;font-weight:800;">↑</span>'
-            if sig < 0:  return '<span style="color:#dc2626;font-weight:800;">↓</span>'
-            return '<span style="color:#94a3b8;font-weight:700;">≈</span>'
+        # Skor bazlı renk paleti (composite_card ile aynı mantık)
+        _mtf_pct = _mtf["overall_pct"]
+        _mtf_dom = _mtf['dominant']
+        if _mtf_dom == "YUKARI":
+            if   _mtf_pct >= 66: _mtf_bg_rgb, _mtf_brd = "22,163,74",  "#16a34a"   # koyu yeşil
+            elif _mtf_pct >= 50: _mtf_bg_rgb, _mtf_brd = "132,204,22", "#65a30d"   # lime
+            else:                _mtf_bg_rgb, _mtf_brd = "234,179,8",  "#ca8a04"   # amber
+        elif _mtf_dom == "AŞAĞI":
+            if   _mtf_pct >= 66: _mtf_bg_rgb, _mtf_brd = "220,38,38",  "#dc2626"   # kırmızı
+            elif _mtf_pct >= 50: _mtf_bg_rgb, _mtf_brd = "249,115,22", "#ea580c"   # turuncu
+            else:                _mtf_bg_rgb, _mtf_brd = "234,179,8",  "#ca8a04"   # amber
+        else:  # KARARSIZ
+            _mtf_bg_rgb, _mtf_brd = "234,179,8", "#ca8a04"  # amber
 
-        _mtf_rows = ""
-        for indicator in ["trend", "momentum", "hacim"]:
-            _label = {"trend": "Trend", "momentum": "Momentum", "hacim": "Hacim"}[indicator]
-            _cells = ""
-            for tf_name in _mtf['timeframes']:
-                _cells += f'<td style="text-align:center;padding:3px 4px;">{_mtf_cell(_mtf["matrix"][tf_name].get(indicator, 0))}</td>'
-            _mtf_rows += f'<tr><td style="font-size:0.7rem;color:#64748b;font-weight:700;padding:3px 6px 3px 0;">{_label}</td>{_cells}</tr>'
+        # Yön çipi — yuvarlak, soft arkaplanlı, modern görünüm
+        def _mtf_chip(sig):
+            if sig > 0:
+                return ('<div style="display:inline-flex;align-items:center;justify-content:center;'
+                        'width:20px;height:20px;border-radius:50%;'
+                        'background:rgba(22,163,74,0.16);color:#16a34a;'
+                        'font-weight:800;font-size:0.82rem;line-height:1;">↑</div>')
+            if sig < 0:
+                return ('<div style="display:inline-flex;align-items:center;justify-content:center;'
+                        'width:20px;height:20px;border-radius:50%;'
+                        'background:rgba(220,38,38,0.16);color:#dc2626;'
+                        'font-weight:800;font-size:0.82rem;line-height:1;">↓</div>')
+            return ('<div style="display:inline-flex;align-items:center;justify-content:center;'
+                    'width:20px;height:20px;border-radius:50%;'
+                    'background:rgba(148,163,184,0.14);color:#94a3b8;'
+                    'font-weight:700;font-size:0.74rem;line-height:1;">≈</div>')
 
-        _mtf_header_cells = "".join(
-            f'<th style="font-size:0.65rem;color:#64748b;font-weight:700;padding:3px 4px;text-align:center;">{tf}</th>'
-            for tf in _mtf['timeframes']
-        )
-        _mtf_dom_color = "#16a34a" if _mtf['dominant'] == "YUKARI" else ("#dc2626" if _mtf['dominant'] == "AŞAĞI" else "#ca8a04")
+        # Grid: 5 sütun (label + 4 vade)
+        _tfs   = _mtf['timeframes']
+        _ncol  = len(_tfs)
+        _grid_cols = "1.15fr " + " ".join(["1fr"] * _ncol)
+        _items = []
+
+        # Üst sıra: boş köşe + timeframe başlıkları (subtle border-bottom)
+        _items.append('<div></div>')
+        for tf in _tfs:
+            _items.append(
+                f'<div style="font-size:0.6rem;font-weight:700;color:#64748b;'
+                f'text-align:center;padding:2px 0 5px 0;'
+                f'letter-spacing:0.05em;text-transform:uppercase;'
+                f'border-bottom:1px solid rgba(100,116,139,0.22);">{tf}</div>'
+            )
+
+        # 3 indicator satırı (Trend, Momentum, Hacim)
+        _ind_labels = {"trend": "Trend", "momentum": "Momentum", "hacim": "Hacim"}
+        for i, ind in enumerate(["trend", "momentum", "hacim"]):
+            _sep = "border-top:1px dashed rgba(100,116,139,0.12);" if i > 0 else ""
+            _items.append(
+                f'<div style="font-size:0.66rem;font-weight:700;color:#64748b;'
+                f'text-transform:uppercase;letter-spacing:0.03em;'
+                f'padding:6px 6px 6px 0;{_sep}">{_ind_labels[ind]}</div>'
+            )
+            for tf in _tfs:
+                _items.append(
+                    f'<div style="text-align:center;padding:5px 0;{_sep}">'
+                    f'{_mtf_chip(_mtf["matrix"][tf].get(ind, 0))}</div>'
+                )
+
+        _grid_html_body = "".join(_items)
+
         mtf_card_html = (
-            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #64748b;border-radius:5px;padding:8px 10px;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
-            f'<span style="font-size:0.75rem;font-weight:800;color:#64748b;">📐 Vade Uyumu (MTF)</span>'
-            f'<span style="font-size:0.7rem;font-weight:800;color:{_mtf_dom_color};">{_mtf["dominant"]} %{_mtf["overall_pct"]}</span>'
+            f'<div style="background:rgba({_mtf_bg_rgb},0.08);border-left:3px solid {_mtf_brd};'
+            f'border-radius:5px;padding:6px 9px;">'
+            # Header (Composite ile aynı tarz: uppercase başlık + sağda skor)
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid rgba(100,116,139,0.18);">'
+            f'<span style="font-size:0.7rem;font-weight:800;color:#64748b;letter-spacing:0.04em;'
+            f'text-transform:uppercase;">📐 Vade Uyumu (MTF)</span>'
+            f'<span style="font-size:0.7rem;font-weight:800;color:{_mtf_brd};">'
+            f'{_mtf_dom} %{_mtf_pct}</span>'
             f'</div>'
-            f'<table style="width:100%;border-collapse:collapse;">'
-            f'<thead><tr><th></th>{_mtf_header_cells}</tr></thead>'
-            f'<tbody>{_mtf_rows}</tbody>'
-            f'</table>'
-            f'<div style="font-size:0.62rem;color:#94a3b8;margin-top:4px;font-style:italic;">'
-            f'{_mtf["bull_cnt"]} hücre yukarı · {_mtf["bear_cnt"]} hücre aşağı · {_mtf["total"] - _mtf["bull_cnt"] - _mtf["bear_cnt"]} nötr'
+            # Grid body
+            f'<div style="display:grid;grid-template-columns:{_grid_cols};gap:0 6px;align-items:center;">'
+            f'{_grid_html_body}'
+            f'</div>'
+            # Footer mini özet
+            f'<div style="font-size:0.6rem;color:#94a3b8;margin-top:5px;'
+            f'padding-top:4px;border-top:1px dashed rgba(100,116,139,0.18);'
+            f'display:flex;gap:8px;justify-content:center;">'
+            f'<span style="color:#16a34a;font-weight:700;">{_mtf["bull_cnt"]} ↑</span>'
+            f'<span style="opacity:0.4;">·</span>'
+            f'<span style="color:#dc2626;font-weight:700;">{_mtf["bear_cnt"]} ↓</span>'
+            f'<span style="opacity:0.4;">·</span>'
+            f'<span style="color:#94a3b8;font-weight:700;">{_mtf["total"] - _mtf["bull_cnt"] - _mtf["bear_cnt"]} ≈</span>'
             f'</div>'
             f'</div>'
         )
     else:
         mtf_card_html = (
-            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #64748b;border-radius:5px;padding:8px 10px;">'
-            f'<div style="font-size:0.75rem;font-weight:800;color:#64748b;margin-bottom:4px;">📐 Vade Uyumu (MTF)</div>'
+            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #94a3b8;'
+            f'border-radius:5px;padding:6px 9px;">'
+            f'<div style="font-size:0.7rem;font-weight:800;color:#64748b;letter-spacing:0.04em;'
+            f'text-transform:uppercase;margin-bottom:4px;">📐 Vade Uyumu (MTF)</div>'
             f'<div style="font-size:0.7rem;color:#94a3b8;">Çoklu vade verisi alınamadı</div>'
             f'</div>'
         )
@@ -14363,27 +14457,110 @@ if st.session_state.generate_prompt:
     levels_data = get_advanced_levels_data(t) or {}
     synth_data = calculate_synthetic_sentiment(t)
 
-    # --- YENİ: 8 MADDELİK TEKNİK HARİTASINI AI İÇİN TEMİZLE (HTML'den Arındır) ---
+    # --- TEKNİK YOL HARİTASI VERİSİNİ AI İÇİN HAZIRLA (Composite + MTF + Trade Plan + Alt kartlar) ---
     roadmap_data_ai = calculate_8_point_roadmap(t)
     roadmap_ai_txt = "Veri Yok"
-    
+
     if roadmap_data_ai:
         import re
         def clean_html(raw_html):
-            # <b>, <br> gibi tüm HTML etiketlerini silip boşluk bırakır
             cleanr = re.compile('<.*?>')
             return re.sub(cleanr, ' ', str(raw_html)).strip()
-            
-        # DİKKAT: İsimler yeni hibrit yapıya göre senkronize edildi!
+
+        # ───── MASTER SENTEZ: Composite Skor + 5 alt faktör ─────
+        _comp_score    = roadmap_data_ai.get('composite_score', 50)
+        _comp_decision = roadmap_data_ai.get('comp_decision', 'BEKLEMEDE')
+        _factor_scores = roadmap_data_ai.get('factor_scores', {})
+        _f_trend = _factor_scores.get('trend', 50)
+        _f_mom   = _factor_scores.get('momentum', 50)
+        _f_vol   = _factor_scores.get('volume', 50)
+        _f_yapi  = _factor_scores.get('yapi', 50)
+        _f_sen   = _factor_scores.get('senaryo', 50)
+
+        # ───── MULTI-TIMEFRAME ALIGNMENT MATRİSİ ─────
+        _mtf_data = calculate_multi_timeframe_alignment(t)
+        if _mtf_data and _mtf_data.get('matrix'):
+            def _mtf_arr(s): return "↑" if s > 0 else ("↓" if s < 0 else "≈")
+            _tfs = _mtf_data['timeframes']
+            # Tablo başlığı
+            _hdr_line = "                  " + "  ".join(f"{tf:<10}" for tf in _tfs)
+            _rows = []
+            for ind in ["trend", "momentum", "hacim"]:
+                _label = {"trend": "Trend         ", "momentum": "Momentum (RSI)", "hacim": "Hacim         "}[ind]
+                _cells = "  ".join(f"{_mtf_arr(_mtf_data['matrix'][tf].get(ind, 0)):<10}" for tf in _tfs)
+                _rows.append(f"{_label}    {_cells}")
+            _mtf_table = _hdr_line + "\n        " + "\n        ".join(_rows)
+            _mtf_neut = _mtf_data['total'] - _mtf_data['bull_cnt'] - _mtf_data['bear_cnt']
+            _mtf_summary = (f"Dominant Yön: {_mtf_data['dominant']} (uyum oranı %{_mtf_data['overall_pct']}) | "
+                            f"{_mtf_data['bull_cnt']} hücre yukarı, {_mtf_data['bear_cnt']} hücre aşağı, {_mtf_neut} nötr")
+        else:
+            _mtf_table = "Veri Yok"
+            _mtf_summary = "Çoklu vade verisi alınamadı (4H/Haftalık veriler gelmedi olabilir)"
+
+        # ───── TRADE PLAN (Long Setup) ─────
+        _tp_curr = roadmap_data_ai.get('tp_curr_price', 0)
+        _tp_stop = roadmap_data_ai.get('tp_stop_5g', 0)
+        _tp_tp1  = roadmap_data_ai.get('tp_target_atr', 0)
+        _tp_tp2  = roadmap_data_ai.get('tp_target_20g', 0)
+
+        def _fmt_p_ai(v):
+            try:
+                v = float(v)
+                return f"{int(v):,}" if v >= 1000 else f"{v:.2f}"
+            except: return "—"
+
+        if _comp_decision in ("AL", "DİKKAT/İZLE") and _tp_curr > 0 and _tp_stop > 0 and _tp_tp1 > _tp_curr:
+            _risk_pct = (_tp_curr - _tp_stop) / _tp_curr * 100
+            _rew1_pct = (_tp_tp1 - _tp_curr) / _tp_curr * 100
+            _rew2_pct = (_tp_tp2 - _tp_curr) / _tp_curr * 100
+            _rr1_ai   = (_tp_tp1 - _tp_curr) / max(_tp_curr - _tp_stop, 0.001)
+            _rr2_ai   = (_tp_tp2 - _tp_curr) / max(_tp_curr - _tp_stop, 0.001)
+            _rr_max   = max(_rr1_ai, _rr2_ai)
+            _rr_qual  = ("Mükemmel" if _rr_max >= 2.5
+                         else ("Sağlam" if _rr_max >= 1.5
+                               else ("Sınırda" if _rr_max >= 1.0 else "Zayıf")))
+            _trade_plan_block = (
+                f"- Entry: {_fmt_p_ai(_tp_curr)} (mevcut fiyat)\n"
+                f"        - Stop (5G dip): {_fmt_p_ai(_tp_stop)} → -%{_risk_pct:.1f} risk\n"
+                f"        - TP1 (ATR×2): {_fmt_p_ai(_tp_tp1)} → +%{_rew1_pct:.1f} ödül = {_rr1_ai:.1f}R\n"
+                f"        - TP2 (20G zirve): {_fmt_p_ai(_tp_tp2)} → +%{_rew2_pct:.1f} ödül = {_rr2_ai:.1f}R\n"
+                f"        - R/R Kalitesi: {_rr_qual} (en iyi {_rr_max:.1f}R)"
+            )
+        else:
+            _trade_plan_block = (
+                f"- Long kurulum uygun değil (Composite skor: {_comp_score}/100, durum: {_comp_decision})\n"
+                f"        - Mevcut fiyat: {_fmt_p_ai(_tp_curr)}\n"
+                f"        - Olası destek (5G dip): {_fmt_p_ai(_tp_stop)}\n"
+                f"        - Olası direnç (20G zirve): {_fmt_p_ai(_tp_tp2)}\n"
+                f"        - Bu seviyelerden teyitli sinyal beklenmeli"
+            )
+
+        # ───── PROMPT METNİ — 3 yeni master blok + M1-M5+M8 ham veriler ─────
         roadmap_ai_txt = f"""
+        *** COMPOSITE TEKNİK SKOR (5 alt faktörün ağırlıklı sentezi) ***
+        Master Skor: {_comp_score}/100 → {_comp_decision}
+        Alt Faktörler (her biri 0-100):
+          • Trend (SMA50/SMA200/EMA hizalaması, ağırlık 30%): {_f_trend}/100
+          • Momentum (RSI + Yön Beklentisi, ağırlık 25%): {_f_mom}/100
+          • Hacim (VSA + akış + hacim oranı, ağırlık 20%): {_f_vol}/100
+          • Yapı (formasyon + absorption + mum yapısı, ağırlık 15%): {_f_yapi}/100
+          • Senaryo (makro+mikro+overheat sentezi, ağırlık 10%): {_f_sen}/100
+
+        *** VADE UYUMU MATRİSİ (Multi-Timeframe Alignment) ***
+        {_mtf_summary}
+
+        {_mtf_table}
+
+        *** TRADE PLAN ÖNERİSİ (Long Setup) ***
+        {_trade_plan_block}
+
+        *** TEKNİK YOL HARİTASI — ALT KARTLAR (master skorun ham bileşenleri) ***
         1) Fiyat Davranışı ve Yapı: {clean_html(roadmap_data_ai['M1'])}
         2) Formasyon Tespiti: {clean_html(roadmap_data_ai['M2'])}
         3) Efor vs Sonuç (VSA): {clean_html(roadmap_data_ai['M3'])}
         4) Trend Skoru ve Enerji: {clean_html(roadmap_data_ai['M4'])}
         5) Hacim ve Akıllı Para İzi: {clean_html(roadmap_data_ai['M5'])}
-        6) Yön Beklentisi ve Momentum: {clean_html(roadmap_data_ai['M6'])}
-        7) Yol Haritası (Senaryolar): {clean_html(roadmap_data_ai['M7'])}
-        8) Okuma Özeti: {clean_html(roadmap_data_ai['M8'])}
+        6) Okuma Özeti: {clean_html(roadmap_data_ai['M8'])}
         """
 
     # Prompt içinde eksik olan slope hesaplaması
@@ -15619,25 +15796,22 @@ Yukarıdaki saf matematiksel verileri (Özellikle "Algoritmik 8 Maddelik Laborat
 Önemli: Veri yoksa veya grafik o maddeyi desteklemiyorsa o maddeyi atlayabilirsin — boş doldurmak zorunda değilsin. Veri varsa yaz, yoksa geç.
 Formatın şu şekilde olmalıdır (Alt başlıkları aynen kullan):
 TEKNİK KART:
-1🔹) Fiyat Davranışı ve Yapı
-- Mum Yapısı: (Gövde ve fitillere göre görsel okuma + algoritmik veri)
-- Formasyon Durumu: (İkili, üçlü mum yapıları, PA sinyali)
-2🔹) Formasyon Tespiti
-- Mevcut Formasyon: (Grafikte gördüğün OBO, TOBO, Bayrak vs. formasyon — formasyon yoksa bu maddeyi atla)
-- Ana Yapı: (İtki mi Düzeltme mi?)
+1🔹) Genel Sentez (Composite Skor + Vade Uyumu)
+- Master Skor: (Algoritmik Composite Skoru ve karar etiketini yaz; en güçlü ve en zayıf alt faktörü vurgula — örn. "Trend 100 mükemmel ama Hacim 50 zayıf")
+- Vade Uyumu (MTF): (4H/Günlük/Haftalık/Aylık matrisinden dominant yön ve uyum oranı; vadelerin uyumlu mu yoksa çelişkili mi olduğu)
+2🔹) Fiyat Davranışı ve Formasyon
+- Mum Yapısı: (Gövde ve fitillere göre görsel okuma + algoritmik PA sinyali)
+- Formasyon Durumu: (Grafikte gördüğün OBO, TOBO, Bayrak vs. formasyon ve ikili/üçlü mum yapıları — formasyon yoksa bu satırı atla)
 3🔹) Hacim, Efor ve Akıllı Para İzi
 - Hacim/Fiyat Uyumu: (Hacmin fiyat hareketini destekleyip desteklemediği, 'Churning' olup olmadığı)
-- Kurumsal Akış: (Grafikteki fitillere ve algoritmaya göre emilim veya agresif çıkış var mı)
+- Kurumsal Akış: (Grafikteki fitillere ve algoritmaya göre emilim veya agresif çıkış)
 4🔹) Trend Skoru ve Enerji
-- Enerji Puanı: (Algoritmadan gelen Skoru yaz ve grafikteki sıkışmayı yorumla)
-5🔹) Yön Beklentisi ve Momentum
-- Boğa / Ayı İhtimali: (Hesaplanmış yön beklentisini yaz)
-- Momentum Durumu: (Kısa vadedeki baskı)
-6) Yol Haritası (Senaryolar)
-- Boğa Olması İçin: (Kırılması gereken direnç ve ulaşılacak ilk hedef)
-- Ayı Olması İçin: (Kırılması gereken destek ve inilecek ilk hedef)
-7) Teknik Okuma Özeti
-(Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik bir özeti.)
+- Enerji Puanı: (Algoritmadan gelen Skoru yaz ve grafikteki sıkışmayı/momentumu yorumla)
+5🔹) Trade Plan ve Risk Yönetimi
+- Giriş ve Stop: (Algoritmik trade plan'daki Entry seviyesi ve 5G dip stop seviyesi — net rakamlarla)
+- Hedefler ve R/R: (TP1 ve TP2 seviyelerini, R/R kalitesini değerlendir; hedefler yakın ya da R/R 1.5 altındaysa "kar al noktası yakın" gibi yorumla)
+6) Teknik Okuma Özeti
+(Tüm analizin 3-4 cümlelik vurucu, stratejik ve psikolojik özeti — Composite Skor ve Vade Uyumunu mutlaka özetin çerçevesine koy.)
 
 * Dördüncü Görevin:
 Yukarıdaki ilk 3 görevini tamaladıktan sonra bu ilk 3 görevi buraya özetleyen ve abonelere yollanacak bir değerlendirme yapacaksın.
@@ -16269,16 +16443,15 @@ with col_left:
     except Exception as e:
         st.warning(f"Teknik tablo oluşturulamadı. Hata: {e}")
     # --------------------------------------------------
-    # --- SMART MONEY HACİM ANALİZİ ---
+    # 1--- SMART MONEY HACİM ANALİZİ ---
     st.markdown("<div style='margin-top: 0px;'></div>", unsafe_allow_html=True)
     render_smart_volume_panel(st.session_state.ticker)
 
-    # --- ICT SMART MONEY ANALİZİ ---
-    # (Not: Fonksiyon içinde zaten 2 sütuna bölme işlemi yapıldı, burada sadece çağırıyoruz)
-    render_ict_deep_panel(st.session_state.ticker)
-
-    # 3. 8 MADDELİK YOL HARİTASI PANELİ
+    # 2. TEKNİK YOL HARİTASI PANELİ
     render_roadmap_8_panel(st.session_state.ticker)
+
+    # 3.--- ICT SMART MONEY ANALİZİ ---
+    render_ict_deep_panel(st.session_state.ticker)
 
     # 4. Kritik Seviyeler
     render_levels_card(st.session_state.ticker)
