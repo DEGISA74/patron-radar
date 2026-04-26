@@ -11201,6 +11201,107 @@ def _mini_pattern_chart_b64(symbol, chart_data, dark_mode):
 
 # --- 8 MADDELİK HİBRİT (PA + QUANT) TEKNİK YOL HARİTASI ---
 @st.cache_data(ttl=600)
+def calculate_multi_timeframe_alignment(ticker):
+    """
+    Multi-timeframe trend uyumu: 4H, Günlük, Haftalık, Aylık vadelerde
+    Trend / Momentum (RSI) / Hacim yönlerini hesaplar.
+    Returns: dict with 'matrix' (3x4 yön matrisi) ve 'overall_pct' (toplam uyum %)
+    """
+    try:
+        import yfinance as yf
+
+        # Vade verileri çek
+        timeframes = {}
+        try:
+            _df_4h = _yf_download_with_retry(ticker, period="60d", interval="4h")
+            if _df_4h is not None and not _df_4h.empty and len(_df_4h) > 30:
+                if isinstance(_df_4h.columns, pd.MultiIndex):
+                    _df_4h.columns = _df_4h.columns.get_level_values(0)
+                timeframes['4H'] = _df_4h
+        except Exception:
+            pass
+
+        _df_d = get_safe_historical_data(ticker, period="1y")
+        if _df_d is not None and len(_df_d) > 50:
+            timeframes['Günlük'] = _df_d
+            # Günlük'ten haftalık ve aylık türet
+            try:
+                _df_w = _df_d.resample('W').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
+                if len(_df_w) > 20:
+                    timeframes['Haftalık'] = _df_w
+                _df_m = _df_d.resample('ME').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
+                if len(_df_m) > 8:
+                    timeframes['Aylık'] = _df_m
+            except Exception:
+                pass
+
+        if not timeframes:
+            return None
+
+        # Her vade için 3 sinyal hesapla
+        matrix = {}
+        for tf_name, df_tf in timeframes.items():
+            try:
+                c = df_tf['Close']; v = df_tf['Volume']
+
+                # 1. Trend: SMA20 ve SMA50'nin yönü + fiyatın bunlara göre konumu
+                sma20 = c.rolling(min(20, len(c)//2)).mean()
+                sma50 = c.rolling(min(50, len(c)-1)).mean()
+                _trend_dir = 0
+                if c.iloc[-1] > sma20.iloc[-1]: _trend_dir += 1
+                if c.iloc[-1] > sma50.iloc[-1]: _trend_dir += 1
+                if sma20.iloc[-1] > sma20.iloc[-min(5, len(sma20)-1)]: _trend_dir += 1
+                trend_sig = 1 if _trend_dir >= 2 else (-1 if _trend_dir == 0 else 0)
+
+                # 2. Momentum (RSI 14)
+                _delta = c.diff()
+                _gain = (_delta.where(_delta > 0, 0)).rolling(14).mean()
+                _loss = (-_delta.where(_delta < 0, 0)).rolling(14).mean()
+                _rsi = (100 - (100 / (1 + _gain/_loss))).iloc[-1]
+                if pd.isna(_rsi): _rsi = 50
+                if _rsi >= 60:    mom_sig = 1
+                elif _rsi <= 40:  mom_sig = -1
+                else:             mom_sig = 0
+
+                # 3. Hacim: Son 5 mum hacmi vs son 20 mum ortalaması
+                _v5 = v.tail(5).mean()
+                _v20 = v.rolling(20).mean().iloc[-1]
+                if pd.isna(_v20) or _v20 == 0:
+                    vol_sig = 0
+                else:
+                    _ratio = _v5 / _v20
+                    if _ratio >= 1.2:   vol_sig = 1
+                    elif _ratio <= 0.7: vol_sig = -1
+                    else:               vol_sig = 0
+
+                matrix[tf_name] = {"trend": trend_sig, "momentum": mom_sig, "hacim": vol_sig}
+            except Exception:
+                matrix[tf_name] = {"trend": 0, "momentum": 0, "hacim": 0}
+
+        # Toplam uyum %: kaç hücre aynı yöne işaret ediyor (en baskın yön)
+        all_signals = [s for tf in matrix.values() for s in tf.values()]
+        if not all_signals:
+            return None
+        bull_cnt = sum(1 for s in all_signals if s == 1)
+        bear_cnt = sum(1 for s in all_signals if s == -1)
+        total = len(all_signals)
+        dominant = "YUKARI" if bull_cnt > bear_cnt else ("AŞAĞI" if bear_cnt > bull_cnt else "KARARSIZ")
+        dominant_count = max(bull_cnt, bear_cnt)
+        overall_pct = round(dominant_count / total * 100) if total > 0 else 0
+
+        return {
+            "matrix":         matrix,
+            "timeframes":     list(matrix.keys()),
+            "overall_pct":    overall_pct,
+            "dominant":       dominant,
+            "bull_cnt":       bull_cnt,
+            "bear_cnt":       bear_cnt,
+            "total":          total,
+        }
+    except Exception:
+        return None
+
+
 def calculate_8_point_roadmap(ticker):
     """Fiyat davranışı (PA), VSA, Hacim ve Trend algoritmalarını birleştiren sentez model."""
     try:
@@ -11449,10 +11550,79 @@ def calculate_8_point_roadmap(ticker):
               else "bear" if (not is_macro_bull and not is_oversold and not is_accumulation)
               else "warning")
 
+        # ── COMPOSITE TECHNICAL SCORE (5 alt faktör → tek skor 0-100) ──
+        # 5 faktör: Trend (uzun vade), Momentum (RSI+ivme), Hacim (akış+absorption), Yapı (formasyon+fitil), Senaryo (yön+sentez)
+        def _norm_status(s):
+            """status string'i 0-100'e çevir."""
+            return {"bull": 100, "warning": 50, "neutral": 50, "bear": 0}.get(s, 50)
+
+        # Faktör 1: TREND (uzun vade — SMA50/SMA200 + EMA hizalama)
+        _f_trend = 0
+        if cp > sma200: _f_trend += 35
+        if cp > sma50:  _f_trend += 30
+        if _ema_bull_now: _f_trend += 25
+        elif _ema_bear_now: _f_trend -= 15
+        _f_trend = max(0, min(100, _f_trend + 10))  # baseline +10
+
+        # Faktör 2: MOMENTUM (RSI + Yön Beklentisi'ndeki boğa ağırlığı)
+        _rsi_score = 50
+        if 45 <= rsi_val <= 65:   _rsi_score = 80   # ideal sağlıklı momentum
+        elif 65 < rsi_val <= 75:  _rsi_score = 65   # güçlü ama riskli
+        elif rsi_val > 75:        _rsi_score = 40   # aşırı alım
+        elif 35 <= rsi_val < 45:  _rsi_score = 55   # nötr alt
+        elif rsi_val < 35:        _rsi_score = 30   # zayıf
+        _f_momentum = round(0.5 * _rsi_score + 0.5 * boga_w)
+
+        # Faktör 3: HACİM (VSA + agresif akış + ratio)
+        _f_volume = 50
+        if "Sağlıklı İtki" in vsa: _f_volume += 25
+        elif "Churning" in vsa or "Anomali" in vsa: _f_volume -= 15
+        if "agresif kurumsal alım" in m5_agresif: _f_volume += 20
+        elif "algoritmik dağıtım" in m5_agresif: _f_volume -= 20
+        if vol_ratio >= 1.5: _f_volume += 10
+        elif vol_ratio < 0.7: _f_volume -= 5
+        _f_volume = max(0, min(100, _f_volume))
+
+        # Faktör 4: YAPI (Formasyon + Stopping Volume + alt fitil = absorption)
+        _f_yapi = 50
+        if not pat_df.empty: _f_yapi += 20
+        if alt_fitil > atr * 0.5 and "Yeşil" in m1_mum: _f_yapi += 20  # alttan toplama
+        if "Kırmızı" in m1_mum and govde > atr * 0.7: _f_yapi -= 15   # güçlü satıcı
+        _f_yapi = max(0, min(100, _f_yapi))
+
+        # Faktör 5: SENARYO (Card 8 sentezinden — makro+mikro+overheat)
+        _f_senaryo = _norm_status(s8)
+
+        # Composite (ağırlıklı ortalama)
+        _w = {"trend": 0.30, "momentum": 0.25, "volume": 0.20, "yapi": 0.15, "senaryo": 0.10}
+        composite_score = round(
+            _f_trend * _w["trend"] + _f_momentum * _w["momentum"] +
+            _f_volume * _w["volume"] + _f_yapi * _w["yapi"] +
+            _f_senaryo * _w["senaryo"]
+        )
+
+        # Karar etiketi
+        if composite_score >= 70:   _comp_decision, _comp_color = "AL", "#16a34a"
+        elif composite_score >= 55: _comp_decision, _comp_color = "DİKKAT/İZLE", "#ca8a04"
+        elif composite_score >= 40: _comp_decision, _comp_color = "BEKLEMEDE", "#d97706"
+        else:                       _comp_decision, _comp_color = "UZAK DUR", "#dc2626"
+
         return {
             "M1": m1, "M2": m2, "M3": m3, "M4": m4, "M5": m5, "M6": m6, "M7": m7, "M8": m8,
             "M2_chart_data": chart_dat,
             "S": [s1, s2, s3, s4, s5, s6, s7, s8],
+            "composite_score":    composite_score,
+            "comp_decision":      _comp_decision,
+            "comp_color":         _comp_color,
+            "factor_scores":      {"trend": _f_trend, "momentum": _f_momentum,
+                                   "volume": _f_volume, "yapi": _f_yapi, "senaryo": _f_senaryo},
+            # Trade plan için ham veriler (Phase E'de Card C'de kullanılacak)
+            "tp_curr_price":      cp,
+            "tp_stop_5g":         float(l.tail(5).min()),
+            "tp_stop_20g":        float(sup_20),
+            "tp_target_20g":      float(res_20),
+            "tp_target_atr":      float(cp + 2 * atr),
+            "tp_atr":             float(atr),
         }
     except Exception as e:
         return None
@@ -12190,32 +12360,53 @@ def render_roadmap_8_panel(ticker):
         s_rgb, s_hex = _STATUS_CFG.get(status, _STATUS_CFG["neutral"])
         box_cls = f"rm-box-{box_idx}"
         return f"""
-        <div class="{box_cls}" style="background:rgba({s_rgb},0.06);border-left:3px solid {s_hex};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;justify-content:flex-start;height:100%;position:relative;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;border-bottom:1px solid rgba({s_rgb},0.2);padding-bottom:4px;">
-                <div style="display:flex;align-items:center;gap:5px;font-size:0.8rem;font-weight:800;color:{s_hex};">
-                    <span style="width:7px;height:7px;border-radius:50%;background:{s_hex};flex-shrink:0;display:inline-block;box-shadow:0 0 4px {s_hex};"></span>
+        <div class="{box_cls}" style="background:rgba({s_rgb},0.06);border-left:3px solid {s_hex};padding:4px 6px;border-radius:4px;display:flex;flex-direction:column;justify-content:flex-start;height:100%;position:relative;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;border-bottom:1px solid rgba({s_rgb},0.2);padding-bottom:3px;">
+                <div style="display:flex;align-items:center;gap:4px;font-size:0.75rem;font-weight:800;color:{s_hex};line-height:1.1;">
+                    <span style="width:6px;height:6px;border-radius:50%;background:{s_hex};flex-shrink:0;display:inline-block;box-shadow:0 0 3px {s_hex};"></span>
                     {num}. {title}
                 </div>
-                <div style="font-size:0.6rem;font-weight:700;color:#64748b;background:rgba(100,116,139,0.1);padding:1px 4px;border-radius:3px;border:1px solid rgba(100,116,139,0.2);">⏱️ {tf_text}</div>
+                <div style="font-size:0.55rem;font-weight:700;color:#64748b;background:rgba(100,116,139,0.1);padding:1px 3px;border-radius:3px;border:1px solid rgba(100,116,139,0.2);">⏱️ {tf_text}</div>
             </div>
-            <div style="font-size:0.75rem;font-weight:500;line-height:1.35;flex:1;" class="dark-text-fix">{content}</div>
-            <div class="rm-edu-tip-{box_idx}" style="font-size:0.68rem;color:#64748b;font-style:italic;margin-top:5px;border-top:1px dashed rgba({s_rgb},0.25);padding-top:4px;opacity:0;max-height:0;overflow:hidden;transition:opacity 0.25s,max-height 0.25s;">{edu_text}</div>
+            <div style="font-size:0.72rem;font-weight:500;line-height:1.3;flex:1;" class="dark-text-fix">{content}</div>
+            <div class="rm-edu-tip-{box_idx}" style="font-size:0.65rem;color:#64748b;font-style:italic;margin-top:3px;border-top:1px dashed rgba({s_rgb},0.25);padding-top:3px;opacity:0;max-height:0;overflow:hidden;transition:opacity 0.25s,max-height 0.25s;">{edu_text}</div>
         </div>
         """
 
-    _statuses = data.get('S', ['neutral'] * 8)
-    _now_str  = datetime.now().strftime("%H:%M")
+    # Statüleri yeniden eşle: 8 → 5 kart için (Card 6 ve Card 7 yeni Composite/MTF/Trade Plan kartlarına taşındı)
+    _statuses_orig = data.get('S', ['neutral'] * 8)
+    # Yeni sıra: [s1 (Fiyat+Formasyon birleşik), s3 (VSA), s4 (Trend), s5 (Hacim), s8 (Sentez)]
+    # Birleşik kart için s1 ve s2'nin daha güçlü olanını seç
+    def _stronger_status(a, b):
+        rank = {"bull": 3, "warning": 2, "bear": 2, "neutral": 1}
+        return a if rank.get(a, 0) >= rank.get(b, 0) else b
+    _statuses = [
+        _stronger_status(_statuses_orig[0], _statuses_orig[1]),  # M1+M2 birleşik
+        _statuses_orig[2],  # M3 VSA
+        _statuses_orig[3],  # M4 Trend
+        _statuses_orig[4],  # M5 Hacim
+        _statuses_orig[7],  # M8 Sentez
+    ]
+    _now_str = datetime.now().strftime("%H:%M")
+
+    # M1+M2 birleştirilmiş içerik (Fiyat Davranışı + Formasyon Tespiti)
+    _m1_plus_m2 = (
+        f'{data["M1"]}'
+        f'<div style="margin-top:6px;padding-top:5px;border-top:1px dashed rgba(100,116,139,0.25);">'
+        f'<span style="font-size:0.68rem;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Formasyon:</span><br>'
+        f'{data["M2"]}'
+        f'</div>'
+    )
 
     _box_defs = [
-        ("1", "Fiyat Davranışı",       data['M1'], "Günlük mum yapısı ve 2-3 mumluk Price Action dizilimi.", "Son 1-3 Gün"),
-        ("2", "Formasyon Tespiti",      data['M2'], "Geometrik yapılar ve ana trend durumu.",                  "1-6 Ay"),
-        ("3", "Efor vs Sonuç (VSA)",    data['M3'], "Hacmin fiyata yansıma kalitesi (Churning kontrolü).",     "Son 3 Gün"),
-        ("4", "Trend Skoru",            data['M4'], "Sıkışma, hacim daralması ve hareketli ortalama yakınsaması.", "1-3 Ay"),
-        ("5", "Hacim Algoritması",      data['M5'], "Kurumsal emilim (Absorption) ve agresif piyasa akışı.",   "Son 20 Gün"),
-        ("6", "Yön Beklentisi",         data['M6'], "RSI + SMA50 pozisyonu + RS Gücü + OBV kurumsal akışı.",  "~1 Ay"),
-        ("7", "Ayı ve Boğa Senaryoları",data['M7'], "Olası kırılımlara göre tetiklenecek yön hedefleri.",      "Kısa Vade"),
-        ("8", "Teknik Özet",            data['M8'], "Tüm verilerin genel sentezi ve piyasa beklentisi.",        "Genel Bakış"),
+        ("1", "Fiyat & Formasyon",   _m1_plus_m2, "Günlük mum yapısı + Price Action dizilimi + geometrik formasyonlar (kısa-orta vade).", "Kısa-Orta Vade"),
+        ("2", "Efor vs Sonuç (VSA)", data['M3'],  "Hacmin fiyata yansıma kalitesi (Churning kontrolü).",                                  "Son 3 Gün"),
+        ("3", "Trend Skoru",         data['M4'],  "Sıkışma, hacim daralması ve hareketli ortalama yakınsaması.",                          "1-3 Ay"),
+        ("4", "Hacim Algoritması",   data['M5'],  "Kurumsal emilim (Absorption) ve agresif piyasa akışı.",                                "Son 20 Gün"),
+        ("5", "Teknik Özet",         data['M8'],  "Tüm verilerin genel sentezi ve piyasa beklentisi.",                                    "Genel Bakış"),
     ]
+    # Not: Eski Card 6 (Yön Beklentisi) → üstteki Composite Skor kartında (Momentum alt faktörü)
+    #      Eski Card 7 (Ayı/Boğa Senaryoları) → üstteki Trade Plan kartında (Stop/TP1/TP2)
 
     boxes = [
         make_box(num, title, content, "", edu, tf, status=_statuses[i], box_idx=i)
@@ -12224,10 +12415,207 @@ def render_roadmap_8_panel(ticker):
 
     grid_html = "".join(boxes)
 
-    # CSS: hover ile edu tooltip görünür hale gelir (Streamlit HTML içinde çalışır)
+    # CSS: hover ile edu tooltip görünür hale gelir
     hover_css = "".join(
-        f".rm-box-{i}:hover .rm-edu-tip-{i}{{opacity:1!important;max-height:60px!important;}}"
-        for i in range(8)
+        f".rm-box-{i}:hover .rm-edu-tip-{i}{{opacity:1!important;max-height:80px!important;}}"
+        for i in range(5)
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # PHASE C — CARD A: COMPOSITE TECHNICAL SCORE (5 alt faktör)
+    # ──────────────────────────────────────────────────────────────────
+    _comp_score    = data.get('composite_score', 50)
+    _comp_decision = data.get('comp_decision', 'BEKLEMEDE')
+    _comp_color    = data.get('comp_color', '#d97706')
+    _factor_scores = data.get('factor_scores', {})
+
+    def _bar_html(label, score):
+        sc = max(0, min(100, score))
+        if   sc >= 70: bcol = "#16a34a"
+        elif sc >= 50: bcol = "#ca8a04"
+        elif sc >= 30: bcol = "#d97706"
+        else:          bcol = "#dc2626"
+        return (f'<div style="margin-bottom:2px;">'
+                f'<div style="display:flex;justify-content:space-between;font-size:0.62rem;'
+                f'font-weight:600;color:#64748b;line-height:1.1;">'
+                f'<span>{label}</span><span style="color:{bcol};">{sc:.0f}</span></div>'
+                f'<div style="height:3px;background:rgba(100,116,139,0.18);border-radius:2px;overflow:hidden;">'
+                f'<div style="height:100%;width:{sc}%;background:{bcol};"></div></div></div>')
+
+    _factor_bars = (
+        _bar_html("Trend",    _factor_scores.get('trend', 50))    +
+        _bar_html("Momentum", _factor_scores.get('momentum', 50)) +
+        _bar_html("Hacim",    _factor_scores.get('volume', 50))   +
+        _bar_html("Yapı",     _factor_scores.get('yapi', 50))     +
+        _bar_html("Senaryo",  _factor_scores.get('senaryo', 50))
+    )
+
+    composite_card_html = (
+        f'<div style="background:rgba({"22,163,74" if _comp_score >= 70 else ("234,179,8" if _comp_score >= 55 else ("245,158,11" if _comp_score >= 40 else "239,68,68"))},0.08);'
+        f'border-left:3px solid {_comp_color};border-radius:5px;padding:6px 9px;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;'
+        f'padding-bottom:4px;border-bottom:1px solid rgba(100,116,139,0.18);">'
+        f'<span style="font-size:0.7rem;font-weight:800;color:#64748b;letter-spacing:0.04em;'
+        f'text-transform:uppercase;">⚡ Composite Skor</span>'
+        f'<span style="font-size:0.7rem;font-weight:800;color:{_comp_color};">{_comp_decision}</span>'
+        f'</div>'
+        f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;">'
+        f'<div style="font-size:1.6rem;font-weight:900;color:{_comp_color};line-height:1;">'
+        f'{_comp_score}<span style="font-size:0.7rem;opacity:0.5;font-weight:700;">/100</span></div>'
+        f'<div style="flex:1;font-size:0.65rem;color:#94a3b8;line-height:1.25;">'
+        f'5 alt faktörün ağırlıklı sentezi'
+        f'</div></div>'
+        f'<div>{_factor_bars}</div>'
+        f'</div>'
+    )
+
+    # ──────────────────────────────────────────────────────────────────
+    # PHASE D — CARD B: MULTI-TIMEFRAME ALIGNMENT TABLOSU
+    # ──────────────────────────────────────────────────────────────────
+    _mtf = calculate_multi_timeframe_alignment(ticker)
+    if _mtf and _mtf.get('matrix'):
+        def _mtf_cell(sig):
+            if sig > 0:  return '<span style="color:#16a34a;font-weight:800;">↑</span>'
+            if sig < 0:  return '<span style="color:#dc2626;font-weight:800;">↓</span>'
+            return '<span style="color:#94a3b8;font-weight:700;">≈</span>'
+
+        _mtf_rows = ""
+        for indicator in ["trend", "momentum", "hacim"]:
+            _label = {"trend": "Trend", "momentum": "Momentum", "hacim": "Hacim"}[indicator]
+            _cells = ""
+            for tf_name in _mtf['timeframes']:
+                _cells += f'<td style="text-align:center;padding:3px 4px;">{_mtf_cell(_mtf["matrix"][tf_name].get(indicator, 0))}</td>'
+            _mtf_rows += f'<tr><td style="font-size:0.7rem;color:#64748b;font-weight:700;padding:3px 6px 3px 0;">{_label}</td>{_cells}</tr>'
+
+        _mtf_header_cells = "".join(
+            f'<th style="font-size:0.65rem;color:#64748b;font-weight:700;padding:3px 4px;text-align:center;">{tf}</th>'
+            for tf in _mtf['timeframes']
+        )
+        _mtf_dom_color = "#16a34a" if _mtf['dominant'] == "YUKARI" else ("#dc2626" if _mtf['dominant'] == "AŞAĞI" else "#ca8a04")
+        mtf_card_html = (
+            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #64748b;border-radius:5px;padding:8px 10px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
+            f'<span style="font-size:0.75rem;font-weight:800;color:#64748b;">📐 Vade Uyumu (MTF)</span>'
+            f'<span style="font-size:0.7rem;font-weight:800;color:{_mtf_dom_color};">{_mtf["dominant"]} %{_mtf["overall_pct"]}</span>'
+            f'</div>'
+            f'<table style="width:100%;border-collapse:collapse;">'
+            f'<thead><tr><th></th>{_mtf_header_cells}</tr></thead>'
+            f'<tbody>{_mtf_rows}</tbody>'
+            f'</table>'
+            f'<div style="font-size:0.62rem;color:#94a3b8;margin-top:4px;font-style:italic;">'
+            f'{_mtf["bull_cnt"]} hücre yukarı · {_mtf["bear_cnt"]} hücre aşağı · {_mtf["total"] - _mtf["bull_cnt"] - _mtf["bear_cnt"]} nötr'
+            f'</div>'
+            f'</div>'
+        )
+    else:
+        mtf_card_html = (
+            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #64748b;border-radius:5px;padding:8px 10px;">'
+            f'<div style="font-size:0.75rem;font-weight:800;color:#64748b;margin-bottom:4px;">📐 Vade Uyumu (MTF)</div>'
+            f'<div style="font-size:0.7rem;color:#94a3b8;">Çoklu vade verisi alınamadı</div>'
+            f'</div>'
+        )
+
+    # ──────────────────────────────────────────────────────────────────
+    # PHASE E — CARD C: TRADE PLAN (Entry/Stop/TP1/TP2/R:R)
+    # ──────────────────────────────────────────────────────────────────
+    _tp_curr   = data.get('tp_curr_price', 0)
+    _tp_stop   = data.get('tp_stop_5g', 0)
+    _tp_stop20 = data.get('tp_stop_20g', 0)
+    _tp_tp1    = data.get('tp_target_atr', 0)
+    _tp_tp2    = data.get('tp_target_20g', 0)
+
+    def _fmt_p(v):
+        try:
+            v = float(v)
+            return f"{int(v):,}" if v >= 1000 else f"{v:.2f}"
+        except: return "—"
+
+    # Trade plan: composite YUKARI ise long mantığı, AŞAĞI ise sadece "long uygun değil" notu
+    if _comp_decision in ("AL", "DİKKAT/İZLE") and _tp_curr > 0 and _tp_stop > 0 and _tp_tp1 > _tp_curr:
+        _risk = max(_tp_curr - _tp_stop, 0.001)
+        _rew1 = max(_tp_tp1 - _tp_curr, 0)
+        _rew2 = max(_tp_tp2 - _tp_curr, 0)
+        _rr1  = _rew1 / _risk if _risk > 0 else 0
+        _rr2  = _rew2 / _risk if _risk > 0 else 0
+        _rr_max = max(_rr1, _rr2)
+        if   _rr_max >= 2.5: _rr_lbl, _rr_col = "Mükemmel R/R", "#16a34a"
+        elif _rr_max >= 1.5: _rr_lbl, _rr_col = "Sağlam R/R",   "#16a34a"
+        elif _rr_max >= 1.0: _rr_lbl, _rr_col = "Sınırda R/R",  "#ca8a04"
+        else:                _rr_lbl, _rr_col = "Zayıf R/R",    "#dc2626"
+
+        trade_plan_html = (
+            f'<div style="background:rgba(56,189,248,0.06);border-left:3px solid #38bdf8;border-radius:5px;padding:8px 10px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'
+            f'<span style="font-size:0.75rem;font-weight:800;color:#0284c7;">🎯 Trade Plan (Long)</span>'
+            f'<span style="font-size:0.7rem;font-weight:800;color:{_rr_col};">{_rr_lbl}</span>'
+            f'</div>'
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;font-size:0.7rem;">'
+            f'<span style="color:#64748b;">Giriş:</span><b style="text-align:right;color:#0284c7;">{_fmt_p(_tp_curr)}</b>'
+            f'<span style="color:#64748b;">Stop (5G dip):</span><b style="text-align:right;color:#dc2626;">{_fmt_p(_tp_stop)}</b>'
+            f'<span style="color:#64748b;">TP1 (ATR×2):</span><b style="text-align:right;color:#16a34a;">{_fmt_p(_tp_tp1)} <span style="opacity:0.7;font-weight:600;">({_rr1:.1f}R)</span></b>'
+            f'<span style="color:#64748b;">TP2 (20G zirve):</span><b style="text-align:right;color:#16a34a;">{_fmt_p(_tp_tp2)} <span style="opacity:0.7;font-weight:600;">({_rr2:.1f}R)</span></b>'
+            f'</div>'
+            f'</div>'
+        )
+    else:
+        trade_plan_html = (
+            f'<div style="background:rgba(100,116,139,0.06);border-left:3px solid #94a3b8;border-radius:5px;padding:8px 10px;">'
+            f'<div style="font-size:0.75rem;font-weight:800;color:#64748b;margin-bottom:4px;">🎯 Trade Plan</div>'
+            f'<div style="font-size:0.7rem;color:#94a3b8;">'
+            f'Composite skor düşük ({_comp_score}/100) — long kurulum uygun değil. '
+            f'<b>{_comp_decision}</b> durumda kalın.</div>'
+            f'</div>'
+        )
+
+    # ── SWAP: Trade Plan ↔ Fiyat & Formasyon yer değiştir ──
+    # Top row 3. sütun: Fiyat & Formasyon (önceden Trade Plan idi)
+    _fp_status = _stronger_status(_statuses_orig[0], _statuses_orig[1])
+    _fp_rgb, _fp_hex = _STATUS_CFG.get(_fp_status, _STATUS_CFG["neutral"])
+    fp_top_html = (
+        f'<div style="background:rgba({_fp_rgb},0.06);border-left:3px solid {_fp_hex};border-radius:5px;padding:6px 9px;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;'
+        f'padding-bottom:4px;border-bottom:1px solid rgba({_fp_rgb},0.18);">'
+        f'<span style="font-size:0.7rem;font-weight:800;color:{_fp_hex};letter-spacing:0.04em;">🕯️ Fiyat & Formasyon</span>'
+        f'<span style="font-size:0.55rem;font-weight:700;color:#64748b;background:rgba(100,116,139,0.1);padding:1px 4px;border-radius:3px;border:1px solid rgba(100,116,139,0.2);">⏱️ Kısa-Orta Vade</span>'
+        f'</div>'
+        f'<div style="font-size:0.7rem;line-height:1.3;" class="dark-text-fix">{_m1_plus_m2}</div>'
+        f'</div>'
+    )
+
+    # Bottom 1. kart: Trade Plan (önceden Fiyat & Formasyon idi)
+    if _comp_decision in ("AL", "DİKKAT/İZLE") and _tp_curr > 0 and _tp_stop > 0 and _tp_tp1 > _tp_curr:
+        _tp_box_status = "bull" if _rr_max >= 1.5 else ("warning" if _rr_max >= 1 else "bear")
+        _tp_box_tf = _rr_lbl
+        _tp_box_inner = (
+            f'<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:0.7rem;">'
+            f'<span style="color:#64748b;">Giriş:</span><b style="text-align:right;color:#0284c7;">{_fmt_p(_tp_curr)}</b>'
+            f'<span style="color:#64748b;">Stop (5G):</span><b style="text-align:right;color:#dc2626;">{_fmt_p(_tp_stop)}</b>'
+            f'<span style="color:#64748b;">TP1 (ATR×2):</span><b style="text-align:right;color:#16a34a;">{_fmt_p(_tp_tp1)} ({_rr1:.1f}R)</b>'
+            f'<span style="color:#64748b;">TP2 (20G):</span><b style="text-align:right;color:#16a34a;">{_fmt_p(_tp_tp2)} ({_rr2:.1f}R)</b>'
+            f'</div>'
+        )
+    else:
+        _tp_box_status = "neutral"
+        _tp_box_tf = "Beklemede"
+        _tp_box_inner = (
+            f'<div style="font-size:0.7rem;color:#94a3b8;">'
+            f'Composite skor düşük ({_comp_score}/100) — long kurulum uygun değil.</div>'
+        )
+
+    # _box_defs[0] ve _statuses[0]'ı Trade Plan ile değiştir, grid'i yeniden kur
+    _box_defs[0] = ("1", "Trade Plan", _tp_box_inner, "Giriş, stop, TP1, TP2 ve R/R kalitesi.", _tp_box_tf)
+    _statuses[0] = _tp_box_status
+    boxes = [
+        make_box(num, title, content, "", edu, tf, status=_statuses[i], box_idx=i)
+        for i, (num, title, content, edu, tf) in enumerate(_box_defs)
+    ]
+    grid_html = "".join(boxes)
+
+    top_section_html = (
+        f'<div style="padding:5px 5px 0 5px;">'
+        f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;">'
+        f'{composite_card_html}{mtf_card_html}{fp_top_html}'
+        f'</div></div>'
     )
 
     html_content = f"""
@@ -12235,16 +12623,17 @@ def render_roadmap_8_panel(ticker):
     .dark-text-fix {{ color: inherit !important; }}
     {hover_css}
     </style>
-    <div class="info-card" style="border-top:3px solid {title_col};margin-top:8px;margin-bottom:10px;padding:0;">
-        <div class="info-header" style="display:flex;justify-content:space-between;align-items:center;color:{title_col};font-size:1.05rem;padding:6px 10px;border-bottom:1px solid {header_border};background:{header_bg};margin-bottom:0;">
+    <div class="info-card" style="border-top:3px solid {title_col};margin-top:5px;margin-bottom:6px;padding:0;">
+        <div class="info-header" style="display:flex;justify-content:space-between;align-items:center;color:{title_col};font-size:1rem;padding:4px 8px;border-bottom:1px solid {header_border};background:{header_bg};margin-bottom:0;">
             <div style="display:flex;align-items:center;gap:10px;">
                 <span style="font-weight:800;">🗺️ Teknik Yol Haritası</span>
                 <span style="font-size:0.6rem;color:#64748b;font-family:'JetBrains Mono',monospace;">güncellendi {_now_str}</span>
             </div>
             <span style="background:{badge_bg};color:{badge_text};padding:2px 10px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:0.9rem;border:1px solid {header_border};">{display_ticker}&nbsp;<span style="opacity:0.6;margin:0 4px;font-weight:400;">—</span>&nbsp;<span style="color:{price_color};">{display_price}</span></span>
         </div>
-        <div style="padding:8px;">
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+        {top_section_html}
+        <div style="padding:5px;">
+            <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;">
                 {grid_html}
             </div>
         </div>
