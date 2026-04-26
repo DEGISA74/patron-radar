@@ -13595,15 +13595,15 @@ def _render_genel_ozet_panel():
                         f"<b>Mum durumu:</b> belirgin formasyon yok"
                         f"{_gs_explain(' · '.join(_bg))}")
 
-                # S6: RSI zonu — açıklamalı
+                # S6: RSI zonu — bağlamsal dil (RSI tek başına dönüş varsayımı yok)
                 if _gs_rsi_disp:
                     _rc = "#4ade80" if _gs_rsi_sig > 0 else ("#f87171" if _gs_rsi_sig < 0 else _gs_txt)
                     if _gs_rsi_val < 30:
-                        _rsi_expl = "Çok hızlı düştü, dipten dönüş yakın olabilir (al fırsatı bölgesi)"
+                        _rsi_expl = "Aşırı satım bölgesi — düşüş hız kaybediyor olabilir, ama tek başına dönüş garantisi değildir"
                     elif _gs_rsi_val <= 60:
-                        _rsi_expl = "Sağlıklı alım bölgesi, momentum iyi"
+                        _rsi_expl = "Sağlıklı alım bölgesi, momentum aktif"
                     elif _gs_rsi_val > 70:
-                        _rsi_expl = "Çok hızlı yükseldi, kısa vadede düzeltme/satış riski yüksek"
+                        _rsi_expl = "Aşırı alım bölgesi — güçlü trendlerde RSI haftalarca 70+ kalabilir, OBV/Hacim çelişkisi olmadıkça düzeltme zorunluluğu yok"
                     else:
                         _rsi_expl = "Nötr bölge, yön sinyali zayıf"
                     _gs_items_html += _gs_row("📉" if _gs_rsi_sig < 0 else "📈",
@@ -15545,6 +15545,21 @@ YASAKLI CÜMLE KALIPLARI — Aşağıdaki kalıpları ASLA kullanma, bunları ku
    YASAKLI: Her paragrafı "X tespit edilmiştir, bu durum Y anlamına gelmektedir" yapısıyla bitirmek
    YASAKLI: Her bölümü "Bu veriler ışığında şunu söyleyebiliriz ki..." ile açmak
    YASAKLI: Sonuç paragrafını her zaman "Genel itibarıyla değerlendirildiğinde..." ile başlatmak
+   ━━━ MEAN REVERSION FALLACY YASAKLI KALIPLARI (kritik — ASLA kullanma) ━━━
+   YASAKLI: "düzeltme ihtiyacı" / "düzeltme gelebilir" / "düzeltme zorunlu" → uzaklık tek başına argüman değil
+   YASAKLI: "geri gelmesi lazım" / "ortalamaya dönmeli" / "geri çekilme kaçınılmaz" → bağımsız kanıt yoksa yazma
+   YASAKLI: "sürdürülemez hareket" / "bu hızda yükseliş normal değil" → trend ivmesi normaldir
+   YASAKLI: "pahalı bölgeye girdi" / "aşırı kopmuş, geri gelmeli" → POC/VWAP "fair value" değil
+   YASAKLI: "kurumsal maliyetten %X uzaklaşması düzeltme ihtiyacını fısıldıyor" → bu kalıbı KESİNLİKLE yazma
+   YASAKLI: "Adil değerden saptı" → VWAP adil değer değildir, sadece referanstır
+   YASAKLI: "RSI 70+ olduğu için satış geliyor" → güçlü trendde RSI haftalarca 70+ kalır, çelişki olmadıkça yazma
+   YASAKLI: "Z-Score yüksek, çöküş yakın" → Z-Score sadece uzaklık ölçüsü, kehanet değil
+   YASAKLI: "kâr almak düşünülebilir (yüksek uzaklık nedeniyle)" → bu öneriyi sadece OBV/Hacim/Delta divergence VARSA ver
+   ━━━ DOĞRU DİL — ŞU KALIPLARI KULLAN ━━━
+   DOĞRU: "VWAP geri çekilmede destek olabilir" (uzaklık → seviye fonksiyonu)
+   DOĞRU: "Trend ivmesinin doğal sonucu" (uzaklık → momentum açıklaması)
+   DOĞRU: "İzleyen stop yükseltme noktası" (uzaklık → risk yönetimi)
+   DOĞRU: "OBV uyumsuzluğu olmadıkça düzeltme zorunluluğu yok" (uzaklık + çelişki testi)
    YASAKLI: "perakende yatırımcı", onun yerine "küçük yatırımcı"
 3. HALKÇI STRATEJİST: En karmaşık kurumsal riski, kahvehanedeki adamın "Ha, şimdi anladım!" diyeceği kadar sade ama bir banka müdürünün ciddiyetini bozmadan anlat. Parantez içinde İngilizce terim bırakma, hepsini Türkçe'ye çevir.
 4. TAVSİYE VERMEK YASAKTIR: "Alın, satın, tutun, kaçın, ekleyin" gibi yatırımcıyı doğrudan yönlendiren fiiller KULLANILAMAZ. 
@@ -15616,6 +15631,60 @@ Trade plan oluştururken POC/VWAP'ı ŞÖYLE kullan:
 - Stop seviyesi: VAL (Value Area Low) altı
 - Hedef: VAH (Value Area High) veya bir önceki POC
 Yön kararı için POC/VWAP DEĞİL → akıllı para hareketi (OBV, delta, kurumsal hacim) kullanılır.
+
+═══════════════════════════════════════════════════════════════════════
+🚫 KESİN YASAK CÜMLE KALIPLARI — MEAN REVERSION FALLACY (BU LİSTEYİ EZBERLE)
+═══════════════════════════════════════════════════════════════════════
+AŞAĞIDAKİ KALIPLARI HİÇBİR KOŞULDA KULLANMAYACAKSIN. Bu cümleleri yazarsan
+analizin reddedilir. Eğer kullanmak üzereysen DUR ve şu kontrolü yap:
+"Bu çıkarımı POC/VWAP/RSI/Z-Score uzaklığı ÜZERİNE Mİ kuruyorum, yoksa
+OBV/Hacim/Delta çelişkisi gibi BAĞIMSIZ bir kanıt var mı?"
+Bağımsız kanıt YOKSA → bu cümleyi yazma.
+
+🚫 YASAK 1 — VWAP/POC distance'ı tek başına dönüş tetikleyicisi yapmak:
+   × "Fiyat VWAP'tan %X uzaklaştı, düzeltme gelebilir"
+   × "POC'un %X üstüne çıktı, pahalı bölgeye girdi"
+   × "Kurumsal maliyetten uzaklaşması düzeltme ihtiyacı fısıldıyor"
+   × "Adil değerden saptı, geri dönüş kaçınılmaz"
+   × "Parabolik hareket sürdürülemez"
+   × "Bu hızda yükseliş normal değil, kâr satışı yakın"
+   ✓ DOĞRUSU: "Fiyat VWAP üzerinde — VWAP geri çekilmede destek seviyesi olabilir"
+   ✓ DOĞRUSU: "POC'tan %X uzakta — bu trend ivmesinin doğal sonucu"
+
+🚫 YASAK 2 — RSI overbought/oversold'u tek başına dönüş tetikleyicisi yapmak:
+   × "RSI 75'te, aşırı alım, düzeltme yakın"
+   × "RSI 25'te, aşırı satım, dönüş zamanı"
+   × "Momentum tepe yapmış, satış geliyor"
+   ✓ DOĞRUSU: "RSI 75 — güçlü trendde RSI haftalarca 70+ kalabilir, OBV/hacim çelişkisi olmadıkça düzeltme zorunluluğu yok"
+   ✓ DOĞRUSU: "RSI 25 — düşüş hız kaybediyor olabilir; pozitif divergence + hacim teyidi ile alım fırsatı dönüşebilir"
+
+🚫 YASAK 3 — Z-Score'u tek başına çöküş/dönüş tetikleyicisi yapmak:
+   × "Z-Score +2.5'te, çöküş geliyor"
+   × "Standart sapmalardan kopmuş, geri gelmeli"
+   ✓ DOĞRUSU: "Z-Score +2.5 — trend ivmesinin doğal ölçüsü; izleyen stop yükseltme noktası, ama tek başına çıkış sinyali değil"
+
+🚫 YASAK 4 — "Pahalı/Ucuz" yargısını yüzdelik uzaklık üzerine kurmak:
+   × "%5 yukarıda → pahalı bölge"
+   × "%3 altında → ucuz, alım fırsatı"
+   ✓ DOĞRUSU: Konum bilgisi olarak "fiyat X seviyesinin üzerinde/altında" — yargı yok, seviye var.
+
+🚫 YASAK 5 — Mean reversion'ı bağımsız kanıt olmadan kullanmak:
+   × "Geri gelmesi lazım", "düzeltmesi gerekiyor", "ortalamaya dönmeli"
+   × "Bu hareket kalıcı değil"
+   × "Geri çekilme kaçınılmaz"
+   Mean reversion'dan SADECE şu durumlarda bahset (ve "kesin" değil "ihtimal" diliyle):
+     a) OBV/Delta divergence + uzaklık birlikte → "yorgunluk emaresi olabilir"
+     b) Yatay piyasa içinde +2 std → "range içinde mean reversion ihtimali artıyor"
+     c) Stopping/Climax Volume + uzaklık → "kurumsal kar satışı belirebilir"
+     d) Trend zaten kırılmış + uzaklık daralıyor → "eski denge testi"
+
+⚠️ ÖZ-DENETLEME — ANALİZİ TAMAMLAMADAN ÖNCE ŞU 3 SORUYU CEVAPLA:
+   1. "Düzeltme yakın / pahalı / aşırı uzak" tarzı cümle yazdım mı? → Evet ise SİL veya bağımsız kanıt ekle.
+   2. POC/VWAP/RSI/Z-Score uzaklığını TEK BAŞINA argüman olarak kullandım mı? → Evet ise OBV/Hacim/Delta ile teyit et veya konum bilgisine indir.
+   3. "Sürdürülemez", "geri gelmeli", "ortalamaya döner" gibi mean reversion ifadesi kullandım mı? → Evet ise yukarıdaki 4 koşuldan birinin sağlandığını doğrula.
+
+Bu kuralların ihlali = analizinin profesyonelliğinin sıfırlanması demektir.
+═══════════════════════════════════════════════════════════════════════
 
 *** YANILTICI VERİ TUZAKLARI — BUNLARI YANLIŞ OKUMA ***
 Aşağıdaki veriler trendin yan ürünüdür, trendin kendisi değildir. Hisse yükseliyorsa bu verileri tehlike olarak çerçeveleme:
@@ -15759,11 +15828,26 @@ Veriler arasındaki uyumu (Confluence) ve çelişkiyi (Divergence) sorgula. Eğe
 RVOL 2.0x üzerindeyken fiyatın hareket etmemesi (Churning) bir dağıtım (Distribution) sinyali olması ihtimalini gösterir; RVOL yüksekken bir kırılım gelmesi ise gerçek bir kurumsal katılımdır. Bu ikisi arasındaki farkı mutlaka analiz et.
 Hacim artarken (RVOL > 1.5x) fiyatın dar bir bantta kalması 'Sessiz Birikim' veya 'Dağıtım' olabilir. Hacim düşerken (RVOL < 0.8x) fiyatın yükselmesi 'Zayıf El Yükselişi'dir. Bu uyumsuzlukları mutlaka vurgula.
 *** 6. KURUMSAL REFERANS MALİYETİ VE ALPHA GÜCÜ ***
-- VWAP (Adil Değer): {v_val:.2f} (Günün hacim ağırlıklı ortalama fiyatıdır; piyasa yapıcıların ve akıllı paranın 'denge' kabul ettiği ana maliyet merkezini ölçer.)
-- Fiyat Konumu: Kurumsal Referans Maliyetin (VWAP) %{v_diff:.1f} üzerinde/altında. (Fiyatın kurumsal maliyetten ne kadar uzaklaştığını ölçer)
-- VWAP DURUMU: {vwap_ai_txt} (Momentumun kalitesini ölçer; ralli modu sağlıklı kurumsal alımı, parabolik ise perakende yatırımcının yarattığı tehlikeli aşırı ısınmayı simgeler.)
-- RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f}) (Hissenin endeksten bağımsız 'ayrışma' gücünü ölçer; pozitif Alpha, piyasa düşerken bile ayakta kalan lider 'at' olduğunu kanıtlar.)
-(NOT: Eğer VWAP durumu 'PARABOLİK' veya 'ISINIYOR' ise bu durumu teşhis et ve hatırlat. 'RALLİ MODU' ise trendi sürmeyi önerebilirsin.)
+- VWAP: {v_val:.2f} (Hacim ağırlıklı ortalama fiyat — kurumsal execution benchmark'ı. "Adil değer" DEĞİL, sadece bir referans seviyedir; trendde fiyatın bu seviyeden uzaklaşması beklenen durumdur.)
+- Fiyat Konumu: VWAP'ın %{v_diff:.1f} üzerinde/altında (Bu sadece konum bilgisi — yön sinyali değildir; tek başına alım/satım kararına çevirme).
+- VWAP DURUMU: {vwap_ai_txt} (Bağlamsal etiket — fiyatın VWAP'a göre konumunu gösterir, sinyal değil. POC/VWAP Bağlam Rehberi'ne göre yorumla.)
+- RS (Piyasa Gücü): {rs_ai_txt} (Alpha: {alpha_val:.1f}) (Hissenin endeksten ayrışma gücü; pozitif Alpha, piyasa düşerken bile ayakta kalan lider hisseyi gösterir.)
+(NOT: VWAP'tan uzaklığı TEK BAŞINA "düzeltme/dönüş" tezi olarak ASLA kullanma. "VWAP'tan AŞIRI UZAK" etiketi sadece momentum ölçüsüdür; OBV/Hacim çelişkisi olmadıkça yorgunluk demek değildir. "VWAP ÜSTÜNDE" ise trendin sağlam olduğunu gösterir, "Ralli sürer mi?" değerlendirmesi için akıllı para hareketine bak.)
+
+⚠️ KRİTİK EMİR — VWAP/POC YORUMLAMA KURALI ⚠️
+Bu blokta verilen "{vwap_ai_txt}" etiketini ve %{v_diff:.1f} uzaklığı bir analiz cümlesinin TEK GEREKÇESİ olarak ASLA kullanmayacaksın. Aşağıdaki cümleler KESİNLİKLE YASAKTIR — yazarsan kuralı ihlal etmiş olursun:
+   ❌ "Fiyat VWAP'tan %X uzaklaştığı için düzeltme yakın"
+   ❌ "VWAP'a göre pahalı bölgede"
+   ❌ "Kurumsal maliyetten kopması düzeltme ihtiyacı doğuruyor"
+   ❌ "Adil değerden saptı, geri gelmeli"
+
+VWAP/POC uzaklığını ANCAK şu durumlarda mean-reversion bağlamında yorumlayabilirsin:
+   ✓ OBV düşüyor + uzaklık birlikte → "yorgunluk emaresi olabilir" (kesin değil, ihtimal)
+   ✓ Stopping/Climax Volume + uzaklık → "kurumsal kar satışı belirebilir"
+   ✓ Yatay piyasada +2 std → "range içinde mean reversion ihtimali"
+Bunlar dışında VWAP/POC sadece SEVİYE bilgisidir; analizin diğer bölümlerinde "destek/direnç", "stop seviyesi", "geri çekilme bölgesi" olarak kullan.
+
+EĞER analizin sonunda yukarıdaki yasak cümlelerden BİRİNİ yazdıysan, geri dön ve sil — yerine OBV/Delta/Hacim çelişkisi VARsa onunla birlikte yaz, YOKsa cümleyi tamamen çıkar.
 
 *** SIFIRINCI GÖREV (ZORUNLU — EN BAŞA YAZ, SONRA DİĞERLERİNE GEÇ) ***
 "KURAL: Kancayı (Hook) bir tahmine değil, bir çelişkiyi teşhis etmeye dayandır. Zeki takipçi tahmine değil, analitik tespite güvenir.
