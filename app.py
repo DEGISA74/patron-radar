@@ -13456,197 +13456,314 @@ def _render_genel_ozet_panel():
                 else:
                     _gs_rsi_disp = f"RSI {_gs_rsi_val:.0f} — nötr"
 
-                # Voting: 4 BAĞIMSIZ sinyal
-                _gs_up = 0; _gs_dn = 0
-                if _gs_cum5 > 0:      _gs_up += 1   # 1. Kümülatif delta
-                elif _gs_cum5 < 0:    _gs_dn += 1
-                if _gs_obv_dir > 0:   _gs_up += 1   # 2. OBV sayısal flag
-                elif _gs_obv_dir < 0: _gs_dn += 1
-                if _gs_hh_hl:         _gs_up += 1   # 3. Price structure (hacimden bağımsız)
-                if _gs_rsi_sig > 0:   _gs_up += 1   # 4. RSI zone (hacimden bağımsız)
-                elif _gs_rsi_sig < 0: _gs_dn += 1
+                # ── DATA-READY FLAG (erken seans: gün içi hacim henüz yok) ──────
+                _data_ready = _gs_rvol >= 0.05
 
-                if   _gs_up >= 3:                    _gs_net_clr = "#4ade80"; _gs_net_txt = "YUKARI"
-                elif _gs_dn >= 3:                    _gs_net_clr = "#f87171"; _gs_net_txt = "AŞAĞI"
-                elif _gs_up >= 2 and _gs_dn < 2:    _gs_net_clr = "#86efac"; _gs_net_txt = "HAFİF YUKARI"
-                elif _gs_dn >= 2 and _gs_up < 2:    _gs_net_clr = "#fca5a5"; _gs_net_txt = "HAFİF AŞAĞI"
-                else:                                _gs_net_clr = "#fbbf24"; _gs_net_txt = "KARARSIZ"
+                # ── LONG RADAR — verdict band için önceden hesapla ─────────────
+                _lr_score = None; _lr_status = ""
+                try:
+                    _sms = calculate_smart_money_score(_ticker)
+                    if _sms and _sms.get('score') is not None:
+                        _lr_score  = _sms['score']
+                        _lr_status = _sms.get('status', '')
+                except Exception:
+                    pass
 
-                _gs_txt  = "#c7d9f0" if _dark else "#1e3a5f"
-                _gs_line = "rgba(56,189,248,0.12)" if _dark else "rgba(56,189,248,0.2)"
-
-                def _gs_row(icon, content):
-                    return (f"<div style='display:flex;align-items:flex-start;gap:6px;"
-                            f"padding:7px 0;border-bottom:1px solid {_gs_line};'>"
-                            f"<span style='flex-shrink:0;font-size:0.9rem;margin-top:1px;'>{icon}</span>"
-                            f"<span style='font-size:0.83rem;line-height:1.4;color:{_gs_txt};flex:1;'>{content}</span>"
-                            f"</div>")
-
-                # Açıklama rengi — lacivert (dark/light mode'a göre)
-                _gs_expl_col = "#93c5fd" if _dark else "#1e3a8a"
-
-                def _gs_explain(text):
-                    """Açıklama satırı — lacivert renk."""
-                    return f"<div style='font-size:0.72rem;color:{_gs_expl_col};margin-top:2px;'>↳ {text}</div>"
-
-                # Sinyal yön okları (her bir sinyalin durumu)
-                def _arrow(direction):
-                    """direction: +1 (up), -1 (down), 0 (neutral)"""
-                    if direction > 0:  return "<span style='color:#16a34a;font-weight:800;'>↑</span>"
-                    if direction < 0:  return "<span style='color:#dc2626;font-weight:800;'>↓</span>"
-                    return "<span style='opacity:0.5;font-weight:700;'>≈</span>"
-
-                # Her sinyalin yönünü belirle
-                _sig_hacim = (1 if _gs_cum5 > 0 else (-1 if _gs_cum5 < 0 else 0))
+                # ── VOTING: 4 BAĞIMSIZ SİNYAL (hacim oyu data_ready kontrolü) ─
+                _sig_hacim = (1 if (_data_ready and _gs_cum5 > 0) else (-1 if (_data_ready and _gs_cum5 < 0) else 0))
                 _sig_obv   = (1 if _gs_obv_dir > 0 else (-1 if _gs_obv_dir < 0 else 0))
                 _sig_yapi  = (1 if _gs_hh_hl else 0)
                 _sig_rsi   = _gs_rsi_sig
 
-                # S1: Net yön — sinyallerin tek tek yönü ok ile
-                _sig_breakdown = (
-                    f"Hacim {_arrow(_sig_hacim)} · "
-                    f"OBV {_arrow(_sig_obv)} · "
-                    f"Yapı {_arrow(_sig_yapi)} · "
-                    f"RSI {_arrow(_sig_rsi)}"
-                )
-                _gs_items_html += _gs_row("📡",
-                    f"<b>Genel görünüm:</b> <b style='color:{_gs_net_clr};'>{_gs_net_txt}</b>"
-                    f"{_gs_explain(_sig_breakdown)}")
+                _gs_up = sum(1 for s in (_sig_hacim, _sig_obv, _sig_yapi, _sig_rsi) if s > 0)
+                _gs_dn = sum(1 for s in (_sig_hacim, _sig_obv, _sig_yapi, _sig_rsi) if s < 0)
 
-                # S2: Hacim + delta yüzdesi
-                _gs_vtitle = _gs_vol.get('title', 'Normal')
+                if   _gs_up >= 3:                  _gs_net_clr = "#4ade80"; _gs_net_txt = "YUKARI"
+                elif _gs_dn >= 3:                  _gs_net_clr = "#f87171"; _gs_net_txt = "AŞAĞI"
+                elif _gs_up >= 2 and _gs_dn < 2:  _gs_net_clr = "#86efac"; _gs_net_txt = "HAFİF YUKARI"
+                elif _gs_dn >= 2 and _gs_up < 2:  _gs_net_clr = "#fca5a5"; _gs_net_txt = "HAFİF AŞAĞI"
+                else:                              _gs_net_clr = "#fbbf24"; _gs_net_txt = "KARARSIZ"
+
+                # ── TEMA RENKLERİ ─────────────────────────────────────────────
+                _gs_txt      = "#c7d9f0" if _dark else "#1e3a5f"
+                _gs_line     = "rgba(147,197,253,0.22)" if _dark else "rgba(30,58,138,0.18)"  # lacivert ayraç
+                _gs_expl_col = "#64748b"
+                _gs_lbl_col  = "#93c5fd" if _dark else "#1e3a8a"   # ana başlık: koyu lacivert
+                _gs_neu      = "#94a3b8"
+                _gs_up_clr   = "#4ade80" if _dark else "#16a34a"
+                _gs_dn_clr   = "#f87171" if _dark else "#dc2626"
+                _lr_clr      = (_gs_up_clr if (_lr_score or 0) >= 60
+                                else ("#f59e0b" if (_lr_score or 0) >= 40 else _gs_dn_clr))
+
+                # ── HELPER'LAR ─────────────────────────────────────────────────
+                def _arrow(d):
+                    if d > 0: return f"<span style='color:{_gs_up_clr};font-weight:800;'>↑</span>"
+                    if d < 0: return f"<span style='color:{_gs_dn_clr};font-weight:800;'>↓</span>"
+                    return f"<span style='color:{_gs_neu};'>≈</span>"
+
+                def _dir_color(sig):
+                    """Sinyale göre etiket rengi: +1 yeşil, -1 kırmızı, 0 gri."""
+                    if sig > 0: return _gs_up_clr
+                    if sig < 0: return _gs_dn_clr
+                    return _gs_neu
+
+                def _gs_section(title):
+                    return (f"<div style='margin-top:8px;padding-top:5px;"
+                            f"border-top:1px solid {_gs_line};"
+                            f"font-size:0.6rem;font-weight:800;letter-spacing:0.09em;"
+                            f"color:{_gs_lbl_col};text-transform:uppercase;margin-bottom:1px;'>"
+                            f"{title}</div>")
+
+                def _gs_explain(text):
+                    return (f"<div style='font-size:0.69rem;color:{_gs_expl_col};"
+                            f"margin-top:1px;line-height:1.35;'>↳ {text}</div>")
+
+                def _gs_row(label, value_html, explain=None, stop=False, lc=None):
+                    """Etiket sol (lc=label color) — değer sağa hizalı monospace — açıklama altta."""
+                    pfx = "⛔ " if stop else ""
+                    lbl_col = lc if lc else _gs_txt
+                    lbl_weight = "700" if lc else "400"
+                    return (
+                        f"<div style='padding:4px 0;'>"
+                        f"<div style='display:flex;align-items:center;gap:4px;'>"
+                        f"<span style='font-size:0.8rem;color:{lbl_col};"
+                        f"font-weight:{lbl_weight};flex:1;'>{pfx}{label}</span>"
+                        f"<span style='font-family:\"JetBrains Mono\",ui-monospace,Consolas,monospace;"
+                        f"font-size:0.81rem;font-weight:700;white-space:nowrap;text-align:right;'>"
+                        f"{value_html}</span>"
+                        f"</div>"
+                        f"{_gs_explain(explain) if explain else ''}"
+                        f"</div>"
+                    )
+
+                # ── VERDICT BANDI ─────────────────────────────────────────────
+                _dom_n      = max(_gs_up, _gs_dn)
+                _lr_vhtml   = (f"<span style='color:{_lr_clr};'>{_lr_score}</span>"
+                               if _lr_score is not None
+                               else f"<span style='color:{_gs_neu};'>—</span>")
+                _stop_vhtml = (f"<span style='color:{_gs_dn_clr};'>{_gs_low5_txt}</span>"
+                               if _gs_low5_txt
+                               else f"<span style='color:{_gs_neu};'>—</span>")
+                _sig_bd     = (f"Hacim {_arrow(_sig_hacim)} · OBV {_arrow(_sig_obv)} · "
+                               f"Yapı {_arrow(_sig_yapi)} · RSI {_arrow(_sig_rsi)}")
+                _mono_s     = '"JetBrains Mono",ui-monospace,Consolas,monospace'
+
+                # LONG değerini "37/100" formatında göster
+                _lr_vhtml   = (f"<span style='color:{_lr_clr};font-size:0.72rem;'>{_lr_score}/100</span>"
+                               if _lr_score is not None
+                               else f"<span style='color:{_gs_neu};font-size:0.72rem;'>—</span>")
+                _stop_vhtml = (f"<span style='color:{_gs_dn_clr};font-size:0.72rem;'>{_gs_low5_txt}</span>"
+                               if _gs_low5_txt
+                               else f"<span style='color:{_gs_neu};font-size:0.72rem;'>—</span>")
+
+                _gs_items_html += (
+                    f"<div style='background:rgba(56,189,248,0.07);"
+                    f"border:1px solid {_gs_line};border-radius:6px;"
+                    f"padding:8px 10px;margin-bottom:2px;'>"
+                    f"<div style='display:flex;align-items:center;"
+                    f"font-family:{_mono_s};font-weight:800;gap:0;'>"
+                    f"<span style='color:{_gs_net_clr};flex:1;font-size:0.83rem;'>{_gs_net_txt} "
+                    f"<span style='opacity:0.6;font-size:0.65rem;font-weight:600;'>{_dom_n}/4</span></span>"
+                    f"<span style='color:{_gs_neu};padding:0 6px;font-weight:400;font-size:0.72rem;'>|</span>"
+                    f"<span style='color:{_gs_neu};font-size:0.62rem;font-weight:600;letter-spacing:0.04em;margin-right:3px;'>LONG</span>{_lr_vhtml}"
+                    f"<span style='color:{_gs_neu};padding:0 6px;font-weight:400;font-size:0.72rem;'>|</span>"
+                    f"<span style='color:{_gs_neu};font-size:0.62rem;font-weight:600;letter-spacing:0.04em;margin-right:3px;'>STOP</span>{_stop_vhtml}"
+                    f"</div>"
+                    f"<div style='font-size:0.69rem;color:{_gs_expl_col};margin-top:5px;'>↳ {_sig_bd}</div>"
+                    f"</div>"
+                )
+
+                # ── GRUP 1: YÖN (önce macro/orta vade, sonra kısa vade) ──────────
+                _gs_items_html += _gs_section("Yön")
+                _net_sig = (1 if _gs_net_txt in ("YUKARI", "HAFİF YUKARI")
+                            else (-1 if _gs_net_txt in ("AŞAĞI", "HAFİF AŞAĞI") else 0))
+
+                # Ana trend önce — orta vade bağlamı (2-3 ay)
+                if _gs_sma50_txt:
+                    _s50col  = _gs_up_clr if _gs_sma50_above else _gs_dn_clr
+                    _s50_dir = "YUKARI" if _gs_sma50_above else "AŞAĞI"
+                    _gs_items_html += _gs_row(
+                        "Ana trend",
+                        f"<span style='color:{_s50col};'>{_s50_dir}</span>",
+                        explain=("Orta vade (2–3 ay) · " + _gs_sma50_txt +
+                                 (" · sağlam" if _gs_sma50_above else " · baskılı")),
+                        lc=_s50col
+                    )
+
+                # Genel görünüm sonra — kısa vade (bugün/bu hafta)
+                _gs_items_html += _gs_row(
+                    "Genel görünüm",
+                    f"<span style='color:{_gs_net_clr};'>{_gs_net_txt}</span>",
+                    explain=f"Kısa vade (bugün–bu hafta) · 4 sinyal oylaması — {_dom_n}/4 aynı yönde",
+                    lc=_dir_color(_net_sig)
+                )
+
+                # ── GRUP 2: PARA AKIŞI ────────────────────────────────────────
+                _gs_items_html += _gs_section("Para akışı")
+
                 if _gs_cdpct > 0:
                     _bp = 50 + _gs_cdpct / 2; _sp = 50 - _gs_cdpct / 2
-                    _dpct = f"%{_bp:.0f} alım / %{_sp:.0f} satış" if _gs_cum5 >= 0 else f"%{_sp:.0f} alım / %{_bp:.0f} satış"
+                    _dpct = (f"%{_bp:.0f} alım / %{_sp:.0f} satış" if _gs_cum5 >= 0
+                             else f"%{_sp:.0f} alım / %{_bp:.0f} satış")
                 else:
                     _dpct = "dengede"
-                if _gs_rvol < 0.05:
-                    _gs_items_html += _gs_row("📊",
-                        f"<b>Hacim:</b> bugün henüz oluşmadı"
-                        f"{_gs_explain(f'Son 5 günün alıcı/satıcı dengesi: <b>{_dpct}</b>')}")
+
+                if not _data_ready:
+                    _gs_items_html += _gs_row(
+                        "Hacim",
+                        f"<span style='color:{_gs_neu};'>henüz yok</span>",
+                        explain=f"Gün içi hacim oluşmadı · son 5 gün dengesi: {_dpct}",
+                        lc=_gs_neu
+                    )
                 else:
-                    _vol_lbl = f"Hacim <b>{_gs_rvol:.1f}x</b>"
                     _vol_intp = "ortalama üstü" if _gs_rvol >= 1.5 else ("normal" if _gs_rvol >= 0.8 else "zayıf")
-                    _gs_items_html += _gs_row("📊",
-                        f"<b>{_vol_lbl}</b> · {_vol_intp}"
-                        f"{_gs_explain(f'Son 5 gün alıcı/satıcı dengesi: <b>{_dpct}</b>')}")
+                    _vol_clr  = _gs_up_clr if _gs_rvol >= 1.5 else (_gs_neu if _gs_rvol >= 0.8 else _gs_dn_clr)
+                    _gs_items_html += _gs_row(
+                        "Hacim",
+                        (f"<span style='color:{_vol_clr};'>{_gs_rvol:.1f}x</span> "
+                         f"<span style='color:{_gs_neu};font-size:0.73rem;'>{_vol_intp}</span>"),
+                        explain=f"Son 5 gün alıcı/satıcı dengesi: {_dpct}",
+                        lc=_dir_color(_sig_hacim)
+                    )
 
-                # S3: OBV — basit açıklama
                 _obv_t = _gs_obv.get('title', ''); _obv_d = _gs_obv.get('desc', '')
-                _obv_simple = {
-                    "🔥 GÜÇLÜ GİZLİ GİRİŞ": "Fiyat düşerken büyük oyuncular sessizce alım yapıyor (kurumsal toplama)",
-                    "👀 Olası Toplama (Zayıf)": "Hafif alım emaresi var ama henüz güçlü değil",
-                    "⚠️ GİZLİ ÇIKIŞ": "Fiyat yükseliyor ama büyük oyuncular sessizce satış yapıyor",
-                    "✅ Hacim Destekli Trend": "Yön ne olursa olsun hacim yönü destekliyor (sağlıklı hareket)",
+                _obv_map = {
+                    "🔥 GÜÇLÜ GİZLİ GİRİŞ":   ("Gizli giriş",    _gs_up_clr, "Fiyat düşerken büyük oyuncular sessizce alıyor"),
+                    "👀 Olası Toplama (Zayıf)": ("Zayıf toplama",  _gs_neu,    "Hafif alım emaresi var, henüz güçlü değil"),
+                    "⚠️ GİZLİ ÇIKIŞ":          ("Gizli çıkış",   _gs_dn_clr, "Fiyat çıkarken büyük oyuncular sessizce satıyor"),
+                    "✅ Hacim Destekli Trend":   ("Trend destekli", _gs_up_clr, "Hacim yönü destekliyor — sağlıklı hareket"),
                 }
-                if _obv_t and _obv_t != 'Nötr / Zayıf':
-                    _expl = _obv_simple.get(_obv_t, _obv_d)
-                    _gs_items_html += _gs_row("🧠",
-                        f"<b>{_obv_t}</b>"
-                        f"{_gs_explain(_expl)}")
-                else:
-                    _gs_items_html += _gs_row("🧠",
-                        f"<b>OBV: nötr</b>"
-                        f"{_gs_explain('Akıllı para hareketi belirgin değil — yön net değil')}")
+                _ov_lbl, _ov_clr, _ov_expl = _obv_map.get(
+                    _obv_t, ("nötr", _gs_neu, "Akıllı para hareketi belirgin değil"))
+                _gs_items_html += _gs_row(
+                    "OBV",
+                    f"<span style='color:{_ov_clr};'>{_ov_lbl}</span>",
+                    explain=_ov_expl,
+                    lc=_ov_clr
+                )
 
-                # S4: SMA50 trend bağlamı
-                if _gs_sma50_txt:
-                    _s50col = "#4ade80" if _gs_sma50_above else "#f87171"
-                    _s50_main = "Ana trend YUKARI" if _gs_sma50_above else "Ana trend AŞAĞI"
-                    _s50_expl = _gs_sma50_txt + (" (uzun vadeli yükseliş sağlam)" if _gs_sma50_above else " (uzun vadeli baskı devam ediyor)")
-                    _gs_items_html += _gs_row("📈",
-                        f"<b style='color:{_s50col};'>{_s50_main}</b>"
-                        f"{_gs_explain(_s50_expl)}")
+                _sfp_t = _gs_sfp.get('title', 'Yok')
+                if _sfp_t and _sfp_t != 'Yok':
+                    import re as _sfp_re
+                    _sfp_clean = _sfp_re.sub(
+                        r'[^\w\s\(\)\.\,\:\!\?çğıöşüÇĞİÖŞÜ%/-]', '', _sfp_t).strip()
+                    _gs_items_html += _gs_row(
+                        "SFP",
+                        f"<span style='color:{_gs_dn_clr};'>{_sfp_clean}</span>",
+                        explain=_gs_sfp.get('desc', 'Sahte kırılım — fiyat seviyeyi geçti ama tutmadı'),
+                        lc=_gs_dn_clr
+                    )
 
-                # S5: Mum formasyonu — sadeleştir
+                # ── GRUP 3: MOMENTUM ──────────────────────────────────────────
+                _gs_items_html += _gs_section("Momentum")
+
+                if _gs_rsi_disp:
+                    if _gs_rsi_val < 30:
+                        _rsi_lbl = "aşırı satım"; _rc = _gs_up_clr
+                        _rsi_expl = "Aşırı satım — düşüş hız kaybediyor, tek başına dönüş garantisi değil"
+                    elif _gs_rsi_val <= 60:
+                        _rsi_lbl = "alım bölgesi"; _rc = _gs_up_clr
+                        _rsi_expl = "Sağlıklı alım bölgesi, momentum aktif"
+                    elif _gs_rsi_val > 70:
+                        _rsi_lbl = "aşırı alım"; _rc = _gs_dn_clr
+                        _rsi_expl = "Güçlü trendlerde RSI haftalarca 70+ kalabilir — OBV/Hacim çelişkisi yoksa düzeltme zorunlu değil"
+                    else:
+                        _rsi_lbl = "nötr"; _rc = _gs_neu
+                        _rsi_expl = "Nötr bölge, yön sinyali zayıf"
+                    _gs_items_html += _gs_row(
+                        "RSI",
+                        (f"<span style='color:{_rc};'>{_gs_rsi_val:.0f}</span> "
+                         f"<span style='color:{_gs_neu};font-size:0.73rem;'>{_rsi_lbl}</span>"),
+                        explain=_rsi_expl,
+                        lc=_rc
+                    )
+
                 def _strip_emoji(s):
                     import re
                     return re.sub(r'[^\w\s\(\)\.\,\:\!\?çğıöşüÇĞİÖŞÜ%/-]', '', s).strip()
+
                 if _gs_cdesc and _gs_cdesc != 'Belirgin, güçlü bir formasyon yok.':
-                    # Mum adını çıkar (parantez içinde Türkçe ad)
                     _cand_clean = _gs_cdesc.replace('ALICI:', '').replace('SATICI:', '').strip()
-                    # "Hanging Man (Asılı Adam)" gibi yapıdan adı al
                     _cand_short = _cand_clean.split('|')[0].strip() if '|' in _cand_clean else _cand_clean
-                    _cand_short = _strip_emoji(_cand_short)[:60]
-                    _bg_extra = []
-                    if _gs_consec_label: _bg_extra.append(f"bugün {_gs_consec_label.split(' ')[-2] if 'gündür' in _gs_consec_label else _gs_consec_label}")
-                    if _gs_hh_hl_txt: _bg_extra.append("yapısal yükseliş (HH+HL)")
-                    _bg_txt = " · ".join(_bg_extra)
+                    _cand_short = _strip_emoji(_cand_short)[:40]
+                    _bg_parts = []
+                    if _gs_consec_label: _bg_parts.append(_gs_consec_label)
+                    if _gs_hh_hl_txt:    _bg_parts.append("HH+HL yapısı")
+                    _bg_txt = " · ".join(_bg_parts)
                     if _gs_cdesc.startswith('ALICI'):
-                        _expl = f"Yükseliş sinyali veren mum formasyonu" + (f" · {_bg_txt}" if _bg_txt else "")
-                        _gs_items_html += _gs_row("🕯",
-                            f"<b style='color:#4ade80;'>ALICI sinyali:</b> {_cand_short}"
-                            f"{_gs_explain(_expl)}")
+                        _gs_items_html += _gs_row(
+                            "Mum",
+                            f"<span style='color:{_gs_up_clr};'>{_cand_short}</span>",
+                            explain="Yükseliş sinyali" + (f" · {_bg_txt}" if _bg_txt else ""),
+                            lc=_gs_up_clr
+                        )
                     elif _gs_cdesc.startswith('SATICI'):
-                        _expl = f"Düşüş sinyali veren mum formasyonu" + (f" · {_bg_txt}" if _bg_txt else "")
-                        _gs_items_html += _gs_row("🕯",
-                            f"<b style='color:#f87171;'>SATICI sinyali:</b> {_cand_short}"
-                            f"{_gs_explain(_expl)}")
+                        _gs_items_html += _gs_row(
+                            "Mum",
+                            f"<span style='color:{_gs_dn_clr};'>{_cand_short}</span>",
+                            explain="Düşüş sinyali" + (f" · {_bg_txt}" if _bg_txt else ""),
+                            lc=_gs_dn_clr
+                        )
                     else:
-                        _gs_items_html += _gs_row("🕯",
-                            f"<b>Mum:</b> {_cand_short}"
-                            f"{_gs_explain('Yön belirsiz formasyon')}")
+                        _gs_items_html += _gs_row(
+                            "Mum",
+                            f"<span style='color:{_gs_neu};'>{_cand_short}</span>",
+                            explain="Yön belirsiz formasyon",
+                            lc=_gs_neu
+                        )
                 elif _gs_consec_label or _gs_hh_hl_txt:
-                    _cc = "#4ade80" if (_gs_consec_label and "yeşil" in _gs_consec_label) else "#f87171"
                     _bg = []
                     if _gs_consec_label: _bg.append(_gs_consec_label)
-                    if _gs_hh_hl_txt: _bg.append("HH+HL yapısı (her zirve önceki zirveden yüksek)")
-                    _gs_items_html += _gs_row("🕯",
-                        f"<b>Mum durumu:</b> belirgin formasyon yok"
-                        f"{_gs_explain(' · '.join(_bg))}")
+                    if _gs_hh_hl_txt:    _bg.append("HH+HL yapısı")
+                    _gs_items_html += _gs_row(
+                        "Mum",
+                        f"<span style='color:{_gs_neu};'>belirgin yok</span>",
+                        explain=" · ".join(_bg),
+                        lc=_gs_neu
+                    )
 
-                # S6: RSI zonu — bağlamsal dil (RSI tek başına dönüş varsayımı yok)
-                if _gs_rsi_disp:
-                    _rc = "#4ade80" if _gs_rsi_sig > 0 else ("#f87171" if _gs_rsi_sig < 0 else _gs_txt)
-                    if _gs_rsi_val < 30:
-                        _rsi_expl = "Aşırı satım bölgesi — düşüş hız kaybediyor olabilir, ama tek başına dönüş garantisi değildir"
-                    elif _gs_rsi_val <= 60:
-                        _rsi_expl = "Sağlıklı alım bölgesi, momentum aktif"
-                    elif _gs_rsi_val > 70:
-                        _rsi_expl = "Aşırı alım bölgesi — güçlü trendlerde RSI haftalarca 70+ kalabilir, OBV/Hacim çelişkisi olmadıkça düzeltme zorunluluğu yok"
-                    else:
-                        _rsi_expl = "Nötr bölge, yön sinyali zayıf"
-                    _gs_items_html += _gs_row("📉" if _gs_rsi_sig < 0 else "📈",
-                        f"<b style='color:{_rc};'>RSI {_gs_rsi_val:.0f}</b> — {('aşırı satım' if _gs_rsi_val<30 else ('alım bölgesi' if _gs_rsi_val<=60 else ('aşırı alım' if _gs_rsi_val>70 else 'nötr')))}"
-                        f"{_gs_explain(_rsi_expl)}")
+                # ── GRUP 4: AKSİYON ──────────────────────────────────────────
+                _gs_items_html += _gs_section("Aksiyon")
 
-                # S7: İptal koşulu — net açıklama
                 if _gs_low5_txt:
                     if _gs_net_txt in ("YUKARI", "HAFİF YUKARI"):
-                        _gs_items_html += _gs_row("⛔",
-                            f"<b>Stop seviyesi:</b> {_gs_low5_txt}"
-                            f"{_gs_explain(f'Bu seviyenin <b>altında</b> kapanış olursa yükseliş senaryosu iptal — pozisyondan çıkılır')}")
+                        _gs_items_html += _gs_row(
+                            "Stop seviyesi",
+                            f"<span style='color:{_gs_dn_clr};'>{_gs_low5_txt}</span>",
+                            explain="Altında kapanış → yükseliş senaryosu iptal",
+                            stop=True, lc=_gs_dn_clr
+                        )
                     elif _gs_net_txt in ("AŞAĞI", "HAFİF AŞAĞI"):
-                        _gs_items_html += _gs_row("⛔",
-                            f"<b>İptal noktası:</b> {_gs_low5_txt}"
-                            f"{_gs_explain(f'Bu seviyenin <b>üstünde</b> kapanış olursa düşüş senaryosu iptal')}")
+                        _gs_items_html += _gs_row(
+                            "İptal noktası",
+                            f"<span style='color:{_gs_up_clr};'>{_gs_low5_txt}</span>",
+                            explain="Üstünde kapanış → düşüş senaryosu iptal",
+                            stop=True, lc=_gs_dn_clr
+                        )
+                    else:
+                        _gs_items_html += _gs_row(
+                            "Kritik seviye",
+                            f"<span style='color:{_gs_neu};'>{_gs_low5_txt}</span>",
+                            explain="Kırılım yönü senaryoyu belirler",
+                            stop=True, lc=_gs_neu
+                        )
 
-                # S8: SFP (varsa)
-                _sfp_t = _gs_sfp.get('title', 'Yok')
-                if _sfp_t and _sfp_t != 'Yok':
-                    _gs_items_html += _gs_row("⚠️",
-                        f"<b>{_sfp_t}</b>"
-                        f"{_gs_explain(_gs_sfp.get('desc', 'Sahte kırılım — fiyat seviyeyi geçti ama tutmadı'))}")
-
-                # S9: LONG RADAR skoru — açıklamalı
-                try:
-                    _sms = calculate_smart_money_score(_ticker)
-                    if _sms and _sms.get('score') is not None:
-                        _sc = _sms['score']; _st = _sms.get('status', '')
-                        _scol = "#4ade80" if _sc >= 60 else ("#fbbf24" if _sc >= 40 else "#f87171")
-                        if _sc >= 65:
-                            _radar_expl = "Tüm kriterler hizalandı — alım için hazır kurulum"
-                        elif _sc >= 45:
-                            _radar_expl = "Bazı kriterler eksik — henüz alım zamanı değil, takipte tut"
-                        elif _sc >= 25:
-                            _radar_expl = "Çok az kriter geçti — henüz erken, beklemede"
-                        else:
-                            _radar_expl = "Kriterler genel olarak olumsuz — şimdilik radar dışı"
-                        _gs_items_html += _gs_row("🏆",
-                            f"<b>LONG RADAR:</b> <b style='color:{_scol};'>{_sc}/100</b> — {_st}"
-                            f"{_gs_explain(_radar_expl + ' (5 alım kriterinin birleşik skoru)')}")
-                except Exception:
-                    pass
+                if _lr_score is not None:
+                    if _lr_score >= 65:
+                        _radar_expl = "Tüm kriterler hizalandı — alım kurulumu hazır"
+                    elif _lr_score >= 45:
+                        _radar_expl = "Bazı kriterler eksik — henüz alım değil, takipte tut"
+                    elif _lr_score >= 25:
+                        _radar_expl = "Çok az kriter geçti — erken, beklemede"
+                    else:
+                        _radar_expl = "Kriterler olumsuz — şimdilik radar dışı"
+                    _gs_items_html += _gs_row(
+                        "LONG RADAR",
+                        (f"<span style='color:{_lr_clr};'>{_lr_score}/100</span> "
+                         f"<span style='color:{_gs_neu};font-size:0.73rem;'>{_lr_status}</span>"),
+                        explain=_radar_expl + " · 5 alım kriterinin birleşik skoru",
+                        lc=_lr_clr
+                    )
 
         except Exception:
             _gs_items_html = "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Özet hesaplanamadı.</div>"
@@ -13661,13 +13778,13 @@ def _render_genel_ozet_panel():
         st.markdown(f"""
         <details open style="margin-bottom:7px;border-radius:10px;overflow:hidden;
                         border:1px solid {_border};box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-          <summary style="cursor:pointer;padding:7px 13px;background:{_hdr_bg};
+          <summary style="cursor:pointer;padding:8px 13px;background:{_hdr_bg};
                           display:flex;align-items:center;gap:8px;
-                          font-size:0.72rem;font-weight:700;color:{_hdr_txt};
-                          letter-spacing:0.03em;list-style:none;user-select:none;">
-            <span style="font-size:1rem;line-height:1;">⚡</span>
+                          font-size:1rem;font-weight:800;color:{_hdr_txt};
+                          letter-spacing:0.02em;list-style:none;user-select:none;">
+            <span style="font-size:1.1rem;line-height:1;">⚡</span>
             GENEL ÖZET
-            <span style="margin-left:auto;font-size:0.65rem;opacity:0.5;">▾</span>
+            <span style="margin-left:auto;font-size:0.7rem;opacity:0.45;font-weight:400;">▾</span>
           </summary>
           <div style="background:{_cnt_bg};padding:8px 12px 10px 12px;">
             {_gs_items_html if _gs_items_html else "<div style='font-size:0.7rem;color:#64748b;padding:6px 2px;font-style:italic;'>Veri bekleniyor...</div>"}
@@ -15864,6 +15981,17 @@ Kural: "ANCAK", "ama", "oysa", "peki" veya "?" kelimelerinden en az biri cümled
   🐳 #THYAO 327.50 | HERKES ALIYOR: Fiyat yükseliyor ama para akışı neden zayıf? 👇📸
   🔥 #SISE 48.20 | ANALİZ: Kurumlar mal mı boşaltıyor yoksa silkeleme mi yapılıyor? 👇📸
   🎯 #EREGL 140.00 | KRİTİK SEVİYE: Robotlar burada neyi bekliyor olabilir? 👇📸
+
+⚡ ALGORİTMA UYUM ZORUNLULUĞU (X / Twitter):
+Bu başlık X algoritması tarafından ilk 30 dakikada engagement velocity ile değerlendirilir.
+Yaşaması için SAVE (kaydet=25 puan) + REPLY (yorum=13.5 puan) tetiklemesi şart.
+Like (1 puan) tek başına tweet'i gömer. Hook'u yazarken "Birisi bunu kaydetmek/yorum yapmak ister mi?" sorusunu kendine sor.
+Detaylı algoritma kuralları için aşağıda Dördüncü Görev'deki "X / TWITTER ALGORİTMA STRATEJİSİ" bölümüne uy:
+   - Somut SEVİYE (save tetikler) + AÇIK UÇLU çelişki/soru (reply tetikler) birlikte olsun
+   - Closed-end soru ("yükselir mi?") YASAK → açık-uçlu ("hangi senaryo?") OK
+   - Max 2 hashtag, ilk satırda URL yok, "ALACAĞIM!" gibi promo dili yok
+   - 180-220 karakter ideal, max 280
+
 Bu başlığı "📌 " ile işaretle. Sonra diğer görevlere geç.
 
 *** BEŞ GÖREVİN VAR ***
@@ -15982,6 +16110,74 @@ Kural: "olabilir", "görünüyor" gibi ihtiyatlı kelimelerle sar.
 Örnek: 🔥 #KONTR 10.85 (+9.93%) | Kurumlar içeri girmiş gibi görünüyor — ama ralli sorgulanabilir. 👇📸
 
 Kapanış: Uyarı baskınsa "SONUÇ ve UYARI kısmına dikkat👇", değilse "UYARI kısmına dikkat👇"
+
+═══════════════════════════════════════════════════════════════════════
+🎯 X / TWITTER ALGORİTMA STRATEJİSİ — HOOK'UN İLK 30 DAKİKADA YAŞAMASI İÇİN
+═══════════════════════════════════════════════════════════════════════
+X'in (eski Twitter) açık kaynaklı algoritması ilk 30 dakikadaki ETKİLEŞİM
+HIZINI ölçer. Ağırlıklar (twitter/the-algorithm repo'dan):
+- Like = 1 puan (en zayıf — TEK BAŞINA tweet'i yaşatmaz, like döneminin sonu)
+- Quote Tweet = 6 puan (tweet'i yeniden bağlam ile paylaşma)
+- Reply / Yorum = 13.5 puan (algoritma için "tartışma" sinyali)
+- Save / Bookmark = 25 puan (EN GÜÇLÜ sinyal — "saklamaya değer")
+
+Hook bu üç davranıştan en az BİRİNİ tetiklemek ZORUNDA, yoksa ilk
+saatte gömülür ve hiç kimse görmez. Hook'un yaşaması = içeriğin yaşaması.
+
+🔥 SAVE TETİKLEYEN HOOK — "Bunu sonra okurum/incelerim"
+   - Somut SEVİYE (ama spoiler değil): Hook'ta kritik fiyat görünsün,
+     ama analizi ele verme. Okuyucu "bu seviyeyi takip etmem lazım" diyerek save'lesin.
+   - Örnek: "#THYAO 327.50 | KURUMSAL BÖLGE TESTİ: Bu seviye kırılırsa hikaye değişir 👇📸"
+   - Örnek: "#SISE 48.20 | 3 KRİTİK SEVİYE: Hangi sırayla teste tabi olacaklar? 👇📸"
+
+💬 REPLY TETİKLEYEN HOOK — "Bu konuda yorum yapmak istiyorum"
+   - AÇIK UÇLU SORU: Cevabı tek değil, çeşitli yorumlara açık olsun.
+     Evet/Hayır kapanması olmasın. "Yükselecek mi?" değil "Hangi senaryo daha güçlü?".
+   - Profesyonel-meraklı ton: "Sizin gözünüze nasıl çarpıyor?" tarzı topluluk daveti.
+   - Örnek: "#EREGL 140 | 3 farklı senaryo görüyorum — sizinki hangisi? 👇📸"
+   - Örnek: "#KONTR 10.85 | OBV bu kadar pozitif olduğunda fiyat genelde ne yapardı? 👇📸"
+
+🔄 QUOTE TWEET TETİKLEYEN HOOK — "Bunu kendi yorumumla paylaşmak istiyorum"
+   - PROFESYONEL ÇELİŞKİ: Yaygın görüşle ters bir tespit (ama veriye dayalı).
+     Okuyucu "ben farklı yorumluyorum" diye QT atmak istesin.
+   - Örnek: "#SASA 2.60 | Herkes düşüş diyor ama tabloda farklı bir şey var 👇📸"
+   - Örnek: "#KCHOL 220 | Bu konsolidasyon sıkılma değil — başka bir şey 👇📸"
+
+⛔ ALGORİTMA CEZASI — HOOK'TA ASLA KULLANMA:
+   × URL/link ilk satırda → tweet görünürlüğü %50+ düşer
+   × 2'den fazla hashtag → engagement reach düşer (max 2 hashtag — örn. #THYAO + #BIST100)
+   × Açıkça promosyon dili: "ALACAĞIM!", "KAÇIRMAYIN!", "MUTLAKA İZLEYİN!"
+   × Tüm CAPS LOCK kelime serisi (1-2 emfazi OK, ama yarım cümle CAPS yasak)
+   × Closed-end soru: "Yükselecek mi?", "Düşer mi?" → kapalı cevap, yorum gelmez
+   × Click-bait abartı: "İNANILMAZ KEŞİF!", "KİMSENİN GÖRMEDİĞİ!" → algoritma cezalı
+   × Tek başına emoji yığını: "🚀🔥💎" → spam sinyali
+
+✅ ALGORİTMA DOSTU YAPI:
+   ✓ İlk satırda: SEMBOL + FIYAT + SENARYO ETİKETİ (görsel hiyerarşi net)
+   ✓ Tek "ama/ancak/oysa" → çelişki kurar (engagement çekecek)
+   ✓ Spesifik VERİ (sayı, seviye, gün sayısı) → "bu önemli" sinyali
+   ✓ "👇📸" sonu → "thread var, kaydır" sinyali (save'i tetikler)
+   ✓ Max 280 karakter, ideal 180-220 karakter (mobile-first okunaklı)
+   ✓ "olabilir", "görünüyor" gibi ihtiyat ifadeleri (cesur ama temkinli ton)
+
+🎯 EN GÜÇLÜ HOOK = SAVE + REPLY birlikte tetiklenecek yapı:
+   "[EMOJİ] #SEMBOL [FIYAT] | [ETİKET]: [Somut veri] [açık uçlu çelişki/soru] 👇📸"
+
+   Örnek (SAVE+REPLY birlikte):
+   🐳 #THYAO 327.50 (-1.2%) | KURUMSAL ALIM: OBV 5 gündür yukarı, fiyat aşağı —
+       3 senaryo var, hangisi sizin? 👇📸
+
+   Bu hook hem kritik seviyeyi (327.50) verir → save tetikler,
+   hem açık uçlu soru sorar → reply tetikler,
+   hem de "3 senaryo var" diyerek thread'e davet eder → tıklanma artar.
+
+⚠️ ZORUNLU ÖZ-KONTROL — HOOK'U YAZDIKTAN SONRA SOR:
+   1. "Birinin bunu kaydetmek (save) isteyeceği somut bir veri var mı?" → Yoksa ekle.
+   2. "Birinin yorum yapmak isteyeceği açık bir soru/çelişki var mı?" → Yoksa ekle.
+   3. "Hashtag sayısı 2'yi geçti mi?" → Geçtiyse fazlasını sil.
+   4. "Closed-end soru ('Yükselir mi?') var mı?" → Varsa açık-uçluya çevir.
+   5. "İlk satırda URL var mı?" → Varsa kaldır.
+═══════════════════════════════════════════════════════════════════════
 ────────────────────────────────────────────────────────────
 
 ─── HOOK BİTTİ, DEVAM: ABONE ÖZETİ ───────────────────────
