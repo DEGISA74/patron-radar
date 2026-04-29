@@ -286,8 +286,62 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS watchlist (symbol TEXT PRIMARY KEY)')
+    c.execute('''CREATE TABLE IF NOT EXISTS scan_signals (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        scan_date   TEXT NOT NULL,
+        symbol      TEXT NOT NULL,
+        scan_type   TEXT NOT NULL,
+        score       REAL,
+        bias        TEXT DEFAULT 'bullish',
+        entry_price REAL,
+        stop_level  REAL,
+        category    TEXT,
+        UNIQUE(scan_date, symbol, scan_type)
+    )''')
     conn.commit()
     conn.close()
+
+def log_scan_signal(scan_type: str, df_result, category: str = ""):
+    """
+    Scan sonuçlarını signals.db'ye (patron.db içinde scan_signals tablosuna) yazar.
+    Aynı gün aynı scan_type + symbol kombinasyonu varsa INSERT OR IGNORE ile atlar.
+    """
+    if df_result is None or (hasattr(df_result, 'empty') and df_result.empty):
+        return
+    today = datetime.now(_TZ_ISTANBUL).strftime("%Y-%m-%d")
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        for _, row in df_result.iterrows():
+            symbol = row.get('Sembol', '')
+            if not symbol:
+                continue
+            entry_raw   = row.get('Fiyat', row.get('fiyat', None))
+            score_raw   = row.get('ToplamSkor', row.get('Raw_Score', row.get('Skor', row.get('score', None))))
+            stop_raw    = row.get('Stop', row.get('stop_level', row.get('StopSeviye', None)))
+            try:
+                entry_price = float(str(entry_raw).replace(',', '.')) if entry_raw is not None else None
+            except Exception:
+                entry_price = None
+            try:
+                score = float(score_raw) if score_raw is not None else None
+            except Exception:
+                score = None
+            try:
+                stop_level = float(str(stop_raw).replace(',', '.')) if stop_raw is not None else None
+            except Exception:
+                stop_level = None
+            c.execute(
+                '''INSERT OR IGNORE INTO scan_signals
+                   (scan_date, symbol, scan_type, score, bias, entry_price, stop_level, category)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (today, symbol, scan_type, score, 'bullish', entry_price, stop_level, category)
+            )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        import logging
+        logging.warning(f"[log_scan_signal] HATA — scan_type={scan_type}: {e}")
 
 def load_watchlist_db():
     conn = sqlite3.connect(DB_FILE)
@@ -313,6 +367,129 @@ def remove_watchlist_db(symbol):
     c.execute('DELETE FROM watchlist WHERE symbol = ?', (symbol,))
     conn.commit()
     conn.close()
+
+def evaluate_signals(lookback_days=90, forward_windows=None):
+    """
+    scan_signals tablosundaki sinyalleri değerlendirir.
+    Her sinyal için +5, +10, +20 günlük fiyat getirisini hesaplar.
+    Minimum 5 gün geçmemiş sinyaller atlanır (henüz olgunlaşmamış).
+    Parquet cache üzerinden çalışır — ek internet isteği yapmaz.
+    """
+    if forward_windows is None:
+        forward_windows = [5, 10, 20]
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        signals = pd.read_sql(
+            "SELECT * FROM scan_signals WHERE scan_date >= date('now', ?)",
+            conn,
+            params=(f'-{lookback_days} days',)
+        )
+        conn.close()
+    except Exception:
+        return pd.DataFrame()
+
+    if signals.empty:
+        return pd.DataFrame()
+
+    today = datetime.now(_TZ_ISTANBUL).date()
+    results = []
+
+    for _, sig in signals.iterrows():
+        try:
+            signal_date = pd.to_datetime(sig['scan_date']).date()
+            days_elapsed = (today - signal_date).days
+            if days_elapsed < min(forward_windows):
+                continue  # henüz değerlendirilemez
+
+            # Parquet cache'ten tarihi veri al
+            df_hist = get_safe_historical_data(sig['symbol'], period='1y', interval='1d')
+            if df_hist is None or df_hist.empty:
+                continue
+
+            df_hist = df_hist.sort_index()
+
+            # Sinyal tarihine en yakın index'i bul
+            sig_ts = pd.Timestamp(sig['scan_date'])
+            idx_arr = df_hist.index.searchsorted(sig_ts)
+            if idx_arr >= len(df_hist):
+                continue
+
+            # Giriş fiyatı: kayıtlı entry_price yoksa o günün kapanışını kullan
+            if sig['entry_price'] and not pd.isna(sig['entry_price']):
+                entry = float(sig['entry_price'])
+            else:
+                entry = float(df_hist['Close'].iloc[idx_arr])
+
+            if entry == 0:
+                continue
+
+            row_result = {
+                'Sembol':        sig['symbol'],
+                'Tarama':        sig['scan_type'],
+                'Sinyal Tarihi': sig['scan_date'],
+                'Giriş':         round(entry, 2),
+                'Geçen Gün':     days_elapsed,
+                'Kategori':      sig.get('category', ''),
+            }
+
+            for fwd in forward_windows:
+                fwd_idx = idx_arr + fwd
+                if fwd_idx < len(df_hist):
+                    fwd_price = float(df_hist['Close'].iloc[fwd_idx])
+                    ret = (fwd_price - entry) / entry * 100
+                    row_result[f'Getiri_{fwd}G'] = round(ret, 2)
+                    row_result[f'Hit_{fwd}G']    = ret > 0
+                else:
+                    row_result[f'Getiri_{fwd}G'] = None
+                    row_result[f'Hit_{fwd}G']    = None
+
+            results.append(row_result)
+        except Exception:
+            continue
+
+    return pd.DataFrame(results) if results else pd.DataFrame()
+
+
+def get_signal_performance_summary(lookback_days=90):
+    """
+    evaluate_signals() çıktısını scan_type bazında özetler.
+    Hit rate, ortalama getiri ve sinyal sayısını döndürür.
+    Minimum 3 değerlendirilebilir sinyal yoksa o satırı — gösterir.
+    """
+    df = evaluate_signals(lookback_days=lookback_days)
+    if df.empty:
+        return pd.DataFrame()
+
+    scan_labels = {
+        'guclu_donus':    '💪 Güçlü Dönüş',
+        'nadir_firsat':   '🔥 Nadir Fırsat',
+        'minervini':      '📈 Minervini SEPA',
+        'rs_leaders':     '🚀 RS Momentum',
+        'golden_pattern': '⭐ Altın Formasyon',
+    }
+
+    summary = []
+    for scan_type, grp in df.groupby('Tarama'):
+        row = {
+            'Tarama':  scan_labels.get(scan_type, scan_type),
+            'Sinyal':  len(grp),
+        }
+        for fwd in [5, 10, 20]:
+            col_hit = f'Hit_{fwd}G'
+            col_ret = f'Getiri_{fwd}G'
+            valid_hits = grp[col_hit].dropna()
+            valid_rets  = grp[col_ret].dropna()
+            if len(valid_hits) >= 3:
+                row[f'Hit {fwd}G']  = f"%{round(valid_hits.mean() * 100, 1)}"
+                row[f'Ort +{fwd}G'] = f"%{round(valid_rets.mean(), 2):+.2f}"
+            else:
+                row[f'Hit {fwd}G']  = f"— (n={len(valid_hits)})"
+                row[f'Ort +{fwd}G'] = "—"
+        summary.append(row)
+
+    return pd.DataFrame(summary)
+
 
 init_db()
 
@@ -3777,6 +3954,7 @@ def scan_guclu_donus_batch(asset_list):
         by=['Skor', 'RS_Pct', 'Sweep_Ay', 'Hacim_10g'],
         ascending=[False, False, False, False]
     ).reset_index(drop=True)
+    log_scan_signal("guclu_donus", df_out, category=st.session_state.get('category', ''))
     return df_out
 
 # ==============================================================================
@@ -4352,7 +4530,9 @@ def scan_nadir_firsat_batch(asset_list):
 
     if not results:
         return pd.DataFrame()
-    return pd.DataFrame(results).reset_index(drop=True)
+    df_nadir = pd.DataFrame(results).reset_index(drop=True)
+    log_scan_signal("nadir_firsat", df_nadir, category=st.session_state.get('category', ''))
+    return df_nadir
 
 # ==============================================================================
 # MINERVINI SEPA MODÜLÜ (HEM TEKLİ ANALİZ HEM TARAMA) - GÜNCELLENMİŞ VERSİYON
@@ -4809,8 +4989,10 @@ def scan_minervini_batch(asset_list):
         df = pd.DataFrame(results)
         # En yüksek Puanlı ve en yüksek RS'li olanları üste al
         # Sadece ilk 30'u göster ki kullanıcı boğulmasın.
-        return df.sort_values(by=["Raw_Score", "rs_val"], ascending=[False, False]).head(30)
-    
+        df_min = df.sort_values(by=["Raw_Score", "rs_val"], ascending=[False, False]).head(30)
+        log_scan_signal("minervini", df_min, category=st.session_state.get('category', ''))
+        return df_min
+
     return pd.DataFrame()
 
 @st.cache_data(ttl=900)
@@ -4926,8 +5108,10 @@ def scan_rs_momentum_leaders(asset_list):
     # 4. Sıralama
     if results:
         # Skora göre azalan sırala
-        return pd.DataFrame(results).sort_values(by="Skor", ascending=False)
-    
+        df_rs = pd.DataFrame(results).sort_values(by="Skor", ascending=False)
+        log_scan_signal("rs_leaders", df_rs, category=st.session_state.get('category', ''))
+        return df_rs
+
     return pd.DataFrame()
 
 @st.cache_data(ttl=600)
@@ -17744,9 +17928,10 @@ with col_right:
     # ALT SEKMELERİ YİNE ŞIK BİR ÇERÇEVE (CONTAINER) İÇİNE ALIYORUZ
     with st.container(border=True):
         
-        tab_radar, tab_top20 = st.tabs([
+        tab_radar, tab_top20, tab_perf = st.tabs([
             "📡 RADARLAR",
-            "👑 TOP 20 MASTER"
+            "👑 TOP 20 MASTER",
+            "📊 SİNYAL PERFORMANSI"
         ])
     # ---------------------------------------------------------
     # SEKME: 📡 RADARLAR VE KESİŞİMLER (R1 + R2)
@@ -17870,3 +18055,69 @@ with col_right:
                         st.session_state.ticker = item['Sembol']; st.rerun()
         else:
             st.info("Lütfen sol menüdeki 'TÜM PİYASAYI TARA' butonunu kullanarak listeyi oluşturun.")
+
+    # ---------------------------------------------------------
+    # SEKME: 📊 SİNYAL PERFORMANSI
+    # ---------------------------------------------------------
+    with tab_perf:
+        st.markdown(
+            "<div style='font-size:0.85rem; color:#64748b; margin-bottom:12px; text-align:center;'>"
+            "Scan sinyallerinin gerçekleşmiş fiyat performansı — her gün otomatik güncellenir"
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+        lookback = st.selectbox(
+            "Değerlendirme Penceresi",
+            options=[30, 60, 90],
+            index=2,
+            format_func=lambda x: f"Son {x} gün",
+            key="perf_lookback"
+        )
+
+        with st.spinner("Sinyal performansı hesaplanıyor..."):
+            df_summary = get_signal_performance_summary(lookback_days=lookback)
+
+        if df_summary.empty:
+            st.info(
+                "Henüz yeterli sinyal verisi yok. "
+                "Scan'ler çalıştıkça ve en az 5 iş günü geçtikçe burada performans görünmeye başlar."
+            )
+        else:
+            # Özet tablo
+            st.dataframe(
+                df_summary,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Tarama":     st.column_config.TextColumn("Tarama Türü", width="medium"),
+                    "Sinyal":     st.column_config.NumberColumn("Sinyal #",   width="small"),
+                    "Hit 5G":     st.column_config.TextColumn("Hit Rate 5G",  width="small"),
+                    "Hit 10G":    st.column_config.TextColumn("Hit Rate 10G", width="small"),
+                    "Hit 20G":    st.column_config.TextColumn("Hit Rate 20G", width="small"),
+                    "Ort +5G":    st.column_config.TextColumn("Ort. +5G",     width="small"),
+                    "Ort +10G":   st.column_config.TextColumn("Ort. +10G",    width="small"),
+                    "Ort +20G":   st.column_config.TextColumn("Ort. +20G",    width="small"),
+                }
+            )
+
+            # Ham sinyal detay tablosu (opsiyonel genişletme)
+            with st.expander("📋 Ham Sinyal Detayları", expanded=False):
+                df_raw = evaluate_signals(lookback_days=lookback)
+                if not df_raw.empty:
+                    show_cols = ['Sembol', 'Tarama', 'Sinyal Tarihi', 'Giriş',
+                                 'Getiri_5G', 'Getiri_10G', 'Getiri_20G', 'Geçen Gün']
+                    show_cols = [c for c in show_cols if c in df_raw.columns]
+
+                    def _color_ret(val):
+                        if val is None or (isinstance(val, float) and pd.isna(val)):
+                            return ''
+                        return 'color: #16a34a; font-weight:bold' if float(val) > 0 else 'color: #dc2626; font-weight:bold'
+
+                    styled = df_raw[show_cols].style.applymap(
+                        _color_ret,
+                        subset=[c for c in ['Getiri_5G', 'Getiri_10G', 'Getiri_20G'] if c in show_cols]
+                    )
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Değerlendirilebilir sinyal bulunamadı.")
