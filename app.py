@@ -5786,7 +5786,14 @@ def calculate_ict_deep_analysis(ticker):
         hedef_1_txt = f"yakınındaki {final_target:.2f}" if dist_final < 1.0 else f"{final_target:.2f} ana hedefine"
         hedef_2_txt = f"hemen üstündeki {ileri_hedef:.2f}" if dist_ileri < 1.0 else f"güçlü {ileri_hedef:.2f} direncine"
         hedef_derin_txt = f"altındaki {derin_hedef:.2f} desteğine" if dist_derin < 1.0 else f"ana geri çekilme bölgesi olan {derin_hedef:.2f} seviyesine"
-        safety_txt = f"hemen dibindeki {safety_lvl:.2f}" if dist_safety < 1.0 else f"majör iptal seviyesi olan {safety_lvl:.2f}"
+        if "bearish" in bias:
+            # Ayı senaryosunda safety_lvl = son 20 günün en yakın swing high'ı (BSL)
+            safety_txt = (f"hemen üstündeki swing tepe {safety_lvl:.2f}" if dist_safety < 1.0
+                         else f"son 20 günün en yakın swing tepe seviyesi (iptal noktası) {safety_lvl:.2f}")
+        else:
+            # Boğa senaryosunda safety_lvl = son swing low (stop seviyesi)
+            safety_txt = (f"hemen dibindeki swing dip {safety_lvl:.2f}" if dist_safety < 1.0
+                         else f"son 20 günün en yakın swing dip seviyesi (iptal noktası) {safety_lvl:.2f}")
 
         # Hedefler arası anlamlılık kontrolü: %1.5'ten küçük fark = ayrı seviye değil, küme
         second_gap = abs(ileri_hedef - final_target) / max(abs(final_target), 1) * 100
@@ -16084,8 +16091,13 @@ En başa "{hook_baslik}" başlığı at. Sonra analizine o günün en baskın bu
 Referans ton — YASAK: "Söz konusu teknik tablo incelendiğinde, momentumun zayıfladığı görülmektedir." OLMASI GEREKEN: "OBV yükselirken fiyat aynı yerde sayıyor — bu tablo genelde kurumsal toplama öncesi görülür, ama dikkatli olmak gerek."
 {genel_analiz_baslik}:
    - Yukarıdaki verilerden SADECE EN KRİTİK OLANLARI seçerek maksimum 6 maddelik bir liste oluştur. Zorlama madde ekleme! 2 kritik sinyal varsa 2 madde yaz.
-   - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel "Öte Yandan; " diye bir başlık at ve altına olumsuzları sırala. Otoriter yazma. Geleceği kimse bilemez.
+   - SIRALAMA KURALI (BU KURAL ÖNEMLİ): Maddeleri "Önem Derecesine" göre azalan şekilde sırala. Düzyazı halinde yapma; Her madde için paragraf aç. Önce olumlu olanları sırala; en çok olumlu’dan en az olumlu’ya doğru sırala. Sonra da olumsuz olanları sırala; en çok olumsuz’dan en az olumsuz’a doğru sırala. Olumsuz olanları sıralamadan evvel şu geçişi kullan: "Tablonun parlak tarafı bu. Ama sahneyi tamamlamak için arka plandaki ağırlıklara da bakmak gerekiyor:" — "Öte Yandan;" gibi sert bir kopuş değil, okuyucuyu doğal olarak oraya taşı. Otoriter yazma. Geleceği kimse bilemez.
    - SIRALAMA KURALI DEVAMI: Her maddeyi 3 cümle ile yorumla ve yorumlarken; o verinin neden önemli olduğunu (8/10) gibi puanla ve finansal bir dille açıkla. Olumlu maddelerin başına "✅" ve verdiğin puanı, olumsuz/nötr maddelerin başına " 📍 " ve verdiğin puanı koy. (Örnek Başlık: "📍 (8/10) Momentum Kaybı ve HARSI Zayıflığı:") Olumlu maddeleri alt alta, Olumsuz maddeleri de alt alta yaz. Sırayı asla karıştırma. (Yani bir olumlu bir olumsuz madde yazma)
+   - AKIŞ KURALI (BU KURAL KRİTİK): Her maddeyi birbirinden kopuk bağımsız bir kutu gibi yazma. Her madde bir öncekinin üzerine inşa edilsin ve bir sonrakine köprü kursun. Bunun için her maddenin 3 cümlesi şu işlevi taşısın:
+     · 1. cümle: Veriyi söyle — net, sade, doğrudan.
+     · 2. cümle: Ne anlama geldiğini söyle — okuyucu için, teknik jargon değil.
+     · 3. cümle: Köprü kur — ya bir soru bırak ("Peki bunu teyit eden var mı?"), ya bir sonraki maddenin cevabını ima et ("Cevap bir sonraki sinyalde gizli."), ya da önceki maddeyle bağlantı kur ("Bu da BOS sinyalini güçlendiriyor.").
+   Okuyucu her maddeyi okuyunca bir sonrakini okumak zorunda hissetmeli. Analizin bir hikayesi olsun — başı, gerilimi ve çözümü.
    Ayrıca, yorumları bir robot gibi değil, tecrübeli ve sezgileri kuvvetli bir stratejist gibi yap.
      a) Listenin en başına; "Kırılım (Breakout)", "Akıllı Para (Smart Money)", "Trend Dönüşü" veya "BOS" içeren EN GÜÇLÜ sinyalleri koy ve bunlara (8/10) ile (10/10) arasında puan ver.
         - Eğer ALTIN FIRSAT durumu ‘EVET’ ise, bu hissenin piyasadan pozitif ayrıştığını (RS Gücü), kurumsal toplama bölgesinde olduğunu (ICT) ve ivme kazandığını vurgula. Analizinde bu 3/3 onayın neden kritik bir ‘alım penceresi’ sunduğunu belirt.
@@ -16264,12 +16276,13 @@ Değerlendirme şu formatta olmalıdır. Başlıkları aynen kullan ama her böl
 
 İlk Başlık daima "{hook_baslik}" formatında olmalıdır. Asla tarih ve saat yazma.
 
-GENEL YORUM: Bugünkü en baskın bulgudan başla. Hisse yükseliyorsa rallinin hikayesini anlat, düşüyorsa neden düştüğünü. 4-5 cümle — ama her cümle o hisseye özel olsun. "fısıldıyor", "kanıtlar nitelikte", "işaret ediyor olsa da" gibi kalıpları kullanma. Bir arkadaşına piyasayı anlatır gibi yaz — ama rakamları ve seviyeleri doğal akışta ver.
+GENEL YORUM: Bugünkü en baskın bulgudan başla. En güçlü sinyali (10/10) (9/10) ilk cümlede söyle. Hisse yükseliyorsa rallinin hikayesini anlat, düşüyorsa neden düştüğünü. 4-5 cümle — ama her cümle o hisseye özel olsun. "fısıldıyor", "kanıtlar nitelikte", "işaret ediyor olsa da" gibi kalıpları kullanma. Bir arkadaşına piyasayı anlatır gibi yaz — ama rakamları ve seviyeleri doğal akışta ver.
 Referans ton — YASAK: "Algoritmik veriler incelendiğinde, hissenin güçlü momentum sergilediği görülmektedir." OLMASI GEREKEN: "BTC 97K'da dirençle karşılaştı ama çekilme henüz başlamadı — kurumlar hâlâ tutunuyor gibi görünüyor."
 
 Teknik Görünüm: Fiyat nerede, hangi seviyeyle boğuşuyor, momentum ne diyor — 2-3 cümle. Somut seviye ver, jenerik kalıp kullanma. Eğer rallide iyi görünüyorsa öyle yaz, zorla "ama" ekleme.
 
-Smart Money İzi: Kurumsal tarafta ne görünüyor — delta, OBV, hacim — 2 cümle. Sadece gerçek bir anomali varsa vurgula. Hacim normalse "normal seyrediyor" de, tehlike üretme.
+Smart Money İzi: Kurumsal tarafta ne görünüyor — delta, OBV, hacim — 2 cümle. Sadece gerçek bir anomali varsa vurgula. Hacim normalse "normal seyrediyor" de, tehlike üretme. mesela, Eğer "bugünkü net baskınlık" ile "OBV trendi" ters yönde 
+gidiyorsa — bunu analiz et.
 
 SONUÇ: Tüm tablonun 2-3 cümlelik özü. En önemli seviyeyi ve o seviyenin ne anlama geldiğini söyle. "Uzun lafın kısası" tonunda yaz.
 
